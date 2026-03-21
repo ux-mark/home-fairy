@@ -11,6 +11,7 @@ import { twinklyClient } from '../lib/twinkly-client.js'
 import { fairyDeviceClient } from '../lib/fairy-device-client.js'
 import { mtaClient } from '../lib/mta-client.js'
 import { MTA_STOPS, searchStops } from '../lib/mta-stops.js'
+import { weatherIndicator, WEATHER_COLORS } from '../lib/weather-indicator.js'
 
 const router = Router()
 
@@ -655,6 +656,59 @@ router.post('/mta/indicator/test', async (_req: Request, res: Response) => {
     }, config.duration * 1000)
 
     res.json({ status: bestStatus, color, duration: config.duration })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// GET /weather/indicator — get weather indicator config
+router.get('/weather/indicator', (_req: Request, res: Response) => {
+  try {
+    res.json(weatherIndicator.getConfig())
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// PUT /weather/indicator — save weather indicator config
+router.put('/weather/indicator', (req: Request, res: Response) => {
+  try {
+    const config = req.body
+    run(
+      `INSERT INTO current_state (key, value, updated_at) VALUES ('pref_weather_indicator', ?, datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      [JSON.stringify(config)],
+    )
+    // Restart the indicator with the new config
+    weatherIndicator.restart()
+    res.json(config)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// POST /weather/indicator/test — trigger weather indicator manually
+router.post('/weather/indicator/test', async (_req: Request, res: Response) => {
+  try {
+    const result = await weatherIndicator.triggerOnce()
+    if (!result) {
+      res.status(400).json({ error: 'Weather indicator not configured or weather data unavailable' })
+      return
+    }
+    res.json(result)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// GET /weather/colors — return the colour mapping for the UI reference
+router.get('/weather/colors', (_req: Request, res: Response) => {
+  try {
+    res.json(WEATHER_COLORS)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: msg })

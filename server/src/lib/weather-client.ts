@@ -3,6 +3,8 @@ import axios from 'axios'
 interface WeatherData {
   temp: number
   description: string
+  main: string      // condition group e.g. "Rain", "Clear", "Clouds"
+  id: number        // specific condition code e.g. 801, 500
   icon: string
   humidity: number
   wind_speed: number
@@ -46,6 +48,8 @@ export async function getCurrentWeather(): Promise<WeatherData> {
   const weather: WeatherData = {
     temp: current.temp,
     description: current.weather?.[0]?.description ?? '',
+    main: current.weather?.[0]?.main ?? '',
+    id: current.weather?.[0]?.id ?? 0,
     icon: current.weather?.[0]?.icon ?? '',
     humidity: current.humidity,
     wind_speed: current.wind_speed,

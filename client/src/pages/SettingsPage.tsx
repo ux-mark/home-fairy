@@ -23,9 +23,10 @@ import {
   ArrowUp,
   Lightbulb,
   Play,
+  Cloud,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { SunScheduleEntry, ConfiguredStop, MtaStop, MtaIndicatorConfig } from '@/lib/api'
+import type { SunScheduleEntry, ConfiguredStop, MtaStop, MtaIndicatorConfig, WeatherIndicatorConfig, WeatherColorEntry } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { useTheme } from '@/hooks/useTheme'
@@ -1168,6 +1169,289 @@ function IndicatorSection() {
   )
 }
 
+// ── Weather Indicator section ────────────────────────────────────────────────
+
+function WeatherIndicatorSection() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const { data: weatherConfig } = useQuery({
+    queryKey: ['weather', 'indicator'],
+    queryFn: api.system.getWeatherIndicator,
+  })
+
+  const { data: weatherColors } = useQuery({
+    queryKey: ['weather', 'colors'],
+    queryFn: api.system.getWeatherColors,
+  })
+
+  const { data: lights } = useQuery({
+    queryKey: ['lifx', 'lights'],
+    queryFn: api.lifx.getLights,
+    retry: false,
+  })
+
+  const { data: rooms } = useQuery({
+    queryKey: ['rooms'],
+    queryFn: api.rooms.getAll,
+  })
+
+  const saveMutation = useMutation({
+    mutationFn: (config: WeatherIndicatorConfig) => api.system.saveWeatherIndicator(config),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['weather', 'indicator'] })
+      toast({ message: 'Weather light settings saved' })
+    },
+    onError: () => toast({ message: 'Failed to save weather light settings', type: 'error' }),
+  })
+
+  const testMutation = useMutation({
+    mutationFn: api.system.testWeatherIndicator,
+    onSuccess: (data) => {
+      const colorEntry = weatherColors?.[data.condition]
+      toast({ message: `Weather light: ${colorEntry?.name || data.condition}` })
+    },
+    onError: () => toast({ message: 'Weather light test failed', type: 'error' }),
+  })
+
+  const config: WeatherIndicatorConfig = weatherConfig ?? {
+    enabled: false,
+    lightId: '',
+    lightLabel: '',
+    intervalMinutes: 15,
+    mode: 'always',
+    brightness: 0.5,
+  }
+
+  const updateConfig = (patch: Partial<WeatherIndicatorConfig>) => {
+    saveMutation.mutate({ ...config, ...patch })
+  }
+
+  // Extract all sensors from rooms
+  const allSensors = useMemo(() => {
+    if (!rooms) return []
+    const sensors: { name: string; room: string }[] = []
+    for (const room of rooms) {
+      if (room.sensors) {
+        for (const sensor of room.sensors) {
+          sensors.push({ name: sensor.name, room: room.name })
+        }
+      }
+    }
+    return sensors
+  }, [rooms])
+
+  const canTest = config.enabled && config.lightId
+
+  return (
+    <Section title="Weather Light">
+      <p className="text-caption text-xs mb-4">
+        A light changes colour to match the current weather forecast
+      </p>
+
+      <div className="space-y-4">
+        {/* Light selector */}
+        <div>
+          <label htmlFor="weather-light" className="text-heading text-sm mb-1.5 block">
+            Light
+          </label>
+          <div className="relative">
+            <Cloud className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+            <select
+              id="weather-light"
+              value={config.lightId}
+              onChange={(e) => {
+                const light = lights?.find(l => l.id === e.target.value)
+                updateConfig({
+                  lightId: e.target.value,
+                  lightLabel: light?.label ?? '',
+                })
+              }}
+              className="input-field h-11 w-full appearance-none rounded-lg border py-2 pl-9 pr-8 text-sm focus:border-fairy-500 focus:outline-none"
+            >
+              <option value="">Select a light</option>
+              {lights?.map(light => (
+                <option key={light.id} value={light.id}>
+                  {light.label}{light.group?.name ? ` (${light.group.name})` : ''}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+          </div>
+        </div>
+
+        {/* Mode selector */}
+        <div>
+          <p className="text-heading text-sm mb-1.5">Mode</p>
+          <div className="surface flex rounded-lg border" style={{ borderColor: 'var(--border-secondary)' }}>
+            <button
+              onClick={() => updateConfig({ mode: 'always' })}
+              aria-pressed={config.mode === 'always'}
+              className={cn(
+                'flex-1 px-3 py-2.5 text-sm font-medium transition-colors min-h-[44px] rounded-l-lg',
+                config.mode === 'always'
+                  ? 'bg-fairy-500 text-white'
+                  : 'text-caption hover:text-[var(--text-primary)]',
+              )}
+            >
+              Always on
+            </button>
+            <button
+              onClick={() => updateConfig({ mode: 'sensor' })}
+              aria-pressed={config.mode === 'sensor'}
+              className={cn(
+                'flex-1 px-3 py-2.5 text-sm font-medium transition-colors min-h-[44px] rounded-r-lg',
+                config.mode === 'sensor'
+                  ? 'bg-fairy-500 text-white'
+                  : 'text-caption hover:text-[var(--text-primary)]',
+              )}
+            >
+              Sensor trigger
+            </button>
+          </div>
+        </div>
+
+        {/* Sensor selector (only in sensor mode) */}
+        {config.mode === 'sensor' && (
+          <div>
+            <label htmlFor="weather-sensor" className="text-heading text-sm mb-1.5 block">
+              Trigger sensor
+            </label>
+            <div className="relative">
+              <select
+                id="weather-sensor"
+                value={config.sensorName ?? ''}
+                onChange={(e) => updateConfig({ sensorName: e.target.value })}
+                className="input-field h-11 w-full appearance-none rounded-lg border py-2 pl-3 pr-8 text-sm focus:border-fairy-500 focus:outline-none"
+              >
+                <option value="">Select a sensor</option>
+                {allSensors
+                  .filter((s, i, arr) => arr.findIndex(x => x.name === s.name) === i)
+                  .map(sensor => (
+                  <option key={`${sensor.name}-${sensor.room}`} value={sensor.name}>
+                    {sensor.name} ({sensor.room})
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+            </div>
+          </div>
+        )}
+
+        {/* Brightness slider */}
+        <div>
+          <label htmlFor="weather-brightness" className="text-heading text-sm mb-1.5 block">
+            Brightness
+          </label>
+          <div className="flex items-center gap-3">
+            <input
+              id="weather-brightness"
+              type="range"
+              min={5}
+              max={100}
+              step={5}
+              value={Math.round(config.brightness * 100)}
+              onChange={(e) => updateConfig({ brightness: Number(e.target.value) / 100 })}
+              className="fairy-slider flex-1"
+              aria-label="Weather light brightness"
+            />
+            <span className="w-10 text-right text-sm font-medium text-heading">
+              {Math.round(config.brightness * 100)}%
+            </span>
+          </div>
+        </div>
+
+        {/* Check interval stepper */}
+        <div>
+          <p className="text-heading text-sm mb-1.5">Check every</p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => updateConfig({ intervalMinutes: Math.max(5, config.intervalMinutes - 5) })}
+              disabled={config.intervalMinutes <= 5}
+              className="surface flex h-11 w-11 items-center justify-center rounded-lg border text-heading transition-colors hover:brightness-95 dark:hover:brightness-110 disabled:opacity-30"
+              style={{ borderColor: 'var(--border-secondary)' }}
+              aria-label="Decrease check interval"
+            >
+              <Minus className="h-4 w-4" />
+            </button>
+            <span className="w-16 text-center text-sm font-medium text-heading">
+              {config.intervalMinutes} min
+            </span>
+            <button
+              onClick={() => updateConfig({ intervalMinutes: Math.min(60, config.intervalMinutes + 5) })}
+              disabled={config.intervalMinutes >= 60}
+              className="surface flex h-11 w-11 items-center justify-center rounded-lg border text-heading transition-colors hover:brightness-95 dark:hover:brightness-110 disabled:opacity-30"
+              style={{ borderColor: 'var(--border-secondary)' }}
+              aria-label="Increase check interval"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Enable toggle + Test button */}
+        <div className="flex items-center justify-between pt-1">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => updateConfig({ enabled: !config.enabled })}
+              className={cn(
+                'relative h-6 w-11 rounded-full transition-colors',
+                config.enabled ? 'bg-fairy-500' : 'bg-[var(--bg-tertiary)]',
+              )}
+              role="switch"
+              aria-checked={config.enabled}
+              aria-label={config.enabled ? 'Disable weather light' : 'Enable weather light'}
+            >
+              <span
+                className={cn(
+                  'absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform',
+                  config.enabled && 'translate-x-5',
+                )}
+              />
+            </button>
+            <span className="text-heading text-sm">{config.enabled ? 'Enabled' : 'Disabled'}</span>
+          </div>
+
+          <button
+            onClick={() => testMutation.mutate()}
+            disabled={!canTest || testMutation.isPending}
+            className={cn(
+              'flex items-center gap-1.5 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors min-h-[44px]',
+              canTest
+                ? 'bg-fairy-500 text-white hover:bg-fairy-600'
+                : 'surface text-caption opacity-50 cursor-not-allowed',
+            )}
+          >
+            <Play className="h-4 w-4" />
+            {testMutation.isPending ? 'Testing...' : 'Test'}
+          </button>
+        </div>
+
+        {/* Colour Reference */}
+        {weatherColors && (
+          <div className="mt-2 rounded-lg border p-4" style={{ borderColor: 'var(--border-secondary)' }}>
+            <p className="text-caption text-xs font-semibold uppercase tracking-wider mb-3">
+              Colour Reference
+            </p>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {Object.entries(weatherColors).map(([key, entry]) => (
+                <div key={key} className="flex items-center gap-2 py-1">
+                  <span
+                    className="inline-block h-8 w-8 shrink-0 rounded-full"
+                    style={{ backgroundColor: entry.hex }}
+                    aria-hidden="true"
+                  />
+                  <span className="text-heading text-xs leading-tight">{entry.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </Section>
+  )
+}
+
 // ── System section ──────────────────────────────────────────────────────────
 
 function SystemSection() {
@@ -1240,6 +1524,7 @@ export default function SettingsPage() {
         <SunScheduleSection />
         <SubwaySection />
         <IndicatorSection />
+        <WeatherIndicatorSection />
         <DevicesSection />
         <TimersSection />
         <SystemSection />

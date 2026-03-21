@@ -2,6 +2,7 @@ import { getAll, getOne, run } from '../db/index.js'
 import { activateScene, deactivateScene } from './scene-executor.js'
 import { lifxClient } from './lifx-client.js'
 import { mtaClient } from './mta-client.js'
+import { weatherIndicator } from './weather-indicator.js'
 
 interface RoomTimer {
   timeout: NodeJS.Timeout
@@ -148,6 +149,14 @@ export class MotionHandler {
         }
       }
     } catch { /* ignore indicator errors */ }
+
+    // Check weather indicator sensor trigger
+    try {
+      const weatherConfig = weatherIndicator.getConfig()
+      if (weatherConfig.enabled && weatherConfig.mode === 'sensor' && weatherConfig.sensorName === sensorName && value === 'active') {
+        weatherIndicator.triggerOnce()
+      }
+    } catch { /* ignore weather indicator errors */ }
 
     // Find which room this sensor belongs to
     const deviceRoom = this.findRoomForSensor(sensorName)

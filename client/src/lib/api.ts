@@ -213,6 +213,22 @@ export interface MtaIndicatorConfig {
   duration: number
 }
 
+export interface WeatherIndicatorConfig {
+  enabled: boolean
+  lightId: string
+  lightLabel: string
+  intervalMinutes: number
+  mode: 'always' | 'sensor'
+  sensorName?: string
+  brightness: number
+}
+
+export interface WeatherColorEntry {
+  color: string
+  name: string
+  hex: string
+}
+
 export interface CombinedMtaStatus {
   overallStatus: 'green' | 'orange' | 'red' | 'none'
   overallMessage: string
@@ -417,6 +433,14 @@ export const api = {
       fetchApi<MtaIndicatorConfig>('/system/mta/indicator', { method: 'PUT', body: JSON.stringify(config) }),
     testMtaIndicator: () =>
       fetchApi<{ status: string; color: string; duration: number }>('/system/mta/indicator/test', { method: 'POST' }),
+    getWeatherIndicator: () =>
+      fetchApi<WeatherIndicatorConfig>('/system/weather/indicator'),
+    saveWeatherIndicator: (config: WeatherIndicatorConfig) =>
+      fetchApi<WeatherIndicatorConfig>('/system/weather/indicator', { method: 'PUT', body: JSON.stringify(config) }),
+    testWeatherIndicator: () =>
+      fetchApi<{ condition: string; color: string }>('/system/weather/indicator/test', { method: 'POST' }),
+    getWeatherColors: () =>
+      fetchApi<Record<string, WeatherColorEntry>>('/system/weather/colors'),
     getLogs: (limit?: number, category?: string) => {
       const params = new URLSearchParams()
       if (limit) params.set('limit', String(limit))
