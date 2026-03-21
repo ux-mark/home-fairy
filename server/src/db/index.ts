@@ -97,6 +97,36 @@ export function initDb(): void {
       UNIQUE(device_id, room_name)
     );
   `)
+
+  // Migration: fix device_rooms CHECK constraint if it doesn't include twinkly/fairy
+  // This handles databases created before the constraint was updated
+  try {
+    const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE name = 'device_rooms'").get() as { sql: string } | undefined
+    if (tableInfo?.sql && !tableInfo.sql.includes("'twinkly'")) {
+      console.log('[db] Migrating device_rooms: adding twinkly/fairy to CHECK constraint')
+      const existingData = db.prepare('SELECT * FROM device_rooms').all()
+      db.exec('DROP TABLE device_rooms')
+      db.exec(`
+        CREATE TABLE device_rooms (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          device_id TEXT NOT NULL,
+          device_label TEXT NOT NULL,
+          device_type TEXT NOT NULL CHECK(device_type IN ('light','switch','sensor','dimmer','contact','motion','twinkly','fairy')),
+          room_name TEXT NOT NULL REFERENCES rooms(name),
+          config TEXT DEFAULT '{}',
+          created_at TEXT DEFAULT (datetime('now')),
+          UNIQUE(device_id, room_name)
+        )
+      `)
+      const insert = db.prepare('INSERT INTO device_rooms (device_id, device_label, device_type, room_name, config) VALUES (?, ?, ?, ?, ?)')
+      for (const row of existingData as any[]) {
+        insert.run(row.device_id, row.device_label, row.device_type, row.room_name, row.config || '{}')
+      }
+      console.log(`[db] Migrated ${(existingData as any[]).length} device_rooms rows`)
+    }
+  } catch (e) {
+    console.error('[db] Migration warning:', e)
+  }
 }
 
 export function getAll<T>(sql: string, params?: unknown[]): T[] {

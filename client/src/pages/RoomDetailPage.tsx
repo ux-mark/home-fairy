@@ -597,7 +597,7 @@ export default function RoomDetailPage() {
   }
 
   return (
-    <div className="pb-28">
+    <div className="pb-40">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="mb-6">
         <Link
@@ -1095,7 +1095,7 @@ export default function RoomDetailPage() {
       </section>
 
       {/* ── Sticky save bar ────────────────────────────────────────────────── */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--border-primary)] chrome p-4 md:bottom-0 md:left-56">
+      <div className="fixed inset-x-0 bottom-[60px] z-30 border-t border-[var(--border-primary)] chrome p-4 md:bottom-0 md:left-56">
         <div className="mx-auto flex max-w-5xl items-center gap-3">
           <Link
             to="/rooms"

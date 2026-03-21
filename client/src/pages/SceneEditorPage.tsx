@@ -1546,7 +1546,7 @@ export default function SceneEditorPage() {
       </Tabs.Root>
 
       {/* ── Sticky save bar ───────────────────────────────────────────────── */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t chrome p-4 md:bottom-0 md:left-56">
+      <div className="fixed inset-x-0 bottom-[60px] z-30 border-t chrome p-4 md:bottom-0 md:left-56">
         <div className="mx-auto flex max-w-5xl items-center gap-3">
           <Link
             to="/scenes"
