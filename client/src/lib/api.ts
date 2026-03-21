@@ -58,6 +58,8 @@ export interface Scene {
   modes: string[]
   commands: SceneCommand[]
   tags: string[]
+  active_from?: string | null // "MM-DD" format
+  active_to?: string | null   // "MM-DD" format
 }
 
 export interface SceneRoom {

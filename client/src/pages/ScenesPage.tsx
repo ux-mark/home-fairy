@@ -1,10 +1,40 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, ChevronRight, Sparkles, Zap, Search } from 'lucide-react'
+import { Plus, ChevronRight, Sparkles, Zap, Search, CalendarDays } from 'lucide-react'
 import { api } from '@/lib/api'
+import type { Scene } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+function isSceneInSeason(scene: Scene): { hasSeason: boolean; inSeason: boolean; label: string } {
+  if (!scene.active_from || !scene.active_to) {
+    return { hasSeason: false, inSeason: true, label: '' }
+  }
+  const now = new Date()
+  const month = now.getMonth() + 1
+  const day = now.getDate()
+  const today = month * 100 + day
+
+  const [fromM, fromD] = scene.active_from.split('-').map(Number)
+  const [toM, toD] = scene.active_to.split('-').map(Number)
+  const from = fromM * 100 + fromD
+  const to = toM * 100 + toD
+
+  const inRange = from <= to
+    ? (today >= from && today <= to)
+    : (today >= from || today <= to)
+
+  const fromLabel = `${MONTH_NAMES[fromM - 1]} ${fromD}`
+  const toLabel = `${MONTH_NAMES[toM - 1]} ${toD}`
+
+  if (inRange) {
+    return { hasSeason: true, inSeason: true, label: `In season until ${toLabel}` }
+  }
+  return { hasSeason: true, inSeason: false, label: `Out of season until ${fromLabel}` }
+}
 
 function SceneCardSkeleton() {
   return (
@@ -123,6 +153,7 @@ export default function ScenesPage() {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {filteredScenes.map(scene => {
               const isActive = activeSceneNames.has(scene.name)
+              const season = isSceneInSeason(scene)
               return (
                 <Link
                   key={scene.name}
@@ -131,6 +162,7 @@ export default function ScenesPage() {
                     'card group rounded-xl border p-4 transition-colors',
                     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                     isActive && 'border-fairy-500/40 shadow-lg shadow-fairy-500/10',
+                    season.hasSeason && !season.inSeason && 'opacity-50',
                   )}
                 >
                   <div className="mb-3 flex items-start justify-between">
@@ -181,6 +213,16 @@ export default function ScenesPage() {
                     <div className="mt-2 flex items-center gap-1 text-xs font-medium text-fairy-400">
                       <Zap className="h-3 w-3" />
                       Active
+                    </div>
+                  )}
+
+                  {season.hasSeason && (
+                    <div className={cn(
+                      'mt-2 flex items-center gap-1 text-xs font-medium',
+                      season.inSeason ? 'text-green-500' : 'text-caption',
+                    )}>
+                      <CalendarDays className="h-3 w-3" />
+                      {season.label}
                     </div>
                   )}
                 </Link>

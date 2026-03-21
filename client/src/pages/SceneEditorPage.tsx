@@ -17,6 +17,7 @@ import {
   Zap,
   Timer,
   Link2,
+  CalendarDays,
 } from 'lucide-react'
 import * as Tabs from '@radix-ui/react-tabs'
 import * as Switch from '@radix-ui/react-switch'
@@ -46,6 +47,8 @@ const FAIRY_PATTERNS = [
   'Relax',
   'Off',
 ]
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 // ── Types for light state within the editor ──────────────────────────────────
 
@@ -510,6 +513,13 @@ export default function SceneEditorPage() {
   const [chainSceneEnabled, setChainSceneEnabled] = useState(false)
   const [chainSceneTarget, setChainSceneTarget] = useState('')
 
+  // Season date range state
+  const [seasonEnabled, setSeasonEnabled] = useState(false)
+  const [seasonFromMonth, setSeasonFromMonth] = useState(12)
+  const [seasonFromDay, setSeasonFromDay] = useState(1)
+  const [seasonToMonth, setSeasonToMonth] = useState(1)
+  const [seasonToDay, setSeasonToDay] = useState(6)
+
   // Hub devices for rooms
   const [roomDevices, setRoomDevices] = useState<Map<string, DeviceRoomAssignment[]>>(new Map())
 
@@ -584,6 +594,17 @@ export default function SceneEditorPage() {
       if (chainCmd) {
         setChainSceneEnabled(true)
         setChainSceneTarget(chainCmd.name || '')
+      }
+
+      // Initialize season date range
+      if (scene.active_from && scene.active_to) {
+        setSeasonEnabled(true)
+        const [fm, fd] = scene.active_from.split('-').map(Number)
+        const [tm, td] = scene.active_to.split('-').map(Number)
+        setSeasonFromMonth(fm)
+        setSeasonFromDay(fd)
+        setSeasonToMonth(tm)
+        setSeasonToDay(td)
       }
 
       // Build light states from commands
@@ -746,6 +767,12 @@ export default function SceneEditorPage() {
         modes,
         commands: allCommands,
         tags,
+        active_from: seasonEnabled
+          ? `${String(seasonFromMonth).padStart(2, '0')}-${String(seasonFromDay).padStart(2, '0')}`
+          : null,
+        active_to: seasonEnabled
+          ? `${String(seasonToMonth).padStart(2, '0')}-${String(seasonToDay).padStart(2, '0')}`
+          : null,
       }
 
       return api.scenes.update(name!, data)
@@ -1366,6 +1393,74 @@ export default function SceneEditorPage() {
                 )
               })}
             </div>
+          </section>
+
+          {/* Season */}
+          <section>
+            <h3 className="mb-3 text-sm font-medium text-body">Season</h3>
+            <p className="mb-3 text-xs text-caption">
+              Restrict this scene to specific dates each year. Outside this range it won't activate from motion, but you can still trigger it manually.
+            </p>
+            <OptionToggle
+              label="Enable seasonal dates"
+              description={
+                seasonEnabled
+                  ? `Active ${MONTH_NAMES[seasonFromMonth - 1]} ${seasonFromDay} — ${MONTH_NAMES[seasonToMonth - 1]} ${seasonToDay}`
+                  : 'Active all year'
+              }
+              enabled={seasonEnabled}
+              onToggle={setSeasonEnabled}
+              icon={CalendarDays}
+            >
+              <div className="space-y-3">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-body">From</label>
+                  <div className="flex gap-2">
+                    <select
+                      value={seasonFromMonth}
+                      onChange={e => setSeasonFromMonth(Number(e.target.value))}
+                      className="h-11 flex-1 rounded-lg input-field border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                    >
+                      {MONTH_NAMES.map((m, i) => (
+                        <option key={m} value={i + 1}>{m}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={seasonFromDay}
+                      onChange={e => setSeasonFromDay(Number(e.target.value))}
+                      className="h-11 w-20 rounded-lg input-field border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                    >
+                      {Array.from({ length: 31 }, (_, i) => (
+                        <option key={i + 1} value={i + 1}>{i + 1}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium text-body">To</label>
+                  <div className="flex gap-2">
+                    <select
+                      value={seasonToMonth}
+                      onChange={e => setSeasonToMonth(Number(e.target.value))}
+                      className="h-11 flex-1 rounded-lg input-field border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                    >
+                      {MONTH_NAMES.map((m, i) => (
+                        <option key={m} value={i + 1}>{m}</option>
+                      ))}
+                    </select>
+                    <select
+                      value={seasonToDay}
+                      onChange={e => setSeasonToDay(Number(e.target.value))}
+                      className="h-11 w-20 rounded-lg input-field border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                    >
+                      {Array.from({ length: 31 }, (_, i) => (
+                        <option key={i + 1} value={i + 1}>{i + 1}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </OptionToggle>
           </section>
 
           {/* Scene Options */}

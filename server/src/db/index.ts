@@ -98,6 +98,15 @@ export function initDb(): void {
     );
   `)
 
+  // Migration: add active_from/active_to columns to scenes for seasonal date ranges
+  try {
+    db.prepare("SELECT active_from FROM scenes LIMIT 1").get()
+  } catch {
+    console.log('[db] Migrating scenes: adding active_from, active_to columns')
+    db.exec("ALTER TABLE scenes ADD COLUMN active_from TEXT")
+    db.exec("ALTER TABLE scenes ADD COLUMN active_to TEXT")
+  }
+
   // Migration: fix device_rooms CHECK constraint if it doesn't include twinkly/fairy
   // This handles databases created before the constraint was updated
   try {

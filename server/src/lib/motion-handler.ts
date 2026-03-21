@@ -35,6 +35,8 @@ interface SceneRow {
   modes: string
   commands: string
   tags: string
+  active_from: string | null
+  active_to: string | null
 }
 
 interface RoomInfo {
@@ -158,6 +160,26 @@ export class MotionHandler {
 
       // Skip scenes tagged as manual-only
       if (tags.some(t => MotionHandler.EXCLUDED_TAGS.has(t))) continue
+
+      // Check seasonal date range
+      if (scene.active_from && scene.active_to) {
+        const now = new Date()
+        const month = now.getMonth() + 1 // 1-12
+        const day = now.getDate()
+        const today = month * 100 + day // e.g. 1225 for Dec 25
+
+        const [fromM, fromD] = scene.active_from.split('-').map(Number)
+        const [toM, toD] = scene.active_to.split('-').map(Number)
+        const from = fromM * 100 + fromD
+        const to = toM * 100 + toD
+
+        // Handle ranges that cross year boundary (e.g. Dec 1 -> Jan 6)
+        const inRange = from <= to
+          ? (today >= from && today <= to)
+          : (today >= from || today <= to)
+
+        if (!inRange) continue // Scene is out of season
+      }
 
       // Check if this scene applies to the current mode
       if (modes.length > 0 && !modes.includes(mode)) continue

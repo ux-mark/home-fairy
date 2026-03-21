@@ -12,6 +12,8 @@ interface SceneRow {
   modes: string
   commands: string
   tags: string
+  active_from: string | null
+  active_to: string | null
   created_at: string
   updated_at: string
 }
@@ -42,6 +44,8 @@ function parseScene(row: SceneRow) {
     modes: Array.isArray(modes) ? modes : [],
     commands: Array.isArray(commands) ? commands : [],
     tags: Array.isArray(tags) ? tags : [],
+    active_from: row.active_from ?? null,
+    active_to: row.active_to ?? null,
   }
 }
 
@@ -79,6 +83,8 @@ const createSceneSchema = z.object({
   modes: z.array(z.string()).optional(),
   commands: z.array(commandSchema).optional(),
   tags: z.array(z.string()).optional(),
+  active_from: z.string().regex(/^\d{2}-\d{2}$/).nullable().optional(),
+  active_to: z.string().regex(/^\d{2}-\d{2}$/).nullable().optional(),
 })
 
 const updateSceneSchema = z.object({
@@ -88,6 +94,8 @@ const updateSceneSchema = z.object({
   modes: z.array(z.string()).optional(),
   commands: z.array(commandSchema).optional(),
   tags: z.array(z.string()).optional(),
+  active_from: z.string().regex(/^\d{2}-\d{2}$/).nullable().optional(),
+  active_to: z.string().regex(/^\d{2}-\d{2}$/).nullable().optional(),
 })
 
 // GET / — list all scenes
@@ -132,8 +140,8 @@ router.post('/', (req: Request, res: Response) => {
   try {
     const body = createSceneSchema.parse(req.body)
     run(
-      `INSERT INTO scenes (name, icon, rooms, modes, commands, tags)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO scenes (name, icon, rooms, modes, commands, tags, active_from, active_to)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         body.name,
         body.icon ?? '',
@@ -141,6 +149,8 @@ router.post('/', (req: Request, res: Response) => {
         JSON.stringify(body.modes ?? []),
         JSON.stringify(body.commands ?? []),
         JSON.stringify(body.tags ?? []),
+        body.active_from ?? null,
+        body.active_to ?? null,
       ],
     )
     const created = getOne<SceneRow>('SELECT * FROM scenes WHERE name = ?', [body.name])
@@ -173,6 +183,8 @@ router.put('/:name', (req: Request, res: Response) => {
     if (body.modes !== undefined) { fields.push('modes = ?'); values.push(JSON.stringify(body.modes)) }
     if (body.commands !== undefined) { fields.push('commands = ?'); values.push(JSON.stringify(body.commands)) }
     if (body.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(body.tags)) }
+    if (body.active_from !== undefined) { fields.push('active_from = ?'); values.push(body.active_from) }
+    if (body.active_to !== undefined) { fields.push('active_to = ?'); values.push(body.active_to) }
 
     if (fields.length > 0) {
       fields.push("updated_at = datetime('now')")
