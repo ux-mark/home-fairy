@@ -20,11 +20,14 @@ function WatchRoomView({
 }) {
   const queryClient = useQueryClient()
 
-  const roomScenes = scenes.filter(
-    s =>
-      s.rooms.some(r => r.name === room.name) &&
-      s.modes.some(m => m.toLowerCase() === currentMode.toLowerCase()),
-  )
+  const roomScenes = scenes.filter(s => {
+    const rooms = Array.isArray(s.rooms) ? s.rooms : []
+    const modes = Array.isArray(s.modes) ? s.modes : []
+    return (
+      rooms.some(r => r?.name === room.name) &&
+      modes.some(m => (m ?? '').toLowerCase() === currentMode.toLowerCase())
+    )
+  })
 
   const activateMutation = useMutation({
     mutationFn: api.scenes.activate,

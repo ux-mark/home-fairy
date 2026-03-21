@@ -44,13 +44,21 @@ export default function ScenesPage() {
     if (!scenes) return []
     if (!search.trim()) return scenes
     const q = search.toLowerCase()
-    return scenes.filter(
-      s =>
-        s.name.toLowerCase().includes(q) ||
-        s.tags.some(t => t.toLowerCase().includes(q)) ||
-        s.rooms.some(r => r.name.toLowerCase().includes(q)) ||
-        s.modes.some(m => m.toLowerCase().includes(q)),
-    )
+    return scenes.filter(s => {
+      try {
+        const tags = Array.isArray(s.tags) ? s.tags : []
+        const rooms = Array.isArray(s.rooms) ? s.rooms : []
+        const modes = Array.isArray(s.modes) ? s.modes : []
+        return (
+          (s.name ?? '').toLowerCase().includes(q) ||
+          tags.some(t => (t ?? '').toLowerCase().includes(q)) ||
+          rooms.some(r => (r?.name ?? '').toLowerCase().includes(q)) ||
+          modes.some(m => (m ?? '').toLowerCase().includes(q))
+        )
+      } catch {
+        return false
+      }
+    })
   }, [scenes, search])
 
   const createMutation = useMutation({

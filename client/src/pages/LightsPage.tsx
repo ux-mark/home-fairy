@@ -205,8 +205,8 @@ export default function LightsPage() {
       const q = search.toLowerCase()
       result = result.filter(
         l =>
-          l.label.toLowerCase().includes(q) ||
-          l.group.name.toLowerCase().includes(q),
+          (l.label ?? '').toLowerCase().includes(q) ||
+          (l.group?.name ?? '').toLowerCase().includes(q),
       )
     }
     return result
