@@ -1,9 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Thermometer, Sun, Clock, Sparkles, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train } from 'lucide-react'
+import { Thermometer, Sun, Clock, Sparkles, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
-import type { Room, Scene, MtaStatus } from '@/lib/api'
+import type { Room, Scene, MtaStatus, CombinedMtaStatus } from '@/lib/api'
 import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
 
 // ── Skeleton loader ──────────────────────────────────────────────────────────
@@ -314,81 +314,145 @@ function QuickActions() {
 
 // ── MTA subway card ─────────────────────────────────────────────────────────
 
-const STATUS_COLORS: Record<MtaStatus['status'], string> = {
-  green: 'bg-green-500',
-  orange: 'bg-orange-500',
-  red: 'bg-red-500',
+const MTA_LINE_COLORS: Record<string, string> = {
+  '1': '#EE352E', '2': '#EE352E', '3': '#EE352E',
+  '4': '#00933C', '5': '#00933C', '6': '#00933C',
+  '7': '#B933AD',
+  'A': '#0039A6', 'C': '#0039A6', 'E': '#0039A6',
+  'B': '#FF6319', 'D': '#FF6319', 'F': '#FF6319', 'M': '#FF6319',
+  'G': '#6CBE45',
+  'J': '#996633', 'Z': '#996633',
+  'L': '#A7A9AC',
+  'N': '#FCCC0A', 'Q': '#FCCC0A', 'R': '#FCCC0A', 'W': '#FCCC0A',
+  'S': '#808183',
 }
 
-const ROUTE_COLORS: Record<string, string> = {
-  '1': 'bg-red-600 text-white',
-  '2': 'bg-red-600 text-white',
-  '3': 'bg-red-600 text-white',
-  '4': 'bg-green-600 text-white',
-  '5': 'bg-green-600 text-white',
-  '6': 'bg-green-600 text-white',
-  '7': 'bg-purple-600 text-white',
+const STATUS_DOT_COLORS: Record<string, string> = {
+  green: '#22c55e',
+  orange: '#f97316',
+  red: '#ef4444',
+  none: '#6b7280',
+}
+
+const STATUS_BG_COLORS: Record<string, string> = {
+  green: 'bg-green-500/10',
+  orange: 'bg-orange-500/10',
+  red: 'bg-red-500/10',
+  none: '',
+}
+
+function MtaLineBadge({ line }: { line: string }) {
+  const bg = MTA_LINE_COLORS[line] || '#808183'
+  const textColor = ['N', 'Q', 'R', 'W'].includes(line) ? '#000' : '#fff'
+  return (
+    <span
+      className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold flex-shrink-0"
+      style={{ backgroundColor: bg, color: textColor }}
+    >
+      {line}
+    </span>
+  )
 }
 
 function MtaCard() {
-  const { data: prefs } = useQuery({
-    queryKey: ['system', 'preferences'],
-    queryFn: api.system.getPreferences,
-  })
-
-  const station = prefs?.mta_station || '120'
-  const direction = prefs?.mta_direction || 'S'
-  const mtaRoutes = prefs?.mta_routes || '1'
-
-  const { data: mtaStatus } = useQuery({
-    queryKey: ['mta', 'status', station, direction, mtaRoutes],
-    queryFn: () => api.system.getMtaStatus(station, direction, mtaRoutes),
+  const { data: combinedStatus } = useQuery({
+    queryKey: ['mta', 'combined-status'],
+    queryFn: api.system.getCombinedMtaStatus,
     retry: false,
     staleTime: 30_000,
     refetchInterval: 30_000,
   })
 
-  if (!mtaStatus) return null
+  if (!combinedStatus || combinedStatus.overallStatus === 'none') return null
 
-  const dirLabel = direction === 'S' ? 'Downtown' : direction === 'N' ? 'Uptown' : 'Both'
-
-  const formatTime = (unix: number) => {
-    const d = new Date(unix * 1000)
-    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  }
+  const overallColor = STATUS_DOT_COLORS[combinedStatus.overallStatus]
+  const bgClass = STATUS_BG_COLORS[combinedStatus.overallStatus]
 
   return (
-    <div className="card mb-6 rounded-xl border px-4 py-3">
-      <div className="mb-2 flex items-center gap-2">
-        <Train className="h-4 w-4 text-body" />
-        <span className="text-heading text-sm font-semibold">Subway</span>
-        <span className="text-caption text-xs">{dirLabel}</span>
-        <span className={cn('ml-auto h-2.5 w-2.5 rounded-full', STATUS_COLORS[mtaStatus.status])} />
-      </div>
-      {mtaStatus.arrivals.length > 0 ? (
-        <div className="space-y-1.5">
-          {mtaStatus.arrivals.map((a, i) => (
-            <div key={`${a.stopId}-${a.arrivalTime}-${i}`} className="flex items-center gap-2 text-sm">
-              <span
-                className={cn(
-                  'flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold',
-                  ROUTE_COLORS[a.routeId] || 'bg-gray-500 text-white',
-                )}
-              >
-                {a.routeId}
-              </span>
-              <span className="text-heading font-medium">
-                {a.minutesAway} min
-              </span>
-              <span className="text-caption text-xs">
-                {formatTime(a.arrivalTime)}
-              </span>
-            </div>
-          ))}
+    <div className={cn('card mb-6 rounded-xl border px-4 py-3', bgClass)}>
+      {/* Main status header */}
+      <div className="mb-3 flex items-center gap-3">
+        <span
+          className="h-10 w-10 flex-shrink-0 rounded-full"
+          style={{ backgroundColor: overallColor }}
+          aria-hidden="true"
+        />
+        <div>
+          <p className="text-heading text-base font-semibold">
+            {combinedStatus.overallMessage}
+          </p>
+          <p className="text-caption text-xs">
+            {combinedStatus.stops.length} station{combinedStatus.stops.length !== 1 ? 's' : ''} tracked
+          </p>
         </div>
-      ) : (
-        <p className="text-caption text-sm">No upcoming trains</p>
-      )}
+        <Train className="ml-auto h-5 w-5 text-caption" />
+      </div>
+
+      {/* Per-stop rows */}
+      <div className="space-y-2">
+        {combinedStatus.stops.map((stop, i) => {
+          const dirLabel = stop.config.direction === 'S' ? 'Downtown' : 'Uptown'
+          const DirIcon = stop.config.direction === 'S' ? ArrowDown : ArrowUp
+          const dotColor = STATUS_DOT_COLORS[stop.status]
+          const next = stop.nextArrival
+
+          return (
+            <div
+              key={`${stop.config.stopId}-${stop.config.direction}-${i}`}
+              className="surface flex items-center gap-2.5 rounded-lg px-3 py-2"
+            >
+              {/* Mini status dot */}
+              <span
+                className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                style={{ backgroundColor: dotColor }}
+                aria-label={`Status: ${stop.status}`}
+              />
+
+              {/* Line badges */}
+              <div className="flex items-center gap-0.5 flex-shrink-0">
+                {stop.config.routes.slice(0, 3).map(line => (
+                  <MtaLineBadge key={line} line={line} />
+                ))}
+              </div>
+
+              {/* Direction */}
+              <span className="flex items-center gap-0.5 text-caption text-xs flex-shrink-0">
+                <DirIcon className="h-3 w-3" />
+              </span>
+
+              {/* Arrival info */}
+              {next ? (
+                <div className="flex-1 min-w-0">
+                  {stop.status === 'red' && stop.catchableTrain ? (
+                    <>
+                      <span className="text-heading text-sm font-medium">
+                        {stop.leaveInMinutes != null && stop.leaveInMinutes > 0
+                          ? `Leave in ${stop.leaveInMinutes} min`
+                          : 'Leave now'}
+                      </span>
+                      <span className="text-caption text-xs ml-1.5">
+                        ({stop.catchableTrain.routeId} in {stop.catchableTrain.minutesAway} min)
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-heading text-sm font-medium">
+                        {next.minutesAway} min
+                      </span>
+                      <span className="text-caption text-xs ml-1.5">
+                        {stop.status === 'green' && `(${stop.config.walkTime} min walk + ${next.minutesAway - stop.config.walkTime} min buffer)`}
+                        {stop.status === 'orange' && `(${stop.config.walkTime} min walk \u2014 tight!)`}
+                      </span>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <span className="text-caption text-xs flex-1">No trains</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -441,9 +505,9 @@ export default function HomePage() {
     <div>
       <DeviceOnboarding />
 
-      <QuickActions />
-
       <MtaCard />
+
+      <QuickActions />
 
       <WeatherCard />
 

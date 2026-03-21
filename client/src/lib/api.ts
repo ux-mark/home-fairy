@@ -179,9 +179,44 @@ export interface SubwayArrival {
 }
 
 export interface MtaStatus {
-  status: 'green' | 'orange' | 'red'
+  status: 'green' | 'orange' | 'red' | 'none'
+  message: string
   nextArrival: SubwayArrival | null
+  catchableTrain: SubwayArrival | null
+  leaveInMinutes: number | null
   arrivals: SubwayArrival[]
+}
+
+export interface MtaStop {
+  stopId: string
+  name: string
+  lines: string[]
+  feedGroup: string
+  borough: string
+}
+
+export interface ConfiguredStop {
+  stopId: string
+  name: string
+  direction: 'N' | 'S'
+  routes: string[]
+  feedGroup: string
+  walkTime: number
+  enabled: boolean
+}
+
+export interface CombinedMtaStatus {
+  overallStatus: 'green' | 'orange' | 'red' | 'none'
+  overallMessage: string
+  stops: Array<{
+    config: ConfiguredStop
+    status: 'green' | 'orange' | 'red' | 'none'
+    message: string
+    nextArrival: SubwayArrival | null
+    catchableTrain: SubwayArrival | null
+    leaveInMinutes: number | null
+    arrivals: SubwayArrival[]
+  }>
 }
 
 // ── Fetch wrapper ────────────────────────────────────────────────────────────
@@ -357,6 +392,17 @@ export const api = {
       fetchApi<MtaStatus>(`/system/mta/status?station=${station || '120'}&direction=${direction || 'S'}${routes ? '&routes=' + routes : ''}`),
     getMtaArrivals: (station?: string, direction?: string, routes?: string) =>
       fetchApi<SubwayArrival[]>(`/system/mta/arrivals?station=${station || '120'}&direction=${direction || 'both'}${routes ? '&routes=' + routes : ''}`),
+    getMtaStops: (query?: string) =>
+      fetchApi<MtaStop[]>('/system/mta/stops' + (query ? '?q=' + encodeURIComponent(query) : '')),
+    getMtaConfigured: () =>
+      fetchApi<ConfiguredStop[]>('/system/mta/configured'),
+    saveMtaConfigured: (stops: ConfiguredStop[]) =>
+      fetchApi<unknown>('/system/preferences', {
+        method: 'PUT',
+        body: JSON.stringify({ key: 'mta_stops', value: JSON.stringify(stops) }),
+      }),
+    getCombinedMtaStatus: () =>
+      fetchApi<CombinedMtaStatus>('/system/mta/combined-status'),
     getLogs: (limit?: number, category?: string) => {
       const params = new URLSearchParams()
       if (limit) params.set('limit', String(limit))

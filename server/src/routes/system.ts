@@ -10,6 +10,7 @@ import { hubitatClient } from '../lib/hubitat-client.js'
 import { twinklyClient } from '../lib/twinkly-client.js'
 import { fairyDeviceClient } from '../lib/fairy-device-client.js'
 import { mtaClient } from '../lib/mta-client.js'
+import { MTA_STOPS, searchStops } from '../lib/mta-stops.js'
 
 const router = Router()
 
@@ -373,15 +374,148 @@ router.get('/mta/arrivals', async (req: Request, res: Response) => {
   }
 })
 
-// GET /mta/status — get subway status colour
+// GET /mta/status — get subway status colour (walk-time aware)
 router.get('/mta/status', async (req: Request, res: Response) => {
   try {
     const station = (req.query.station as string) || '120'
     const direction = (req.query.direction as string) || 'S'
+    const feed = (req.query.feed as string) || '123456S'
     const routesParam = req.query.routes as string | undefined
     const routes = routesParam ? routesParam.split(',') : undefined
-    const result = await mtaClient.getStatus(station, direction, routes)
+    const walkTime = Number(req.query.walkTime) || 5
+    const maxWait = Number(req.query.maxWait) || 6
+    const result = await mtaClient.getStatus(station, direction, routes, feed, walkTime, maxWait)
     res.json(result)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// GET /mta/stops — list available MTA stops, with optional search
+router.get('/mta/stops', (req: Request, res: Response) => {
+  try {
+    const query = req.query.q as string | undefined
+    const results = query ? searchStops(query) : MTA_STOPS
+    res.json(results)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// GET /mta/configured — get user's configured subway stops
+router.get('/mta/configured', (_req: Request, res: Response) => {
+  try {
+    const row = getOne<CurrentStateRow>(
+      "SELECT * FROM current_state WHERE key = 'pref_mta_stops'",
+    )
+    let stops: unknown[] = []
+    try {
+      stops = row?.value ? JSON.parse(row.value) : []
+    } catch { stops = [] }
+    res.json(stops)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// GET /mta/combined-status — check ALL configured stops and return combined status
+router.get('/mta/combined-status', async (_req: Request, res: Response) => {
+  try {
+    const row = getOne<CurrentStateRow>(
+      "SELECT * FROM current_state WHERE key = 'pref_mta_stops'",
+    )
+    let configuredStops: Array<{
+      stopId: string
+      name: string
+      direction: string
+      routes: string[]
+      feedGroup: string
+      walkTime: number
+      enabled: boolean
+    }> = []
+    try {
+      configuredStops = row?.value ? JSON.parse(row.value) : []
+    } catch { configuredStops = [] }
+
+    // Get max wait threshold from preferences (default 6 min)
+    const maxWaitRow = getOne<CurrentStateRow>(
+      "SELECT * FROM current_state WHERE key = 'pref_mta_max_wait'",
+    )
+    const maxWaitMinutes = maxWaitRow?.value ? Number(maxWaitRow.value) : 6
+
+    // Filter to enabled stops only
+    const enabledStops = configuredStops.filter(s => s.enabled)
+
+    if (enabledStops.length === 0) {
+      res.json({
+        overallStatus: 'none',
+        overallMessage: 'No subway stops configured',
+        stops: [],
+      })
+      return
+    }
+
+    // Fetch status for each configured stop in parallel
+    const stopResults = await Promise.all(
+      enabledStops.map(async (config) => {
+        try {
+          const result = await mtaClient.getStatus(
+            config.stopId,
+            config.direction,
+            config.routes,
+            config.feedGroup,
+            config.walkTime,
+            maxWaitMinutes,
+          )
+          return { config, ...result }
+        } catch {
+          return {
+            config,
+            status: 'none' as const,
+            message: 'Unable to fetch data',
+            nextArrival: null,
+            arrivals: [],
+          }
+        }
+      }),
+    )
+
+    // Determine overall status: best (most positive) across all stops
+    // Priority: green > orange > red > none
+    const statusPriority: Record<string, number> = { green: 3, orange: 2, red: 1, none: 0 }
+    let bestStatus: 'green' | 'orange' | 'red' | 'none' = 'none'
+    let bestMessage = 'No upcoming trains'
+    for (const result of stopResults) {
+      if (statusPriority[result.status] > statusPriority[bestStatus]) {
+        bestStatus = result.status
+        bestMessage = result.message
+      }
+    }
+
+    // Generate overall message based on best status
+    let overallMessage: string
+    switch (bestStatus) {
+      case 'green':
+        overallMessage = 'Leave soon'
+        break
+      case 'orange':
+        overallMessage = 'Leave now!'
+        break
+      case 'red':
+        overallMessage = "You'll miss the next one"
+        break
+      default:
+        overallMessage = 'No upcoming trains'
+    }
+
+    res.json({
+      overallStatus: bestStatus,
+      overallMessage,
+      stops: stopResults,
+    })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: msg })
