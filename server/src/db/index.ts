@@ -1,0 +1,93 @@
+import Database, { type Database as DatabaseType } from 'better-sqlite3'
+import path from 'path'
+import fs from 'fs'
+
+const dbPath = process.env.FAIRY_DB_PATH || './data/thefairies.sqlite'
+const dbDir = path.dirname(dbPath)
+
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true })
+}
+
+const db: DatabaseType = new Database(dbPath)
+
+db.pragma('journal_mode = WAL')
+db.pragma('foreign_keys = ON')
+
+export function initDb(): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS rooms (
+      name TEXT PRIMARY KEY,
+      display_order INTEGER DEFAULT 0,
+      parent_room TEXT,
+      auto INTEGER DEFAULT 1,
+      timer INTEGER DEFAULT 15,
+      sensors TEXT DEFAULT '[]',
+      tags TEXT DEFAULT '[]',
+      current_scene TEXT,
+      last_active TEXT,
+      temperature REAL,
+      lux REAL,
+      mode_changed INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS scenes (
+      name TEXT PRIMARY KEY,
+      icon TEXT DEFAULT '',
+      rooms TEXT DEFAULT '[]',
+      modes TEXT DEFAULT '[]',
+      commands TEXT DEFAULT '[]',
+      tags TEXT DEFAULT '[]',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS light_rooms (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      light_id TEXT NOT NULL,
+      light_label TEXT NOT NULL,
+      light_selector TEXT NOT NULL,
+      room_name TEXT NOT NULL REFERENCES rooms(name),
+      has_color INTEGER DEFAULT 1,
+      min_kelvin INTEGER DEFAULT 2500,
+      max_kelvin INTEGER DEFAULT 9000,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(light_id, room_name)
+    );
+
+    CREATE TABLE IF NOT EXISTS current_state (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      parent_id INTEGER,
+      seq INTEGER DEFAULT 1,
+      message TEXT NOT NULL,
+      debug TEXT,
+      category TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+  `)
+}
+
+export function getAll<T>(sql: string, params?: unknown[]): T[] {
+  const stmt = db.prepare(sql)
+  return (params ? stmt.all(...params) : stmt.all()) as T[]
+}
+
+export function getOne<T>(sql: string, params?: unknown[]): T | undefined {
+  const stmt = db.prepare(sql)
+  return (params ? stmt.get(...params) : stmt.get()) as T | undefined
+}
+
+export function run(sql: string, params?: unknown[]): Database.RunResult {
+  const stmt = db.prepare(sql)
+  return params ? stmt.run(...params) : stmt.run()
+}
+
+export { db }

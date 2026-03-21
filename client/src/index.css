@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@theme {
+  --color-fairy-50: #ecfdf5;
+  --color-fairy-100: #d1fae5;
+  --color-fairy-200: #a7f3d0;
+  --color-fairy-300: #6ee7b7;
+  --color-fairy-400: #34d399;
+  --color-fairy-500: #10b981;
+  --color-fairy-600: #059669;
+  --color-fairy-700: #047857;
+  --color-fairy-800: #065f46;
+  --color-fairy-900: #064e3b;
+
+  --color-slate-950: #020617;
+}
+
+:root {
+  --radius: 0.75rem;
+}
+
+body {
+  @apply bg-slate-950 text-slate-100 antialiased;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+* {
+  @apply border-slate-800;
+}
+
+/* Custom slider styles for better mobile touch targets */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+  width: 100%;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  margin-top: -8px;
+}
+
+/* react-colorful overrides for larger touch targets */
+.react-colorful {
+  width: 100% !important;
+  min-height: 200px;
+}
+
+.react-colorful__saturation {
+  border-radius: var(--radius) var(--radius) 0 0 !important;
+}
+
+.react-colorful__last-control {
+  border-radius: 0 0 var(--radius) var(--radius) !important;
+}
+
+.react-colorful__pointer {
+  width: 24px !important;
+  height: 24px !important;
+}

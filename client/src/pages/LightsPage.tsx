@@ -1,0 +1,270 @@
+import { useState } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import {
+  RefreshCw,
+  Power,
+  Wifi,
+  WifiOff,
+  Zap,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react'
+import { api } from '@/lib/api'
+import type { Light } from '@/lib/api'
+import { cn, getLightColorHex, hsbToHex, kelvinToHex } from '@/lib/utils'
+import { useToast } from '@/hooks/useToast'
+
+// ── Expandable light card ────────────────────────────────────────────────────
+
+function LightRow({ light }: { light: Light }) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const [expanded, setExpanded] = useState(false)
+  const [brightness, setBrightness] = useState(Math.round(light.brightness * 100))
+
+  const isOn = light.power === 'on'
+  const colorHex = getLightColorHex(light)
+
+  const toggleMutation = useMutation({
+    mutationFn: () => api.lifx.toggle(`id:${light.id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }),
+    onError: () => toast({ message: 'Failed to toggle light', type: 'error' }),
+  })
+
+  const identifyMutation = useMutation({
+    mutationFn: () => api.lifx.identify(`id:${light.id}`),
+  })
+
+  const setStateMutation = useMutation({
+    mutationFn: (b: number) =>
+      api.lifx.setState(`id:${light.id}`, { brightness: b / 100, duration: 0.3 }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }),
+  })
+
+  const handleBrightnessCommit = () => {
+    setStateMutation.mutate(brightness)
+  }
+
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 transition-colors">
+      {/* Main row */}
+      <div className="flex items-center gap-3 p-4">
+        {/* Colour dot */}
+        <div
+          className={cn('h-5 w-5 shrink-0 rounded-full', !isOn && 'opacity-30')}
+          style={{ backgroundColor: isOn ? colorHex : '#475569' }}
+          aria-hidden="true"
+        />
+
+        {/* Label + meta */}
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="min-w-0 flex-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        >
+          <p
+            className={cn(
+              'truncate text-sm font-medium',
+              isOn ? 'text-slate-100' : 'text-slate-400',
+            )}
+          >
+            {light.label}
+          </p>
+          <p className="mt-0.5 truncate text-xs text-slate-500">
+            {light.group.name}
+            {isOn && ` \u00B7 ${Math.round(light.brightness * 100)}%`}
+          </p>
+        </button>
+
+        {/* Connection */}
+        <span title={light.connected ? 'Connected' : 'Disconnected'}>
+          {light.connected ? (
+            <Wifi className="h-3.5 w-3.5 text-fairy-500" />
+          ) : (
+            <WifiOff className="h-3.5 w-3.5 text-red-400" />
+          )}
+        </span>
+
+        {/* Identify */}
+        <button
+          onClick={() => identifyMutation.mutate()}
+          className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-fairy-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          aria-label={`Identify ${light.label}`}
+          title="Flash this light"
+        >
+          <Zap className="h-4 w-4" />
+        </button>
+
+        {/* Power */}
+        <button
+          onClick={() => toggleMutation.mutate()}
+          disabled={toggleMutation.isPending}
+          className={cn(
+            'rounded-lg p-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            isOn
+              ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
+              : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300',
+          )}
+          aria-label={`Turn ${light.label} ${isOn ? 'off' : 'on'}`}
+        >
+          <Power className="h-4 w-4" />
+        </button>
+
+        {/* Expand toggle */}
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="rounded-lg p-2 text-slate-500 transition-colors hover:text-slate-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          aria-label={expanded ? 'Collapse' : 'Expand'}
+        >
+          {expanded ? (
+            <ChevronUp className="h-4 w-4" />
+          ) : (
+            <ChevronDown className="h-4 w-4" />
+          )}
+        </button>
+      </div>
+
+      {/* Expanded controls */}
+      {expanded && isOn && (
+        <div className="border-t border-slate-800 px-4 py-3">
+          <label className="mb-2 flex items-center justify-between text-xs font-medium text-slate-400">
+            <span>Brightness</span>
+            <span className="text-slate-300">{brightness}%</span>
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={brightness}
+            onChange={e => setBrightness(Number(e.target.value))}
+            onPointerUp={handleBrightnessCommit}
+            onKeyUp={e => {
+              if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                handleBrightnessCommit()
+              }
+            }}
+            className="h-11 w-full cursor-pointer appearance-none rounded-lg"
+            style={{
+              background: `linear-gradient(to right, #0f172a, ${colorHex})`,
+            }}
+            aria-label={`Brightness for ${light.label}`}
+          />
+
+          {/* Colour info */}
+          <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+            <div
+              className="h-4 w-4 rounded-full border border-slate-700"
+              style={{ backgroundColor: colorHex }}
+            />
+            {light.product.capabilities.has_color ? (
+              <span>
+                H:{Math.round(light.color.hue)}\u00B0 S:
+                {Math.round(light.color.saturation * 100)}%
+              </span>
+            ) : (
+              <span>{light.color.kelvin}K</span>
+            )}
+            <span className="text-slate-600">\u00B7</span>
+            <span>{light.product.name}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Lights page ──────────────────────────────────────────────────────────────
+
+export default function LightsPage() {
+  const queryClient = useQueryClient()
+  const [groupFilter, setGroupFilter] = useState<string>('all')
+
+  const {
+    data: lights,
+    isLoading,
+    isFetching,
+  } = useQuery({
+    queryKey: ['lifx', 'lights'],
+    queryFn: api.lifx.getLights,
+  })
+
+  const groups = Array.from(
+    new Set(lights?.map(l => l.group.name) ?? []),
+  ).sort()
+
+  const filteredLights =
+    groupFilter === 'all'
+      ? lights
+      : lights?.filter(l => l.group.name === groupFilter)
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-medium text-slate-400">LIFX Lights</h2>
+        <div className="flex items-center gap-2">
+          {/* Group filter */}
+          {groups.length > 1 && (
+            <select
+              value={groupFilter}
+              onChange={e => setGroupFilter(e.target.value)}
+              className="h-10 rounded-lg border border-slate-700 bg-slate-800 px-2.5 text-sm text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+              aria-label="Filter by group"
+            >
+              <option value="all">All groups</option>
+              {groups.map(g => (
+                <option key={g} value={g}>
+                  {g}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {/* Refresh */}
+          <button
+            onClick={() =>
+              queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] })
+            }
+            disabled={isFetching}
+            className={cn(
+              'flex min-h-[44px] items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-700',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              isFetching && 'opacity-60',
+            )}
+          >
+            <RefreshCw
+              className={cn('h-4 w-4', isFetching && 'animate-spin')}
+            />
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={i}
+              className="h-16 animate-pulse rounded-xl bg-slate-800"
+            />
+          ))}
+        </div>
+      ) : filteredLights && filteredLights.length > 0 ? (
+        <div className="space-y-3">
+          {filteredLights.map(light => (
+            <LightRow key={light.id} light={light} />
+          ))}
+        </div>
+      ) : (
+        <div className="rounded-xl border border-dashed border-slate-700 py-12 text-center">
+          <p className="text-sm text-slate-400">
+            {lights?.length
+              ? 'No lights match the current filter.'
+              : 'No LIFX lights found.'}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Make sure your lights are powered on and connected to the network.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
