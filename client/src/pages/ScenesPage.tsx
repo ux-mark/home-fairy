@@ -1,6 +1,7 @@
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
-import { Plus, ChevronRight, Sparkles, Zap } from 'lucide-react'
+import { Plus, ChevronRight, Sparkles, Zap, Search } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
@@ -21,6 +22,7 @@ export default function ScenesPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const [search, setSearch] = useState('')
 
   const { data: scenes, isLoading } = useQuery({
     queryKey: ['scenes'],
@@ -36,6 +38,20 @@ export default function ScenesPage() {
   const activeSceneNames = new Set(
     rooms?.filter(r => r.current_scene).map(r => r.current_scene!) ?? [],
   )
+
+  // Filter scenes by search
+  const filteredScenes = useMemo(() => {
+    if (!scenes) return []
+    if (!search.trim()) return scenes
+    const q = search.toLowerCase()
+    return scenes.filter(
+      s =>
+        s.name.toLowerCase().includes(q) ||
+        s.tags.some(t => t.toLowerCase().includes(q)) ||
+        s.rooms.some(r => r.name.toLowerCase().includes(q)) ||
+        s.modes.some(m => m.toLowerCase().includes(q)),
+    )
+  }, [scenes, search])
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -69,81 +85,112 @@ export default function ScenesPage() {
         </button>
       </div>
 
+      {/* Search input */}
+      {scenes && scenes.length > 0 && (
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <input
+            type="search"
+            placeholder="Search scenes by name, tag, room, or mode..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 pl-10 pr-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          />
+        </div>
+      )}
+
       {isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <SceneCardSkeleton key={i} />
           ))}
         </div>
-      ) : scenes && scenes.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {scenes.map(scene => {
-            const isActive = activeSceneNames.has(scene.name)
-            return (
-              <Link
-                key={scene.name}
-                to={`/scenes/${encodeURIComponent(scene.name)}`}
-                className={cn(
-                  'group rounded-xl border bg-slate-900 p-4 transition-colors',
-                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                  isActive
-                    ? 'border-fairy-500/40 shadow-lg shadow-fairy-500/10'
-                    : 'border-slate-800 hover:border-slate-700',
-                )}
-              >
-                <div className="mb-3 flex items-start justify-between">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-800 text-xl">
-                    {scene.icon || <Sparkles className="h-5 w-5 text-slate-500" />}
-                  </div>
-                  <ChevronRight className="h-5 w-5 text-slate-600 transition-colors group-hover:text-slate-400" />
-                </div>
-
-                <h3 className="text-base font-semibold text-slate-100">
-                  {scene.name}
-                </h3>
-
-                {/* Badges */}
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {scene.rooms.slice(0, 3).map(r => (
-                    <span
-                      key={r.name}
-                      className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-400"
-                    >
-                      {r.name}
-                    </span>
-                  ))}
-                  {scene.rooms.length > 3 && (
-                    <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-500">
-                      +{scene.rooms.length - 3}
-                    </span>
+      ) : filteredScenes.length > 0 ? (
+        <>
+          {search.trim() && scenes && filteredScenes.length !== scenes.length && (
+            <p className="mb-3 text-xs text-slate-500">
+              Showing {filteredScenes.length} of {scenes.length} scene{scenes.length !== 1 ? 's' : ''}
+            </p>
+          )}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {filteredScenes.map(scene => {
+              const isActive = activeSceneNames.has(scene.name)
+              return (
+                <Link
+                  key={scene.name}
+                  to={`/scenes/${encodeURIComponent(scene.name)}`}
+                  className={cn(
+                    'group rounded-xl border bg-slate-900 p-4 transition-colors',
+                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                    isActive
+                      ? 'border-fairy-500/40 shadow-lg shadow-fairy-500/10'
+                      : 'border-slate-800 hover:border-slate-700',
                   )}
-                </div>
-
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {scene.modes.slice(0, 3).map(m => (
-                    <span
-                      key={m}
-                      className="rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400"
-                    >
-                      {m}
-                    </span>
-                  ))}
-                </div>
-
-                <p className="mt-2 text-xs text-slate-500">
-                  {scene.commands.length} command
-                  {scene.commands.length !== 1 ? 's' : ''}
-                </p>
-
-                {isActive && (
-                  <div className="mt-2 flex items-center gap-1 text-xs font-medium text-fairy-400">
-                    <Zap className="h-3 w-3" />
-                    Active
+                >
+                  <div className="mb-3 flex items-start justify-between">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-800 text-xl">
+                      {scene.icon || <Sparkles className="h-5 w-5 text-slate-500" />}
+                    </div>
+                    <ChevronRight className="h-5 w-5 text-slate-600 transition-colors group-hover:text-slate-400" />
                   </div>
-                )}
-              </Link>
-            )
-          })}
+
+                  <h3 className="text-base font-semibold text-slate-100">
+                    {scene.name}
+                  </h3>
+
+                  {/* Badges */}
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {scene.rooms.slice(0, 3).map(r => (
+                      <span
+                        key={r.name}
+                        className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-400"
+                      >
+                        {r.name}
+                      </span>
+                    ))}
+                    {scene.rooms.length > 3 && (
+                      <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                        +{scene.rooms.length - 3}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {scene.modes.slice(0, 3).map(m => (
+                      <span
+                        key={m}
+                        className="rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400"
+                      >
+                        {m}
+                      </span>
+                    ))}
+                  </div>
+
+                  <p className="mt-2 text-xs text-slate-500">
+                    {scene.commands.length} command
+                    {scene.commands.length !== 1 ? 's' : ''}
+                  </p>
+
+                  {isActive && (
+                    <div className="mt-2 flex items-center gap-1 text-xs font-medium text-fairy-400">
+                      <Zap className="h-3 w-3" />
+                      Active
+                    </div>
+                  )}
+                </Link>
+              )
+            })}
+          </div>
+        </>
+      ) : scenes && scenes.length > 0 && search.trim() ? (
+        <div className="rounded-xl border border-dashed border-slate-700 py-12 text-center">
+          <Search className="mx-auto mb-3 h-8 w-8 text-slate-600" />
+          <p className="text-sm text-slate-400">
+            No scenes match "{search}".
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            Try a different search term or clear the filter.
+          </p>
         </div>
       ) : (
         <div className="rounded-xl border border-dashed border-slate-700 py-12 text-center">

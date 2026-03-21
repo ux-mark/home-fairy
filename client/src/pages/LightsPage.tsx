@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import {
   RefreshCw,
   Power,
@@ -8,10 +9,12 @@ import {
   Zap,
   ChevronDown,
   ChevronUp,
+  Search,
+  Info,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Light } from '@/lib/api'
-import { cn, getLightColorHex, hsbToHex, kelvinToHex } from '@/lib/utils'
+import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 
 // ── Expandable light card ────────────────────────────────────────────────────
@@ -87,7 +90,7 @@ function LightRow({ light }: { light: Light }) {
         {/* Identify */}
         <button
           onClick={() => identifyMutation.mutate()}
-          className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-fairy-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-fairy-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           aria-label={`Identify ${light.label}`}
           title="Flash this light"
         >
@@ -99,7 +102,7 @@ function LightRow({ light }: { light: Light }) {
           onClick={() => toggleMutation.mutate()}
           disabled={toggleMutation.isPending}
           className={cn(
-            'rounded-lg p-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
             isOn
               ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
               : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300',
@@ -112,7 +115,7 @@ function LightRow({ light }: { light: Light }) {
         {/* Expand toggle */}
         <button
           onClick={() => setExpanded(!expanded)}
-          className="rounded-lg p-2 text-slate-500 transition-colors hover:text-slate-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-500 transition-colors hover:text-slate-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           aria-label={expanded ? 'Collapse' : 'Expand'}
         >
           {expanded ? (
@@ -177,6 +180,7 @@ function LightRow({ light }: { light: Light }) {
 export default function LightsPage() {
   const queryClient = useQueryClient()
   const [groupFilter, setGroupFilter] = useState<string>('all')
+  const [search, setSearch] = useState('')
 
   const {
     data: lights,
@@ -191,10 +195,22 @@ export default function LightsPage() {
     new Set(lights?.map(l => l.group.name) ?? []),
   ).sort()
 
-  const filteredLights =
-    groupFilter === 'all'
-      ? lights
-      : lights?.filter(l => l.group.name === groupFilter)
+  // Filter by group and search
+  const filteredLights = useMemo(() => {
+    let result = lights ?? []
+    if (groupFilter !== 'all') {
+      result = result.filter(l => l.group.name === groupFilter)
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      result = result.filter(
+        l =>
+          l.label.toLowerCase().includes(q) ||
+          l.group.name.toLowerCase().includes(q),
+      )
+    }
+    return result
+  }, [lights, groupFilter, search])
 
   return (
     <div>
@@ -238,6 +254,33 @@ export default function LightsPage() {
         </div>
       </div>
 
+      {/* Admin note */}
+      <div className="mb-4 flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2.5 text-xs text-slate-400">
+        <Info className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+        <p>
+          Manage light assignments in{' '}
+          <Link
+            to="/rooms"
+            className="text-fairy-400 underline-offset-2 hover:underline"
+          >
+            Room settings
+          </Link>
+          . This page is for direct light control.
+        </p>
+      </div>
+
+      {/* Search input */}
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+        <input
+          type="search"
+          placeholder="Search by light name or group..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 pl-10 pr-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        />
+      </div>
+
       {isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 6 }).map((_, i) => (
@@ -247,22 +290,45 @@ export default function LightsPage() {
             />
           ))}
         </div>
-      ) : filteredLights && filteredLights.length > 0 ? (
-        <div className="space-y-3">
-          {filteredLights.map(light => (
-            <LightRow key={light.id} light={light} />
-          ))}
-        </div>
+      ) : filteredLights.length > 0 ? (
+        <>
+          {(search.trim() || groupFilter !== 'all') && lights && (
+            <p className="mb-3 text-xs text-slate-500">
+              Showing {filteredLights.length} of {lights.length} light{lights.length !== 1 ? 's' : ''}
+            </p>
+          )}
+          <div className="space-y-3">
+            {filteredLights.map(light => (
+              <LightRow key={light.id} light={light} />
+            ))}
+          </div>
+        </>
       ) : (
         <div className="rounded-xl border border-dashed border-slate-700 py-12 text-center">
-          <p className="text-sm text-slate-400">
-            {lights?.length
-              ? 'No lights match the current filter.'
-              : 'No LIFX lights found.'}
-          </p>
-          <p className="mt-1 text-xs text-slate-500">
-            Make sure your lights are powered on and connected to the network.
-          </p>
+          {search.trim() || groupFilter !== 'all' ? (
+            <>
+              <Search className="mx-auto mb-3 h-8 w-8 text-slate-600" />
+              <p className="text-sm text-slate-400">
+                No lights match the current filter.
+              </p>
+              <button
+                onClick={() => {
+                  setSearch('')
+                  setGroupFilter('all')
+                }}
+                className="mt-2 text-xs text-fairy-400 hover:underline"
+              >
+                Clear filters
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-slate-400">No LIFX lights found.</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Make sure your lights are powered on and connected to the network.
+              </p>
+            </>
+          )}
         </div>
       )}
     </div>
