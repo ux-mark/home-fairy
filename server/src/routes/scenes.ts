@@ -79,7 +79,7 @@ const commandSchema = z.object({
 const createSceneSchema = z.object({
   name: z.string().min(1),
   icon: z.string().optional(),
-  rooms: z.array(z.object({ name: z.string(), priority: z.number() })).optional(),
+  rooms: z.array(z.object({ name: z.string(), priority: z.union([z.number(), z.string().transform(Number)]) })).optional(),
   modes: z.array(z.string()).optional(),
   commands: z.array(commandSchema).optional(),
   tags: z.array(z.string()).optional(),
@@ -90,7 +90,7 @@ const createSceneSchema = z.object({
 const updateSceneSchema = z.object({
   name: z.string().min(1).optional(),
   icon: z.string().optional(),
-  rooms: z.array(z.object({ name: z.string(), priority: z.number() })).optional(),
+  rooms: z.array(z.object({ name: z.string(), priority: z.union([z.number(), z.string().transform(Number)]) })).optional(),
   modes: z.array(z.string()).optional(),
   commands: z.array(commandSchema).optional(),
   tags: z.array(z.string()).optional(),
