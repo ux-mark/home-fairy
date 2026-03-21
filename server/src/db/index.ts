@@ -98,6 +98,14 @@ export function initDb(): void {
     );
   `)
 
+  // Migration: add auto_activate column to scenes
+  try {
+    db.prepare('SELECT auto_activate FROM scenes LIMIT 1').get()
+  } catch {
+    console.log('[db] Migrating scenes: adding auto_activate column')
+    db.exec('ALTER TABLE scenes ADD COLUMN auto_activate INTEGER DEFAULT 1')
+  }
+
   // Migration: add active_from/active_to columns to scenes for seasonal date ranges
   try {
     db.prepare("SELECT active_from FROM scenes LIMIT 1").get()

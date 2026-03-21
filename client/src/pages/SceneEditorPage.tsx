@@ -513,6 +513,9 @@ export default function SceneEditorPage() {
   const [chainSceneEnabled, setChainSceneEnabled] = useState(false)
   const [chainSceneTarget, setChainSceneTarget] = useState('')
 
+  // Auto-activate (show on room cards + motion-triggered)
+  const [autoActivate, setAutoActivate] = useState(true)
+
   // Season date range state
   const [seasonEnabled, setSeasonEnabled] = useState(false)
   const [seasonFromMonth, setSeasonFromMonth] = useState(12)
@@ -595,6 +598,9 @@ export default function SceneEditorPage() {
         setChainSceneEnabled(true)
         setChainSceneTarget(chainCmd.name || '')
       }
+
+      // Initialize auto-activate
+      setAutoActivate(scene.auto_activate !== false)
 
       // Initialize season date range
       if (scene.active_from && scene.active_to) {
@@ -773,6 +779,7 @@ export default function SceneEditorPage() {
         active_to: seasonEnabled
           ? `${String(seasonToMonth).padStart(2, '0')}-${String(seasonToDay).padStart(2, '0')}`
           : null,
+        auto_activate: autoActivate,
       }
 
       return api.scenes.update(name!, data)
@@ -1392,6 +1399,39 @@ export default function SceneEditorPage() {
                   </button>
                 )
               })}
+            </div>
+          </section>
+
+          {/* Auto-activate */}
+          <section>
+            <h3 className="mb-3 text-sm font-medium text-body">Automation</h3>
+            <div className="card rounded-lg border p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-heading text-sm font-medium">Auto-activate</p>
+                  <p className="text-caption text-xs mt-0.5">
+                    {autoActivate
+                      ? 'This scene can be triggered by motion sensors and appears on room cards'
+                      : 'This scene is manual only — activate it from the Scenes page or Quick Actions'}
+                  </p>
+                </div>
+                <Switch.Root
+                  checked={autoActivate}
+                  onCheckedChange={setAutoActivate}
+                  className={cn(
+                    'relative h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors',
+                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                    autoActivate ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
+                  )}
+                >
+                  <Switch.Thumb
+                    className={cn(
+                      'block h-4 w-4 rounded-full bg-white shadow transition-transform',
+                      autoActivate ? 'translate-x-5' : 'translate-x-1',
+                    )}
+                  />
+                </Switch.Root>
+              </div>
             </div>
           </section>
 

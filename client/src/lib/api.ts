@@ -60,6 +60,7 @@ export interface Scene {
   tags: string[]
   active_from?: string | null // "MM-DD" format
   active_to?: string | null   // "MM-DD" format
+  auto_activate?: boolean     // false = manual only, true = motion-triggered + shown on room cards
 }
 
 export interface SceneRoom {

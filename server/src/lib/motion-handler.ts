@@ -35,6 +35,7 @@ interface SceneRow {
   modes: string
   commands: string
   tags: string
+  auto_activate: number
   active_from: string | null
   active_to: string | null
 }
@@ -134,14 +135,11 @@ export class MotionHandler {
     return undefined
   }
 
-  // Tags that mark a scene as manual-only (not triggered by motion sensors)
-  private static EXCLUDED_TAGS = new Set(['key-scene', 'system', 'hide', 'Moving'])
-
   // Find the highest-priority scene for a room in the current mode
-  // Excludes system/manual-only scenes (All Off, Nighttime, Cleaning, etc.)
+  // Only considers scenes with auto_activate = true
   private findSceneForRoom(roomName: string): string | null {
     const mode = getCurrentMode()
-    const scenes = getAll<SceneRow>('SELECT * FROM scenes')
+    const scenes = getAll<SceneRow>('SELECT * FROM scenes WHERE auto_activate = 1')
 
     let bestScene: string | null = null
     let bestPriority = -1
@@ -149,17 +147,12 @@ export class MotionHandler {
     for (const scene of scenes) {
       let rooms: RoomInfo[]
       let modes: string[]
-      let tags: string[]
       try {
         rooms = JSON.parse(scene.rooms)
         modes = JSON.parse(scene.modes)
-        tags = JSON.parse(scene.tags)
       } catch {
         continue
       }
-
-      // Skip scenes tagged as manual-only
-      if (tags.some(t => MotionHandler.EXCLUDED_TAGS.has(t))) continue
 
       // Check seasonal date range
       if (scene.active_from && scene.active_to) {

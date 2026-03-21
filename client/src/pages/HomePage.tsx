@@ -77,16 +77,12 @@ function RoomCard({
   onActivateScene: (name: string) => void
   isLocked?: boolean
 }) {
-  // Filter scenes: match room + mode, exclude system/global scenes
-  const EXCLUDED_TAGS = new Set(['key-scene', 'system', 'hide', 'Moving'])
+  // Filter scenes: auto-activate only, match room + mode, in season
   const roomScenes = scenes.filter(s => {
+    // Only show scenes marked for automatic activation
+    if (s.auto_activate === false) return false
     const rooms = Array.isArray(s.rooms) ? s.rooms : []
     const modes = Array.isArray(s.modes) ? s.modes : []
-    const tags = Array.isArray(s.tags) ? s.tags : []
-    // Skip system scenes (All Off, Nighttime, none, Cleaning, Moving etc.)
-    if (tags.some(t => EXCLUDED_TAGS.has(t))) return false
-    // Skip scenes with too many rooms (system-level)
-    if (rooms.length > 4) return false
     // Skip out-of-season scenes
     if (s.active_from && s.active_to) {
       const now = new Date()
