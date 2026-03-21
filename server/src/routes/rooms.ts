@@ -47,13 +47,19 @@ function parseRoom(row: RoomRow) {
   }
 }
 
+const sensorSchema = z.object({
+  name: z.string(),
+  priority_threshold: z.number().optional(),
+  priorityThreshold: z.number().optional(), // legacy format
+}).passthrough()
+
 const createRoomSchema = z.object({
   name: z.string().min(1),
   display_order: z.number().optional(),
   parent_room: z.string().nullable().optional(),
   auto: z.boolean().optional(),
   timer: z.number().optional(),
-  sensors: z.array(z.string()).optional(),
+  sensors: z.array(sensorSchema).optional(),
   tags: z.array(z.string()).optional(),
 })
 
@@ -62,7 +68,7 @@ const updateRoomSchema = z.object({
   parent_room: z.string().nullable().optional(),
   auto: z.boolean().optional(),
   timer: z.number().optional(),
-  sensors: z.array(z.string()).optional(),
+  sensors: z.array(sensorSchema).optional(),
   tags: z.array(z.string()).optional(),
   current_scene: z.string().nullable().optional(),
   last_active: z.string().nullable().optional(),
