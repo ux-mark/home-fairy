@@ -34,6 +34,7 @@ interface SceneRow {
   rooms: string
   modes: string
   commands: string
+  tags: string
 }
 
 interface RoomInfo {
@@ -131,7 +132,11 @@ export class MotionHandler {
     return undefined
   }
 
+  // Tags that mark a scene as manual-only (not triggered by motion sensors)
+  private static EXCLUDED_TAGS = new Set(['key-scene', 'system', 'hide', 'Moving'])
+
   // Find the highest-priority scene for a room in the current mode
+  // Excludes system/manual-only scenes (All Off, Nighttime, Cleaning, etc.)
   private findSceneForRoom(roomName: string): string | null {
     const mode = getCurrentMode()
     const scenes = getAll<SceneRow>('SELECT * FROM scenes')
@@ -140,18 +145,30 @@ export class MotionHandler {
     let bestPriority = -1
 
     for (const scene of scenes) {
-      const rooms: RoomInfo[] = JSON.parse(scene.rooms)
-      const modes: string[] = JSON.parse(scene.modes)
+      let rooms: RoomInfo[]
+      let modes: string[]
+      let tags: string[]
+      try {
+        rooms = JSON.parse(scene.rooms)
+        modes = JSON.parse(scene.modes)
+        tags = JSON.parse(scene.tags)
+      } catch {
+        continue
+      }
 
-      // Check if this scene applies to the current mode (or has no mode restriction)
+      // Skip scenes tagged as manual-only
+      if (tags.some(t => MotionHandler.EXCLUDED_TAGS.has(t))) continue
+
+      // Check if this scene applies to the current mode
       if (modes.length > 0 && !modes.includes(mode)) continue
 
       // Check if this scene applies to this room
-      const roomEntry = rooms.find((r) => r.name === roomName)
+      const roomEntry = rooms.find((r) => r?.name === roomName)
       if (!roomEntry) continue
 
-      if (roomEntry.priority > bestPriority) {
-        bestPriority = roomEntry.priority
+      const priority = Number(roomEntry.priority) || 0
+      if (priority > bestPriority) {
+        bestPriority = priority
         bestScene = scene.name
       }
     }
