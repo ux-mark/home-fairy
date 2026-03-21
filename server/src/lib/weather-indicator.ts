@@ -166,7 +166,19 @@ class WeatherIndicator {
       if (!weather) return null
 
       const conditionKey = getWeatherColorKey(weather.main || weather.description, weather.id)
-      const colorInfo = WEATHER_COLORS[conditionKey] || WEATHER_COLORS.clear
+      const defaultColorInfo = WEATHER_COLORS[conditionKey] || WEATHER_COLORS.clear
+
+      // Check for custom colour overrides
+      const customRow = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'pref_weather_custom_colors'")
+      let customColors: Record<string, { color: string; hex: string }> = {}
+      try { customColors = customRow?.value ? JSON.parse(customRow.value) : {} } catch { /* ignore */ }
+      const customColor = customColors[conditionKey]
+
+      const colorInfo = {
+        ...defaultColorInfo,
+        color: customColor?.color ?? defaultColorInfo.color,
+        hex: customColor?.hex ?? defaultColorInfo.hex,
+      }
 
       // Only update if condition changed (to avoid unnecessary API calls)
       if (conditionKey !== this.currentCondition) {

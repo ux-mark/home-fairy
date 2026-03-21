@@ -24,10 +24,13 @@ import {
   Lightbulb,
   Play,
   Cloud,
+  Palette,
+  RotateCcw,
 } from 'lucide-react'
+import { HsvColorPicker } from 'react-colorful'
 import { api } from '@/lib/api'
 import type { SunScheduleEntry, ConfiguredStop, MtaStop, MtaIndicatorConfig, WeatherIndicatorConfig, WeatherColorEntry } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, hsbToHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { useTheme } from '@/hooks/useTheme'
 import type { Theme } from '@/hooks/useTheme'
@@ -1245,6 +1248,101 @@ function WeatherIndicatorSection() {
     return sensors
   }, [rooms])
 
+  // ── Custom colour state ──────────────────────────────────────────────────
+  const { data: customColors } = useQuery({
+    queryKey: ['weather', 'custom-colors'],
+    queryFn: api.system.getWeatherCustomColors,
+  })
+
+  const [editingCondition, setEditingCondition] = useState<string | null>(null)
+  const [editColor, setEditColor] = useState<{ h: number; s: number; v: number }>({ h: 0, s: 100, v: 100 })
+  const [previewingCondition, setPreviewingCondition] = useState<string | null>(null)
+
+  const previewMutation = useMutation({
+    mutationFn: (params: { color: string; conditionKey: string; name: string }) =>
+      api.system.previewWeatherColor(params.color),
+    onMutate: (params) => {
+      setPreviewingCondition(params.conditionKey)
+      setTimeout(() => setPreviewingCondition(null), 5000)
+    },
+    onSuccess: (_data, params) => {
+      toast({ message: `Previewing ${params.name} on ${config.lightLabel || 'light'}` })
+    },
+    onError: () => {
+      setPreviewingCondition(null)
+      toast({ message: 'Could not preview colour', type: 'error' })
+    },
+  })
+
+  const saveCustomColorMutation = useMutation({
+    mutationFn: (params: { condition: string; color: string; hex: string }) =>
+      api.system.saveWeatherCustomColor(params.condition, params.color, params.hex),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['weather', 'custom-colors'] })
+      setEditingCondition(null)
+      toast({ message: 'Custom colour saved' })
+    },
+    onError: () => toast({ message: 'Failed to save custom colour', type: 'error' }),
+  })
+
+  const resetAllColorsMutation = useMutation({
+    mutationFn: api.system.resetWeatherCustomColors,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['weather', 'custom-colors'] })
+      toast({ message: 'Colours reset to defaults' })
+    },
+    onError: () => toast({ message: 'Failed to reset colours', type: 'error' }),
+  })
+
+  const handleStartEdit = useCallback((key: string, currentHex: string) => {
+    // Parse hex to approximate HSV for the picker initial state
+    const r = parseInt(currentHex.slice(1, 3), 16) / 255
+    const g = parseInt(currentHex.slice(3, 5), 16) / 255
+    const b = parseInt(currentHex.slice(5, 7), 16) / 255
+    const max = Math.max(r, g, b)
+    const min = Math.min(r, g, b)
+    const d = max - min
+    let h = 0
+    if (d !== 0) {
+      if (max === r) h = ((g - b) / d + (g < b ? 6 : 0)) * 60
+      else if (max === g) h = ((b - r) / d + 2) * 60
+      else h = ((r - g) / d + 4) * 60
+    }
+    const s = max === 0 ? 0 : (d / max) * 100
+    const v = max * 100
+    setEditColor({ h, s, v })
+    setEditingCondition(key)
+  }, [])
+
+  const handleSaveCustomColor = useCallback(() => {
+    if (!editingCondition) return
+    const lifxColor = `hue:${editColor.h.toFixed(1)} saturation:${(editColor.s / 100).toFixed(2)}`
+    const hex = hsbToHex(editColor.h, editColor.s / 100, editColor.v / 100)
+    saveCustomColorMutation.mutate({ condition: editingCondition, color: lifxColor, hex })
+  }, [editingCondition, editColor, saveCustomColorMutation])
+
+  const handleResetSingleColor = useCallback((condition: string) => {
+    if (!customColors) return
+    const updated = { ...customColors }
+    delete updated[condition]
+    // Reset all, then re-save the remaining custom colours
+    api.system.resetWeatherCustomColors().then(() => {
+      const remaining = Object.entries(updated)
+      const saveRemaining = async () => {
+        for (const [key, val] of remaining) {
+          await api.system.saveWeatherCustomColor(key, val.color, val.hex)
+        }
+      }
+      saveRemaining().then(() => {
+        queryClient.invalidateQueries({ queryKey: ['weather', 'custom-colors'] })
+        setEditingCondition(null)
+        toast({ message: 'Colour reset to default' })
+      })
+    })
+  }, [customColors, queryClient, toast])
+
+  const hasAnyCustomColors = customColors && Object.keys(customColors).length > 0
+
   const canTest = config.enabled && config.lightId
 
   return (
@@ -1444,24 +1542,192 @@ function WeatherIndicatorSection() {
           </button>
         </div>
 
-        {/* Colour Reference */}
+        {/* Colour Reference — interactive preview + customisation */}
         {weatherColors && (
           <div className="mt-2 rounded-lg border p-4" style={{ borderColor: 'var(--border-secondary)' }}>
             <p className="text-caption text-xs font-semibold uppercase tracking-wider mb-3">
               Colour Reference
             </p>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {Object.entries(weatherColors).map(([key, entry]) => (
-                <div key={key} className="flex items-center gap-2 py-1">
-                  <span
-                    className="inline-block h-8 w-8 shrink-0 rounded-full"
-                    style={{ backgroundColor: entry.hex }}
-                    aria-hidden="true"
-                  />
-                  <span className="text-heading text-xs leading-tight">{entry.name}</span>
-                </div>
-              ))}
+
+            {!config.lightId && (
+              <p className="text-caption text-xs mb-3 italic">
+                Select a light above to preview colours
+              </p>
+            )}
+
+            <div className="space-y-1">
+              {Object.entries(weatherColors).map(([key, entry]) => {
+                const custom = customColors?.[key]
+                const displayHex = custom?.hex || entry.hex
+                const displayColor = custom?.color || entry.color
+                const isCustomised = !!custom
+                const isPreviewing = previewingCondition === key
+                const isEditing = editingCondition === key
+
+                return (
+                  <div key={key}>
+                    <div className="flex items-center gap-3 py-1.5">
+                      {/* Colour swatch — tappable for preview */}
+                      <div className="relative shrink-0">
+                        <button
+                          onClick={() => {
+                            if (!config.lightId) return
+                            previewMutation.mutate({ color: displayColor, conditionKey: key, name: entry.name })
+                          }}
+                          disabled={!config.lightId}
+                          className={cn(
+                            'h-10 w-10 rounded-full shrink-0 transition-all active:scale-90',
+                            'ring-2 ring-offset-2 ring-offset-[var(--bg-primary)]',
+                            isPreviewing
+                              ? 'ring-fairy-500 scale-95'
+                              : config.lightId
+                                ? 'ring-transparent hover:ring-fairy-500/50'
+                                : 'ring-transparent opacity-80 cursor-default',
+                          )}
+                          style={{ backgroundColor: displayHex }}
+                          title={config.lightId ? `Preview ${entry.name} on light` : 'Select a light to preview'}
+                          aria-label={`Preview ${entry.name}`}
+                        />
+                        {/* Custom colour indicator dot */}
+                        {isCustomised && (
+                          <span
+                            className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-fairy-500 border-2 border-[var(--bg-primary)]"
+                            aria-label="Customised"
+                          />
+                        )}
+                      </div>
+
+                      {/* Label + description */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-heading text-sm leading-tight truncate">
+                          {entry.name}
+                          {isPreviewing && (
+                            <span className="ml-1.5 text-fairy-500 text-xs font-normal">Previewing</span>
+                          )}
+                        </p>
+                        <p className="text-caption text-[11px] leading-tight">{entry.description}</p>
+                      </div>
+
+                      {/* Edit button */}
+                      <button
+                        onClick={() => {
+                          if (isEditing) {
+                            setEditingCondition(null)
+                          } else {
+                            handleStartEdit(key, displayHex)
+                          }
+                        }}
+                        className={cn(
+                          'p-2 rounded-lg transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center',
+                          isEditing
+                            ? 'text-fairy-500 bg-fairy-500/10'
+                            : 'text-caption hover:text-heading hover:bg-[var(--bg-tertiary)]',
+                        )}
+                        aria-label={isEditing ? `Close ${entry.name} editor` : `Edit ${entry.name} colour`}
+                      >
+                        <Palette className="h-4 w-4" />
+                      </button>
+                    </div>
+
+                    {/* Inline colour picker when editing */}
+                    {isEditing && (
+                      <div className="mt-1 mb-3 ml-[52px] rounded-lg border p-3" style={{ borderColor: 'var(--border-secondary)' }}>
+                        <div className="weather-color-picker">
+                          <HsvColorPicker
+                            color={editColor}
+                            onChange={setEditColor}
+                          />
+                        </div>
+
+                        {/* Preview of chosen colour */}
+                        <div className="mt-3 flex items-center gap-2">
+                          <span
+                            className="h-6 w-6 rounded-full shrink-0"
+                            style={{ backgroundColor: hsbToHex(editColor.h, editColor.s / 100, editColor.v / 100) }}
+                            aria-hidden="true"
+                          />
+                          <span className="text-caption text-xs">
+                            H:{Math.round(editColor.h)} S:{Math.round(editColor.s)}% V:{Math.round(editColor.v)}%
+                          </span>
+                        </div>
+
+                        <div className="mt-3 flex gap-2">
+                          <button
+                            onClick={handleSaveCustomColor}
+                            disabled={saveCustomColorMutation.isPending}
+                            className="flex-1 rounded-lg bg-fairy-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-fairy-600 min-h-[44px]"
+                          >
+                            {saveCustomColorMutation.isPending ? 'Saving...' : 'Save colour'}
+                          </button>
+                          <button
+                            onClick={() => setEditingCondition(null)}
+                            className="rounded-lg px-3 py-2 text-sm font-medium text-caption transition-colors hover:text-heading hover:bg-[var(--bg-tertiary)] min-h-[44px]"
+                          >
+                            Cancel
+                          </button>
+                          {isCustomised && (
+                            <button
+                              onClick={() => handleResetSingleColor(key)}
+                              className="rounded-lg px-3 py-2 text-sm font-medium text-caption transition-colors hover:text-heading hover:bg-[var(--bg-tertiary)] min-h-[44px]"
+                              title="Reset to default colour"
+                            >
+                              <RotateCcw className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
             </div>
+
+            {/* Reset all button */}
+            {hasAnyCustomColors && (
+              <button
+                onClick={() => resetAllColorsMutation.mutate()}
+                disabled={resetAllColorsMutation.isPending}
+                className="mt-3 flex items-center gap-1.5 text-caption text-xs transition-colors hover:text-heading"
+              >
+                <RotateCcw className="h-3 w-3" />
+                {resetAllColorsMutation.isPending ? 'Resetting...' : 'Reset all to defaults'}
+              </button>
+            )}
+
+            {/* Scoped styles for the compact weather colour picker */}
+            <style>{`
+              .weather-color-picker .react-colorful {
+                width: 100% !important;
+                height: auto !important;
+                gap: 12px;
+              }
+              .weather-color-picker .react-colorful__saturation {
+                min-height: 160px;
+                border-radius: 10px !important;
+                border-bottom: none !important;
+              }
+              .weather-color-picker .react-colorful__last-control,
+              .weather-color-picker .react-colorful__hue {
+                height: 28px !important;
+                border-radius: 14px !important;
+              }
+              .weather-color-picker .react-colorful__interactive {
+                outline: none;
+              }
+              .weather-color-picker .react-colorful__pointer {
+                width: 26px !important;
+                height: 26px !important;
+                border: 3px solid white !important;
+                box-shadow: 0 0 0 1.5px rgba(0,0,0,0.25), 0 2px 8px rgba(0,0,0,0.35) !important;
+              }
+              .weather-color-picker .react-colorful__hue-pointer {
+                width: 30px !important;
+                height: 30px !important;
+              }
+              .weather-color-picker .react-colorful__interactive:focus .react-colorful__pointer {
+                box-shadow: 0 0 0 2px #10b981, 0 0 0 4px rgba(16,185,129,0.3), 0 2px 8px rgba(0,0,0,0.35) !important;
+              }
+            `}</style>
           </div>
         )}
       </div>

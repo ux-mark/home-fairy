@@ -441,6 +441,14 @@ export const api = {
       fetchApi<{ condition: string; color: string }>('/system/weather/indicator/test', { method: 'POST' }),
     getWeatherColors: () =>
       fetchApi<Record<string, WeatherColorEntry>>('/system/weather/colors'),
+    previewWeatherColor: (color: string, brightness?: number) =>
+      fetchApi<{ success: boolean }>('/system/weather/preview', { method: 'POST', body: JSON.stringify({ color, brightness }) }),
+    getWeatherCustomColors: () =>
+      fetchApi<Record<string, { color: string; hex: string }>>('/system/weather/custom-colors'),
+    saveWeatherCustomColor: (condition: string, color: string, hex: string) =>
+      fetchApi<Record<string, { color: string; hex: string }>>('/system/weather/custom-colors', { method: 'PUT', body: JSON.stringify({ condition, color, hex }) }),
+    resetWeatherCustomColors: () =>
+      fetchApi<{ success: boolean }>('/system/weather/custom-colors', { method: 'DELETE' }),
     getLogs: (limit?: number, category?: string) => {
       const params = new URLSearchParams()
       if (limit) params.set('limit', String(limit))

@@ -715,6 +715,91 @@ router.get('/weather/colors', (_req: Request, res: Response) => {
   }
 })
 
+// POST /weather/preview — preview a colour on the indicator light
+router.post('/weather/preview', async (req: Request, res: Response) => {
+  try {
+    const { color, brightness } = req.body
+    if (!color) {
+      res.status(400).json({ error: 'color is required' })
+      return
+    }
+    const config = weatherIndicator.getConfig()
+    if (!config.lightId) {
+      res.status(400).json({ error: 'No weather indicator light configured' })
+      return
+    }
+
+    await lifxClient.setState(`id:${config.lightId}`, {
+      power: 'on',
+      color,
+      brightness: brightness ?? config.brightness,
+      duration: 0.3,
+    })
+
+    // Revert after 5 seconds
+    setTimeout(async () => {
+      try {
+        await lifxClient.setState(`id:${config.lightId}`, { power: 'off', duration: 1 })
+      } catch {
+        // Ignore revert errors
+      }
+    }, 5000)
+
+    res.json({ success: true })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// GET /weather/custom-colors — get user's custom colour overrides
+router.get('/weather/custom-colors', (_req: Request, res: Response) => {
+  try {
+    const row = getOne<CurrentStateRow>("SELECT value FROM current_state WHERE key = 'pref_weather_custom_colors'")
+    let customs: Record<string, { color: string; hex: string }> = {}
+    try { customs = row?.value ? JSON.parse(row.value) : {} } catch { /* ignore parse errors */ }
+    res.json(customs)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// PUT /weather/custom-colors — save a custom colour for a weather condition
+router.put('/weather/custom-colors', (req: Request, res: Response) => {
+  try {
+    const { condition, color, hex } = req.body
+    if (!condition || !color || !hex) {
+      res.status(400).json({ error: 'condition, color, and hex are required' })
+      return
+    }
+    const row = getOne<CurrentStateRow>("SELECT value FROM current_state WHERE key = 'pref_weather_custom_colors'")
+    let customs: Record<string, { color: string; hex: string }> = {}
+    try { customs = row?.value ? JSON.parse(row.value) : {} } catch { /* ignore parse errors */ }
+    customs[condition] = { color, hex }
+    run(
+      `INSERT INTO current_state (key, value, updated_at) VALUES ('pref_weather_custom_colors', ?, datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      [JSON.stringify(customs)],
+    )
+    res.json(customs)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// DELETE /weather/custom-colors — reset all custom colours to defaults
+router.delete('/weather/custom-colors', (_req: Request, res: Response) => {
+  try {
+    run("DELETE FROM current_state WHERE key = 'pref_weather_custom_colors'")
+    res.json({ success: true })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
 // GET /backup — download database as JSON export
 router.get('/backup', (_req: Request, res: Response) => {
   try {
