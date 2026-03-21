@@ -182,6 +182,25 @@ router.post('/lights/:selector/effects/:effect', async (req: Request, res: Respo
   }
 })
 
+// POST /test — test LIFX connectivity by identifying a random connected light
+router.post('/test', async (_req: Request, res: Response) => {
+  try {
+    const lights = await lifxClient.listAll()
+    const connected = lights.filter((l: Record<string, unknown>) => l.connected)
+    if (connected.length === 0) {
+      res.json({ success: false, message: 'No connected lights found' })
+      return
+    }
+    // Pick a random connected light and identify it
+    const light = connected[Math.floor(Math.random() * connected.length)] as Record<string, unknown>
+    await lifxClient.identify(`id:${light.id}`)
+    res.json({ success: true, message: `Identified ${light.label}`, light: light.label })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.json({ success: false, message: msg })
+  }
+})
+
 // GET /scenes — list LIFX scenes
 router.get('/scenes', async (_req: Request, res: Response) => {
   try {

@@ -336,6 +336,9 @@ export const api = {
       }),
     cancelAllTimers: () =>
       fetchApi<unknown>('/system/timers/cancel-all', { method: 'POST' }),
+    allOff: () => fetchApi<{ success: boolean; actions: string[] }>('/system/all-off', { method: 'POST' }),
+    nighttime: () => fetchApi<{ success: boolean; mode: string; excludeRooms: string[]; actions: string[] }>('/system/nighttime', { method: 'POST' }),
+    guestNight: () => fetchApi<{ success: boolean; mode: string; excludeRooms: string[]; actions: string[] }>('/system/guest-night', { method: 'POST' }),
     getLogs: (limit?: number, category?: string) => {
       const params = new URLSearchParams()
       if (limit) params.set('limit', String(limit))
@@ -367,10 +370,16 @@ export const api = {
       device_label: string
       device_type: string
       room_name: string
+      config?: Record<string, unknown>
     }) =>
       fetchApi<unknown>('/hubitat/device-rooms', {
         method: 'POST',
         body: JSON.stringify(data),
+      }),
+    sendCommand: (deviceId: string, command: string, value?: string | number) =>
+      fetchApi<unknown>(`/hubitat/devices/${encodeURIComponent(deviceId)}/command`, {
+        method: 'POST',
+        body: JSON.stringify({ command, value }),
       }),
     unassignDevice: (deviceId: string, roomName: string) =>
       fetchApi<unknown>(

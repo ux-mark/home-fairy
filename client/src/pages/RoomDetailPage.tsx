@@ -16,6 +16,7 @@ import {
   Activity,
   CheckSquare,
   Square,
+  Shield,
 } from 'lucide-react'
 import * as Switch from '@radix-ui/react-switch'
 import * as Tabs from '@radix-ui/react-tabs'
@@ -251,10 +252,14 @@ function DeviceTypeBadge({ type }: { type: string }) {
 function AssignedDeviceRow({
   assignment,
   onRemove,
+  onToggleExclude,
 }: {
   assignment: DeviceRoomAssignment
   onRemove: () => void
+  onToggleExclude: () => void
 }) {
+  const isExcluded = !!assignment.config?.exclude_from_all_off
+
   return (
     <div className="flex items-center gap-3 rounded-lg border border-fairy-500/20 bg-fairy-500/5 px-3 py-2.5 transition-colors">
       <div className="min-w-0 flex-1">
@@ -263,6 +268,19 @@ function AssignedDeviceRow({
         </p>
       </div>
       <DeviceTypeBadge type={assignment.device_type} />
+      <button
+        onClick={onToggleExclude}
+        className={cn(
+          'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          isExcluded
+            ? 'bg-amber-500/15 text-amber-400'
+            : 'text-caption hover:text-body hover:surface',
+        )}
+        aria-label={isExcluded ? `Include ${assignment.device_label} in All Off` : `Exclude ${assignment.device_label} from All Off`}
+        title={isExcluded ? 'Kept on during All Off (click to include)' : 'Keep on during All Off'}
+      >
+        <Shield className="h-4 w-4" />
+      </button>
       <button
         onClick={onRemove}
         className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-body transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
@@ -528,9 +546,10 @@ export default function RoomDetailPage() {
 
   // Devices assigned to THIS room (from API or local pending state)
   const [pendingDeviceAssigns, setPendingDeviceAssigns] = useState<
-    { device_id: string; device_label: string; device_type: string }[]
+    { device_id: string; device_label: string; device_type: string; config?: Record<string, unknown> }[]
   >([])
   const [pendingDeviceUnassigns, setPendingDeviceUnassigns] = useState<string[]>([])
+  const [pendingDeviceConfigs, setPendingDeviceConfigs] = useState<Record<string, Record<string, unknown>>>({})
 
   // Devices currently assigned to this room from API
   const apiDevicesForRoom = useMemo(() => {
@@ -540,19 +559,24 @@ export default function RoomDetailPage() {
 
   // Effective assigned devices = API assignments minus pending unassigns plus pending assigns
   const effectiveDeviceAssignments = useMemo(() => {
-    const base = apiDevicesForRoom.filter(
-      a => !pendingDeviceUnassigns.includes(a.device_id),
-    )
+    const base = apiDevicesForRoom
+      .filter(a => !pendingDeviceUnassigns.includes(a.device_id))
+      .map(a => ({
+        ...a,
+        config: pendingDeviceConfigs[a.device_id]
+          ? { ...a.config, ...pendingDeviceConfigs[a.device_id] }
+          : a.config,
+      }))
     const pending: DeviceRoomAssignment[] = pendingDeviceAssigns.map(p => ({
       id: 0,
       device_id: p.device_id,
       device_label: p.device_label,
       device_type: p.device_type,
       room_name: name!,
-      config: {},
+      config: pendingDeviceConfigs[p.device_id] ?? p.config ?? {},
     }))
     return [...base, ...pending]
-  }, [apiDevicesForRoom, pendingDeviceAssigns, pendingDeviceUnassigns, name])
+  }, [apiDevicesForRoom, pendingDeviceAssigns, pendingDeviceUnassigns, pendingDeviceConfigs, name])
 
   // Assigned switches/dimmers
   const assignedSwitches = useMemo(
@@ -649,14 +673,31 @@ export default function RoomDetailPage() {
       for (const deviceId of pendingDeviceUnassigns) {
         await api.hubitat.unassignDevice(deviceId, name!)
       }
-      // Save device assignments
+      // Save device assignments (new assigns)
       for (const d of pendingDeviceAssigns) {
         await api.hubitat.assignDevice({
           device_id: d.device_id,
           device_label: d.device_label,
           device_type: d.device_type,
           room_name: name!,
+          config: pendingDeviceConfigs[d.device_id] ?? d.config,
         })
+      }
+      // Save device config changes for existing assignments
+      for (const [deviceId, config] of Object.entries(pendingDeviceConfigs)) {
+        // Skip if it was a new assign (already handled above) or unassigned
+        if (pendingDeviceAssigns.find(p => p.device_id === deviceId)) continue
+        if (pendingDeviceUnassigns.includes(deviceId)) continue
+        const existing = apiDevicesForRoom.find(a => a.device_id === deviceId)
+        if (existing) {
+          await api.hubitat.assignDevice({
+            device_id: existing.device_id,
+            device_label: existing.device_label,
+            device_type: existing.device_type,
+            room_name: name!,
+            config: { ...existing.config, ...config },
+          })
+        }
       }
     },
     onSuccess: () => {
@@ -667,6 +708,7 @@ export default function RoomDetailPage() {
       setDirty(false)
       setPendingDeviceAssigns([])
       setPendingDeviceUnassigns([])
+      setPendingDeviceConfigs({})
       toast({ message: 'Room saved successfully' })
     },
     onError: () =>
@@ -751,6 +793,17 @@ export default function RoomDetailPage() {
     } else {
       setPendingDeviceUnassigns(prev => [...prev, deviceId])
     }
+    setDirty(true)
+  }
+
+  const handleToggleDeviceExclude = (deviceId: string) => {
+    const current = pendingDeviceConfigs[deviceId] ?? {}
+    const assignment = effectiveDeviceAssignments.find(d => d.device_id === deviceId)
+    const currentExclude = current.exclude_from_all_off ?? assignment?.config?.exclude_from_all_off ?? false
+    setPendingDeviceConfigs(prev => ({
+      ...prev,
+      [deviceId]: { ...prev[deviceId], exclude_from_all_off: !currentExclude },
+    }))
     setDirty(true)
   }
 
@@ -1289,6 +1342,7 @@ export default function RoomDetailPage() {
                       key={d.device_id}
                       assignment={d}
                       onRemove={() => handleUnassignDevice(d.device_id)}
+                      onToggleExclude={() => handleToggleDeviceExclude(d.device_id)}
                     />
                   ))}
                 </div>

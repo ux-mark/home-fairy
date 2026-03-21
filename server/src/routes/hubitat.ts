@@ -53,7 +53,20 @@ router.get('/devices', (_req: Request, res: Response) => {
 // GET /devices/sync — pull from Hubitat API and upsert into hub_devices
 router.get('/devices/sync', async (_req: Request, res: Response) => {
   try {
-    const devices: HubitatDevice[] = await hubitatClient.listDevices()
+    let devices: HubitatDevice[]
+    try {
+      devices = await hubitatClient.listDevices()
+    } catch (connErr) {
+      const connMsg = connErr instanceof Error ? connErr.message : String(connErr)
+      res.status(503).json({
+        error: 'Unable to reach Hubitat hub',
+        details: connMsg,
+      })
+      return
+    }
+
+    let newCount = 0
+    let updatedCount = 0
 
     for (const dev of devices) {
       // Get full device details for capabilities/attributes
@@ -64,12 +77,42 @@ router.get('/devices/sync', async (_req: Request, res: Response) => {
         fullDevice = dev
       }
 
+      // Determine device type based on capabilities
+      const caps = (fullDevice.capabilities ?? []).map((c: string) => c.toLowerCase())
+      let deviceType = 'unknown'
+      if (caps.includes('motionsensor') || caps.includes('motion sensor')) {
+        deviceType = 'motion'
+      } else if (caps.includes('contactsensor') || caps.includes('contact sensor')) {
+        deviceType = 'contact'
+      } else if (caps.includes('temperaturesensor') || caps.includes('temperature sensor') || caps.includes('temperaturemeasurement') || caps.includes('temperature measurement')) {
+        deviceType = 'temperature'
+      } else if (caps.includes('switchlevel') || caps.includes('switch level')) {
+        deviceType = 'dimmer'
+      } else if (caps.includes('switch')) {
+        deviceType = 'switch'
+      } else if (caps.includes('lock')) {
+        deviceType = 'lock'
+      } else if (caps.includes('thermostat')) {
+        deviceType = 'thermostat'
+      } else if (caps.includes('battery')) {
+        deviceType = 'sensor'
+      }
+
+      // Check if device already exists
+      const existing = getOne<HubDeviceRow>('SELECT id FROM hub_devices WHERE id = ?', [fullDevice.id])
+      if (existing) {
+        updatedCount++
+      } else {
+        newCount++
+      }
+
       run(
-        `INSERT INTO hub_devices (id, label, device_name, capabilities, attributes, updated_at)
-         VALUES (?, ?, ?, ?, ?, datetime('now'))
+        `INSERT INTO hub_devices (id, label, device_name, device_type, capabilities, attributes, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
          ON CONFLICT(id) DO UPDATE SET
            label = excluded.label,
            device_name = excluded.device_name,
+           device_type = excluded.device_type,
            capabilities = excluded.capabilities,
            attributes = excluded.attributes,
            updated_at = datetime('now')`,
@@ -77,6 +120,7 @@ router.get('/devices/sync', async (_req: Request, res: Response) => {
           fullDevice.id,
           fullDevice.label,
           fullDevice.name ?? null,
+          deviceType,
           JSON.stringify(fullDevice.capabilities ?? []),
           JSON.stringify(fullDevice.attributes ?? {}),
         ],
@@ -86,6 +130,8 @@ router.get('/devices/sync', async (_req: Request, res: Response) => {
     const rows = getAll<HubDeviceRow>('SELECT * FROM hub_devices ORDER BY label')
     res.json({
       synced: devices.length,
+      new: newCount,
+      updated: updatedCount,
       devices: rows.map((r) => ({
         ...r,
         capabilities: JSON.parse(r.capabilities),

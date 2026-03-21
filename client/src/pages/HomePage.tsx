@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Thermometer, Sun, Clock, Sparkles, Zap, Cloud, Droplets, Wind } from 'lucide-react'
+import { Thermometer, Sun, Clock, Sparkles, Zap, Cloud, Droplets, Wind, Power, Moon, Users } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
@@ -223,6 +223,95 @@ function WeatherCard() {
   )
 }
 
+// ── Quick actions ────────────────────────────────────────────────────────────
+
+function QuickActions() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const allOffMutation = useMutation({
+    mutationFn: api.system.allOff,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] })
+      queryClient.invalidateQueries({ queryKey: ['system'] })
+      queryClient.invalidateQueries({ queryKey: ['lifx'] })
+      toast({ message: 'All devices turned off' })
+    },
+    onError: () => toast({ message: 'Failed to turn off devices', type: 'error' }),
+  })
+
+  const nighttimeMutation = useMutation({
+    mutationFn: api.system.nighttime,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] })
+      queryClient.invalidateQueries({ queryKey: ['system'] })
+      queryClient.invalidateQueries({ queryKey: ['lifx'] })
+      toast({ message: 'Nighttime mode activated' })
+    },
+    onError: () => toast({ message: 'Failed to set nighttime', type: 'error' }),
+  })
+
+  const guestNightMutation = useMutation({
+    mutationFn: api.system.guestNight,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] })
+      queryClient.invalidateQueries({ queryKey: ['system'] })
+      queryClient.invalidateQueries({ queryKey: ['lifx'] })
+      toast({ message: 'Guest night mode activated' })
+    },
+    onError: () => toast({ message: 'Failed to set guest night', type: 'error' }),
+  })
+
+  const anyPending = allOffMutation.isPending || nighttimeMutation.isPending || guestNightMutation.isPending
+
+  return (
+    <section className="mb-6" aria-label="Quick actions">
+      <div className="flex gap-2">
+        <button
+          onClick={() => allOffMutation.mutate()}
+          disabled={anyPending}
+          className={cn(
+            'flex flex-1 min-h-[52px] items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-semibold transition-all',
+            'bg-red-500/15 text-red-400 active:scale-[0.97]',
+            'hover:bg-red-500/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500',
+            'disabled:opacity-50',
+          )}
+        >
+          <Power className="h-4.5 w-4.5" />
+          All Off
+        </button>
+        <button
+          onClick={() => nighttimeMutation.mutate()}
+          disabled={anyPending}
+          className={cn(
+            'flex flex-1 min-h-[52px] items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-semibold transition-all',
+            'bg-indigo-500/15 text-indigo-400 active:scale-[0.97]',
+            'hover:bg-indigo-500/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500',
+            'disabled:opacity-50',
+          )}
+        >
+          <Moon className="h-4.5 w-4.5" />
+          Nighttime
+        </button>
+        <button
+          onClick={() => guestNightMutation.mutate()}
+          disabled={anyPending}
+          className={cn(
+            'flex flex-1 min-h-[52px] items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-semibold transition-all',
+            'bg-purple-500/15 text-purple-400 active:scale-[0.97]',
+            'hover:bg-purple-500/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-500',
+            'disabled:opacity-50',
+          )}
+        >
+          <Moon className="h-4 w-4" />
+          <Users className="h-4 w-4" />
+          Guest
+        </button>
+      </div>
+    </section>
+  )
+}
+
 // ── Home page ────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
@@ -270,6 +359,8 @@ export default function HomePage() {
   return (
     <div>
       <DeviceOnboarding />
+
+      <QuickActions />
 
       <WeatherCard />
 

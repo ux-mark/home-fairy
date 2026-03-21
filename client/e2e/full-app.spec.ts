@@ -121,8 +121,8 @@ test('Room Detail Page shows settings, tabs, and save button', async ({ page }) 
   const autoToggle = page.locator('#auto-toggle')
   await expect(autoToggle).toBeVisible()
 
-  // Devices section heading
-  await expect(page.getByText('Devices').first()).toBeVisible()
+  // Devices section heading (use the h3 within the page content, not the nav)
+  await expect(page.locator('h3:text("Devices")').first()).toBeVisible()
 
   // Tab triggers: Lights, Switches, Sensors
   const lightsTab = page.getByRole('tab', { name: /Lights/i })
@@ -246,38 +246,32 @@ test('Scene Editor shows tabs and light controls', async ({ page }) => {
   await page.screenshot({ path: 'test-results/05-scene-editor.png', fullPage: true })
 })
 
-// ── Test 6: Lights Page ──────────────────────────────────────────────────────
+// ── Test 6: Devices Page ─────────────────────────────────────────────────────
 
-test('Lights Page shows light list with search and group filter', async ({ page }) => {
+test('Devices Page shows device list with search and filter chips', async ({ page }) => {
   test.setTimeout(30_000)
-  collectConsoleErrors(page, 'Lights')
+  collectConsoleErrors(page, 'Devices')
 
-  await page.goto('/lights')
+  await page.goto('/devices')
   await page.waitForLoadState('networkidle')
 
   // Heading
-  await expect(page.getByText('LIFX Lights')).toBeVisible()
+  await expect(page.getByText('All Devices')).toBeVisible()
 
   // Search input
   const searchInput = page.locator('input[type="search"]')
   await expect(searchInput).toBeVisible()
 
-  // Group filter dropdown
-  const groupFilter = page.locator('select[aria-label="Filter by group"]')
-  // May or may not exist depending on number of groups
-  if (await groupFilter.count() > 0) {
-    await expect(groupFilter).toBeVisible()
-    // Check it has "All groups" option (options inside select are not "visible" in browser sense, check by value)
-    const options = await groupFilter.locator('option').allTextContents()
-    expect(options).toContain('All groups')
-  }
+  // Filter chips — "All" should be visible
+  const allChip = page.getByRole('button', { name: /^All/ })
+  await expect(allChip).toBeVisible()
 
-  // Light cards should be present
-  const lightCards = page.locator('.card.rounded-xl')
-  const lightCount = await lightCards.count()
-  expect(lightCount).toBeGreaterThanOrEqual(1)
+  // Device cards should be present
+  const deviceCards = page.locator('.card.rounded-xl')
+  const deviceCount = await deviceCards.count()
+  expect(deviceCount).toBeGreaterThanOrEqual(1)
 
-  await page.screenshot({ path: 'test-results/06-lights.png', fullPage: true })
+  await page.screenshot({ path: 'test-results/06-devices.png', fullPage: true })
 })
 
 // ── Test 7: Settings Page ────────────────────────────────────────────────────
@@ -374,7 +368,7 @@ test('No unexpected console errors across all pages', async ({ page }) => {
     { url: '/rooms/Living', name: 'RoomDetail' },
     { url: '/scenes', name: 'Scenes' },
     { url: '/scenes/Relaxed%20Living', name: 'SceneEditor' },
-    { url: '/lights', name: 'Lights' },
+    { url: '/devices', name: 'Devices' },
     { url: '/settings', name: 'Settings' },
     { url: '/watch', name: 'Watch' },
   ]

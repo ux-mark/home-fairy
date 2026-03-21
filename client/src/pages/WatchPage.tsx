@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Power } from 'lucide-react'
+import { ArrowLeft, Power, Moon } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { Room, Scene } from '@/lib/api'
@@ -118,10 +118,20 @@ export default function WatchPage() {
   })
 
   const allOffMutation = useMutation({
-    mutationFn: () => api.system.setMode('Night'),
+    mutationFn: () => api.system.allOff(),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms'] })
       queryClient.invalidateQueries({ queryKey: ['system'] })
+      queryClient.invalidateQueries({ queryKey: ['lifx'] })
+    },
+  })
+
+  const nighttimeMutation = useMutation({
+    mutationFn: () => api.system.nighttime(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] })
+      queryClient.invalidateQueries({ queryKey: ['system'] })
+      queryClient.invalidateQueries({ queryKey: ['lifx'] })
     },
   })
 
@@ -178,15 +188,25 @@ export default function WatchPage() {
           ))}
       </div>
 
-      {/* All off button */}
-      <button
-        onClick={() => allOffMutation.mutate()}
-        disabled={allOffMutation.isPending}
-        className="mt-3 flex min-h-[52px] items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-base font-bold text-white transition-colors active:bg-red-700"
-      >
-        <Power className="h-5 w-5" />
-        All Off
-      </button>
+      {/* Action buttons */}
+      <div className="mt-3 flex gap-2">
+        <button
+          onClick={() => nighttimeMutation.mutate()}
+          disabled={nighttimeMutation.isPending || allOffMutation.isPending}
+          className="flex flex-1 min-h-[52px] items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-base font-bold text-white transition-colors active:bg-indigo-700 disabled:opacity-50"
+        >
+          <Moon className="h-5 w-5" />
+          Nighttime
+        </button>
+        <button
+          onClick={() => allOffMutation.mutate()}
+          disabled={allOffMutation.isPending || nighttimeMutation.isPending}
+          className="flex flex-1 min-h-[52px] items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-base font-bold text-white transition-colors active:bg-red-700 disabled:opacity-50"
+        >
+          <Power className="h-5 w-5" />
+          All Off
+        </button>
+      </div>
     </div>
   )
 }

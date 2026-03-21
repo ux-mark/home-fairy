@@ -85,13 +85,28 @@ app.post('/hubitat', async (req, res) => {
         await motionHandler.handleLuxEvent(displayName, Number(eventValue))
         break
 
-      case 'battery':
-        // Simple db update for battery levels
+      case 'battery': {
+        // Update battery level in hub_devices attributes
         run(
           `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.battery', ?), updated_at = datetime('now') WHERE label = ?`,
           [eventValue, displayName],
         )
+        const batteryLevel = Number(eventValue)
+        if (batteryLevel < 5) {
+          console.error(`Critical battery: ${displayName} at ${batteryLevel}%`)
+          run(
+            'INSERT INTO logs (message, category) VALUES (?, ?)',
+            [`Critical battery: ${displayName} at ${batteryLevel}%`, 'battery'],
+          )
+        } else if (batteryLevel < 15) {
+          console.warn(`Low battery: ${displayName} at ${batteryLevel}%`)
+          run(
+            'INSERT INTO logs (message, category) VALUES (?, ?)',
+            [`Low battery: ${displayName} at ${batteryLevel}%`, 'battery'],
+          )
+        }
         break
+      }
     }
 
     // Emit to connected clients for real-time UI updates

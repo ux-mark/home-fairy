@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Home, DoorOpen, Sparkles, Lightbulb, Settings, Sun, Moon, Monitor } from 'lucide-react'
+import { Home, DoorOpen, Sparkles, LayoutGrid, Settings, Sun, Moon, Monitor } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/hooks/useTheme'
@@ -11,7 +11,7 @@ const NAV_ITEMS = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/rooms', icon: DoorOpen, label: 'Rooms' },
   { to: '/scenes', icon: Sparkles, label: 'Scenes' },
-  { to: '/lights', icon: Lightbulb, label: 'Lights' },
+  { to: '/devices', icon: LayoutGrid, label: 'Devices' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ] as const
 

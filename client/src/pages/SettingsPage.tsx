@@ -214,6 +214,114 @@ function ModesSection() {
   )
 }
 
+// ── Night Mode section ─────────────────────────────────────────────────────
+
+function NightModeSection() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const { data: rooms } = useQuery({
+    queryKey: ['rooms'],
+    queryFn: api.rooms.getAll,
+  })
+
+  const { data: prefs } = useQuery({
+    queryKey: ['system', 'preferences'],
+    queryFn: api.system.getPreferences,
+  })
+
+  const mutation = useMutation({
+    mutationFn: ({ key, value }: { key: string; value: string }) =>
+      api.system.setPreference(key, value),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system', 'preferences'] })
+      toast({ message: 'Night mode settings saved' })
+    },
+    onError: () => toast({ message: 'Failed to save settings', type: 'error' }),
+  })
+
+  const nightExclude: string[] = (() => {
+    try {
+      return prefs?.night_exclude_rooms ? JSON.parse(prefs.night_exclude_rooms) : ['Bedroom']
+    } catch { return ['Bedroom'] }
+  })()
+
+  const guestExclude: string[] = (() => {
+    try {
+      return prefs?.guest_night_exclude_rooms ? JSON.parse(prefs.guest_night_exclude_rooms) : ['Bedroom']
+    } catch { return ['Bedroom'] }
+  })()
+
+  const roomNames = (rooms ?? []).sort((a, b) => a.display_order - b.display_order).map(r => r.name)
+
+  const toggleRoom = (prefKey: string, current: string[], roomName: string) => {
+    const next = current.includes(roomName)
+      ? current.filter(r => r !== roomName)
+      : [...current, roomName]
+    mutation.mutate({ key: prefKey, value: JSON.stringify(next) })
+  }
+
+  return (
+    <Section title="Night Mode">
+      <div className="space-y-5">
+        <div>
+          <p className="text-heading text-sm mb-1">Nighttime excluded rooms</p>
+          <p className="text-caption text-xs mb-3">
+            These rooms keep their lights on when you tap Nighttime.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {roomNames.map(name => {
+              const checked = nightExclude.includes(name)
+              return (
+                <button
+                  key={name}
+                  onClick={() => toggleRoom('night_exclude_rooms', nightExclude, name)}
+                  disabled={mutation.isPending}
+                  className={cn(
+                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors min-h-[44px]',
+                    checked
+                      ? 'bg-indigo-500/15 text-indigo-400 ring-1 ring-indigo-500/30'
+                      : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
+                  )}
+                >
+                  {name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+
+        <div className="border-t border-[var(--border-secondary)] pt-5">
+          <p className="text-heading text-sm mb-1">Guest night excluded rooms</p>
+          <p className="text-caption text-xs mb-3">
+            These rooms keep their lights on when you tap Guest Night.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {roomNames.map(name => {
+              const checked = guestExclude.includes(name)
+              return (
+                <button
+                  key={name}
+                  onClick={() => toggleRoom('guest_night_exclude_rooms', guestExclude, name)}
+                  disabled={mutation.isPending}
+                  className={cn(
+                    'rounded-lg px-3 py-2 text-sm font-medium transition-colors min-h-[44px]',
+                    checked
+                      ? 'bg-purple-500/15 text-purple-400 ring-1 ring-purple-500/30'
+                      : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
+                  )}
+                >
+                  {name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </Section>
+  )
+}
+
 // ── Sun Schedule section ────────────────────────────────────────────────────
 
 function SunScheduleSection() {
@@ -480,6 +588,7 @@ export default function SettingsPage() {
         <ThemeSection />
         <GeneralSection />
         <ModesSection />
+        <NightModeSection />
         <SunScheduleSection />
         <DevicesSection />
         <TimersSection />
