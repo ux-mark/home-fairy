@@ -32,7 +32,7 @@ import {
 import { HsvColorPicker } from 'react-colorful'
 import { api } from '@/lib/api'
 import type { SunScheduleEntry, ConfiguredStop, MtaStop, MtaIndicatorConfig, WeatherIndicatorConfig, WeatherColorEntry, NightStatus } from '@/lib/api'
-import { cn, hsbToHex } from '@/lib/utils'
+import { cn, hsbToHex, formatTime } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { useTheme } from '@/hooks/useTheme'
 import type { Theme } from '@/hooks/useTheme'
@@ -428,11 +428,6 @@ function SunScheduleSection() {
     queryFn: api.system.getSunSchedule,
     refetchInterval: 60_000,
   })
-
-  const formatTime = (iso: string) => {
-    const d = new Date(iso)
-    return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  }
 
   const formatPhase = (phase: string) =>
     phase.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())

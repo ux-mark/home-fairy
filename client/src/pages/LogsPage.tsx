@@ -3,19 +3,12 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { ArrowLeft, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatDateTime } from '@/lib/utils'
 
-const CATEGORIES = ['hubitat', 'scene', 'lifx', 'system', 'timer'] as const
+const CATEGORIES = ['hubitat', 'scene', 'motion', 'lifx', 'system', 'battery', 'weather', 'timer'] as const
 
 function formatTimestamp(dateStr: string) {
-  const d = new Date(dateStr)
-  return d.toLocaleString(undefined, {
-    month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
+  return formatDateTime(dateStr, { second: '2-digit' })
 }
 
 function LogEntry({

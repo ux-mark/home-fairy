@@ -42,9 +42,58 @@ export function kelvinToHex(kelvin: number): string {
   return '#' + [r, g, b].map(c => Math.round(c).toString(16).padStart(2, '0')).join('')
 }
 
+/**
+ * Parse a date string from the server, treating SQLite dates as UTC.
+ * SQLite datetime('now') produces "2026-03-21 13:27:05" without timezone.
+ * JavaScript new Date() treats this as LOCAL time, which is wrong.
+ * This function appends 'Z' (UTC) if no timezone indicator is present.
+ */
+export function parseServerDate(dateStr: string): Date {
+  // If it already has a timezone (Z, +, -), parse as-is
+  if (/[Z+\-]\d{0,2}:?\d{0,2}$/.test(dateStr) || dateStr.endsWith('Z')) {
+    return new Date(dateStr)
+  }
+  // SQLite format: "2026-03-21 13:27:05" → treat as UTC by appending Z
+  // Also handle "2026-03-21T13:27:05" without Z
+  return new Date(dateStr.replace(' ', 'T') + 'Z')
+}
+
+/**
+ * Format a server date to local time string.
+ * Respects the user's locale for AM/PM vs 24h automatically
+ * (browser uses the system's locale settings).
+ */
+export function formatDateTime(dateStr: string | null, options?: Intl.DateTimeFormatOptions): string {
+  if (!dateStr) return ''
+  const d = parseServerDate(dateStr)
+  if (isNaN(d.getTime())) return dateStr
+  return d.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    ...options,
+  })
+}
+
+/**
+ * Format just the time portion in local timezone.
+ */
+export function formatTime(dateStr: string | null): string {
+  if (!dateStr) return ''
+  const d = parseServerDate(dateStr)
+  if (isNaN(d.getTime())) return dateStr
+  return d.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 export function formatTimeAgo(dateStr: string | null): string {
   if (!dateStr) return 'Never'
-  const diff = Date.now() - new Date(dateStr).getTime()
+  const d = parseServerDate(dateStr)
+  const diff = Date.now() - d.getTime()
+  if (isNaN(diff)) return 'Unknown'
   const mins = Math.floor(diff / 60000)
   if (mins < 1) return 'Just now'
   if (mins < 60) return `${mins}m ago`
