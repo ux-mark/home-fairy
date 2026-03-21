@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { lifxClient, getRateLimitStatus } from '../lib/lifx-client.js'
+import { getAll, getOne } from '../db/index.js'
 
 const router = Router()
 
@@ -77,6 +78,57 @@ router.put('/lights/states', async (req: Request, res: Response) => {
       res.status(400).json({ error: 'Validation failed', details: err.errors })
       return
     }
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// GET /lights/:lightId/usage — get where a light is used (rooms, scenes, indicator)
+router.get('/lights/:lightId/usage', (req: Request, res: Response) => {
+  try {
+    const lightId = req.params.lightId
+
+    // Find room assignment
+    const roomAssignment = getOne<{ room_name: string }>(
+      'SELECT * FROM light_rooms WHERE light_id = ?',
+      [lightId],
+    )
+
+    // Find scenes that reference this light
+    interface SceneRow { name: string; icon: string; commands: string }
+    const scenes = getAll<SceneRow>('SELECT name, icon, commands FROM scenes')
+    const usedInScenes = scenes
+      .filter(scene => {
+        const cmds = JSON.parse(scene.commands || '[]') as { light_id?: string }[]
+        return cmds.some(c => c.light_id === lightId)
+      })
+      .map(s => ({ name: s.name, icon: s.icon }))
+
+    // Check if it's a configured indicator light
+    const mtaIndicator = getOne<{ value: string }>(
+      "SELECT value FROM current_state WHERE key = 'pref_mta_indicator'",
+    )
+    const weatherIndicator = getOne<{ value: string }>(
+      "SELECT value FROM current_state WHERE key = 'pref_weather_indicator'",
+    )
+
+    let indicatorRole: 'subway' | 'weather' | null = null
+    try {
+      const mta = JSON.parse(mtaIndicator?.value || '{}') as { lightId?: string }
+      if (mta.lightId === lightId) indicatorRole = 'subway'
+    } catch { /* ignore */ }
+    try {
+      const weather = JSON.parse(weatherIndicator?.value || '{}') as { lightId?: string }
+      if (weather.lightId === lightId) indicatorRole = 'weather'
+    } catch { /* ignore */ }
+
+    res.json({
+      lightId,
+      room: roomAssignment?.room_name || null,
+      scenes: usedInScenes,
+      indicatorRole,
+    })
+  } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: msg })
   }

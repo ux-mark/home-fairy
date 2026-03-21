@@ -230,6 +230,13 @@ export interface WeatherColorEntry {
   hex: string
 }
 
+export interface DeviceUsage {
+  lightId: string
+  room: string | null
+  scenes: { name: string; icon: string }[]
+  indicatorRole: 'subway' | 'weather' | null
+}
+
 export interface NightStatus {
   active: boolean
   lockedRooms: string[]
@@ -303,6 +310,8 @@ export const api = {
         { method: 'POST' },
       ),
     getRateLimit: () => fetchApi<RateLimitStatus>('/lifx/rate-limit'),
+    getUsage: (lightId: string) =>
+      fetchApi<DeviceUsage>('/lifx/lights/' + encodeURIComponent(lightId) + '/usage'),
   },
   rooms: {
     getAll: () => fetchApi<Room[]>('/rooms'),

@@ -9,12 +9,15 @@ import {
   Search,
   ChevronDown,
   ChevronUp,
+  ChevronRight,
   X,
   LayoutGrid,
   List,
+  Settings,
+  Loader2,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { Light, DeviceRoomAssignment, HubDevice, LightRoom } from '@/lib/api'
+import type { Light, DeviceRoomAssignment, HubDevice, LightRoom, DeviceUsage } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 
@@ -50,6 +53,109 @@ function KindBadge({ kind }: { kind: string }) {
     <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', cls)}>
       {kind === 'lifx' ? 'Light' : kind}
     </span>
+  )
+}
+
+// ── Light usage detail panel ──────────────────────────────────────────────────
+
+function LightUsagePanel({ lightId, roomName }: { lightId: string; roomName: string | null }) {
+  const { data: usage, isLoading } = useQuery({
+    queryKey: ['lifx', 'usage', lightId],
+    queryFn: () => api.lifx.getUsage(lightId),
+    staleTime: 60_000,
+  })
+
+  if (isLoading) {
+    return (
+      <div className="border-t px-4 py-3 flex items-center justify-center gap-2 text-caption text-xs">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        <span>Loading usage info...</span>
+      </div>
+    )
+  }
+
+  if (!usage) return null
+
+  return (
+    <div className="border-t px-4 py-3 space-y-2.5">
+      {/* Room assignment */}
+      {(usage.room || roomName) ? (
+        <Link
+          to={`/rooms/${encodeURIComponent(usage.room || roomName!)}`}
+          className="flex min-h-[44px] items-center gap-2 rounded-lg px-2 -mx-2 text-sm text-fairy-400 transition-colors hover:bg-fairy-500/10"
+        >
+          <span className="text-body text-xs font-medium">Room:</span>
+          <span className="flex-1 truncate">{usage.room || roomName}</span>
+          <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />
+        </Link>
+      ) : (
+        <Link
+          to="/rooms"
+          className="flex min-h-[44px] items-center gap-2 rounded-lg px-2 -mx-2 text-sm text-caption transition-colors hover:bg-fairy-500/10"
+        >
+          <span className="flex-1">Not assigned to any room</span>
+          <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />
+        </Link>
+      )}
+
+      {/* Scenes */}
+      {usage.scenes.length > 0 ? (
+        <div>
+          <p className="text-caption text-xs font-medium mb-1 px-2">
+            Used in {usage.scenes.length} scene{usage.scenes.length !== 1 ? 's' : ''}:
+          </p>
+          <div className="space-y-0.5">
+            {usage.scenes.map(scene => (
+              <Link
+                key={scene.name}
+                to={`/scenes/${encodeURIComponent(scene.name)}`}
+                className="flex min-h-[44px] items-center gap-2 rounded-lg px-2 -mx-2 text-sm text-fairy-400 transition-colors hover:bg-fairy-500/10"
+              >
+                <span className="text-base leading-none" aria-hidden="true">
+                  {scene.icon}
+                </span>
+                <span className="flex-1 truncate">{scene.name}</span>
+                <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="text-caption text-xs px-2">Not used in any scenes</p>
+      )}
+
+      {/* Indicator role */}
+      {usage.indicatorRole === 'subway' && (
+        <Link
+          to="/settings"
+          className="flex min-h-[44px] items-center gap-2 rounded-lg px-2 -mx-2 transition-colors hover:bg-indigo-500/10"
+        >
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 px-2.5 py-1 text-xs font-medium text-indigo-400"
+          >
+            <span aria-hidden="true">&#x1F687;</span>
+            Subway indicator light
+          </span>
+          <span className="flex-1" />
+          <Settings className="h-3.5 w-3.5 text-indigo-400 opacity-60" />
+        </Link>
+      )}
+      {usage.indicatorRole === 'weather' && (
+        <Link
+          to="/settings"
+          className="flex min-h-[44px] items-center gap-2 rounded-lg px-2 -mx-2 transition-colors hover:bg-amber-500/10"
+        >
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-400"
+          >
+            <span aria-hidden="true">&#x1F324;&#xFE0F;</span>
+            Weather indicator light
+          </span>
+          <span className="flex-1" />
+          <Settings className="h-3.5 w-3.5 text-amber-400 opacity-60" />
+        </Link>
+      )}
+    </div>
   )
 }
 
@@ -179,6 +285,8 @@ function LightCard({ device }: { device: UnifiedDevice }) {
           </div>
         </div>
       )}
+
+      {expanded && <LightUsagePanel lightId={light.id} roomName={device.roomName} />}
     </div>
   )
 }
