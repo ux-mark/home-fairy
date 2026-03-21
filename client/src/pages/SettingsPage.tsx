@@ -688,7 +688,6 @@ function SubwaySection() {
 
                 {/* Walk time stepper */}
                 <div className="flex flex-col items-center gap-0.5 flex-shrink-0">
-                <span className="text-caption text-[10px]">Walk</span>
                 <div className="flex items-center gap-1">
                   <button
                     onClick={() => handleWalkTimeChange(index, -1)}
@@ -712,6 +711,7 @@ function SubwaySection() {
                     <Plus className="h-3.5 w-3.5" />
                   </button>
                 </div>
+                <span className="text-caption text-[10px]">walk</span>
                 </div>
 
                 {/* Toggle + Delete */}
