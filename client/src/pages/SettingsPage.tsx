@@ -568,6 +568,16 @@ function SubwaySection() {
   const [addDirection, setAddDirection] = useState<'N' | 'S'>('S')
   const [addWalkTime, setAddWalkTime] = useState(5)
 
+  const { data: prefs } = useQuery({
+    queryKey: ['system', 'preferences'],
+    queryFn: api.system.getPreferences,
+  })
+
+  const prefMutation = useMutation({
+    mutationFn: (data: { key: string; value: string }) => api.system.setPreference(data.key, data.value),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['system', 'preferences'] }),
+  })
+
   const { data: configuredStops = [] } = useQuery({
     queryKey: ['mta', 'configured'],
     queryFn: api.system.getMtaConfigured,
