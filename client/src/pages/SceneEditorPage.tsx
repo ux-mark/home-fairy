@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -6,7 +6,6 @@ import {
   Save,
   Eye,
   EyeOff,
-  Plus,
   X,
   Power,
   Trash2,
@@ -14,6 +13,10 @@ import {
   Search,
   Copy,
   AlertTriangle,
+  ToggleLeft,
+  Zap,
+  Timer,
+  Link2,
 } from 'lucide-react'
 import * as Tabs from '@radix-ui/react-tabs'
 import * as Switch from '@radix-ui/react-switch'
@@ -22,14 +25,27 @@ import type {
   Scene,
   SceneCommand,
   SceneRoom,
-  Room,
   LightRoom,
-  Light,
+  DeviceRoomAssignment,
 } from '@/lib/api'
 import { cn, hsbToHex, kelvinToHex, debounce, DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import ColorBrightnessPicker from '@/components/ui/ColorBrightnessPicker'
-import SceneCommandCard from '@/components/ui/SceneCommandCard'
+
+// ── Fairy device patterns ────────────────────────────────────────────────────
+
+const FAIRY_PATTERNS = [
+  'Morning',
+  'Evening',
+  'Night',
+  'Rainbow x4',
+  'Rainbow x2',
+  'Warm White',
+  'Cool White',
+  'Party',
+  'Relax',
+  'Off',
+]
 
 // ── Types for light state within the editor ──────────────────────────────────
 
@@ -63,12 +79,10 @@ function LightEditorCard({
   const [expanded, setExpanded] = useState(false)
   const isOn = state.power === 'on'
 
-  // Preview colour — 40px circle
   const previewHex = state.hasColor
     ? hsbToHex(state.hue, state.saturation / 100, state.brightness / 100)
     : kelvinToHex(state.kelvin)
 
-  // Debounced live change for API calls
   const debouncedApiCall = useMemo(() => {
     return debounce(
       (update: { color?: { h: number; s: number; l: number }; kelvin?: number; brightness?: number }) => {
@@ -104,16 +118,14 @@ function LightEditorCard({
   )
 
   return (
-    <div className="rounded-xl card border transition-colors">
-      {/* Header row - always visible */}
+    <div className="rounded-xl border border-slate-800 bg-slate-900 transition-colors">
       <button
         onClick={() => setExpanded(!expanded)}
         className="flex w-full items-center gap-3 p-4 text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-fairy-500"
       >
-        {/* Large colour preview circle (40px) */}
         <div
           className={cn(
-            'h-10 w-10 shrink-0 rounded-full border-2 border-[var(--border-secondary)]',
+            'h-10 w-10 shrink-0 rounded-full border-2 border-slate-700',
             !isOn && 'opacity-30',
           )}
           style={{
@@ -123,16 +135,13 @@ function LightEditorCard({
           aria-hidden="true"
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-heading">
+          <p className="truncate text-sm font-medium text-slate-200">
             {state.label}
           </p>
-          <p className="text-xs text-caption">
-            {isOn
-              ? `${state.brightness}% brightness`
-              : 'Off'}
+          <p className="text-xs text-slate-500">
+            {isOn ? `${state.brightness}% brightness` : 'Off'}
           </p>
         </div>
-        {/* Power toggle (stop propagation) */}
         <button
           onClick={e => {
             e.stopPropagation()
@@ -148,7 +157,7 @@ function LightEditorCard({
             'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
             isOn
               ? 'bg-fairy-500/15 text-fairy-400'
-              : 'text-caption hover:surface',
+              : 'text-slate-500 hover:bg-slate-800',
           )}
           aria-label={`Turn ${state.label} ${isOn ? 'off' : 'on'}`}
         >
@@ -156,15 +165,13 @@ function LightEditorCard({
         </button>
       </button>
 
-      {/* Expanded colour/brightness controls */}
       {expanded && isOn && (
-        <div className="border-t border-[var(--border-primary)] p-4">
-          {/* Live preview toggle with warning */}
+        <div className="border-t border-slate-800 p-4">
           <div className="mb-4 space-y-2">
             <div className="flex items-center justify-between">
               <label
                 htmlFor={`live-${state.lightId}`}
-                className="flex items-center gap-2 text-xs font-medium text-body"
+                className="flex items-center gap-2 text-xs font-medium text-slate-400"
               >
                 {livePreview ? (
                   <Eye className="h-3.5 w-3.5 text-fairy-400" />
@@ -201,7 +208,7 @@ function LightEditorCard({
 
           <ColorBrightnessPicker
             hasColor={state.hasColor}
-            color={{ h: state.hue, s: state.saturation, v: state.brightness }}
+            color={{ h: state.hue, s: state.saturation, l: 50 }}
             kelvin={state.kelvin}
             brightness={state.brightness}
             minKelvin={state.minKelvin}
@@ -219,6 +226,208 @@ function LightEditorCard({
             }}
             onLiveChange={handleLiveChange}
           />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Device card for switches/Twinkly ─────────────────────────────────────────
+
+function DeviceToggleCard({
+  label,
+  isOn,
+  onToggle,
+  isDimmer,
+  level,
+  onLevelChange,
+}: {
+  label: string
+  isOn: boolean
+  onToggle: (on: boolean) => void
+  isDimmer?: boolean
+  level?: number
+  onLevelChange?: (level: number) => void
+}) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-slate-200">{label}</p>
+          <p className="text-xs text-slate-500">
+            {isOn ? (isDimmer && level !== undefined ? `On at ${level}%` : 'On') : 'Off'}
+          </p>
+        </div>
+        <Switch.Root
+          checked={isOn}
+          onCheckedChange={onToggle}
+          className={cn(
+            'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            isOn ? 'bg-fairy-500' : 'bg-slate-700',
+          )}
+        >
+          <Switch.Thumb
+            className={cn(
+              'block h-5 w-5 rounded-full bg-white shadow transition-transform',
+              isOn ? 'translate-x-6' : 'translate-x-1',
+            )}
+          />
+        </Switch.Root>
+      </div>
+      {isOn && isDimmer && onLevelChange && (
+        <div className="mt-3 pt-3 border-t border-slate-800">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs text-slate-400">Level</span>
+            <span className="text-xs font-medium text-slate-300">{level ?? 100}%</span>
+          </div>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={level ?? 100}
+            onChange={e => onLevelChange(Number(e.target.value))}
+            className="fairy-slider w-full"
+            aria-label={`${label} brightness level`}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Fairy device card ────────────────────────────────────────────────────────
+
+function FairyDeviceCard({
+  label,
+  isOn,
+  pattern,
+  brightness,
+  onToggle,
+  onPatternChange,
+  onBrightnessChange,
+}: {
+  label: string
+  isOn: boolean
+  pattern: string
+  brightness: number
+  onToggle: (on: boolean) => void
+  onPatternChange: (pattern: string) => void
+  onBrightnessChange: (brightness: number) => void
+}) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-slate-200">{label}</p>
+          <p className="text-xs text-slate-500">
+            {isOn ? `${pattern} at ${brightness}%` : 'Off'}
+          </p>
+        </div>
+        <Switch.Root
+          checked={isOn}
+          onCheckedChange={onToggle}
+          className={cn(
+            'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            isOn ? 'bg-fairy-500' : 'bg-slate-700',
+          )}
+        >
+          <Switch.Thumb
+            className={cn(
+              'block h-5 w-5 rounded-full bg-white shadow transition-transform',
+              isOn ? 'translate-x-6' : 'translate-x-1',
+            )}
+          />
+        </Switch.Root>
+      </div>
+      {isOn && (
+        <div className="mt-3 space-y-3 pt-3 border-t border-slate-800">
+          <div>
+            <label className="mb-1.5 block text-xs text-slate-400">Pattern</label>
+            <select
+              value={pattern}
+              onChange={e => onPatternChange(e.target.value)}
+              className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            >
+              {FAIRY_PATTERNS.map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs text-slate-400">Brightness</span>
+              <span className="text-xs font-medium text-slate-300">{brightness}%</span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={brightness}
+              onChange={e => onBrightnessChange(Number(e.target.value))}
+              className="fairy-slider w-full"
+              aria-label={`${label} brightness`}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Toggle-to-reveal option card ─────────────────────────────────────────────
+
+function OptionToggle({
+  label,
+  description,
+  enabled,
+  onToggle,
+  children,
+  icon: Icon,
+}: {
+  label: string
+  description: string
+  enabled: boolean
+  onToggle: (on: boolean) => void
+  children?: React.ReactNode
+  icon?: React.ComponentType<{ className?: string }>
+}) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <div className="flex items-center gap-3">
+        {Icon && (
+          <div className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+            enabled ? 'bg-fairy-500/15 text-fairy-400' : 'bg-slate-800 text-slate-500',
+          )}>
+            <Icon className="h-4 w-4" />
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-slate-200">{label}</p>
+          <p className="text-xs text-slate-500">{description}</p>
+        </div>
+        <Switch.Root
+          checked={enabled}
+          onCheckedChange={onToggle}
+          className={cn(
+            'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            enabled ? 'bg-fairy-500' : 'bg-slate-700',
+          )}
+        >
+          <Switch.Thumb
+            className={cn(
+              'block h-5 w-5 rounded-full bg-white shadow transition-transform',
+              enabled ? 'translate-x-6' : 'translate-x-1',
+            )}
+          />
+        </Switch.Root>
+      </div>
+      {enabled && children && (
+        <div className="mt-3 pt-3 border-t border-slate-800">
+          {children}
         </div>
       )}
     </div>
@@ -261,6 +470,11 @@ export default function SceneEditorPage() {
     queryFn: api.system.getCurrent,
   })
 
+  const { data: allScenes } = useQuery({
+    queryKey: ['scenes'],
+    queryFn: api.scenes.getAll,
+  })
+
   const availableModes = systemCurrent?.all_modes ?? [...DEFAULT_MODES]
 
   // ── Form state ───────────────────────────────────────────────────────────
@@ -269,7 +483,6 @@ export default function SceneEditorPage() {
   const [icon, setIcon] = useState('')
   const [sceneRooms, setSceneRooms] = useState<SceneRoom[]>([])
   const [modes, setModes] = useState<string[]>([])
-  const [commands, setCommands] = useState<SceneCommand[]>([])
   const [tags, setTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
   const [lightStates, setLightStates] = useState<Map<string, LightEditorState>>(
@@ -281,25 +494,99 @@ export default function SceneEditorPage() {
   const [initialized, setInitialized] = useState(false)
   const [lightSearch, setLightSearch] = useState('')
 
+  // Device tab state
+  const [deviceCommands, setDeviceCommands] = useState<SceneCommand[]>([])
+
+  // Settings tab option state
+  const [allOffEnabled, setAllOffEnabled] = useState(false)
+  const [modeChangeEnabled, setModeChangeEnabled] = useState(false)
+  const [modeChangeTarget, setModeChangeTarget] = useState('')
+  const [sceneTimerEnabled, setSceneTimerEnabled] = useState(false)
+  const [sceneTimerTarget, setSceneTimerTarget] = useState('')
+  const [sceneTimerDuration, setSceneTimerDuration] = useState(300)
+  const [chainSceneEnabled, setChainSceneEnabled] = useState(false)
+  const [chainSceneTarget, setChainSceneTarget] = useState('')
+
+  // Hub devices for rooms
+  const [roomDevices, setRoomDevices] = useState<Map<string, DeviceRoomAssignment[]>>(new Map())
+
+  // Fetch devices when rooms change
+  useEffect(() => {
+    if (sceneRooms.length === 0) {
+      setRoomDevices(new Map())
+      return
+    }
+
+    let cancelled = false
+    const fetchDevices = async () => {
+      const newMap = new Map<string, DeviceRoomAssignment[]>()
+      for (const room of sceneRooms) {
+        try {
+          const devices = await api.hubitat.getDevicesForRoom(room.name)
+          if (!cancelled) {
+            newMap.set(room.name, devices)
+          }
+        } catch {
+          if (!cancelled) {
+            newMap.set(room.name, [])
+          }
+        }
+      }
+      if (!cancelled) {
+        setRoomDevices(newMap)
+      }
+    }
+    fetchDevices()
+    return () => { cancelled = true }
+  }, [sceneRooms])
+
   // Initialize state from scene data
   useEffect(() => {
     if (scene && !initialized) {
       setSceneName(scene.name)
       setIcon(scene.icon ?? '')
-      // Filter out malformed room entries (e.g. entries with no name)
       const validRooms = (Array.isArray(scene.rooms) ? scene.rooms : []).filter(
         (r): r is SceneRoom => !!r && typeof r.name === 'string' && r.name.length > 0,
       )
       setSceneRooms(validRooms)
       setModes(Array.isArray(scene.modes) ? scene.modes : [])
-      setCommands(Array.isArray(scene.commands) ? scene.commands : [])
       setTags(Array.isArray(scene.tags) ? scene.tags : [])
+
+      const cmds = Array.isArray(scene.commands) ? scene.commands : []
+
+      // Route device commands
+      setDeviceCommands(
+        cmds.filter(c =>
+          c.type === 'hubitat_device' || c.type === 'twinkly' || c.type === 'fairy_device',
+        ),
+      )
+
+      // Route settings option commands
+      setAllOffEnabled(cmds.some(c => c.type === 'all_off'))
+
+      const modeCmd = cmds.find(c => c.type === 'mode_update')
+      if (modeCmd) {
+        setModeChangeEnabled(true)
+        setModeChangeTarget(modeCmd.name || '')
+      }
+
+      const timerCmd = cmds.find(c => c.type === 'scene_timer')
+      if (timerCmd) {
+        setSceneTimerEnabled(true)
+        setSceneTimerTarget(timerCmd.command || '')
+        setSceneTimerDuration(timerCmd.duration ?? 300)
+      }
+
+      const chainCmd = cmds.find(c => c.type === 'fairy_scene')
+      if (chainCmd) {
+        setChainSceneEnabled(true)
+        setChainSceneTarget(chainCmd.name || '')
+      }
 
       // Build light states from commands
       const states = new Map<string, LightEditorState>()
-      for (const cmd of scene.commands) {
+      for (const cmd of cmds) {
         if (cmd.type === 'lifx_light' && cmd.light_id) {
-          // Parse the color string
           let hue = 0, sat = 0, kelvin = 3500
           if (cmd.color) {
             const hueMatch = cmd.color.match(/hue:([\d.]+)/)
@@ -310,10 +597,7 @@ export default function SceneEditorPage() {
             if (kelvinMatch) kelvin = parseInt(kelvinMatch[1])
           }
 
-          // Find the light assignment for capabilities
-          const assignment = allAssignments?.find(
-            a => a.light_id === cmd.light_id,
-          )
+          const assignment = allAssignments?.find(a => a.light_id === cmd.light_id)
 
           states.set(cmd.light_id, {
             lightId: cmd.light_id,
@@ -337,7 +621,6 @@ export default function SceneEditorPage() {
 
   // ── Derived data ─────────────────────────────────────────────────────────
 
-  // Lights grouped by room for the scene's rooms
   const roomLightsMap = useMemo(() => {
     const map = new Map<string, LightRoom[]>()
     if (!allAssignments) return map
@@ -355,9 +638,7 @@ export default function SceneEditorPage() {
       const next = new Map(prev)
       let changed = false
       for (const room of sceneRooms) {
-        const roomLights = allAssignments.filter(
-          a => a.room_name === room.name,
-        )
+        const roomLights = allAssignments.filter(a => a.room_name === room.name)
         for (const rl of roomLights) {
           if (!next.has(rl.light_id)) {
             const live = allLights.find(l => l.id === rl.light_id)
@@ -382,14 +663,35 @@ export default function SceneEditorPage() {
     })
   }, [sceneRooms, allAssignments, allLights])
 
-  // ── Mutations ────────────────────────────────────────────────────────────
+  // Categorize room devices
+  const categorizedDevices = useMemo(() => {
+    const switches: Array<DeviceRoomAssignment & { roomName: string }> = []
+    const twinkly: Array<DeviceRoomAssignment & { roomName: string }> = []
+    const fairy: Array<DeviceRoomAssignment & { roomName: string }> = []
+
+    for (const [roomName, devices] of roomDevices) {
+      for (const device of devices) {
+        const dt = device.device_type.toLowerCase()
+        if (dt.includes('twinkly')) {
+          twinkly.push({ ...device, roomName })
+        } else if (dt.includes('fairy')) {
+          fairy.push({ ...device, roomName })
+        } else {
+          switches.push({ ...device, roomName })
+        }
+      }
+    }
+
+    return { switches, twinkly, fairy }
+  }, [roomDevices])
+
+  // ── Mutations ──────────────────────────────────────────────────────────
 
   const saveMutation = useMutation({
     mutationFn: () => {
-      // Build commands from light states + existing non-light commands
+      // Build commands from light states
       const lightCommands: SceneCommand[] = []
       for (const [, ls] of lightStates) {
-        // Only include lights in rooms that are still part of the scene
         const inScene = sceneRooms.some(r => {
           const rl = allAssignments?.find(
             a => a.room_name === r.name && a.light_id === ls.lightId,
@@ -412,8 +714,27 @@ export default function SceneEditorPage() {
         })
       }
 
-      const nonLightCommands = commands.filter(c => c.type !== 'lifx_light')
-      const allCommands = [...lightCommands, ...nonLightCommands]
+      // Build option commands from settings state
+      const optionCommands: SceneCommand[] = []
+      if (allOffEnabled) {
+        optionCommands.push({ type: 'all_off', name: 'all_off' })
+      }
+      if (modeChangeEnabled && modeChangeTarget) {
+        optionCommands.push({ type: 'mode_update', name: modeChangeTarget })
+      }
+      if (sceneTimerEnabled && sceneTimerTarget) {
+        optionCommands.push({
+          type: 'scene_timer',
+          name: 'timer',
+          command: sceneTimerTarget,
+          duration: sceneTimerDuration,
+        })
+      }
+      if (chainSceneEnabled && chainSceneTarget) {
+        optionCommands.push({ type: 'fairy_scene', name: chainSceneTarget })
+      }
+
+      const allCommands = [...lightCommands, ...deviceCommands, ...optionCommands]
 
       const data: Partial<Scene> = {
         name: sceneName,
@@ -444,7 +765,7 @@ export default function SceneEditorPage() {
       toast({ message: 'Failed to delete scene', type: 'error' }),
   })
 
-  // ── Handlers ─────────────────────────────────────────────────────────────
+  // ── Handlers ───────────────────────────────────────────────────────────
 
   const handleLightStateChange = useCallback(
     (lightId: string, updated: LightEditorState) => {
@@ -497,27 +818,9 @@ export default function SceneEditorPage() {
     }
   }
 
-  const handleAddCommand = () => {
-    setCommands([
-      ...commands,
-      { type: 'all_off', name: '' },
-    ])
-  }
-
-  const handleCommandChange = (index: number, command: SceneCommand) => {
-    const updated = [...commands]
-    updated[index] = command
-    setCommands(updated)
-  }
-
-  const handleCommandDelete = (index: number) => {
-    setCommands(commands.filter((_, i) => i !== index))
-  }
-
   const handleApplyToAllInRoom = (roomName: string) => {
     const roomLights = roomLightsMap.get(roomName) ?? []
     if (roomLights.length === 0) return
-    // Use the first light's state as template
     const first = lightStates.get(roomLights[0].light_id)
     if (!first) return
     setLightStates(prev => {
@@ -539,7 +842,114 @@ export default function SceneEditorPage() {
     })
   }
 
-  // Filter lights within a room by search
+  // Device command helpers
+  const handleSwitchToggle = useCallback(
+    (device: DeviceRoomAssignment, on: boolean) => {
+      setDeviceCommands(prev => {
+        const filtered = prev.filter(
+          c => !(c.type === 'hubitat_device' && c.id === String(device.device_id)),
+        )
+        if (on) {
+          return [
+            ...filtered,
+            {
+              type: 'hubitat_device' as const,
+              name: device.device_label,
+              id: String(device.device_id),
+              command: 'on',
+            },
+          ]
+        }
+        return filtered
+      })
+    },
+    [],
+  )
+
+  const handleSwitchLevel = useCallback(
+    (device: DeviceRoomAssignment, level: number) => {
+      setDeviceCommands(prev =>
+        prev.map(c =>
+          c.type === 'hubitat_device' && c.id === String(device.device_id)
+            ? { ...c, command: 'on', brightness: level / 100 }
+            : c,
+        ),
+      )
+    },
+    [],
+  )
+
+  const handleTwinklyToggle = useCallback(
+    (device: DeviceRoomAssignment, on: boolean) => {
+      setDeviceCommands(prev => {
+        const filtered = prev.filter(
+          c => !(c.type === 'twinkly' && c.name === device.device_label),
+        )
+        if (on) {
+          return [
+            ...filtered,
+            {
+              type: 'twinkly' as const,
+              name: device.device_label,
+              command: 'on',
+            },
+          ]
+        }
+        return filtered
+      })
+    },
+    [],
+  )
+
+  const handleFairyToggle = useCallback(
+    (device: DeviceRoomAssignment, on: boolean) => {
+      setDeviceCommands(prev => {
+        const filtered = prev.filter(
+          c => !(c.type === 'fairy_device' && c.name === device.device_label),
+        )
+        if (on) {
+          return [
+            ...filtered,
+            {
+              type: 'fairy_device' as const,
+              name: device.device_label,
+              command: 'Morning',
+              id: '100',
+            },
+          ]
+        }
+        return filtered
+      })
+    },
+    [],
+  )
+
+  const handleFairyPatternChange = useCallback(
+    (device: DeviceRoomAssignment, pattern: string) => {
+      setDeviceCommands(prev =>
+        prev.map(c =>
+          c.type === 'fairy_device' && c.name === device.device_label
+            ? { ...c, command: pattern }
+            : c,
+        ),
+      )
+    },
+    [],
+  )
+
+  const handleFairyBrightnessChange = useCallback(
+    (device: DeviceRoomAssignment, brightness: number) => {
+      setDeviceCommands(prev =>
+        prev.map(c =>
+          c.type === 'fairy_device' && c.name === device.device_label
+            ? { ...c, id: String(brightness) }
+            : c,
+        ),
+      )
+    },
+    [],
+  )
+
   const filterRoomLights = useCallback(
     (roomLights: LightRoom[]) => {
       if (!lightSearch.trim()) return roomLights
@@ -551,14 +961,23 @@ export default function SceneEditorPage() {
     [lightSearch],
   )
 
+  // ── Tab trigger style ───────────────────────────────────────────────────
+
+  const tabTriggerClass = cn(
+    'min-h-[44px] flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
+    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+    'data-[state=active]:bg-fairy-500 data-[state=active]:text-white',
+    'data-[state=inactive]:text-slate-400 data-[state=inactive]:hover:text-slate-200',
+  )
+
   // ── Loading / Not found ──────────────────────────────────────────────────
 
   if (sceneLoading) {
     return (
       <div className="space-y-4">
-        <div className="h-6 w-32 animate-pulse rounded surface" />
-        <div className="h-12 animate-pulse rounded-xl surface" />
-        <div className="h-64 animate-pulse rounded-xl surface" />
+        <div className="h-6 w-32 animate-pulse rounded bg-slate-800" />
+        <div className="h-12 animate-pulse rounded-xl bg-slate-800" />
+        <div className="h-64 animate-pulse rounded-xl bg-slate-800" />
       </div>
     )
   }
@@ -566,7 +985,7 @@ export default function SceneEditorPage() {
   if (!scene) {
     return (
       <div className="py-12 text-center">
-        <p className="text-body">Scene not found.</p>
+        <p className="text-slate-400">Scene not found.</p>
         <Link
           to="/scenes"
           className="mt-2 inline-block text-sm text-fairy-400 hover:underline"
@@ -577,6 +996,15 @@ export default function SceneEditorPage() {
     )
   }
 
+  // ── Helpers for device tab ──────────────────────────────────────────────
+
+  const totalDevices =
+    categorizedDevices.switches.length +
+    categorizedDevices.twinkly.length +
+    categorizedDevices.fairy.length
+
+  const otherScenes = allScenes?.filter(s => s.name !== name) ?? []
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -584,7 +1012,7 @@ export default function SceneEditorPage() {
       {/* Back link */}
       <Link
         to="/scenes"
-        className="mb-4 inline-flex items-center gap-1.5 text-sm text-body transition-colors hover:text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        className="mb-4 inline-flex items-center gap-1.5 text-sm text-slate-400 transition-colors hover:text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
       >
         <ArrowLeft className="h-4 w-4" />
         All Scenes
@@ -599,7 +1027,7 @@ export default function SceneEditorPage() {
             onChange={e => setIcon(e.target.value)}
             placeholder="Icon"
             maxLength={4}
-            className="h-12 w-14 shrink-0 rounded-xl border border-[var(--border-secondary)] surface text-center text-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            className="h-12 w-14 shrink-0 rounded-xl border border-slate-700 bg-slate-800 text-center text-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
             aria-label="Scene icon (emoji or text)"
           />
           <input
@@ -607,72 +1035,48 @@ export default function SceneEditorPage() {
             value={sceneName}
             onChange={e => setSceneName(e.target.value)}
             placeholder="Scene name"
-            className="h-12 min-w-0 flex-1 rounded-xl border border-[var(--border-secondary)] surface px-4 text-lg font-semibold text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            className="h-12 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-800 px-4 text-lg font-semibold text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           />
         </div>
       </section>
 
       {/* ── Tabs ──────────────────────────────────────────────────────────── */}
       <Tabs.Root defaultValue="lights" className="space-y-4">
-        <Tabs.List className="flex gap-1 overflow-x-auto rounded-xl card p-1">
-          <Tabs.Trigger
-            value="lights"
-            className={cn(
-              'min-h-[44px] flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              'data-[state=active]:bg-fairy-500 data-[state=active]:text-white',
-              'data-[state=inactive]:text-body data-[state=inactive]:hover:text-heading',
-            )}
-          >
+        <Tabs.List className="flex gap-1 overflow-x-auto rounded-xl bg-slate-900 p-1">
+          <Tabs.Trigger value="lights" className={tabTriggerClass}>
             Lights
           </Tabs.Trigger>
-          <Tabs.Trigger
-            value="rooms"
-            className={cn(
-              'min-h-[44px] flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              'data-[state=active]:bg-fairy-500 data-[state=active]:text-white',
-              'data-[state=inactive]:text-body data-[state=inactive]:hover:text-heading',
-            )}
-          >
-            Rooms & Modes
+          <Tabs.Trigger value="devices" className={tabTriggerClass}>
+            Devices
           </Tabs.Trigger>
-          <Tabs.Trigger
-            value="advanced"
-            className={cn(
-              'min-h-[44px] flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              'data-[state=active]:bg-fairy-500 data-[state=active]:text-white',
-              'data-[state=inactive]:text-body data-[state=inactive]:hover:text-heading',
-            )}
-          >
-            Advanced
+          <Tabs.Trigger value="settings" className={tabTriggerClass}>
+            Settings
           </Tabs.Trigger>
         </Tabs.List>
 
         {/* ── Tab 1: Lights ─────────────────────────────────────────────── */}
         <Tabs.Content value="lights" className="space-y-6">
           {sceneRooms.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-[var(--border-secondary)] py-8 text-center">
+            <div className="rounded-xl border border-dashed border-slate-700 py-8 text-center">
               <Lightbulb className="mx-auto mb-2 h-8 w-8 text-slate-600" />
-              <p className="text-sm text-body">
+              <p className="text-sm text-slate-400">
                 No rooms added to this scene yet.
               </p>
-              <p className="mt-1 text-xs text-caption">
-                Go to the "Rooms & Modes" tab to add rooms first.
+              <p className="mt-1 text-xs text-slate-500">
+                Go to the Settings tab to add rooms first.
               </p>
             </div>
           ) : (
             <>
-              {/* Search/filter at top */}
+              {/* Search/filter */}
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-caption" />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
                 <input
                   type="search"
                   placeholder="Search lights by name..."
                   value={lightSearch}
                   onChange={e => setLightSearch(e.target.value)}
-                  className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface pl-10 pr-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 pl-10 pr-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                 />
               </div>
 
@@ -682,12 +1086,11 @@ export default function SceneEditorPage() {
 
                 return (
                   <div key={sceneRoom.name}>
-                    {/* Room heading with "Apply to all" */}
                     <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-heading">
+                      <h3 className="text-sm font-semibold text-slate-200">
                         {sceneRoom.name}
                         {roomLights.length > 0 && (
-                          <span className="ml-1.5 text-xs font-normal text-caption">
+                          <span className="ml-1.5 text-xs font-normal text-slate-500">
                             ({roomLights.length} light{roomLights.length !== 1 ? 's' : ''})
                           </span>
                         )}
@@ -704,8 +1107,8 @@ export default function SceneEditorPage() {
                     </div>
 
                     {roomLights.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center">
-                        <p className="text-xs text-caption">
+                      <div className="rounded-xl border border-dashed border-slate-700 py-6 text-center">
+                        <p className="text-xs text-slate-500">
                           No lights assigned to this room.
                         </p>
                         <Link
@@ -716,8 +1119,8 @@ export default function SceneEditorPage() {
                         </Link>
                       </div>
                     ) : filteredLights.length === 0 ? (
-                      <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
-                        No lights match "{lightSearch}" in this room.
+                      <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                        No lights match &quot;{lightSearch}&quot; in this room.
                       </p>
                     ) : (
                       <div className="space-y-3">
@@ -747,11 +1150,124 @@ export default function SceneEditorPage() {
           )}
         </Tabs.Content>
 
-        {/* ── Tab 2: Rooms & Modes ──────────────────────────────────────── */}
-        <Tabs.Content value="rooms" className="space-y-6">
+        {/* ── Tab 2: Devices ─────────────────────────────────────────────── */}
+        <Tabs.Content value="devices" className="space-y-6">
+          {sceneRooms.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-700 py-8 text-center">
+              <ToggleLeft className="mx-auto mb-2 h-8 w-8 text-slate-600" />
+              <p className="text-sm text-slate-400">
+                Add rooms in the Settings tab to see available devices.
+              </p>
+            </div>
+          ) : totalDevices === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-700 py-8 text-center">
+              <ToggleLeft className="mx-auto mb-2 h-8 w-8 text-slate-600" />
+              <p className="text-sm text-slate-400">
+                No switches or devices assigned to these rooms.
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Assign devices to rooms from the room detail page.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Switches section */}
+              {categorizedDevices.switches.length > 0 && (
+                <section>
+                  <h3 className="mb-3 text-sm font-medium text-slate-400">
+                    Switches &amp; Hub Devices
+                  </h3>
+                  <div className="space-y-3">
+                    {categorizedDevices.switches.map(device => {
+                      const cmd = deviceCommands.find(
+                        c => c.type === 'hubitat_device' && c.id === String(device.device_id),
+                      )
+                      const isOn = !!cmd
+                      const isDimmer = device.device_type.toLowerCase().includes('dimmer')
+                      const level = cmd?.brightness !== undefined
+                        ? Math.round(cmd.brightness * 100)
+                        : 100
+
+                      return (
+                        <DeviceToggleCard
+                          key={`switch-${device.device_id}`}
+                          label={device.device_label}
+                          isOn={isOn}
+                          onToggle={on => handleSwitchToggle(device, on)}
+                          isDimmer={isDimmer}
+                          level={level}
+                          onLevelChange={l => handleSwitchLevel(device, l)}
+                        />
+                      )
+                    })}
+                  </div>
+                </section>
+              )}
+
+              {/* Twinkly section */}
+              {categorizedDevices.twinkly.length > 0 && (
+                <section>
+                  <h3 className="mb-3 text-sm font-medium text-slate-400">
+                    Twinkly Lights
+                  </h3>
+                  <div className="space-y-3">
+                    {categorizedDevices.twinkly.map(device => {
+                      const cmd = deviceCommands.find(
+                        c => c.type === 'twinkly' && c.name === device.device_label,
+                      )
+                      return (
+                        <DeviceToggleCard
+                          key={`twinkly-${device.device_id}`}
+                          label={device.device_label}
+                          isOn={!!cmd}
+                          onToggle={on => handleTwinklyToggle(device, on)}
+                        />
+                      )
+                    })}
+                  </div>
+                </section>
+              )}
+
+              {/* Fairy Devices section */}
+              {categorizedDevices.fairy.length > 0 && (
+                <section>
+                  <h3 className="mb-3 text-sm font-medium text-slate-400">
+                    Fairy Devices
+                  </h3>
+                  <div className="space-y-3">
+                    {categorizedDevices.fairy.map(device => {
+                      const cmd = deviceCommands.find(
+                        c => c.type === 'fairy_device' && c.name === device.device_label,
+                      )
+                      const isOn = !!cmd
+                      const pattern = cmd?.command || 'Morning'
+                      const rawBrightness = cmd?.id ? parseInt(cmd.id, 10) : 100
+
+                      return (
+                        <FairyDeviceCard
+                          key={`fairy-${device.device_id}`}
+                          label={device.device_label}
+                          isOn={isOn}
+                          pattern={pattern}
+                          brightness={isNaN(rawBrightness) ? 100 : rawBrightness}
+                          onToggle={on => handleFairyToggle(device, on)}
+                          onPatternChange={p => handleFairyPatternChange(device, p)}
+                          onBrightnessChange={b => handleFairyBrightnessChange(device, b)}
+                        />
+                      )
+                    })}
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+        </Tabs.Content>
+
+        {/* ── Tab 3: Settings ────────────────────────────────────────────── */}
+        <Tabs.Content value="settings" className="space-y-6">
           {/* Room selection */}
           <section>
-            <h3 className="mb-3 text-sm font-medium text-body">Rooms</h3>
+            <h3 className="mb-3 text-sm font-medium text-slate-400">Rooms</h3>
             <div className="space-y-2">
               {allRooms?.map(room => {
                 const inScene = sceneRooms.find(r => r.name === room.name)
@@ -762,7 +1278,7 @@ export default function SceneEditorPage() {
                       'flex items-center gap-3 rounded-xl border p-3 transition-colors',
                       inScene
                         ? 'border-fairy-500/30 bg-fairy-500/5'
-                        : 'border-[var(--border-primary)] card',
+                        : 'border-slate-800 bg-slate-900',
                     )}
                   >
                     <button
@@ -792,12 +1308,12 @@ export default function SceneEditorPage() {
                         </svg>
                       )}
                     </button>
-                    <span className="min-w-0 flex-1 text-sm font-medium text-heading">
+                    <span className="min-w-0 flex-1 text-sm font-medium text-slate-200">
                       {room.name}
                     </span>
                     {inScene && (
                       <div className="flex items-center gap-2">
-                        <label className="text-xs text-caption">
+                        <label className="text-xs text-slate-500">
                           Priority
                         </label>
                         <input
@@ -811,7 +1327,7 @@ export default function SceneEditorPage() {
                               Number(e.target.value),
                             )
                           }
-                          className="h-9 w-16 rounded-lg border border-[var(--border-secondary)] surface px-2 text-center text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                          className="h-9 w-16 rounded-lg border border-slate-700 bg-slate-800 px-2 text-center text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                         />
                       </div>
                     )}
@@ -823,7 +1339,10 @@ export default function SceneEditorPage() {
 
           {/* Mode selection */}
           <section>
-            <h3 className="mb-3 text-sm font-medium text-body">Modes</h3>
+            <h3 className="mb-3 text-sm font-medium text-slate-400">Modes</h3>
+            <p className="mb-2 text-xs text-slate-500">
+              This scene will be available when any of these modes are active.
+            </p>
             <div className="flex flex-wrap gap-2">
               {availableModes.map(mode => {
                 const selected = modes.includes(mode)
@@ -836,7 +1355,7 @@ export default function SceneEditorPage() {
                       'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                       selected
                         ? 'bg-fairy-500 text-white'
-                        : 'surface text-body hover:text-heading',
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200',
                     )}
                   >
                     {mode}
@@ -845,53 +1364,123 @@ export default function SceneEditorPage() {
               })}
             </div>
           </section>
-        </Tabs.Content>
 
-        {/* ── Tab 3: Advanced ───────────────────────────────────────────── */}
-        <Tabs.Content value="advanced" className="space-y-6">
-          {/* Commands (non-light ones) */}
+          {/* Scene Options */}
           <section>
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-medium text-body">Commands</h3>
-              <button
-                onClick={handleAddCommand}
-                className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-fairy-400 transition-colors hover:bg-fairy-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            <h3 className="mb-3 text-sm font-medium text-slate-400">
+              Scene Options
+            </h3>
+            <div className="space-y-3">
+              <OptionToggle
+                label="All Off"
+                description="Turn off all lights when this scene activates"
+                enabled={allOffEnabled}
+                onToggle={setAllOffEnabled}
+                icon={Power}
+              />
+
+              <OptionToggle
+                label="Change Mode"
+                description="Switch to a different mode when this scene activates"
+                enabled={modeChangeEnabled}
+                onToggle={on => {
+                  setModeChangeEnabled(on)
+                  if (!on) setModeChangeTarget('')
+                }}
+                icon={Zap}
               >
-                <Plus className="h-3.5 w-3.5" />
-                Add Command
-              </button>
-            </div>
-            {commands.filter(c => c.type !== 'lifx_light').length > 0 ? (
-              <div className="space-y-3">
-                {commands.map((cmd, i) => {
-                  if (cmd.type === 'lifx_light') return null
-                  return (
-                    <SceneCommandCard
-                      key={i}
-                      command={cmd}
-                      index={i}
-                      onChange={handleCommandChange}
-                      onDelete={handleCommandDelete}
+                <select
+                  value={modeChangeTarget}
+                  onChange={e => setModeChangeTarget(e.target.value)}
+                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                >
+                  <option value="">Select a mode</option>
+                  {availableModes.map(mode => (
+                    <option key={mode} value={mode}>{mode}</option>
+                  ))}
+                </select>
+              </OptionToggle>
+
+              <OptionToggle
+                label="Scene Timer"
+                description="Activate another scene after a delay"
+                enabled={sceneTimerEnabled}
+                onToggle={on => {
+                  setSceneTimerEnabled(on)
+                  if (!on) {
+                    setSceneTimerTarget('')
+                    setSceneTimerDuration(300)
+                  }
+                }}
+                icon={Timer}
+              >
+                <div className="space-y-3">
+                  <div>
+                    <label className="mb-1.5 block text-xs text-slate-400">
+                      Switch to scene
+                    </label>
+                    <select
+                      value={sceneTimerTarget}
+                      onChange={e => setSceneTimerTarget(e.target.value)}
+                      className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                    >
+                      <option value="">Select a scene</option>
+                      {otherScenes.map(s => (
+                        <option key={s.name} value={s.name}>
+                          {s.icon ? `${s.icon} ` : ''}{s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="mb-1.5 block text-xs text-slate-400">
+                      After (seconds)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      value={sceneTimerDuration}
+                      onChange={e => setSceneTimerDuration(Number(e.target.value))}
+                      className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                     />
-                  )
-                })}
-              </div>
-            ) : (
-              <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
-                No additional commands. Light commands are managed in the Lights
-                tab.
-              </p>
-            )}
+                  </div>
+                </div>
+              </OptionToggle>
+
+              <OptionToggle
+                label="Chain Scene"
+                description="Also activate another scene at the same time"
+                enabled={chainSceneEnabled}
+                onToggle={on => {
+                  setChainSceneEnabled(on)
+                  if (!on) setChainSceneTarget('')
+                }}
+                icon={Link2}
+              >
+                <select
+                  value={chainSceneTarget}
+                  onChange={e => setChainSceneTarget(e.target.value)}
+                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                >
+                  <option value="">Select a scene</option>
+                  {otherScenes.map(s => (
+                    <option key={s.name} value={s.name}>
+                      {s.icon ? `${s.icon} ` : ''}{s.name}
+                    </option>
+                  ))}
+                </select>
+              </OptionToggle>
+            </div>
           </section>
 
           {/* Tags */}
           <section>
-            <h3 className="mb-3 text-sm font-medium text-body">Tags</h3>
+            <h3 className="mb-3 text-sm font-medium text-slate-400">Tags</h3>
             <div className="flex flex-wrap gap-2">
               {tags.map(tag => (
                 <span
                   key={tag}
-                  className="flex items-center gap-1 rounded-full surface px-2.5 py-1 text-xs font-medium text-slate-300"
+                  className="flex items-center gap-1 rounded-full bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-300"
                 >
                   {tag}
                   <button
@@ -916,12 +1505,12 @@ export default function SceneEditorPage() {
                 value={tagInput}
                 onChange={e => setTagInput(e.target.value)}
                 placeholder="Add tag"
-                className="h-11 min-w-0 flex-1 rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="h-11 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               />
               <button
                 type="submit"
                 disabled={!tagInput.trim()}
-                className="min-h-[44px] rounded-lg surface px-3 text-sm font-medium text-slate-300 transition-colors hover:bg-[var(--bg-tertiary)] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="min-h-[44px] rounded-lg bg-slate-800 px-3 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-700 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               >
                 Add
               </button>
@@ -954,11 +1543,11 @@ export default function SceneEditorPage() {
       </Tabs.Root>
 
       {/* ── Sticky save bar ───────────────────────────────────────────────── */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--border-primary)] card/95 p-4 backdrop-blur-sm md:bottom-0 md:left-56">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm md:bottom-0 md:left-56">
         <div className="mx-auto flex max-w-5xl items-center gap-3">
           <Link
             to="/scenes"
-            className="min-h-[44px] rounded-lg px-4 py-2.5 text-sm font-medium text-body transition-colors hover:text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            className="min-h-[44px] rounded-lg px-4 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           >
             Cancel
           </Link>
