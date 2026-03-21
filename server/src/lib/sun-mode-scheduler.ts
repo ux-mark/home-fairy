@@ -36,6 +36,26 @@ class SunModeScheduler {
     const now = new Date()
     const mappings = this.getMappings(sunTimes)
 
+    // Find what the current mode SHOULD be based on which transitions have passed
+    let currentShouldBe: SunModeMapping | null = null
+    for (const mapping of mappings) {
+      if (mapping.time.getTime() <= now.getTime()) {
+        currentShouldBe = mapping  // latest past transition = current mode
+      }
+    }
+
+    // If the current mode doesn't match, set it now
+    if (currentShouldBe) {
+      const currentModeRow = getOne<{ value: string }>(
+        "SELECT value FROM current_state WHERE key = 'mode'",
+      )
+      const currentMode = currentModeRow?.value
+      if (currentMode !== currentShouldBe.mode) {
+        this.transitionMode(currentShouldBe.mode, currentShouldBe.sunPhase + ' (catch-up)')
+      }
+    }
+
+    // Schedule future transitions
     for (const mapping of mappings) {
       const delay = mapping.time.getTime() - now.getTime()
       if (delay > 0) {
