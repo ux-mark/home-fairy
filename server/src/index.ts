@@ -15,6 +15,8 @@ import hubitatRoutes from './routes/hubitat.js'
 import motionRoutes from './routes/motion.js'
 import { motionHandler } from './lib/motion-handler.js'
 import { sunModeScheduler } from './lib/sun-mode-scheduler.js'
+import { timerManager } from './lib/timer-manager.js'
+import { activateScene } from './lib/scene-executor.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -111,6 +113,21 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log(`Client disconnected: ${socket.id}`)
   })
+})
+
+// Wire up scene timer expiry — activate the target scene when the timer fires
+timerManager.setOnExpire(async (targetScene, sceneName) => {
+  try {
+    console.log(`Scene timer expired: ${sceneName} -> activating ${targetScene}`)
+    run(
+      'INSERT INTO logs (message, category) VALUES (?, ?)',
+      [`Scene timer expired (${sceneName}): activating "${targetScene}"`, 'timer'],
+    )
+    await activateScene(targetScene)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.error(`Failed to activate scene from timer: ${msg}`)
+  }
 })
 
 httpServer.listen(PORT, () => {

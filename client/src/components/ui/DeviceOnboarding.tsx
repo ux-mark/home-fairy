@@ -108,10 +108,10 @@ export default function DeviceOnboarding() {
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-slate-100">
+          <p className="text-heading text-sm font-medium">
             {summary} not assigned to rooms
           </p>
-          <p className="mt-0.5 text-xs text-slate-400">
+          <p className="text-body mt-0.5 text-xs">
             Assign them to rooms so scenes and automation can control them.
           </p>
 
@@ -123,7 +123,7 @@ export default function DeviceOnboarding() {
                 className={cn(
                   'rounded-full px-2 py-0.5 text-[10px] font-medium',
                   item.type === 'light'
-                    ? 'bg-slate-800 text-slate-400'
+                    ? 'surface text-body'
                     : 'bg-blue-500/10 text-blue-400',
                 )}
               >
@@ -131,7 +131,7 @@ export default function DeviceOnboarding() {
               </span>
             ))}
             {totalCount > 3 && (
-              <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+              <span className="surface text-caption rounded-full px-2 py-0.5 text-[10px] font-medium">
                 +{totalCount - previewItems.length} more
               </span>
             )}
@@ -153,8 +153,8 @@ export default function DeviceOnboarding() {
         <button
           onClick={() => setDismissed(true)}
           className={cn(
-            'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-400',
-            'transition-colors hover:text-slate-200',
+            'text-body min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg',
+            'transition-colors hover:text-[var(--text-primary)]',
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
           )}
           aria-label="Dismiss notification"

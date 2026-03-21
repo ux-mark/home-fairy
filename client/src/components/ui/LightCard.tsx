@@ -23,7 +23,7 @@ export default function LightCard({
   return (
     <div
       className={cn(
-        'rounded-xl border border-slate-800 bg-slate-900 transition-colors',
+        'card rounded-xl border transition-colors',
         compact ? 'px-3 py-2.5' : 'p-4',
       )}
     >
@@ -45,13 +45,13 @@ export default function LightCard({
             className={cn(
               'truncate font-medium',
               compact ? 'text-sm' : 'text-base',
-              isOn ? 'text-slate-100' : 'text-slate-400',
+              isOn ? 'text-heading' : 'text-body',
             )}
           >
             {light.label}
           </p>
           {!compact && (
-            <p className="mt-0.5 truncate text-xs text-slate-500">
+            <p className="text-caption mt-0.5 truncate text-xs">
               {light.group.name}
               {isOn && ` \u00B7 ${Math.round(light.brightness * 100)}%`}
             </p>
@@ -76,7 +76,7 @@ export default function LightCard({
             {onIdentify && (
               <button
                 onClick={onIdentify}
-                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-fairy-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="text-body rounded-lg p-2 transition-colors hover:bg-[var(--bg-tertiary)] hover:text-fairy-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                 aria-label={`Identify ${light.label}`}
                 title="Flash this light"
               >
@@ -90,7 +90,7 @@ export default function LightCard({
                   'rounded-lg p-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                   isOn
                     ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
-                    : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300',
+                    : 'text-caption hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-secondary)]',
                 )}
                 aria-label={`Turn ${light.label} ${isOn ? 'off' : 'on'}`}
               >

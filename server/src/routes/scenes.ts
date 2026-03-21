@@ -28,17 +28,38 @@ interface LightRoomRow {
 }
 
 function parseScene(row: SceneRow) {
+  let rooms: unknown = []
+  let modes: unknown = []
+  let commands: unknown = []
+  let tags: unknown = []
+  try { rooms = JSON.parse(row.rooms) } catch { rooms = [] }
+  try { modes = JSON.parse(row.modes) } catch { modes = [] }
+  try { commands = JSON.parse(row.commands) } catch { commands = [] }
+  try { tags = JSON.parse(row.tags) } catch { tags = [] }
   return {
     ...row,
-    rooms: JSON.parse(row.rooms),
-    modes: JSON.parse(row.modes),
-    commands: JSON.parse(row.commands),
-    tags: JSON.parse(row.tags),
+    rooms: Array.isArray(rooms) ? rooms : [],
+    modes: Array.isArray(modes) ? modes : [],
+    commands: Array.isArray(commands) ? commands : [],
+    tags: Array.isArray(tags) ? tags : [],
   }
 }
 
 const commandSchema = z.object({
-  type: z.enum(['lifx_scene', 'lifx_light', 'all_off', 'lifx_off']),
+  type: z.enum([
+    'lifx_scene',
+    'lifx_light',
+    'all_off',
+    'lifx_off',
+    'hubitat_device',
+    'scene_timer',
+    'mode_update',
+    'lifx_effect',
+    'twinkly',
+    'fairy_device',
+    'fairy_scene',
+  ]),
+  name: z.string().optional(),
   scene_name: z.string().optional(),
   light_id: z.string().optional(),
   selector: z.string().optional(),
@@ -46,6 +67,10 @@ const commandSchema = z.object({
   brightness: z.number().min(0).max(1).optional(),
   power: z.string().optional(),
   duration: z.number().optional(),
+  command: z.string().optional(),
+  id: z.string().optional(),
+  effect: z.enum(['breathe', 'pulse', 'move']).optional(),
+  effect_params: z.record(z.unknown()).optional(),
 })
 
 const createSceneSchema = z.object({
@@ -58,6 +83,7 @@ const createSceneSchema = z.object({
 })
 
 const updateSceneSchema = z.object({
+  name: z.string().min(1).optional(),
   icon: z.string().optional(),
   rooms: z.array(z.object({ name: z.string(), priority: z.number() })).optional(),
   modes: z.array(z.string()).optional(),
@@ -142,6 +168,7 @@ router.put('/:name', (req: Request, res: Response) => {
     const fields: string[] = []
     const values: unknown[] = []
 
+    if (body.name !== undefined) { fields.push('name = ?'); values.push(body.name) }
     if (body.icon !== undefined) { fields.push('icon = ?'); values.push(body.icon) }
     if (body.rooms !== undefined) { fields.push('rooms = ?'); values.push(JSON.stringify(body.rooms)) }
     if (body.modes !== undefined) { fields.push('modes = ?'); values.push(JSON.stringify(body.modes)) }
@@ -154,7 +181,9 @@ router.put('/:name', (req: Request, res: Response) => {
       run(`UPDATE scenes SET ${fields.join(', ')} WHERE name = ?`, values)
     }
 
-    const updated = getOne<SceneRow>('SELECT * FROM scenes WHERE name = ?', [req.params.name])
+    // If name changed, query by the new name
+    const lookupName = body.name ?? req.params.name
+    const updated = getOne<SceneRow>('SELECT * FROM scenes WHERE name = ?', [lookupName])
     res.json(parseScene(updated!))
   } catch (err) {
     if (err instanceof z.ZodError) {

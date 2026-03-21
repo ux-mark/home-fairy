@@ -104,7 +104,7 @@ function LightEditorCard({
   )
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 transition-colors">
+    <div className="rounded-xl card border transition-colors">
       {/* Header row - always visible */}
       <button
         onClick={() => setExpanded(!expanded)}
@@ -113,7 +113,7 @@ function LightEditorCard({
         {/* Large colour preview circle (40px) */}
         <div
           className={cn(
-            'h-10 w-10 shrink-0 rounded-full border-2 border-slate-700',
+            'h-10 w-10 shrink-0 rounded-full border-2 border-[var(--border-secondary)]',
             !isOn && 'opacity-30',
           )}
           style={{
@@ -123,10 +123,10 @@ function LightEditorCard({
           aria-hidden="true"
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-slate-200">
+          <p className="truncate text-sm font-medium text-heading">
             {state.label}
           </p>
-          <p className="text-xs text-slate-500">
+          <p className="text-xs text-caption">
             {isOn
               ? `${state.brightness}% brightness`
               : 'Off'}
@@ -148,7 +148,7 @@ function LightEditorCard({
             'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
             isOn
               ? 'bg-fairy-500/15 text-fairy-400'
-              : 'text-slate-500 hover:bg-slate-800',
+              : 'text-caption hover:surface',
           )}
           aria-label={`Turn ${state.label} ${isOn ? 'off' : 'on'}`}
         >
@@ -158,13 +158,13 @@ function LightEditorCard({
 
       {/* Expanded colour/brightness controls */}
       {expanded && isOn && (
-        <div className="border-t border-slate-800 p-4">
+        <div className="border-t border-[var(--border-primary)] p-4">
           {/* Live preview toggle with warning */}
           <div className="mb-4 space-y-2">
             <div className="flex items-center justify-between">
               <label
                 htmlFor={`live-${state.lightId}`}
-                className="flex items-center gap-2 text-xs font-medium text-slate-400"
+                className="flex items-center gap-2 text-xs font-medium text-body"
               >
                 {livePreview ? (
                   <Eye className="h-3.5 w-3.5 text-fairy-400" />
@@ -201,7 +201,7 @@ function LightEditorCard({
 
           <ColorBrightnessPicker
             hasColor={state.hasColor}
-            color={{ h: state.hue, s: state.saturation, l: 50 }}
+            color={{ h: state.hue, s: state.saturation, v: state.brightness }}
             kelvin={state.kelvin}
             brightness={state.brightness}
             minKelvin={state.minKelvin}
@@ -285,11 +285,15 @@ export default function SceneEditorPage() {
   useEffect(() => {
     if (scene && !initialized) {
       setSceneName(scene.name)
-      setIcon(scene.icon)
-      setSceneRooms(scene.rooms)
-      setModes(scene.modes)
-      setCommands(scene.commands)
-      setTags(scene.tags)
+      setIcon(scene.icon ?? '')
+      // Filter out malformed room entries (e.g. entries with no name)
+      const validRooms = (Array.isArray(scene.rooms) ? scene.rooms : []).filter(
+        (r): r is SceneRoom => !!r && typeof r.name === 'string' && r.name.length > 0,
+      )
+      setSceneRooms(validRooms)
+      setModes(Array.isArray(scene.modes) ? scene.modes : [])
+      setCommands(Array.isArray(scene.commands) ? scene.commands : [])
+      setTags(Array.isArray(scene.tags) ? scene.tags : [])
 
       // Build light states from commands
       const states = new Map<string, LightEditorState>()
@@ -552,9 +556,9 @@ export default function SceneEditorPage() {
   if (sceneLoading) {
     return (
       <div className="space-y-4">
-        <div className="h-6 w-32 animate-pulse rounded bg-slate-800" />
-        <div className="h-12 animate-pulse rounded-xl bg-slate-800" />
-        <div className="h-64 animate-pulse rounded-xl bg-slate-800" />
+        <div className="h-6 w-32 animate-pulse rounded surface" />
+        <div className="h-12 animate-pulse rounded-xl surface" />
+        <div className="h-64 animate-pulse rounded-xl surface" />
       </div>
     )
   }
@@ -562,7 +566,7 @@ export default function SceneEditorPage() {
   if (!scene) {
     return (
       <div className="py-12 text-center">
-        <p className="text-slate-400">Scene not found.</p>
+        <p className="text-body">Scene not found.</p>
         <Link
           to="/scenes"
           className="mt-2 inline-block text-sm text-fairy-400 hover:underline"
@@ -580,7 +584,7 @@ export default function SceneEditorPage() {
       {/* Back link */}
       <Link
         to="/scenes"
-        className="mb-4 inline-flex items-center gap-1.5 text-sm text-slate-400 transition-colors hover:text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        className="mb-4 inline-flex items-center gap-1.5 text-sm text-body transition-colors hover:text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
       >
         <ArrowLeft className="h-4 w-4" />
         All Scenes
@@ -595,7 +599,7 @@ export default function SceneEditorPage() {
             onChange={e => setIcon(e.target.value)}
             placeholder="Icon"
             maxLength={4}
-            className="h-12 w-14 shrink-0 rounded-xl border border-slate-700 bg-slate-800 text-center text-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            className="h-12 w-14 shrink-0 rounded-xl border border-[var(--border-secondary)] surface text-center text-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
             aria-label="Scene icon (emoji or text)"
           />
           <input
@@ -603,21 +607,21 @@ export default function SceneEditorPage() {
             value={sceneName}
             onChange={e => setSceneName(e.target.value)}
             placeholder="Scene name"
-            className="h-12 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-800 px-4 text-lg font-semibold text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            className="h-12 min-w-0 flex-1 rounded-xl border border-[var(--border-secondary)] surface px-4 text-lg font-semibold text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           />
         </div>
       </section>
 
       {/* ── Tabs ──────────────────────────────────────────────────────────── */}
       <Tabs.Root defaultValue="lights" className="space-y-4">
-        <Tabs.List className="flex gap-1 overflow-x-auto rounded-xl bg-slate-900 p-1">
+        <Tabs.List className="flex gap-1 overflow-x-auto rounded-xl card p-1">
           <Tabs.Trigger
             value="lights"
             className={cn(
               'min-h-[44px] flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               'data-[state=active]:bg-fairy-500 data-[state=active]:text-white',
-              'data-[state=inactive]:text-slate-400 data-[state=inactive]:hover:text-slate-200',
+              'data-[state=inactive]:text-body data-[state=inactive]:hover:text-heading',
             )}
           >
             Lights
@@ -628,7 +632,7 @@ export default function SceneEditorPage() {
               'min-h-[44px] flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               'data-[state=active]:bg-fairy-500 data-[state=active]:text-white',
-              'data-[state=inactive]:text-slate-400 data-[state=inactive]:hover:text-slate-200',
+              'data-[state=inactive]:text-body data-[state=inactive]:hover:text-heading',
             )}
           >
             Rooms & Modes
@@ -639,7 +643,7 @@ export default function SceneEditorPage() {
               'min-h-[44px] flex-1 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               'data-[state=active]:bg-fairy-500 data-[state=active]:text-white',
-              'data-[state=inactive]:text-slate-400 data-[state=inactive]:hover:text-slate-200',
+              'data-[state=inactive]:text-body data-[state=inactive]:hover:text-heading',
             )}
           >
             Advanced
@@ -649,12 +653,12 @@ export default function SceneEditorPage() {
         {/* ── Tab 1: Lights ─────────────────────────────────────────────── */}
         <Tabs.Content value="lights" className="space-y-6">
           {sceneRooms.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-700 py-8 text-center">
+            <div className="rounded-xl border border-dashed border-[var(--border-secondary)] py-8 text-center">
               <Lightbulb className="mx-auto mb-2 h-8 w-8 text-slate-600" />
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-body">
                 No rooms added to this scene yet.
               </p>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-caption">
                 Go to the "Rooms & Modes" tab to add rooms first.
               </p>
             </div>
@@ -662,13 +666,13 @@ export default function SceneEditorPage() {
             <>
               {/* Search/filter at top */}
               <div className="relative">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-caption" />
                 <input
                   type="search"
                   placeholder="Search lights by name..."
                   value={lightSearch}
                   onChange={e => setLightSearch(e.target.value)}
-                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 pl-10 pr-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                  className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface pl-10 pr-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                 />
               </div>
 
@@ -680,10 +684,10 @@ export default function SceneEditorPage() {
                   <div key={sceneRoom.name}>
                     {/* Room heading with "Apply to all" */}
                     <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-sm font-semibold text-slate-200">
+                      <h3 className="text-sm font-semibold text-heading">
                         {sceneRoom.name}
                         {roomLights.length > 0 && (
-                          <span className="ml-1.5 text-xs font-normal text-slate-500">
+                          <span className="ml-1.5 text-xs font-normal text-caption">
                             ({roomLights.length} light{roomLights.length !== 1 ? 's' : ''})
                           </span>
                         )}
@@ -700,8 +704,8 @@ export default function SceneEditorPage() {
                     </div>
 
                     {roomLights.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-slate-700 py-6 text-center">
-                        <p className="text-xs text-slate-500">
+                      <div className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center">
+                        <p className="text-xs text-caption">
                           No lights assigned to this room.
                         </p>
                         <Link
@@ -712,7 +716,7 @@ export default function SceneEditorPage() {
                         </Link>
                       </div>
                     ) : filteredLights.length === 0 ? (
-                      <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                      <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                         No lights match "{lightSearch}" in this room.
                       </p>
                     ) : (
@@ -747,7 +751,7 @@ export default function SceneEditorPage() {
         <Tabs.Content value="rooms" className="space-y-6">
           {/* Room selection */}
           <section>
-            <h3 className="mb-3 text-sm font-medium text-slate-400">Rooms</h3>
+            <h3 className="mb-3 text-sm font-medium text-body">Rooms</h3>
             <div className="space-y-2">
               {allRooms?.map(room => {
                 const inScene = sceneRooms.find(r => r.name === room.name)
@@ -758,7 +762,7 @@ export default function SceneEditorPage() {
                       'flex items-center gap-3 rounded-xl border p-3 transition-colors',
                       inScene
                         ? 'border-fairy-500/30 bg-fairy-500/5'
-                        : 'border-slate-800 bg-slate-900',
+                        : 'border-[var(--border-primary)] card',
                     )}
                   >
                     <button
@@ -788,12 +792,12 @@ export default function SceneEditorPage() {
                         </svg>
                       )}
                     </button>
-                    <span className="min-w-0 flex-1 text-sm font-medium text-slate-200">
+                    <span className="min-w-0 flex-1 text-sm font-medium text-heading">
                       {room.name}
                     </span>
                     {inScene && (
                       <div className="flex items-center gap-2">
-                        <label className="text-xs text-slate-500">
+                        <label className="text-xs text-caption">
                           Priority
                         </label>
                         <input
@@ -807,7 +811,7 @@ export default function SceneEditorPage() {
                               Number(e.target.value),
                             )
                           }
-                          className="h-9 w-16 rounded-lg border border-slate-700 bg-slate-800 px-2 text-center text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                          className="h-9 w-16 rounded-lg border border-[var(--border-secondary)] surface px-2 text-center text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                         />
                       </div>
                     )}
@@ -819,7 +823,7 @@ export default function SceneEditorPage() {
 
           {/* Mode selection */}
           <section>
-            <h3 className="mb-3 text-sm font-medium text-slate-400">Modes</h3>
+            <h3 className="mb-3 text-sm font-medium text-body">Modes</h3>
             <div className="flex flex-wrap gap-2">
               {availableModes.map(mode => {
                 const selected = modes.includes(mode)
@@ -832,7 +836,7 @@ export default function SceneEditorPage() {
                       'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                       selected
                         ? 'bg-fairy-500 text-white'
-                        : 'bg-slate-800 text-slate-400 hover:text-slate-200',
+                        : 'surface text-body hover:text-heading',
                     )}
                   >
                     {mode}
@@ -848,7 +852,7 @@ export default function SceneEditorPage() {
           {/* Commands (non-light ones) */}
           <section>
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-medium text-slate-400">Commands</h3>
+              <h3 className="text-sm font-medium text-body">Commands</h3>
               <button
                 onClick={handleAddCommand}
                 className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-fairy-400 transition-colors hover:bg-fairy-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
@@ -873,7 +877,7 @@ export default function SceneEditorPage() {
                 })}
               </div>
             ) : (
-              <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+              <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                 No additional commands. Light commands are managed in the Lights
                 tab.
               </p>
@@ -882,12 +886,12 @@ export default function SceneEditorPage() {
 
           {/* Tags */}
           <section>
-            <h3 className="mb-3 text-sm font-medium text-slate-400">Tags</h3>
+            <h3 className="mb-3 text-sm font-medium text-body">Tags</h3>
             <div className="flex flex-wrap gap-2">
               {tags.map(tag => (
                 <span
                   key={tag}
-                  className="flex items-center gap-1 rounded-full bg-slate-800 px-2.5 py-1 text-xs font-medium text-slate-300"
+                  className="flex items-center gap-1 rounded-full surface px-2.5 py-1 text-xs font-medium text-slate-300"
                 >
                   {tag}
                   <button
@@ -912,12 +916,12 @@ export default function SceneEditorPage() {
                 value={tagInput}
                 onChange={e => setTagInput(e.target.value)}
                 placeholder="Add tag"
-                className="h-11 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="h-11 min-w-0 flex-1 rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               />
               <button
                 type="submit"
                 disabled={!tagInput.trim()}
-                className="min-h-[44px] rounded-lg bg-slate-800 px-3 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-700 disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="min-h-[44px] rounded-lg surface px-3 text-sm font-medium text-slate-300 transition-colors hover:bg-[var(--bg-tertiary)] disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               >
                 Add
               </button>
@@ -950,11 +954,11 @@ export default function SceneEditorPage() {
       </Tabs.Root>
 
       {/* ── Sticky save bar ───────────────────────────────────────────────── */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm md:bottom-0 md:left-56">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--border-primary)] card/95 p-4 backdrop-blur-sm md:bottom-0 md:left-56">
         <div className="mx-auto flex max-w-5xl items-center gap-3">
           <Link
             to="/scenes"
-            className="min-h-[44px] rounded-lg px-4 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            className="min-h-[44px] rounded-lg px-4 py-2.5 text-sm font-medium text-body transition-colors hover:text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           >
             Cancel
           </Link>

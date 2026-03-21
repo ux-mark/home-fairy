@@ -12,11 +12,15 @@ import {
   CheckCircle,
   AlertCircle,
   Sun,
+  Moon,
+  Monitor,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SunScheduleEntry } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
+import { useTheme } from '@/hooks/useTheme'
+import type { Theme } from '@/hooks/useTheme'
 
 // ── Section wrapper ─────────────────────────────────────────────────────────
 
@@ -28,12 +32,50 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-xl border border-slate-800 bg-slate-900 p-5">
-      <h3 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">
+    <section className="card rounded-xl border p-5">
+      <h3 className="text-caption mb-4 text-sm font-semibold uppercase tracking-wider">
         {title}
       </h3>
       {children}
     </section>
+  )
+}
+
+// ── Theme section ───────────────────────────────────────────────────────────
+
+const THEME_OPTIONS: { value: Theme; label: string; icon: typeof Sun }[] = [
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+  { value: 'system', label: 'System', icon: Monitor },
+]
+
+function ThemeSection() {
+  const { theme, setTheme } = useTheme()
+
+  return (
+    <Section title="Appearance">
+      <div className="flex items-center justify-between">
+        <span className="text-heading text-sm">Theme</span>
+        <div className="surface flex rounded-lg border" style={{ borderColor: 'var(--border-secondary)' }}>
+          {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+            <button
+              key={value}
+              onClick={() => setTheme(value)}
+              aria-pressed={theme === value}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-2 text-sm font-medium transition-colors',
+                theme === value
+                  ? 'bg-fairy-500 text-white'
+                  : 'text-caption hover:text-[var(--text-primary)]',
+              )}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </Section>
   )
 }
 
@@ -63,8 +105,8 @@ function GeneralSection() {
   return (
     <Section title="General">
       <div className="flex items-center justify-between">
-        <span className="text-sm text-slate-200">Temperature Unit</span>
-        <div className="flex rounded-lg border border-slate-700 bg-slate-800">
+        <span className="text-heading text-sm">Temperature Unit</span>
+        <div className="surface flex rounded-lg border" style={{ borderColor: 'var(--border-secondary)' }}>
           {(['C', 'F'] as const).map(unit => (
             <button
               key={unit}
@@ -73,7 +115,7 @@ function GeneralSection() {
                 'px-4 py-2 text-sm font-medium transition-colors',
                 tempUnit === unit
                   ? 'bg-fairy-500 text-white'
-                  : 'text-slate-400 hover:text-slate-200',
+                  : 'text-caption hover:text-[var(--text-primary)]',
               )}
             >
               °{unit}
@@ -138,7 +180,7 @@ function ModesSection() {
           onChange={e => setNewMode(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleAdd()}
           placeholder="New mode name..."
-          className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-fairy-500 focus:outline-none"
+          className="input-field flex-1 rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--text-muted)] focus:border-fairy-500 focus:outline-none"
         />
         <button
           onClick={handleAdd}
@@ -153,19 +195,19 @@ function ModesSection() {
         {modes?.map(mode => (
           <span
             key={mode}
-            className="inline-flex items-center gap-1.5 rounded-full bg-slate-800 px-3 py-1.5 text-sm text-slate-200"
+            className="surface inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-heading"
           >
             {mode}
             <button
               onClick={() => handleDelete(mode)}
-              className="rounded-full p-0.5 text-slate-500 transition-colors hover:bg-slate-700 hover:text-red-400"
+              className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-red-400"
             >
               <X className="h-3.5 w-3.5" />
             </button>
           </span>
         ))}
         {modes?.length === 0 && (
-          <p className="text-sm text-slate-500">No modes configured.</p>
+          <p className="text-caption text-sm">No modes configured.</p>
         )}
       </div>
     </Section>
@@ -197,18 +239,18 @@ function SunScheduleSection() {
             <div
               key={entry.sunPhase}
               className={cn(
-                'flex items-center justify-between rounded-lg bg-slate-800 px-3 py-2',
+                'surface flex items-center justify-between rounded-lg px-3 py-2',
                 entry.isPast && 'opacity-40',
               )}
             >
               <div className="flex items-center gap-2">
                 <Sun className="h-4 w-4 text-amber-400" />
                 <div>
-                  <p className="text-sm text-slate-200">{entry.mode}</p>
-                  <p className="text-xs text-slate-500">{formatPhase(entry.sunPhase)}</p>
+                  <p className="text-heading text-sm">{entry.mode}</p>
+                  <p className="text-caption text-xs">{formatPhase(entry.sunPhase)}</p>
                 </div>
               </div>
-              <span className="font-mono text-sm text-slate-400">
+              <span className="font-mono text-sm text-[var(--text-secondary)]">
                 {formatTime(entry.time)}
               </span>
             </div>
@@ -246,13 +288,13 @@ function DevicesSection() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm text-slate-200">Hubitat</p>
-            <p className="text-xs text-slate-500">Sync devices from Hubitat hub</p>
+            <p className="text-heading text-sm">Hubitat</p>
+            <p className="text-caption text-xs">Sync devices from Hubitat hub</p>
           </div>
           <button
             onClick={() => syncMutation.mutate()}
             disabled={syncMutation.isPending}
-            className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm text-slate-200 transition-colors hover:bg-slate-700 disabled:opacity-50"
+            className="surface flex items-center gap-1.5 rounded-lg px-3 py-2 text-heading text-sm transition-colors hover:brightness-95 dark:hover:brightness-110 disabled:opacity-50"
           >
             <RefreshCw
               className={cn('h-4 w-4', syncMutation.isPending && 'animate-spin')}
@@ -263,8 +305,8 @@ function DevicesSection() {
 
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-sm text-slate-200">LIFX</p>
-            <p className="text-xs text-slate-500">
+            <p className="text-heading text-sm">LIFX</p>
+            <p className="text-caption text-xs">
               {lifxLoading
                 ? 'Checking...'
                 : lights
@@ -332,10 +374,10 @@ function TimersSection() {
           {timers.map(timer => (
             <div
               key={timer.id}
-              className="flex items-center justify-between rounded-lg bg-slate-800 px-3 py-2"
+              className="surface flex items-center justify-between rounded-lg px-3 py-2"
             >
               <div>
-                <p className="text-sm text-slate-200">
+                <p className="text-heading text-sm">
                   {timer.sceneName} → {timer.targetScene}
                 </p>
                 <p className="font-mono text-xs text-fairy-400">
@@ -345,7 +387,7 @@ function TimersSection() {
               <button
                 onClick={() => cancelMutation.mutate(timer.id)}
                 disabled={cancelMutation.isPending}
-                className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-700 hover:text-red-400"
+                className="rounded-lg p-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-red-400"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -388,17 +430,17 @@ function SystemSection() {
     <Section title="System">
       <div className="space-y-3">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-slate-400">Version</span>
+          <span className="text-[var(--text-secondary)]">Version</span>
           <span className="text-slate-200">3.0.0</span>
         </div>
         {health && (
           <>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-400">Uptime</span>
+              <span className="text-[var(--text-secondary)]">Uptime</span>
               <span className="text-slate-200">{formatUptime(health.uptime)}</span>
             </div>
             <div className="flex items-center justify-between text-sm">
-              <span className="text-slate-400">Database</span>
+              <span className="text-[var(--text-secondary)]">Database</span>
               <span
                 className={cn(
                   'text-sm',
@@ -413,7 +455,7 @@ function SystemSection() {
         <div className="pt-2">
           <Link
             to="/settings/logs"
-            className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2.5 text-sm text-slate-200 transition-colors hover:bg-slate-700"
+            className="surface flex items-center gap-2 rounded-lg px-3 py-2.5 text-heading text-sm transition-colors hover:brightness-95 dark:hover:brightness-110"
           >
             <FileText className="h-4 w-4" />
             View System Logs
@@ -431,10 +473,11 @@ export default function SettingsPage() {
     <div>
       <div className="mb-6 flex items-center gap-2">
         <Settings className="h-5 w-5 text-fairy-400" />
-        <h1 className="text-lg font-semibold text-slate-100">Settings</h1>
+        <h1 className="text-heading text-lg font-semibold">Settings</h1>
       </div>
 
       <div className="space-y-4">
+        <ThemeSection />
         <GeneralSection />
         <ModesSection />
         <SunScheduleSection />

@@ -1,8 +1,10 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Home, DoorOpen, Sparkles, Lightbulb, Settings } from 'lucide-react'
+import { Home, DoorOpen, Sparkles, Lightbulb, Settings, Sun, Moon, Monitor } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useTheme } from '@/hooks/useTheme'
+import type { Theme } from '@/hooks/useTheme'
 import ToastContainer from '@/components/ui/Toast'
 
 const NAV_ITEMS = [
@@ -12,6 +14,37 @@ const NAV_ITEMS = [
   { to: '/lights', icon: Lightbulb, label: 'Lights' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ] as const
+
+const THEME_CYCLE: Theme[] = ['system', 'light', 'dark']
+const THEME_ICON = { system: Monitor, light: Sun, dark: Moon } as const
+const THEME_LABEL = { system: 'System theme', light: 'Light mode', dark: 'Dark mode' } as const
+
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme()
+  const Icon = THEME_ICON[theme]
+
+  const cycleTheme = () => {
+    const idx = THEME_CYCLE.indexOf(theme)
+    const next = THEME_CYCLE[(idx + 1) % THEME_CYCLE.length]
+    setTheme(next)
+  }
+
+  return (
+    <button
+      onClick={cycleTheme}
+      aria-label={THEME_LABEL[theme]}
+      title={THEME_LABEL[theme]}
+      className={cn(
+        'rounded-lg p-2 transition-colors',
+        'text-[var(--text-muted)] hover:text-[var(--text-primary)]',
+        'hover:bg-[var(--bg-tertiary)]',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+      )}
+    >
+      <Icon className="h-4.5 w-4.5" />
+    </button>
+  )
+}
 
 export default function AppLayout() {
   const location = useLocation()
@@ -23,13 +56,13 @@ export default function AppLayout() {
   return (
     <div className="flex min-h-svh flex-col md:flex-row">
       {/* Desktop sidebar */}
-      <aside className="hidden w-56 shrink-0 border-r border-slate-800 bg-slate-900/50 md:flex md:flex-col">
-        <div className="flex items-center gap-2 border-b border-slate-800 px-5 py-4">
+      <aside className="sidebar hidden w-56 shrink-0 border-r md:flex md:flex-col">
+        <div className="flex items-center gap-2 border-b px-5 py-4">
           <Sparkles className="h-5 w-5 text-fairy-400" />
-          <h1 className="text-lg font-semibold text-slate-100">The Fairies</h1>
+          <h1 className="text-heading text-lg font-semibold">The Fairies</h1>
         </div>
         {system?.mode && (
-          <div className="border-b border-slate-800 px-5 py-3">
+          <div className="border-b px-5 py-3">
             <span className="inline-flex items-center rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400">
               {system.mode}
             </span>
@@ -47,7 +80,7 @@ export default function AppLayout() {
                   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                   isActive
                     ? 'bg-fairy-500/15 text-fairy-400'
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200',
+                    : 'text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]',
                 )
               }
             >
@@ -60,14 +93,14 @@ export default function AppLayout() {
 
       {/* Main content */}
       <main className="flex-1 pb-20 md:pb-0">
-        {/* Mobile header */}
-        <header className="flex items-center justify-between border-b border-slate-800 bg-slate-900/80 px-4 py-3 backdrop-blur-sm md:px-6 md:py-4">
+        {/* Header */}
+        <header className="chrome flex items-center justify-between border-b px-4 py-3 md:px-6 md:py-4">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-fairy-400 md:hidden" />
-            <h1 className="text-lg font-semibold text-slate-100 md:hidden">
+            <h1 className="text-heading text-lg font-semibold md:hidden">
               The Fairies
             </h1>
-            <h2 className="hidden text-lg font-semibold text-slate-100 md:block">
+            <h2 className="text-heading hidden text-lg font-semibold md:block">
               {NAV_ITEMS.find(
                 n =>
                   n.to === location.pathname ||
@@ -75,11 +108,14 @@ export default function AppLayout() {
               )?.label ?? 'The Fairies'}
             </h2>
           </div>
-          {system?.mode && (
-            <span className="inline-flex items-center rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400">
-              {system.mode}
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            {system?.mode && (
+              <span className="inline-flex items-center rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400">
+                {system.mode}
+              </span>
+            )}
+          </div>
         </header>
 
         <div className="mx-auto max-w-5xl px-4 py-4 md:px-6 md:py-6">
@@ -88,7 +124,7 @@ export default function AppLayout() {
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-800 bg-slate-900/95 backdrop-blur-sm md:hidden">
+      <nav className="chrome fixed inset-x-0 bottom-0 z-40 border-t md:hidden">
         <div className="flex items-center justify-around">
           {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
             <NavLink
@@ -101,7 +137,7 @@ export default function AppLayout() {
                   'focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-fairy-500',
                   isActive
                     ? 'text-fairy-400'
-                    : 'text-slate-500 active:text-slate-300',
+                    : 'text-[var(--text-muted)] active:text-[var(--text-secondary)]',
                 )
               }
             >

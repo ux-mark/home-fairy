@@ -90,7 +90,7 @@ export function initDb(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       device_id TEXT NOT NULL,
       device_label TEXT NOT NULL,
-      device_type TEXT NOT NULL CHECK(device_type IN ('light','switch','sensor','dimmer','contact','motion')),
+      device_type TEXT NOT NULL CHECK(device_type IN ('light','switch','sensor','dimmer','contact','motion','twinkly','fairy')),
       room_name TEXT NOT NULL REFERENCES rooms(name),
       config TEXT DEFAULT '{}',
       created_at TEXT DEFAULT (datetime('now')),

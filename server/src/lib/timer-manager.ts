@@ -9,8 +9,16 @@ export interface SceneTimer {
   timeout: NodeJS.Timeout
 }
 
+type OnExpireCallback = (targetScene: string, sceneName: string) => void
+
 class TimerManager {
   private timers: Map<string, SceneTimer> = new Map()
+  private onExpire: OnExpireCallback | null = null
+
+  /** Register a callback to invoke when a scene timer expires */
+  setOnExpire(callback: OnExpireCallback): void {
+    this.onExpire = callback
+  }
 
   createTimer(
     sceneName: string,
@@ -25,7 +33,9 @@ class TimerManager {
       console.log(
         `Timer ${id} expired: ${sceneName} -> ${targetScene}`,
       )
-      // The scene executor should hook into this via onExpire if needed
+      if (this.onExpire) {
+        this.onExpire(targetScene, sceneName)
+      }
     }, durationMs)
 
     // Prevent timer from keeping the process alive

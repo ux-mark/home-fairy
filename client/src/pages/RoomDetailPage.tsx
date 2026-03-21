@@ -49,17 +49,17 @@ function AvailableLightRow({
   const colorHex = getLightColorHex(light)
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2.5 transition-colors hover:border-slate-700">
+    <div className="flex items-center gap-3 rounded-lg card border/50 px-3 py-2.5 transition-colors hover:border-[var(--border-secondary)]">
       <div
         className={cn('h-4 w-4 shrink-0 rounded-full', !isOn && 'opacity-30')}
         style={{ backgroundColor: isOn ? colorHex : '#475569' }}
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-slate-200">
+        <p className="truncate text-sm font-medium text-heading">
           {light.label}
         </p>
-        <p className="truncate text-xs text-slate-500">{light.group.name}</p>
+        <p className="truncate text-xs text-caption">{light.group.name}</p>
       </div>
       {light.connected ? (
         <Wifi className="h-3 w-3 shrink-0 text-fairy-500" />
@@ -68,7 +68,7 @@ function AvailableLightRow({
       )}
       <button
         onClick={onIdentify}
-        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-fairy-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-body transition-colors hover:surface hover:text-fairy-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
         aria-label={`Identify ${light.label}`}
         title="Flash this light"
       >
@@ -109,10 +109,10 @@ function AssignedLightRow({
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-slate-200">
+        <p className="truncate text-sm font-medium text-heading">
           {assignment.label}
         </p>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-caption">
           {isOn ? (
             <span className="text-fairy-400">On</span>
           ) : (
@@ -124,7 +124,7 @@ function AssignedLightRow({
       </div>
       <button
         onClick={onIdentify}
-        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-fairy-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-body transition-colors hover:surface hover:text-fairy-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
         aria-label={`Identify ${assignment.label}`}
         title="Flash this light"
       >
@@ -132,7 +132,7 @@ function AssignedLightRow({
       </button>
       <button
         onClick={onRemove}
-        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-body transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
         aria-label={`Remove ${assignment.label} from this room`}
       >
         <X className="h-4 w-4" />
@@ -152,7 +152,7 @@ const deviceTypeBadgeClasses: Record<string, string> = {
 }
 
 function DeviceTypeBadge({ type }: { type: string }) {
-  const cls = deviceTypeBadgeClasses[type] ?? 'bg-slate-700 text-slate-400'
+  const cls = deviceTypeBadgeClasses[type] ?? 'bg-slate-700 text-body'
   return (
     <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', cls)}>
       {type}
@@ -172,14 +172,14 @@ function AssignedDeviceRow({
   return (
     <div className="flex items-center gap-3 rounded-lg border border-fairy-500/20 bg-fairy-500/5 px-3 py-2.5 transition-colors">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-slate-200">
+        <p className="truncate text-sm font-medium text-heading">
           {assignment.device_label}
         </p>
       </div>
       <DeviceTypeBadge type={assignment.device_type} />
       <button
         onClick={onRemove}
-        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-body transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
         aria-label={`Remove ${assignment.device_label} from this room`}
       >
         <X className="h-4 w-4" />
@@ -198,9 +198,9 @@ function AvailableDeviceRow({
   onAdd: () => void
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/50 px-3 py-2.5 transition-colors hover:border-slate-700">
+    <div className="flex items-center gap-3 rounded-lg card border/50 px-3 py-2.5 transition-colors hover:border-[var(--border-secondary)]">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-slate-200">
+        <p className="truncate text-sm font-medium text-heading">
           {device.label}
         </p>
       </div>
@@ -575,9 +575,9 @@ export default function RoomDetailPage() {
   if (roomLoading) {
     return (
       <div className="space-y-4">
-        <div className="h-6 w-32 animate-pulse rounded bg-slate-800" />
-        <div className="h-40 animate-pulse rounded-xl bg-slate-800" />
-        <div className="h-60 animate-pulse rounded-xl bg-slate-800" />
+        <div className="h-6 w-32 animate-pulse rounded surface" />
+        <div className="h-40 animate-pulse rounded-xl surface" />
+        <div className="h-60 animate-pulse rounded-xl surface" />
       </div>
     )
   }
@@ -585,7 +585,7 @@ export default function RoomDetailPage() {
   if (!room) {
     return (
       <div className="py-12 text-center">
-        <p className="text-slate-400">Room not found.</p>
+        <p className="text-body">Room not found.</p>
         <Link
           to="/rooms"
           className="mt-2 inline-block text-sm text-fairy-400 hover:underline"
@@ -602,14 +602,14 @@ export default function RoomDetailPage() {
       <div className="mb-6">
         <Link
           to="/rooms"
-          className="mb-3 inline-flex items-center gap-1.5 text-sm text-slate-400 transition-colors hover:text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          className="mb-3 inline-flex items-center gap-1.5 text-sm text-body transition-colors hover:text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
         >
           <ArrowLeft className="h-4 w-4" />
           All Rooms
         </Link>
 
         <div className="flex items-center gap-3">
-          <h2 className="text-xl font-semibold text-slate-100">
+          <h2 className="text-xl font-semibold text-heading">
             {room.name}
           </h2>
         </div>
@@ -617,7 +617,7 @@ export default function RoomDetailPage() {
         {/* Parent room selector */}
         {parentRoomOptions.length > 0 && (
           <div className="mt-2">
-            <label className="mr-2 text-xs font-medium text-slate-500">
+            <label className="mr-2 text-xs font-medium text-caption">
               Parent room
             </label>
             <select
@@ -626,7 +626,7 @@ export default function RoomDetailPage() {
                 setParentRoom(e.target.value)
                 markDirty()
               }}
-              className="h-9 rounded-lg border border-slate-700 bg-slate-800 px-2.5 text-sm text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+              className="h-9 rounded-lg border border-[var(--border-secondary)] surface px-2.5 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               aria-label="Parent room"
             >
               <option value="">None</option>
@@ -642,15 +642,15 @@ export default function RoomDetailPage() {
 
       {/* ── Settings card ───────────────────────────────────────────────────── */}
       <section className="mb-8">
-        <h3 className="mb-3 text-sm font-medium text-slate-400">
+        <h3 className="mb-3 text-sm font-medium text-body">
           Room Settings
         </h3>
-        <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-900 p-4">
+        <div className="space-y-4 rounded-xl card border p-4">
           {/* Auto toggle */}
           <div className="flex items-center justify-between">
             <label
               htmlFor="auto-toggle"
-              className="text-sm font-medium text-slate-200"
+              className="text-sm font-medium text-heading"
             >
               Automation
             </label>
@@ -678,7 +678,7 @@ export default function RoomDetailPage() {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">
+              <label className="mb-1 block text-xs font-medium text-body">
                 Auto-off after inactivity (min)
               </label>
               <input
@@ -689,11 +689,11 @@ export default function RoomDetailPage() {
                   setTimer(Number(e.target.value))
                   markDirty()
                 }}
-                className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">
+              <label className="mb-1 block text-xs font-medium text-body">
                 Display Order
               </label>
               <input
@@ -704,7 +704,7 @@ export default function RoomDetailPage() {
                   setDisplayOrder(Number(e.target.value))
                   markDirty()
                 }}
-                className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               />
             </div>
           </div>
@@ -713,17 +713,17 @@ export default function RoomDetailPage() {
 
       {/* ── Devices section with tabs ───────────────────────────────────────── */}
       <section className="mb-8">
-        <h3 className="mb-3 text-sm font-medium text-slate-400">Devices</h3>
+        <h3 className="mb-3 text-sm font-medium text-body">Devices</h3>
 
         <Tabs.Root value={activeTab} onValueChange={setActiveTab}>
-          <Tabs.List className="mb-4 flex gap-1 overflow-x-auto rounded-xl bg-slate-900 p-1">
+          <Tabs.List className="mb-4 flex gap-1 overflow-x-auto rounded-xl card p-1">
             <Tabs.Trigger
               value="lights"
               className={cn(
                 'min-h-[44px] flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                 'data-[state=active]:bg-fairy-500 data-[state=active]:text-white',
-                'data-[state=inactive]:text-slate-400 data-[state=inactive]:hover:text-slate-200',
+                'data-[state=inactive]:text-body data-[state=inactive]:hover:text-heading',
               )}
             >
               <Lightbulb className="h-4 w-4" />
@@ -740,7 +740,7 @@ export default function RoomDetailPage() {
                 'min-h-[44px] flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                 'data-[state=active]:bg-fairy-500 data-[state=active]:text-white',
-                'data-[state=inactive]:text-slate-400 data-[state=inactive]:hover:text-slate-200',
+                'data-[state=inactive]:text-body data-[state=inactive]:hover:text-heading',
               )}
             >
               <ToggleLeft className="h-4 w-4" />
@@ -757,7 +757,7 @@ export default function RoomDetailPage() {
                 'min-h-[44px] flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors',
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                 'data-[state=active]:bg-fairy-500 data-[state=active]:text-white',
-                'data-[state=inactive]:text-slate-400 data-[state=inactive]:hover:text-slate-200',
+                'data-[state=inactive]:text-body data-[state=inactive]:hover:text-heading',
               )}
             >
               <Activity className="h-4 w-4" />
@@ -769,22 +769,22 @@ export default function RoomDetailPage() {
           <Tabs.Content value="lights" className="space-y-6">
             {/* Search */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-caption" />
               <input
                 type="search"
                 placeholder="Search lights by name..."
                 value={lightSearch}
                 onChange={e => setLightSearch(e.target.value)}
-                className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 pl-10 pr-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface pl-10 pr-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               />
             </div>
 
             {/* Assigned lights */}
             <div>
-              <h4 className="mb-3 text-sm font-medium text-slate-400">
+              <h4 className="mb-3 text-sm font-medium text-body">
                 Assigned
                 {effectiveAssigned.length > 0 && (
-                  <span className="ml-1.5 text-slate-500">
+                  <span className="ml-1.5 text-caption">
                     ({effectiveAssigned.length})
                   </span>
                 )}
@@ -804,11 +804,11 @@ export default function RoomDetailPage() {
                   ))}
                 </div>
               ) : effectiveAssigned.length > 0 && lightSearch.trim() ? (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   No assigned lights match "{lightSearch}".
                 </p>
               ) : (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   No lights assigned to this room yet. Add them from below.
                 </p>
               )}
@@ -816,10 +816,10 @@ export default function RoomDetailPage() {
 
             {/* Available lights grouped by LIFX group */}
             <div>
-              <h4 className="mb-3 text-sm font-medium text-slate-400">
+              <h4 className="mb-3 text-sm font-medium text-body">
                 Available
                 {availableLights.length > 0 && (
-                  <span className="ml-1.5 text-slate-500">
+                  <span className="ml-1.5 text-caption">
                     ({availableLights.length})
                   </span>
                 )}
@@ -829,7 +829,7 @@ export default function RoomDetailPage() {
                   {Array.from(filteredAvailableByGroup.entries()).map(
                     ([groupName, lights]) => (
                       <div key={groupName}>
-                        <p className="mb-2 text-xs font-medium text-slate-500 uppercase tracking-wide">
+                        <p className="mb-2 text-xs font-medium text-caption uppercase tracking-wide">
                           {groupName}
                         </p>
                         <div className="space-y-2">
@@ -849,15 +849,15 @@ export default function RoomDetailPage() {
                   )}
                 </div>
               ) : availableLights.length > 0 && lightSearch.trim() ? (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   No available lights match "{lightSearch}".
                 </p>
               ) : availableLights.length === 0 && allLights ? (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   All lights have been assigned to rooms.
                 </p>
               ) : !allLights ? (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   No LIFX lights found. Check your LIFX connection.
                 </p>
               ) : null}
@@ -868,22 +868,22 @@ export default function RoomDetailPage() {
           <Tabs.Content value="switches" className="space-y-6">
             {/* Search */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-caption" />
               <input
                 type="search"
                 placeholder="Search devices by name..."
                 value={deviceSearch}
                 onChange={e => setDeviceSearch(e.target.value)}
-                className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 pl-10 pr-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface pl-10 pr-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               />
             </div>
 
             {/* ── Switches & Dimmers section ─────────────────────────────────── */}
             <div>
-              <h4 className="mb-3 text-sm font-medium text-slate-400">
+              <h4 className="mb-3 text-sm font-medium text-body">
                 Assigned Switches
                 {assignedSwitches.length > 0 && (
-                  <span className="ml-1.5 text-slate-500">
+                  <span className="ml-1.5 text-caption">
                     ({assignedSwitches.length})
                   </span>
                 )}
@@ -899,21 +899,21 @@ export default function RoomDetailPage() {
                   ))}
                 </div>
               ) : assignedSwitches.length > 0 && deviceSearch.trim() ? (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   No assigned switches match "{deviceSearch}".
                 </p>
               ) : (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   No switches assigned yet. Add them from the available devices below.
                 </p>
               )}
             </div>
 
             <div>
-              <h4 className="mb-3 text-sm font-medium text-slate-400">
+              <h4 className="mb-3 text-sm font-medium text-body">
                 Available Switches
                 {availableSwitchDevices.length > 0 && (
-                  <span className="ml-1.5 text-slate-500">
+                  <span className="ml-1.5 text-caption">
                     ({availableSwitchDevices.length})
                   </span>
                 )}
@@ -929,26 +929,26 @@ export default function RoomDetailPage() {
                   ))}
                 </div>
               ) : availableSwitchDevices.length > 0 && deviceSearch.trim() ? (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   No available switches match "{deviceSearch}".
                 </p>
               ) : availableSwitchDevices.length === 0 && allHubDevices ? (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   All switches and dimmers have been assigned to rooms.
                 </p>
               ) : !allHubDevices ? (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   No Hubitat devices found. Check your hub connection.
                 </p>
               ) : null}
             </div>
 
             {/* ── Other Devices (Twinkly / Fairy) ────────────────────────────── */}
-            <div className="border-t border-slate-800 pt-6">
-              <h4 className="mb-3 text-sm font-medium text-slate-400">
+            <div className="border-t border-[var(--border-primary)] pt-6">
+              <h4 className="mb-3 text-sm font-medium text-body">
                 Assigned Other Devices
                 {assignedOtherDevices.length > 0 && (
-                  <span className="ml-1.5 text-slate-500">
+                  <span className="ml-1.5 text-caption">
                     ({assignedOtherDevices.length})
                   </span>
                 )}
@@ -964,21 +964,21 @@ export default function RoomDetailPage() {
                   ))}
                 </div>
               ) : assignedOtherDevices.length > 0 && deviceSearch.trim() ? (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   No assigned devices match "{deviceSearch}".
                 </p>
               ) : (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   No Twinkly or Fairy devices assigned. Add them from below.
                 </p>
               )}
             </div>
 
             <div>
-              <h4 className="mb-3 text-sm font-medium text-slate-400">
+              <h4 className="mb-3 text-sm font-medium text-body">
                 Available Other Devices
                 {availableOtherDevices.length > 0 && (
-                  <span className="ml-1.5 text-slate-500">
+                  <span className="ml-1.5 text-caption">
                     ({availableOtherDevices.length})
                   </span>
                 )}
@@ -994,15 +994,15 @@ export default function RoomDetailPage() {
                   ))}
                 </div>
               ) : availableOtherDevices.length > 0 && deviceSearch.trim() ? (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   No available devices match "{deviceSearch}".
                 </p>
               ) : availableOtherDevices.length === 0 && allHubDevices ? (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   All Twinkly and Fairy devices have been assigned to rooms.
                 </p>
               ) : !allHubDevices ? (
-                <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+                <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   No Hubitat devices found. Check your hub connection.
                 </p>
               ) : null}
@@ -1012,7 +1012,7 @@ export default function RoomDetailPage() {
           {/* ── Sensors tab ──────────────────────────────────────────────────── */}
           <Tabs.Content value="sensors" className="space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-caption">
                 Configure motion sensors and their priority thresholds.
               </p>
               <button
@@ -1029,7 +1029,7 @@ export default function RoomDetailPage() {
                 {effectiveSensors.map((sensor, i) => (
                   <div
                     key={i}
-                    className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3"
+                    className="flex items-center gap-3 rounded-xl card border p-3"
                   >
                     <input
                       type="text"
@@ -1038,10 +1038,10 @@ export default function RoomDetailPage() {
                         handleUpdateSensor(i, { ...sensor, name: e.target.value })
                       }
                       placeholder="Sensor name"
-                      className="h-11 min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-800 px-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                      className="h-11 min-w-0 flex-1 rounded-lg border border-[var(--border-secondary)] surface px-2.5 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                     />
                     <div className="flex flex-col items-center gap-0.5">
-                      <label className="text-[10px] text-slate-500">
+                      <label className="text-[10px] text-caption">
                         Priority
                       </label>
                       <input
@@ -1055,12 +1055,12 @@ export default function RoomDetailPage() {
                             priority_threshold: Number(e.target.value),
                           })
                         }
-                        className="h-11 w-20 rounded-lg border border-slate-700 bg-slate-800 px-2.5 text-center text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                        className="h-11 w-20 rounded-lg border border-[var(--border-secondary)] surface px-2.5 text-center text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                       />
                     </div>
                     <button
                       onClick={() => handleRemoveSensor(i)}
-                      className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-500 transition-colors hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                      className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-caption transition-colors hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                       aria-label="Remove sensor"
                     >
                       <X className="h-4 w-4" />
@@ -1069,7 +1069,7 @@ export default function RoomDetailPage() {
                 ))}
               </div>
             ) : (
-              <p className="rounded-xl border border-dashed border-slate-700 py-6 text-center text-xs text-slate-500">
+              <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                 No sensors configured. Add a sensor to enable motion-based automation.
               </p>
             )}
@@ -1095,11 +1095,11 @@ export default function RoomDetailPage() {
       </section>
 
       {/* ── Sticky save bar ────────────────────────────────────────────────── */}
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-800 bg-slate-950/95 p-4 backdrop-blur-sm md:bottom-0 md:left-56">
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--border-primary)] bg-slate-950/95 p-4 backdrop-blur-sm md:bottom-0 md:left-56">
         <div className="mx-auto flex max-w-5xl items-center gap-3">
           <Link
             to="/rooms"
-            className="min-h-[44px] rounded-lg px-4 py-2.5 text-sm font-medium text-slate-400 transition-colors hover:text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            className="min-h-[44px] rounded-lg px-4 py-2.5 text-sm font-medium text-body transition-colors hover:text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           >
             Cancel
           </Link>

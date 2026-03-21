@@ -32,13 +32,13 @@ function LogEntry({
   const [expanded, setExpanded] = useState(false)
 
   return (
-    <div className="border-b border-slate-800 py-3 last:border-0">
+    <div className="border-b border-[var(--border-primary)] py-3 last:border-0">
       <div className="flex items-start gap-3">
         <button
           onClick={() => log.debug && setExpanded(!expanded)}
           className={cn(
             'mt-0.5 shrink-0',
-            log.debug ? 'text-slate-500 hover:text-slate-300' : 'text-transparent',
+            log.debug ? 'text-caption hover:text-slate-300' : 'text-transparent',
           )}
           disabled={!log.debug}
         >
@@ -52,18 +52,18 @@ function LogEntry({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             {log.category && (
-              <span className="inline-flex rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-medium uppercase text-slate-400">
+              <span className="inline-flex rounded surface px-1.5 py-0.5 text-[10px] font-medium uppercase text-body">
                 {log.category}
               </span>
             )}
-            <span className="text-xs text-slate-500">
+            <span className="text-xs text-caption">
               {formatTimestamp(log.created_at)}
             </span>
           </div>
-          <p className="mt-1 text-sm text-slate-200">{log.message}</p>
+          <p className="mt-1 text-sm text-heading">{log.message}</p>
 
           {expanded && log.debug && (
-            <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-slate-800 p-3 text-xs text-slate-400">
+            <pre className="mt-2 max-h-48 overflow-auto rounded-lg surface p-3 text-xs text-body">
               {(() => {
                 try {
                   return JSON.stringify(JSON.parse(log.debug), null, 2)
@@ -93,17 +93,17 @@ export default function LogsPage() {
       <div className="mb-4 flex items-center gap-3">
         <Link
           to="/settings"
-          className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+          className="rounded-lg p-1.5 text-body transition-colors hover:surface hover:text-heading"
         >
           <ArrowLeft className="h-5 w-5" />
         </Link>
-        <h1 className="flex-1 text-lg font-semibold text-slate-100">
+        <h1 className="flex-1 text-lg font-semibold text-heading">
           System Logs
         </h1>
         <button
           onClick={() => refetch()}
           disabled={isFetching}
-          className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-800 hover:text-slate-200"
+          className="rounded-lg p-2 text-body transition-colors hover:surface hover:text-heading"
         >
           <RefreshCw
             className={cn('h-4 w-4', isFetching && 'animate-spin')}
@@ -119,7 +119,7 @@ export default function LogsPage() {
             'rounded-full px-3 py-1 text-xs font-medium transition-colors',
             !category
               ? 'bg-fairy-500 text-white'
-              : 'bg-slate-800 text-slate-400 hover:text-slate-200',
+              : 'surface text-body hover:text-heading',
           )}
         >
           All
@@ -132,7 +132,7 @@ export default function LogsPage() {
               'rounded-full px-3 py-1 text-xs font-medium transition-colors',
               category === cat
                 ? 'bg-fairy-500 text-white'
-                : 'bg-slate-800 text-slate-400 hover:text-slate-200',
+                : 'surface text-body hover:text-heading',
             )}
           >
             {cat}
@@ -141,13 +141,13 @@ export default function LogsPage() {
       </div>
 
       {/* Log entries */}
-      <div className="rounded-xl border border-slate-800 bg-slate-900">
+      <div className="rounded-xl border border-[var(--border-primary)] card">
         {isLoading ? (
           <div className="space-y-3 p-4">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="animate-pulse space-y-2">
-                <div className="h-3 w-24 rounded bg-slate-800" />
-                <div className="h-4 w-3/4 rounded bg-slate-800" />
+                <div className="h-3 w-24 rounded surface" />
+                <div className="h-4 w-3/4 rounded surface" />
               </div>
             ))}
           </div>
@@ -158,7 +158,7 @@ export default function LogsPage() {
             ))}
           </div>
         ) : (
-          <div className="py-12 text-center text-sm text-slate-500">
+          <div className="py-12 text-center text-sm text-caption">
             No logs found.
           </div>
         )}

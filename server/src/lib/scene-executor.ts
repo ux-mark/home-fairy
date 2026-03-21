@@ -225,15 +225,15 @@ export async function activateScene(sceneName: string): Promise<void> {
 
         case 'twinkly': {
           // Look up Twinkly device IP from device_rooms or fairy_devices
-          const twinklyDev = getOne<{ IPAddress: string }>(
-            "SELECT IPAddress FROM hub_devices WHERE label = ? AND device_type = 'twinkly'",
+          const twinklyDev = getOne<{ ip: string | null }>(
+            "SELECT json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'twinkly'",
             [cmd.name],
           )
-          if (twinklyDev?.IPAddress) {
+          if (twinklyDev?.ip) {
             if (cmd.command === 'on') {
-              await twinklyClient.turnOn(twinklyDev.IPAddress)
+              await twinklyClient.turnOn(twinklyDev.ip)
             } else {
-              await twinklyClient.turnOff(twinklyDev.IPAddress)
+              await twinklyClient.turnOff(twinklyDev.ip)
             }
             log(`Twinkly ${cmd.name}: ${cmd.command}`)
           } else {
@@ -243,16 +243,16 @@ export async function activateScene(sceneName: string): Promise<void> {
         }
 
         case 'fairy_device': {
-          const fairyDev = getOne<{ IPAddress: string }>(
-            "SELECT IPAddress FROM hub_devices WHERE label = ? AND device_type = 'fairy'",
+          const fairyDev = getOne<{ ip: string | null }>(
+            "SELECT json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'fairy'",
             [cmd.name],
           )
-          if (fairyDev?.IPAddress) {
+          if (fairyDev?.ip) {
             const brightness = cmd.id ? parseInt(cmd.id, 10) : 100
             if (cmd.command.toLowerCase() === 'off') {
-              await fairyDeviceClient.turnOff(fairyDev.IPAddress)
+              await fairyDeviceClient.turnOff(fairyDev.ip)
             } else {
-              await fairyDeviceClient.setBrightness(fairyDev.IPAddress, Math.round(brightness * 2.55))
+              await fairyDeviceClient.setBrightness(fairyDev.ip, Math.round(brightness * 2.55))
             }
             log(`Fairy device ${cmd.name}: ${cmd.command} (brightness: ${cmd.id || 'default'})`)
           } else {
@@ -376,12 +376,12 @@ export async function deactivateScene(sceneName: string): Promise<void> {
   )
   for (const cmd of twinklyCommands) {
     try {
-      const dev = getOne<{ IPAddress: string }>(
-        "SELECT IPAddress FROM hub_devices WHERE label = ? AND device_type = 'twinkly'",
+      const dev = getOne<{ ip: string | null }>(
+        "SELECT json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'twinkly'",
         [cmd.name],
       )
-      if (dev?.IPAddress) {
-        await twinklyClient.turnOff(dev.IPAddress)
+      if (dev?.ip) {
+        await twinklyClient.turnOff(dev.ip)
         log(`Turned off Twinkly: ${cmd.name}`)
       }
     } catch (err) {
@@ -396,12 +396,12 @@ export async function deactivateScene(sceneName: string): Promise<void> {
   )
   for (const cmd of fairyCommands) {
     try {
-      const dev = getOne<{ IPAddress: string }>(
-        "SELECT IPAddress FROM hub_devices WHERE label = ? AND device_type = 'fairy'",
+      const dev = getOne<{ ip: string | null }>(
+        "SELECT json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'fairy'",
         [cmd.name],
       )
-      if (dev?.IPAddress) {
-        await fairyDeviceClient.turnOff(dev.IPAddress)
+      if (dev?.ip) {
+        await fairyDeviceClient.turnOff(dev.ip)
         log(`Turned off Fairy device: ${cmd.name}`)
       }
     } catch (err) {

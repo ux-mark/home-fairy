@@ -8,11 +8,11 @@ import { useToast } from '@/hooks/useToast'
 
 function SceneCardSkeleton() {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+    <div className="card rounded-xl border p-4">
       <div className="animate-pulse space-y-2">
-        <div className="h-8 w-8 rounded-lg bg-slate-800" />
-        <div className="h-5 w-28 rounded bg-slate-800" />
-        <div className="h-4 w-20 rounded bg-slate-800" />
+        <div className="surface h-8 w-8 rounded-lg" />
+        <div className="surface h-5 w-28 rounded" />
+        <div className="surface h-4 w-20 rounded" />
       </div>
     </div>
   )
@@ -82,7 +82,7 @@ export default function ScenesPage() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-medium text-slate-400">All Scenes</h2>
+        <h2 className="text-body text-sm font-medium">All Scenes</h2>
         <button
           onClick={() => createMutation.mutate()}
           disabled={createMutation.isPending}
@@ -96,13 +96,13 @@ export default function ScenesPage() {
       {/* Search input */}
       {scenes && scenes.length > 0 && (
         <div className="relative mb-4">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+          <Search className="text-caption absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
           <input
             type="search"
             placeholder="Search scenes by name, tag, room, or mode..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 pl-10 pr-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            className="input-field h-11 w-full rounded-lg border pl-10 pr-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           />
         </div>
       )}
@@ -116,7 +116,7 @@ export default function ScenesPage() {
       ) : filteredScenes.length > 0 ? (
         <>
           {search.trim() && scenes && filteredScenes.length !== scenes.length && (
-            <p className="mb-3 text-xs text-slate-500">
+            <p className="text-caption mb-3 text-xs">
               Showing {filteredScenes.length} of {scenes.length} scene{scenes.length !== 1 ? 's' : ''}
             </p>
           )}
@@ -128,43 +128,41 @@ export default function ScenesPage() {
                   key={scene.name}
                   to={`/scenes/${encodeURIComponent(scene.name)}`}
                   className={cn(
-                    'group rounded-xl border bg-slate-900 p-4 transition-colors',
+                    'card group rounded-xl border p-4 transition-colors',
                     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                    isActive
-                      ? 'border-fairy-500/40 shadow-lg shadow-fairy-500/10'
-                      : 'border-slate-800 hover:border-slate-700',
+                    isActive && 'border-fairy-500/40 shadow-lg shadow-fairy-500/10',
                   )}
                 >
                   <div className="mb-3 flex items-start justify-between">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-800 text-xl">
-                      {scene.icon || <Sparkles className="h-5 w-5 text-slate-500" />}
+                    <div className="surface flex h-10 w-10 items-center justify-center rounded-lg text-xl">
+                      {scene.icon || <Sparkles className="text-caption h-5 w-5" />}
                     </div>
-                    <ChevronRight className="h-5 w-5 text-slate-600 transition-colors group-hover:text-slate-400" />
+                    <ChevronRight className="text-caption h-5 w-5 transition-colors group-hover:text-[var(--text-secondary)]" />
                   </div>
 
-                  <h3 className="text-base font-semibold text-slate-100">
+                  <h3 className="text-heading text-base font-semibold">
                     {scene.name}
                   </h3>
 
                   {/* Badges */}
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    {scene.rooms.slice(0, 3).map(r => (
+                    {(Array.isArray(scene.rooms) ? scene.rooms : []).filter(r => r?.name).slice(0, 3).map(r => (
                       <span
                         key={r.name}
-                        className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-400"
+                        className="surface text-body rounded-full px-2 py-0.5 text-[10px] font-medium"
                       >
                         {r.name}
                       </span>
                     ))}
-                    {scene.rooms.length > 3 && (
-                      <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-medium text-slate-500">
+                    {Array.isArray(scene.rooms) && scene.rooms.length > 3 && (
+                      <span className="surface text-caption rounded-full px-2 py-0.5 text-[10px] font-medium">
                         +{scene.rooms.length - 3}
                       </span>
                     )}
                   </div>
 
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    {scene.modes.slice(0, 3).map(m => (
+                    {(Array.isArray(scene.modes) ? scene.modes : []).slice(0, 3).map(m => (
                       <span
                         key={m}
                         className="rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400"
@@ -174,9 +172,9 @@ export default function ScenesPage() {
                     ))}
                   </div>
 
-                  <p className="mt-2 text-xs text-slate-500">
-                    {scene.commands.length} command
-                    {scene.commands.length !== 1 ? 's' : ''}
+                  <p className="text-caption mt-2 text-xs">
+                    {(Array.isArray(scene.commands) ? scene.commands : []).length} command
+                    {(Array.isArray(scene.commands) ? scene.commands : []).length !== 1 ? 's' : ''}
                   </p>
 
                   {isActive && (
@@ -191,20 +189,20 @@ export default function ScenesPage() {
           </div>
         </>
       ) : scenes && scenes.length > 0 && search.trim() ? (
-        <div className="rounded-xl border border-dashed border-slate-700 py-12 text-center">
-          <Search className="mx-auto mb-3 h-8 w-8 text-slate-600" />
-          <p className="text-sm text-slate-400">
+        <div className="rounded-xl border border-dashed py-12 text-center" style={{ borderColor: 'var(--border-secondary)' }}>
+          <Search className="text-caption mx-auto mb-3 h-8 w-8" />
+          <p className="text-body text-sm">
             No scenes match "{search}".
           </p>
-          <p className="mt-1 text-xs text-slate-500">
+          <p className="text-caption mt-1 text-xs">
             Try a different search term or clear the filter.
           </p>
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed border-slate-700 py-12 text-center">
-          <Sparkles className="mx-auto mb-3 h-8 w-8 text-slate-600" />
-          <p className="text-sm text-slate-400">No scenes created yet.</p>
-          <p className="mt-1 text-xs text-slate-500">
+        <div className="rounded-xl border border-dashed py-12 text-center" style={{ borderColor: 'var(--border-secondary)' }}>
+          <Sparkles className="text-caption mx-auto mb-3 h-8 w-8" />
+          <p className="text-body text-sm">No scenes created yet.</p>
+          <p className="text-caption mt-1 text-xs">
             Tap "Create Scene" to build your first lighting scene.
           </p>
         </div>

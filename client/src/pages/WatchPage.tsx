@@ -47,13 +47,13 @@ function WatchRoomView({
     <div className="flex min-h-svh flex-col">
       <button
         onClick={onBack}
-        className="mb-2 flex min-h-[44px] items-center gap-1 self-start rounded-lg px-2 py-2 text-sm text-slate-400 transition-colors active:text-slate-200"
+        className="mb-2 flex min-h-[44px] items-center gap-1 self-start rounded-lg px-2 py-2 text-sm text-body transition-colors active:text-heading"
         aria-label="Back to rooms"
       >
         <ArrowLeft className="h-5 w-5" />
       </button>
 
-      <h2 className="mb-3 text-center text-lg font-bold text-slate-100">
+      <h2 className="mb-3 text-center text-lg font-bold text-heading">
         {room.name}
       </h2>
 
@@ -65,7 +65,7 @@ function WatchRoomView({
           <button
             onClick={() => deactivateMutation.mutate(room.current_scene!)}
             disabled={deactivateMutation.isPending}
-            className="mt-2 block w-full min-h-[44px] rounded-xl bg-slate-800 py-3 text-sm font-medium text-slate-300 transition-colors active:bg-slate-700"
+            className="mt-2 block w-full min-h-[44px] rounded-xl surface py-3 text-sm font-medium text-slate-300 transition-colors active:bg-slate-700"
           >
             Turn Off
           </button>
@@ -83,7 +83,7 @@ function WatchRoomView({
               'active:scale-[0.98]',
               room.current_scene === scene.name
                 ? 'bg-fairy-500 text-white'
-                : 'bg-slate-800 text-slate-100 active:bg-slate-700',
+                : 'surface text-heading active:bg-slate-700',
             )}
           >
             {scene.icon && <span className="mr-2 text-lg">{scene.icon}</span>}
@@ -163,10 +163,10 @@ export default function WatchPage() {
                 'active:scale-[0.98]',
                 room.current_scene
                   ? 'bg-fairy-500/10 border border-fairy-500/30'
-                  : 'bg-slate-800',
+                  : 'surface',
               )}
             >
-              <span className="text-base font-semibold text-slate-100">
+              <span className="text-base font-semibold text-heading">
                 {room.name}
               </span>
               {room.current_scene && (

@@ -10,13 +10,13 @@ import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
 
 function RoomCardSkeleton() {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+    <div className="card rounded-xl border p-4">
       <div className="animate-pulse space-y-3">
-        <div className="h-5 w-28 rounded bg-slate-800" />
-        <div className="h-4 w-20 rounded bg-slate-800" />
+        <div className="surface h-5 w-28 rounded" />
+        <div className="surface h-4 w-20 rounded" />
         <div className="flex gap-2">
-          <div className="h-8 w-16 rounded-lg bg-slate-800" />
-          <div className="h-8 w-16 rounded-lg bg-slate-800" />
+          <div className="surface h-8 w-16 rounded-lg" />
+          <div className="surface h-8 w-16 rounded-lg" />
         </div>
       </div>
     </div>
@@ -38,7 +38,7 @@ function ModeSelector({
 }) {
   return (
     <section aria-label="System mode" className="mb-6">
-      <h2 className="mb-3 text-sm font-medium text-slate-400">Current Mode</h2>
+      <h2 className="text-body mb-3 text-sm font-medium">Current Mode</h2>
       <div className="flex flex-wrap gap-2">
         {modes.map(mode => (
           <button
@@ -51,7 +51,7 @@ function ModeSelector({
               'min-h-[44px]',
               currentMode === mode
                 ? 'bg-fairy-500 text-white shadow-lg shadow-fairy-500/25'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700',
+                : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
             )}
           >
             {mode}
@@ -87,10 +87,10 @@ function RoomCard({
   const displayScenes = roomScenes.slice(0, 4)
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4 transition-colors hover:border-slate-700">
+    <div className="card rounded-xl border p-4 transition-colors" style={{ borderColor: 'var(--border-primary)' }}>
       <div className="mb-3 flex items-start justify-between">
         <div>
-          <h3 className="text-base font-semibold text-slate-100">
+          <h3 className="text-heading text-base font-semibold">
             {room.name}
           </h3>
           {room.current_scene ? (
@@ -99,7 +99,7 @@ function RoomCard({
               {room.current_scene}
             </span>
           ) : (
-            <span className="mt-1 inline-block text-xs text-slate-500">
+            <span className="text-caption mt-1 inline-block text-xs">
               No active scene
             </span>
           )}
@@ -109,7 +109,7 @@ function RoomCard({
             'rounded-full px-2 py-0.5 text-[10px] font-medium',
             room.auto
               ? 'bg-fairy-500/15 text-fairy-400'
-              : 'bg-slate-800 text-slate-500',
+              : 'surface text-caption',
           )}
         >
           {room.auto ? 'Auto' : 'Manual'}
@@ -118,7 +118,7 @@ function RoomCard({
 
       {/* Sensor data */}
       {(room.temperature !== null || room.lux !== null) && (
-        <div className="mb-3 flex items-center gap-4 text-xs text-slate-400">
+        <div className="text-body mb-3 flex items-center gap-4 text-xs">
           {room.temperature !== null && (
             <span className="flex items-center gap-1">
               <Thermometer className="h-3.5 w-3.5" />
@@ -135,7 +135,7 @@ function RoomCard({
       )}
 
       {/* Last active */}
-      <div className="mb-3 flex items-center gap-1 text-xs text-slate-500">
+      <div className="text-caption mb-3 flex items-center gap-1 text-xs">
         <Clock className="h-3 w-3" />
         {formatTimeAgo(room.last_active)}
       </div>
@@ -152,7 +152,7 @@ function RoomCard({
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                 room.current_scene === scene.name
                   ? 'bg-fairy-500/20 text-fairy-300'
-                  : 'bg-slate-800 text-slate-300 hover:bg-slate-700',
+                  : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
               )}
             >
               {scene.icon && <span className="text-sm">{scene.icon}</span>}
@@ -189,7 +189,7 @@ function WeatherCard() {
   const unit = useFahrenheit ? 'F' : 'C'
 
   return (
-    <div className="mb-6 flex items-center gap-4 rounded-xl border border-slate-800 bg-slate-900 px-4 py-3">
+    <div className="card mb-6 flex items-center gap-4 rounded-xl border px-4 py-3">
       {weather.icon ? (
         <img
           src={`https://openweathermap.org/img/wn/${weather.icon}@2x.png`}
@@ -197,18 +197,18 @@ function WeatherCard() {
           className="h-12 w-12"
         />
       ) : (
-        <Cloud className="h-8 w-8 text-slate-400" />
+        <Cloud className="text-body h-8 w-8" />
       )}
       <div className="flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="text-2xl font-semibold text-slate-100">
+          <span className="text-heading text-2xl font-semibold">
             {displayTemp}°{unit}
           </span>
-          <span className="text-sm capitalize text-slate-400">
+          <span className="text-body text-sm capitalize">
             {weather.description}
           </span>
         </div>
-        <div className="mt-1 flex items-center gap-4 text-xs text-slate-500">
+        <div className="text-caption mt-1 flex items-center gap-4 text-xs">
           <span className="flex items-center gap-1">
             <Droplets className="h-3 w-3" />
             {weather.humidity}%
@@ -282,9 +282,9 @@ export default function HomePage() {
 
       <section aria-label="Rooms">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-medium text-slate-400">Rooms</h2>
+          <h2 className="text-body text-sm font-medium">Rooms</h2>
           {rooms && (
-            <span className="text-xs text-slate-500">
+            <span className="text-caption text-xs">
               {rooms.length} room{rooms.length !== 1 ? 's' : ''}
             </span>
           )}
@@ -313,10 +313,10 @@ export default function HomePage() {
               ))}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-slate-700 py-12 text-center">
-            <Zap className="mx-auto mb-3 h-8 w-8 text-slate-600" />
-            <p className="text-sm text-slate-400">No rooms set up yet.</p>
-            <p className="mt-1 text-xs text-slate-500">
+          <div className="rounded-xl border border-dashed py-12 text-center" style={{ borderColor: 'var(--border-secondary)' }}>
+            <Zap className="text-caption mx-auto mb-3 h-8 w-8" />
+            <p className="text-body text-sm">No rooms set up yet.</p>
+            <p className="text-caption mt-1 text-xs">
               Head to the Rooms tab to get started.
             </p>
           </div>

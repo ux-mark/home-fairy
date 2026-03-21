@@ -15,10 +15,10 @@ import { useToast } from '@/hooks/useToast'
 
 function RoomCardSkeleton() {
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+    <div className="card rounded-xl border p-4">
       <div className="animate-pulse space-y-2">
-        <div className="h-5 w-32 rounded bg-slate-800" />
-        <div className="h-4 w-24 rounded bg-slate-800" />
+        <div className="surface h-5 w-32 rounded" />
+        <div className="surface h-4 w-24 rounded" />
       </div>
     </div>
   )
@@ -58,7 +58,7 @@ export default function RoomsPage() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-medium text-slate-400">All Rooms</h2>
+        <h2 className="text-body text-sm font-medium">All Rooms</h2>
         <Dialog.Root open={dialogOpen} onOpenChange={setDialogOpen}>
           <Dialog.Trigger asChild>
             <button className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-fairy-500 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-fairy-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
@@ -68,11 +68,11 @@ export default function RoomsPage() {
           </Dialog.Trigger>
           <Dialog.Portal>
             <Dialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
-            <Dialog.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-xl">
-              <Dialog.Title className="text-lg font-semibold text-slate-100">
+            <Dialog.Content className="card fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border p-6 shadow-xl">
+              <Dialog.Title className="text-heading text-lg font-semibold">
                 New Room
               </Dialog.Title>
-              <Dialog.Description className="mt-1 text-sm text-slate-400">
+              <Dialog.Description className="text-body mt-1 text-sm">
                 Give your room a name. You can assign lights and configure automation later.
               </Dialog.Description>
               <form
@@ -88,13 +88,13 @@ export default function RoomsPage() {
                   onChange={e => setNewRoomName(e.target.value)}
                   placeholder="Room name"
                   autoFocus
-                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                  className="input-field h-11 w-full rounded-lg border px-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                 />
                 <div className="flex justify-end gap-2">
                   <Dialog.Close asChild>
                     <button
                       type="button"
-                      className="min-h-[44px] rounded-lg px-4 py-2 text-sm font-medium text-slate-400 transition-colors hover:text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                      className="text-body min-h-[44px] rounded-lg px-4 py-2 text-sm font-medium transition-colors hover:text-[var(--text-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                     >
                       Cancel
                     </button>
@@ -127,13 +127,13 @@ export default function RoomsPage() {
               <Link
                 key={room.name}
                 to={`/rooms/${encodeURIComponent(room.name)}`}
-                className="group flex items-center gap-4 rounded-xl border border-slate-800 bg-slate-900 p-4 transition-colors hover:border-slate-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="card group flex items-center gap-4 rounded-xl border p-4 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               >
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-base font-semibold text-slate-100">
+                  <h3 className="text-heading text-base font-semibold">
                     {room.name}
                   </h3>
-                  <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-400">
+                  <div className="text-body mt-1 flex flex-wrap items-center gap-3 text-xs">
                     <span className="flex items-center gap-1">
                       <Lightbulb className="h-3 w-3" />
                       {lightsPerRoom(room.name)} light
@@ -150,22 +150,22 @@ export default function RoomsPage() {
                         'rounded-full px-1.5 py-0.5 text-[10px] font-medium',
                         room.auto
                           ? 'bg-fairy-500/15 text-fairy-400'
-                          : 'bg-slate-800 text-slate-500',
+                          : 'surface text-caption',
                       )}
                     >
                       {room.auto ? 'Auto' : 'Manual'}
                     </span>
                   </div>
                 </div>
-                <ChevronRight className="h-5 w-5 shrink-0 text-slate-600 transition-colors group-hover:text-slate-400" />
+                <ChevronRight className="text-caption h-5 w-5 shrink-0 transition-colors group-hover:text-[var(--text-secondary)]" />
               </Link>
             ))}
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed border-slate-700 py-12 text-center">
-          <DoorOpen className="mx-auto mb-3 h-8 w-8 text-slate-600" />
-          <p className="text-sm text-slate-400">No rooms yet.</p>
-          <p className="mt-1 text-xs text-slate-500">
+        <div className="rounded-xl border border-dashed py-12 text-center" style={{ borderColor: 'var(--border-secondary)' }}>
+          <DoorOpen className="text-caption mx-auto mb-3 h-8 w-8" />
+          <p className="text-body text-sm">No rooms yet.</p>
+          <p className="text-caption mt-1 text-xs">
             Tap "Add Room" above to create your first room.
           </p>
         </div>

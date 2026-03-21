@@ -32,11 +32,17 @@ router.get('/devices', (_req: Request, res: Response) => {
   try {
     const rows = getAll<HubDeviceRow>('SELECT * FROM hub_devices ORDER BY label')
     res.json(
-      rows.map((r) => ({
-        ...r,
-        capabilities: JSON.parse(r.capabilities),
-        attributes: JSON.parse(r.attributes),
-      })),
+      rows.map((r) => {
+        let capabilities: unknown = []
+        let attributes: unknown = {}
+        try { capabilities = JSON.parse(r.capabilities) } catch { capabilities = [] }
+        try { attributes = JSON.parse(r.attributes) } catch { attributes = {} }
+        return {
+          ...r,
+          capabilities: Array.isArray(capabilities) ? capabilities : [],
+          attributes: attributes && typeof attributes === 'object' ? attributes : {},
+        }
+      }),
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

@@ -36,12 +36,12 @@ export default function SceneCommandCard({
   }
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+    <div className="card rounded-xl border p-4">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1 space-y-3">
           {/* Type selector */}
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-400">
+            <label className="text-body mb-1 block text-xs font-medium">
               Type
             </label>
             <select
@@ -52,7 +52,7 @@ export default function SceneCommandCard({
                   e.target.value as SceneCommand['type'],
                 )
               }
-              className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+              className="input-field h-11 w-full rounded-lg border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
             >
               {COMMAND_TYPES.map(t => (
                 <option key={t.value} value={t.value}>
@@ -64,7 +64,7 @@ export default function SceneCommandCard({
 
           {/* Name */}
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-400">
+            <label className="text-body mb-1 block text-xs font-medium">
               Name
             </label>
             <input
@@ -72,14 +72,14 @@ export default function SceneCommandCard({
               value={command.name}
               onChange={e => updateField('name', e.target.value)}
               placeholder="Command name"
-              className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+              className="input-field h-11 w-full rounded-lg border px-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
             />
           </div>
 
           {/* Dynamic fields based on type */}
           {(command.type === 'lifx_light' || command.type === 'lifx_off') && (
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">
+              <label className="text-body mb-1 block text-xs font-medium">
                 Selector
               </label>
               <input
@@ -87,7 +87,7 @@ export default function SceneCommandCard({
                 value={command.selector ?? ''}
                 onChange={e => updateField('selector', e.target.value)}
                 placeholder="e.g. label:Kitchen"
-                className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="input-field h-11 w-full rounded-lg border px-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               />
             </div>
           )}
@@ -95,7 +95,7 @@ export default function SceneCommandCard({
           {command.type === 'lifx_light' && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-400">
+                <label className="text-body mb-1 block text-xs font-medium">
                   Colour
                 </label>
                 <input
@@ -103,11 +103,11 @@ export default function SceneCommandCard({
                   value={command.color ?? ''}
                   onChange={e => updateField('color', e.target.value)}
                   placeholder="e.g. hue:120"
-                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                  className="input-field h-11 w-full rounded-lg border px-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-400">
+                <label className="text-body mb-1 block text-xs font-medium">
                   Brightness
                 </label>
                 <input
@@ -120,7 +120,7 @@ export default function SceneCommandCard({
                     updateField('brightness', Number(e.target.value))
                   }
                   placeholder="0-1"
-                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                  className="input-field h-11 w-full rounded-lg border px-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                 />
               </div>
             </div>
@@ -129,7 +129,7 @@ export default function SceneCommandCard({
           {command.type === 'hubitat_device' && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-400">
+                <label className="text-body mb-1 block text-xs font-medium">
                   Device ID
                 </label>
                 <input
@@ -137,11 +137,11 @@ export default function SceneCommandCard({
                   value={command.id ?? ''}
                   onChange={e => updateField('id', e.target.value)}
                   placeholder="Device ID"
-                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                  className="input-field h-11 w-full rounded-lg border px-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-400">
+                <label className="text-body mb-1 block text-xs font-medium">
                   Command
                 </label>
                 <input
@@ -149,7 +149,7 @@ export default function SceneCommandCard({
                   value={command.command ?? ''}
                   onChange={e => updateField('command', e.target.value)}
                   placeholder="e.g. on, off"
-                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                  className="input-field h-11 w-full rounded-lg border px-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                 />
               </div>
             </div>
@@ -158,7 +158,7 @@ export default function SceneCommandCard({
           {command.type === 'scene_timer' && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-400">
+                <label className="text-body mb-1 block text-xs font-medium">
                   Target Scene
                 </label>
                 <input
@@ -166,11 +166,11 @@ export default function SceneCommandCard({
                   value={command.command ?? ''}
                   onChange={e => updateField('command', e.target.value)}
                   placeholder="Scene to activate after timer"
-                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                  className="input-field h-11 w-full rounded-lg border px-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-400">
+                <label className="text-body mb-1 block text-xs font-medium">
                   Delay (seconds)
                 </label>
                 <input
@@ -181,7 +181,7 @@ export default function SceneCommandCard({
                     updateField('duration', Number(e.target.value))
                   }
                   placeholder="e.g. 300"
-                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                  className="input-field h-11 w-full rounded-lg border px-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                 />
               </div>
             </div>
@@ -189,13 +189,13 @@ export default function SceneCommandCard({
 
           {command.type === 'twinkly' && (
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">
+              <label className="text-body mb-1 block text-xs font-medium">
                 Action
               </label>
               <select
                 value={command.command ?? 'on'}
                 onChange={e => updateField('command', e.target.value)}
-                className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="input-field h-11 w-full rounded-lg border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               >
                 <option value="on">On (movie mode)</option>
                 <option value="off">Off</option>
@@ -206,7 +206,7 @@ export default function SceneCommandCard({
           {(command.type === 'fairy_device' || command.type === 'fairy_scene') && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-400">
+                <label className="text-body mb-1 block text-xs font-medium">
                   Command / Pattern
                 </label>
                 <input
@@ -214,12 +214,12 @@ export default function SceneCommandCard({
                   value={command.command ?? ''}
                   onChange={e => updateField('command', e.target.value)}
                   placeholder={command.type === 'fairy_scene' ? 'Scene name' : 'e.g. Rainbow x4'}
-                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                  className="input-field h-11 w-full rounded-lg border px-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                 />
               </div>
               {command.type === 'fairy_device' && (
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-400">
+                  <label className="text-body mb-1 block text-xs font-medium">
                     Brightness (0-100)
                   </label>
                   <input
@@ -229,7 +229,7 @@ export default function SceneCommandCard({
                     value={command.id ?? ''}
                     onChange={e => updateField('id', e.target.value)}
                     placeholder="Brightness %"
-                    className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                    className="input-field h-11 w-full rounded-lg border px-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                   />
                 </div>
               )}
@@ -239,13 +239,13 @@ export default function SceneCommandCard({
           {command.type === 'lifx_effect' && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-400">
+                <label className="text-body mb-1 block text-xs font-medium">
                   Effect
                 </label>
                 <select
                   value={command.effect ?? 'breathe'}
                   onChange={e => updateField('effect', e.target.value as any)}
-                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                  className="input-field h-11 w-full rounded-lg border px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                 >
                   <option value="breathe">Breathe</option>
                   <option value="pulse">Pulse</option>
@@ -253,7 +253,7 @@ export default function SceneCommandCard({
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-400">
+                <label className="text-body mb-1 block text-xs font-medium">
                   Selector
                 </label>
                 <input
@@ -261,7 +261,7 @@ export default function SceneCommandCard({
                   value={command.selector ?? ''}
                   onChange={e => updateField('selector', e.target.value)}
                   placeholder="e.g. all"
-                  className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                  className="input-field h-11 w-full rounded-lg border px-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                 />
               </div>
             </div>
@@ -269,7 +269,7 @@ export default function SceneCommandCard({
 
           {command.type === 'mode_update' && (
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-400">
+              <label className="text-body mb-1 block text-xs font-medium">
                 Mode
               </label>
               <input
@@ -277,7 +277,7 @@ export default function SceneCommandCard({
                 value={command.command ?? ''}
                 onChange={e => updateField('command', e.target.value)}
                 placeholder="e.g. Evening"
-                className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="input-field h-11 w-full rounded-lg border px-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               />
             </div>
           )}
@@ -286,7 +286,7 @@ export default function SceneCommandCard({
         {/* Delete */}
         <button
           onClick={() => onDelete(index)}
-          className="shrink-0 rounded-lg p-2.5 text-slate-500 transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          className="text-caption shrink-0 rounded-lg p-2.5 transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           aria-label={`Delete command ${command.name || index + 1}`}
         >
           <Trash2 className="h-4 w-4" />

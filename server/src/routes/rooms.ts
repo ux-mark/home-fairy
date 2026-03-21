@@ -34,10 +34,14 @@ interface LightRoomRow {
 }
 
 function parseRoom(row: RoomRow) {
+  let sensors: unknown = []
+  let tags: unknown = []
+  try { sensors = JSON.parse(row.sensors) } catch { sensors = [] }
+  try { tags = JSON.parse(row.tags) } catch { tags = [] }
   return {
     ...row,
-    sensors: JSON.parse(row.sensors),
-    tags: JSON.parse(row.tags),
+    sensors: Array.isArray(sensors) ? sensors : [],
+    tags: Array.isArray(tags) ? tags : [],
     auto: Boolean(row.auto),
     mode_changed: Boolean(row.mode_changed),
   }

@@ -53,7 +53,7 @@ function getCurrentMode(): string {
   const row = getOne<{ value: string }>(
     "SELECT value FROM current_state WHERE key = 'mode'",
   )
-  return row?.value ?? 'day'
+  return row?.value ?? 'Evening'
 }
 
 export class MotionHandler {

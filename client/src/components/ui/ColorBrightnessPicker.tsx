@@ -1,16 +1,38 @@
-import { useCallback, useEffect, useMemo } from 'react'
-import { HslColorPicker, type HslColor } from 'react-colorful'
-import { cn, kelvinToHex, hsbToHex, debounce } from '@/lib/utils'
+/**
+ * ColorBrightnessPicker
+ *
+ * Core component for controlling light colour and brightness.
+ * Uses react-colorful's HsvColorPicker which works in HSV (= HSB) —
+ * the same colour space that LIFX uses. This means what the user sees
+ * in the picker matches exactly what the physical light will show.
+ *
+ * For white-only lights (has_color=false), shows a kelvin temperature
+ * slider instead of the colour picker.
+ *
+ * Brightness is handled as a separate slider below the picker because
+ * LIFX treats brightness independently from colour (hue + saturation).
+ */
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { HsvColorPicker } from 'react-colorful'
+import { kelvinToHex, hsbToHex, debounce } from '@/lib/utils'
+
+export interface HsvColor {
+  h: number // 0-360
+  s: number // 0-100
+  v: number // 0-100 (this is brightness in LIFX terms)
+}
 
 interface ColorBrightnessPickerProps {
   hasColor: boolean
-  color: HslColor
+  /** HSV colour — h: 0-360, s: 0-100 (maps to LIFX saturation 0-1), v is ignored (use brightness instead) */
+  color: HsvColor
   kelvin: number
+  /** Brightness 0-100 (maps to LIFX brightness 0-1) */
   brightness: number
   minKelvin?: number
   maxKelvin?: number
-  onChange: (update: { color?: HslColor; kelvin?: number; brightness?: number }) => void
-  onLiveChange?: (update: { color?: HslColor; kelvin?: number; brightness?: number }) => void
+  onChange: (update: { color?: HsvColor; kelvin?: number; brightness?: number }) => void
+  onLiveChange?: (update: { color?: HsvColor; kelvin?: number; brightness?: number }) => void
 }
 
 export default function ColorBrightnessPicker({
@@ -23,10 +45,11 @@ export default function ColorBrightnessPicker({
   onChange,
   onLiveChange,
 }: ColorBrightnessPickerProps) {
+  // Debounced live change (300ms) for API calls — prevents hammering LIFX
   const debouncedLiveChange = useMemo(() => {
     if (!onLiveChange) return undefined
     return debounce(
-      (update: { color?: HslColor; kelvin?: number; brightness?: number }) => {
+      (update: { color?: HsvColor; kelvin?: number; brightness?: number }) => {
         onLiveChange(update)
       },
       300,
@@ -38,9 +61,11 @@ export default function ColorBrightnessPicker({
   }, [debouncedLiveChange])
 
   const handleColorChange = useCallback(
-    (c: HslColor) => {
-      onChange({ color: c })
-      debouncedLiveChange?.({ color: c })
+    (c: { h: number; s: number; v: number }) => {
+      // react-colorful HsvColorPicker reports h: 0-360, s: 0-100, v: 0-100
+      const update: HsvColor = { h: c.h, s: c.s, v: c.v }
+      onChange({ color: update })
+      debouncedLiveChange?.({ color: update })
     },
     [onChange, debouncedLiveChange],
   )
@@ -63,40 +88,54 @@ export default function ColorBrightnessPicker({
     [onChange, debouncedLiveChange],
   )
 
+  // Preview colour hex — uses HSB→RGB conversion matching LIFX
   const previewHex = hasColor
     ? hsbToHex(color.h, color.s / 100, brightness / 100)
     : kelvinToHex(kelvin)
 
-  const brightnessGradient = `linear-gradient(to right, #0f172a, ${previewHex})`
-  const kelvinGradient = `linear-gradient(to right, #ff8a00, ${kelvinToHex(Math.round((minKelvin + maxKelvin) / 2))}, #b4d7ff)`
+  // Brightness gradient: dark → current colour at full brightness
+  const fullBrightnessHex = hasColor
+    ? hsbToHex(color.h, color.s / 100, 1)
+    : previewHex
+  const brightnessGradient = `linear-gradient(to right, #0a0a0a, ${fullBrightnessHex})`
+
+  // Kelvin gradient: warm amber → neutral → cool blue-white
+  const kelvinGradient = `linear-gradient(to right, #ff8a00, #f5e6d0, #e0e8f0, #b4d7ff)`
 
   return (
     <div className="space-y-5">
-      {/* Colour preview swatch + label */}
+      {/* Colour preview swatch + current values */}
       <div className="flex items-center gap-3">
         <div
-          className="h-10 w-10 shrink-0 rounded-full border-2 border-slate-700 shadow-inner"
-          style={{ backgroundColor: previewHex, opacity: brightness / 100 || 0.05 }}
+          className="h-10 w-10 shrink-0 rounded-full shadow-inner"
+          style={{
+            backgroundColor: previewHex,
+            opacity: Math.max(brightness / 100, 0.08),
+            border: '2px solid var(--border-secondary, #334155)',
+          }}
           aria-hidden="true"
         />
-        <div className="text-sm text-slate-400">
+        <div className="text-sm" style={{ color: 'var(--text-secondary, #94a3b8)' }}>
           {hasColor
-            ? `HSL ${Math.round(color.h)}° ${Math.round(color.s)}% · ${brightness}%`
+            ? `H:${Math.round(color.h)}° S:${Math.round(color.s)}% B:${brightness}%`
             : `${kelvin}K · ${brightness}%`}
         </div>
       </div>
 
-      {/* Colour picker or kelvin slider */}
+      {/* Colour picker (HSV) or Kelvin slider */}
       {hasColor ? (
         <div className="fairy-picker">
-          <HslColorPicker
-            color={{ h: color.h, s: color.s, l: color.l }}
+          <HsvColorPicker
+            color={{ h: color.h, s: color.s, v: color.v || 100 }}
             onChange={handleColorChange}
           />
         </div>
       ) : (
         <div className="space-y-2">
-          <label className="block text-xs font-medium text-slate-400">
+          <label
+            className="block text-xs font-medium"
+            style={{ color: 'var(--text-secondary, #94a3b8)' }}
+          >
             Colour Temperature
           </label>
           <div className="relative">
@@ -111,7 +150,10 @@ export default function ColorBrightnessPicker({
               style={{ background: kelvinGradient }}
               aria-label="Colour temperature"
             />
-            <div className="mt-1 flex justify-between text-[10px] text-slate-500">
+            <div
+              className="mt-1 flex justify-between text-[10px]"
+              style={{ color: 'var(--text-muted, #64748b)' }}
+            >
               <span>Warm {minKelvin}K</span>
               <span>Cool {maxKelvin}K</span>
             </div>
@@ -121,9 +163,12 @@ export default function ColorBrightnessPicker({
 
       {/* Brightness slider */}
       <div className="space-y-2">
-        <label className="flex items-center justify-between text-xs font-medium text-slate-400">
+        <label
+          className="flex items-center justify-between text-xs font-medium"
+          style={{ color: 'var(--text-secondary, #94a3b8)' }}
+        >
           <span>Brightness</span>
-          <span className="text-slate-300">{brightness}%</span>
+          <span style={{ color: 'var(--text-primary, #f1f5f9)' }}>{brightness}%</span>
         </label>
         <input
           type="range"
@@ -138,116 +183,92 @@ export default function ColorBrightnessPicker({
         />
       </div>
 
-      {/*
-        Styles for the colour picker and sliders.
-        Scoped via .fairy-picker and .fairy-slider class names.
-        Key fixes:
-        - Hue bar: 28px tall, large 28px pointer, visible border
-        - Saturation area: 240px min height, large pointer
-        - Sliders: 12px track, 28px thumb, generous touch padding
-      */}
+      {/* Scoped styles for picker and sliders */}
       <style>{`
-        /* ── react-colorful overrides ─────────────────── */
         .fairy-picker .react-colorful {
           width: 100% !important;
-          min-width: 240px;
-          gap: 12px;
+          height: auto !important;
+          gap: 16px;
         }
-
-        /* Saturation/lightness panel */
         .fairy-picker .react-colorful__saturation {
-          min-height: 240px;
-          border-radius: 12px;
+          min-height: 260px;
+          border-radius: 12px !important;
+          border-bottom: none !important;
         }
-
-        /* Hue bar — make it tall and easy to grab */
+        .fairy-picker .react-colorful__last-control,
         .fairy-picker .react-colorful__hue {
-          height: 28px !important;
-          border-radius: 14px;
-        }
-
-        /* All pointers (saturation + hue) — big, visible, touch-friendly */
-        .fairy-picker .react-colorful__pointer {
-          width: 28px !important;
-          height: 28px !important;
-          border-width: 3px !important;
-          border-color: white !important;
-          box-shadow: 0 0 0 1px rgba(0,0,0,0.3), 0 2px 6px rgba(0,0,0,0.4) !important;
-        }
-
-        /* Hue pointer specifically — add a coloured fill to match position */
-        .fairy-picker .react-colorful__hue .react-colorful__pointer {
-          width: 32px !important;
           height: 32px !important;
+          border-radius: 16px !important;
         }
-
-        /* Ensure interactive area is large enough for touch (44px) */
         .fairy-picker .react-colorful__interactive {
-          min-height: 44px;
+          outline: none;
         }
-
-        /* ── Range slider overrides ──────────────────── */
+        .fairy-picker .react-colorful__pointer {
+          width: 30px !important;
+          height: 30px !important;
+          border: 3px solid white !important;
+          box-shadow: 0 0 0 1.5px rgba(0,0,0,0.25), 0 2px 8px rgba(0,0,0,0.35) !important;
+        }
+        .fairy-picker .react-colorful__hue-pointer {
+          width: 34px !important;
+          height: 34px !important;
+        }
+        .fairy-picker .react-colorful__interactive:focus .react-colorful__pointer {
+          box-shadow: 0 0 0 2px #10b981, 0 0 0 4px rgba(16,185,129,0.3), 0 2px 8px rgba(0,0,0,0.35) !important;
+        }
         .fairy-slider {
           -webkit-appearance: none;
           appearance: none;
-          height: 12px;
-          border-radius: 6px;
+          height: 14px;
+          border-radius: 7px;
           outline: none;
           cursor: pointer;
-          /* Add vertical padding for touch target without changing visual height */
-          padding: 16px 0;
+          padding: 15px 0;
           background-clip: content-box;
           box-sizing: content-box;
         }
-
         .fairy-slider:focus-visible {
           outline: 2px solid #10b981;
-          outline-offset: 2px;
+          outline-offset: 4px;
         }
-
-        /* Webkit thumb (Chrome, Safari) */
         .fairy-slider::-webkit-slider-thumb {
           -webkit-appearance: none;
           appearance: none;
-          width: 28px;
-          height: 28px;
+          width: 30px;
+          height: 30px;
           border-radius: 50%;
           background: white;
-          border: 3px solid rgba(148, 163, 184, 0.6);
-          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+          border: 3px solid rgba(148, 163, 184, 0.5);
+          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
           cursor: pointer;
-          margin-top: -8px; /* Centre on the 12px track */
+          margin-top: -8px;
+          transition: transform 0.1s ease, border-color 0.1s ease;
         }
         .fairy-slider:active::-webkit-slider-thumb {
-          transform: scale(1.15);
+          transform: scale(1.12);
           border-color: #10b981;
         }
-
-        /* Webkit track */
         .fairy-slider::-webkit-slider-runnable-track {
-          height: 12px;
-          border-radius: 6px;
+          height: 14px;
+          border-radius: 7px;
         }
-
-        /* Firefox thumb */
         .fairy-slider::-moz-range-thumb {
-          width: 28px;
-          height: 28px;
+          width: 30px;
+          height: 30px;
           border-radius: 50%;
           background: white;
-          border: 3px solid rgba(148, 163, 184, 0.6);
-          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+          border: 3px solid rgba(148, 163, 184, 0.5);
+          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
           cursor: pointer;
+          transition: transform 0.1s ease, border-color 0.1s ease;
         }
         .fairy-slider:active::-moz-range-thumb {
-          transform: scale(1.15);
+          transform: scale(1.12);
           border-color: #10b981;
         }
-
-        /* Firefox track */
         .fairy-slider::-moz-range-track {
-          height: 12px;
-          border-radius: 6px;
+          height: 14px;
+          border-radius: 7px;
           background: transparent;
         }
       `}</style>

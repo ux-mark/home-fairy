@@ -49,7 +49,7 @@ function LightRow({ light }: { light: Light }) {
   }
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 transition-colors">
+    <div className="card rounded-xl border transition-colors">
       {/* Main row */}
       <div className="flex items-center gap-3 p-4">
         {/* Colour dot */}
@@ -67,12 +67,12 @@ function LightRow({ light }: { light: Light }) {
           <p
             className={cn(
               'truncate text-sm font-medium',
-              isOn ? 'text-slate-100' : 'text-slate-400',
+              isOn ? 'text-heading' : 'text-body',
             )}
           >
             {light.label}
           </p>
-          <p className="mt-0.5 truncate text-xs text-slate-500">
+          <p className="text-caption mt-0.5 truncate text-xs">
             {light.group.name}
             {isOn && ` \u00B7 ${Math.round(light.brightness * 100)}%`}
           </p>
@@ -90,7 +90,7 @@ function LightRow({ light }: { light: Light }) {
         {/* Identify */}
         <button
           onClick={() => identifyMutation.mutate()}
-          className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-800 hover:text-fairy-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          className="text-body flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors hover:bg-[var(--bg-tertiary)] hover:text-fairy-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           aria-label={`Identify ${light.label}`}
           title="Flash this light"
         >
@@ -102,10 +102,10 @@ function LightRow({ light }: { light: Light }) {
           onClick={() => toggleMutation.mutate()}
           disabled={toggleMutation.isPending}
           className={cn(
-            'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
             isOn
               ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
-              : 'text-slate-500 hover:bg-slate-800 hover:text-slate-300',
+              : 'text-caption hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-secondary)]',
           )}
           aria-label={`Turn ${light.label} ${isOn ? 'off' : 'on'}`}
         >
@@ -115,7 +115,7 @@ function LightRow({ light }: { light: Light }) {
         {/* Expand toggle */}
         <button
           onClick={() => setExpanded(!expanded)}
-          className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-500 transition-colors hover:text-slate-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          className="text-caption flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors hover:text-[var(--text-secondary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           aria-label={expanded ? 'Collapse' : 'Expand'}
         >
           {expanded ? (
@@ -128,10 +128,10 @@ function LightRow({ light }: { light: Light }) {
 
       {/* Expanded controls */}
       {expanded && isOn && (
-        <div className="border-t border-slate-800 px-4 py-3">
-          <label className="mb-2 flex items-center justify-between text-xs font-medium text-slate-400">
+        <div className="border-t px-4 py-3">
+          <label className="text-body mb-2 flex items-center justify-between text-xs font-medium">
             <span>Brightness</span>
-            <span className="text-slate-300">{brightness}%</span>
+            <span className="text-heading">{brightness}%</span>
           </label>
           <input
             type="range"
@@ -147,16 +147,16 @@ function LightRow({ light }: { light: Light }) {
             }}
             className="h-11 w-full cursor-pointer appearance-none rounded-lg"
             style={{
-              background: `linear-gradient(to right, #0f172a, ${colorHex})`,
+              background: `linear-gradient(to right, var(--bg-primary), ${colorHex})`,
             }}
             aria-label={`Brightness for ${light.label}`}
           />
 
           {/* Colour info */}
-          <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
+          <div className="text-caption mt-2 flex items-center gap-2 text-xs">
             <div
-              className="h-4 w-4 rounded-full border border-slate-700"
-              style={{ backgroundColor: colorHex }}
+              className="h-4 w-4 rounded-full border"
+              style={{ backgroundColor: colorHex, borderColor: 'var(--border-secondary)' }}
             />
             {light.product.capabilities.has_color ? (
               <span>
@@ -166,7 +166,7 @@ function LightRow({ light }: { light: Light }) {
             ) : (
               <span>{light.color.kelvin}K</span>
             )}
-            <span className="text-slate-600">\u00B7</span>
+            <span style={{ color: 'var(--border-secondary)' }}>\u00B7</span>
             <span>{light.product.name}</span>
           </div>
         </div>
@@ -215,14 +215,14 @@ export default function LightsPage() {
   return (
     <div>
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="text-sm font-medium text-slate-400">LIFX Lights</h2>
+        <h2 className="text-body text-sm font-medium">LIFX Lights</h2>
         <div className="flex items-center gap-2">
           {/* Group filter */}
           {groups.length > 1 && (
             <select
               value={groupFilter}
               onChange={e => setGroupFilter(e.target.value)}
-              className="h-10 rounded-lg border border-slate-700 bg-slate-800 px-2.5 text-sm text-slate-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+              className="input-field h-10 rounded-lg border px-2.5 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               aria-label="Filter by group"
             >
               <option value="all">All groups</option>
@@ -241,7 +241,7 @@ export default function LightsPage() {
             }
             disabled={isFetching}
             className={cn(
-              'flex min-h-[44px] items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-700',
+              'surface text-heading flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:brightness-95 dark:hover:brightness-110',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               isFetching && 'opacity-60',
             )}
@@ -255,8 +255,8 @@ export default function LightsPage() {
       </div>
 
       {/* Admin note */}
-      <div className="mb-4 flex items-center gap-2 rounded-lg bg-slate-900 px-3 py-2.5 text-xs text-slate-400">
-        <Info className="h-3.5 w-3.5 shrink-0 text-slate-500" />
+      <div className="card text-body mb-4 flex items-center gap-2 rounded-lg px-3 py-2.5 text-xs">
+        <Info className="text-caption h-3.5 w-3.5 shrink-0" />
         <p>
           Manage light assignments in{' '}
           <Link
@@ -271,13 +271,13 @@ export default function LightsPage() {
 
       {/* Search input */}
       <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+        <Search className="text-caption absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
         <input
           type="search"
           placeholder="Search by light name or group..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="h-11 w-full rounded-lg border border-slate-700 bg-slate-800 pl-10 pr-3 text-sm text-slate-100 placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          className="input-field h-11 w-full rounded-lg border pl-10 pr-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
         />
       </div>
 
@@ -286,14 +286,14 @@ export default function LightsPage() {
           {Array.from({ length: 6 }).map((_, i) => (
             <div
               key={i}
-              className="h-16 animate-pulse rounded-xl bg-slate-800"
+              className="surface h-16 animate-pulse rounded-xl"
             />
           ))}
         </div>
       ) : filteredLights.length > 0 ? (
         <>
           {(search.trim() || groupFilter !== 'all') && lights && (
-            <p className="mb-3 text-xs text-slate-500">
+            <p className="text-caption mb-3 text-xs">
               Showing {filteredLights.length} of {lights.length} light{lights.length !== 1 ? 's' : ''}
             </p>
           )}
@@ -304,11 +304,11 @@ export default function LightsPage() {
           </div>
         </>
       ) : (
-        <div className="rounded-xl border border-dashed border-slate-700 py-12 text-center">
+        <div className="rounded-xl border border-dashed py-12 text-center" style={{ borderColor: 'var(--border-secondary)' }}>
           {search.trim() || groupFilter !== 'all' ? (
             <>
-              <Search className="mx-auto mb-3 h-8 w-8 text-slate-600" />
-              <p className="text-sm text-slate-400">
+              <Search className="text-caption mx-auto mb-3 h-8 w-8" />
+              <p className="text-body text-sm">
                 No lights match the current filter.
               </p>
               <button
@@ -323,8 +323,8 @@ export default function LightsPage() {
             </>
           ) : (
             <>
-              <p className="text-sm text-slate-400">No LIFX lights found.</p>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="text-body text-sm">No LIFX lights found.</p>
+              <p className="text-caption mt-1 text-xs">
                 Make sure your lights are powered on and connected to the network.
               </p>
             </>
