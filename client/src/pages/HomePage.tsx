@@ -68,7 +68,7 @@ function RoomCard({
   room,
   scenes,
   currentMode,
-  onActivateScene,
+  onToggleScene,
   isLocked,
 }: {
   room: Room
