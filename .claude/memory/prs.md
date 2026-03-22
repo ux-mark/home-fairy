@@ -18,4 +18,9 @@
 
 -->
 
-*No PRs tracked yet.*
+## PR (pending) — Fix scene button toggle and sensor filtering in device list
+- **Branch**: fix/scene-toggle-and-sensor-filter → dev
+- **Created**: 2026-03-22
+- **Status**: open (PR needs manual creation — GitHub token lacks permissions)
+- **Summary**: Scene buttons toggle on/off, WCAG AA contrast fix in light mode, sensor devices filtered from Switches tab
+- **Files**: `client/src/pages/HomePage.tsx`, `client/src/pages/RoomDetailPage.tsx`
