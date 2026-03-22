@@ -1415,68 +1415,95 @@ export default function RoomDetailPage() {
 
           {/* ── Sensors tab ──────────────────────────────────────────────────── */}
           <Tabs.Content value="sensors" className="space-y-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs text-caption">
-                Configure motion sensors and their priority thresholds.
-              </p>
-              <button
-                onClick={handleAddSensor}
-                className="min-h-[44px] flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-fairy-400 transition-colors hover:bg-fairy-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add Sensor
-              </button>
-            </div>
+            {(() => {
+              const SENSOR_TYPES = ['motion', 'contact', 'temperature', 'sensor']
+              const hubSensors = allHubDevices?.filter(d => SENSOR_TYPES.includes(d.device_type)) ?? []
+              const assignedNames = new Set(effectiveSensors.map(s => s.name))
+              const availableSensors = hubSensors.filter(d => !assignedNames.has(d.label))
 
-            {effectiveSensors.length > 0 ? (
-              <div className="space-y-2">
-                {effectiveSensors.map((sensor, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-3 rounded-xl card border p-3"
-                  >
-                    <input
-                      type="text"
-                      value={sensor.name}
-                      onChange={e =>
-                        handleUpdateSensor(i, { ...sensor, name: e.target.value })
-                      }
-                      placeholder="Sensor name"
-                      className="h-11 min-w-0 flex-1 rounded-lg border border-[var(--border-secondary)] surface px-2.5 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                    />
-                    <div className="flex flex-col items-center gap-0.5">
-                      <label className="text-[10px] text-caption">
-                        Priority
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        value={sensor.priority_threshold}
-                        onChange={e =>
-                          handleUpdateSensor(i, {
-                            ...sensor,
-                            priority_threshold: Number(e.target.value),
-                          })
-                        }
-                        className="h-11 w-20 rounded-lg border border-[var(--border-secondary)] surface px-2.5 text-center text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                      />
-                    </div>
-                    <button
-                      onClick={() => handleRemoveSensor(i)}
-                      className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-caption transition-colors hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                      aria-label="Remove sensor"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
+              return (
+                <>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-caption">
+                      Configure motion sensors and their lux thresholds.
+                    </p>
+                    {availableSensors.length > 0 && (
+                      <button
+                        onClick={handleAddSensor}
+                        className="min-h-[44px] flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium text-fairy-400 transition-colors hover:bg-fairy-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Add sensor
+                      </button>
+                    )}
                   </div>
-                ))}
-              </div>
-            ) : (
-              <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
-                No sensors configured. Add a sensor to enable motion-based automation.
-              </p>
-            )}
+
+                  {effectiveSensors.length > 0 ? (
+                    <div className="space-y-2">
+                      {effectiveSensors.map((sensor, i) => (
+                        <div
+                          key={i}
+                          className="flex items-center gap-3 rounded-xl card border p-3"
+                        >
+                          <select
+                            value={sensor.name}
+                            onChange={e =>
+                              handleUpdateSensor(i, { ...sensor, name: e.target.value })
+                            }
+                            className="h-11 min-w-0 flex-1 rounded-lg border border-[var(--border-secondary)] surface px-2.5 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                          >
+                            <option value="" disabled>Select a sensor</option>
+                            {sensor.name && !hubSensors.some(d => d.label === sensor.name) && (
+                              <option value={sensor.name}>{sensor.name}</option>
+                            )}
+                            {hubSensors
+                              .filter(d => d.label === sensor.name || !assignedNames.has(d.label))
+                              .map(d => (
+                                <option key={d.id} value={d.label}>
+                                  {d.label}
+                                </option>
+                              ))}
+                          </select>
+                          <div className="flex flex-col items-center gap-0.5">
+                            <label className="text-[10px] text-caption">
+                              Lux
+                            </label>
+                            <input
+                              type="number"
+                              min={0}
+                              max={10000}
+                              value={sensor.priority_threshold}
+                              onChange={e =>
+                                handleUpdateSensor(i, {
+                                  ...sensor,
+                                  priority_threshold: Number(e.target.value),
+                                })
+                              }
+                              className="h-11 w-20 rounded-lg border border-[var(--border-secondary)] surface px-2.5 text-center text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                            />
+                          </div>
+                          <button
+                            onClick={() => handleRemoveSensor(i)}
+                            className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-caption transition-colors hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                            aria-label="Remove sensor"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : hubSensors.length > 0 ? (
+                    <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
+                      No sensors configured. Add a sensor to enable motion-based automation.
+                    </p>
+                  ) : (
+                    <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
+                      No sensors found in Hubitat. Sync your devices first.
+                    </p>
+                  )}
+                </>
+              )
+            })()}
           </Tabs.Content>
         </Tabs.Root>
       </section>
