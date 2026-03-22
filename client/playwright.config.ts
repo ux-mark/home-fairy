@@ -4,14 +4,14 @@ export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
   use: {
-    baseURL: 'http://localhost:5173',
+    baseURL: 'http://localhost:8000',
     headless: true,
     viewport: { width: 375, height: 812 }, // iPhone-sized for mobile-first testing
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: 'npx vite --port 5173',
-    port: 5173,
+    command: 'npx vite --port 8000',
+    port: 8000,
     reuseExistingServer: true,
     timeout: 15_000,
   },

@@ -23,7 +23,7 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const PORT = Number(process.env.PORT) || 3001
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173'
+const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:8000'
 
 // Initialize database
 initDb()

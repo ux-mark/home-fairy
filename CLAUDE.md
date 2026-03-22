@@ -36,7 +36,7 @@ thefairies-app/
 ## Key Commands
 ```bash
 # Development (from root)
-npm run dev              # Starts both client (:5173) and server (:3001)
+npm run dev              # Starts both client (:8000) and server (:3001)
 npm run dev:client       # Client only
 npm run dev:server       # Server only
 
