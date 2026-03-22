@@ -416,6 +416,9 @@ function MtaCard() {
           const DirIcon = stop.config.direction === 'S' ? ArrowDown : ArrowUp
           const dotColor = STATUS_DOT_COLORS[stop.status]
           const next = stop.nextArrival
+          // Use catchableTrain when available (re-evaluated status from a later train)
+          const displayTrain = stop.catchableTrain ?? next
+          const buffer = displayTrain ? displayTrain.minutesAway - stop.config.walkTime : 0
 
           return (
             <div
@@ -442,7 +445,7 @@ function MtaCard() {
               </span>
 
               {/* Arrival info */}
-              {next ? (
+              {displayTrain ? (
                 <div className="flex-1 min-w-0">
                   {stop.status === 'red' && stop.catchableTrain ? (
                     <>
@@ -458,11 +461,13 @@ function MtaCard() {
                   ) : (
                     <>
                       <span className="text-heading text-sm font-medium">
-                        {next.minutesAway} min
+                        {stop.leaveInMinutes != null && stop.leaveInMinutes > 0
+                          ? `Leave in ${stop.leaveInMinutes} min`
+                          : 'Leave now'}
                       </span>
                       <span className="text-caption text-xs ml-1.5">
-                        {stop.status === 'green' && `(${stop.config.walkTime} min walk + ${next.minutesAway - stop.config.walkTime} min buffer)`}
-                        {stop.status === 'orange' && `(${stop.config.walkTime} min walk \u2014 tight!)`}
+                        {stop.status === 'green' && `(${displayTrain.routeId} in ${displayTrain.minutesAway} min, ${buffer} min wait at station)`}
+                        {stop.status === 'orange' && `(${displayTrain.routeId} in ${displayTrain.minutesAway} min \u2014 tight!)`}
                       </span>
                     </>
                   )}
