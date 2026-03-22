@@ -447,7 +447,16 @@ function MtaCard() {
               {/* Arrival info */}
               {displayTrain ? (
                 <div className="flex-1 min-w-0">
-                  {stop.status === 'red' && stop.catchableTrain ? (
+                  {stop.status === 'red' ? (
+                    <>
+                      <span className="text-heading text-sm font-medium">
+                        Next in {next?.minutesAway ?? displayTrain.minutesAway} min
+                      </span>
+                      <span className="text-caption text-xs ml-1.5">
+                        (too far to catch)
+                      </span>
+                    </>
+                  ) : stop.status === 'green' ? (
                     <>
                       <span className="text-heading text-sm font-medium">
                         {stop.leaveInMinutes != null && stop.leaveInMinutes > 0
@@ -455,22 +464,19 @@ function MtaCard() {
                           : 'Leave now'}
                       </span>
                       <span className="text-caption text-xs ml-1.5">
-                        ({stop.catchableTrain.routeId} in {stop.catchableTrain.minutesAway} min)
+                        ({displayTrain.routeId} in {displayTrain.minutesAway} min, {buffer} min wait at station)
                       </span>
                     </>
-                  ) : (
+                  ) : stop.status === 'orange' ? (
                     <>
                       <span className="text-heading text-sm font-medium">
-                        {stop.leaveInMinutes != null && stop.leaveInMinutes > 0
-                          ? `Leave in ${stop.leaveInMinutes} min`
-                          : 'Leave now'}
+                        Leave now
                       </span>
                       <span className="text-caption text-xs ml-1.5">
-                        {stop.status === 'green' && `(${displayTrain.routeId} in ${displayTrain.minutesAway} min, ${buffer} min wait at station)`}
-                        {stop.status === 'orange' && `(${displayTrain.routeId} in ${displayTrain.minutesAway} min \u2014 tight!)`}
+                        ({displayTrain.routeId} in {displayTrain.minutesAway} min \u2014 tight!)
                       </span>
                     </>
-                  )}
+                  ) : null}
                 </div>
               ) : (
                 <span className="text-caption text-xs flex-1">No trains</span>
