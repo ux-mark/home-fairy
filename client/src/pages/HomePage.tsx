@@ -473,7 +473,7 @@ function MtaCard() {
                         Leave now
                       </span>
                       <span className="text-caption text-xs ml-1.5">
-                        ({displayTrain.routeId} in {displayTrain.minutesAway} min \u2014 tight!)
+                        ({displayTrain.routeId} in {displayTrain.minutesAway} min — tight!)
                       </span>
                     </>
                   ) : null}
