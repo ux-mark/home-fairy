@@ -64,7 +64,7 @@ test('Home Page loads with mode buttons and room cards', async ({ page }) => {
   const weatherCard = page.locator('img[alt]').first()
   // No assertion — just verifying no crash
 
-  await page.screenshot({ path: 'test-results/01-home.png', fullPage: true })
+  await page.screenshot({ path: '.testing/results/01-home.png', fullPage: true })
 })
 
 // ── Test 2: Rooms Page ───────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ test('Rooms Page shows room list and Add Room button', async ({ page }) => {
     }
   }
 
-  await page.screenshot({ path: 'test-results/02-rooms.png', fullPage: true })
+  await page.screenshot({ path: '.testing/results/02-rooms.png', fullPage: true })
 })
 
 // ── Test 3: Room Detail Page ─────────────────────────────────────────────────
@@ -149,7 +149,7 @@ test('Room Detail Page shows settings, tabs, and save button', async ({ page }) 
   const saveBtn = page.getByText('Save Room')
   await expect(saveBtn).toBeVisible()
 
-  await page.screenshot({ path: 'test-results/03-room-detail.png', fullPage: true })
+  await page.screenshot({ path: '.testing/results/03-room-detail.png', fullPage: true })
 })
 
 // ── Test 4: Scenes Page ──────────────────────────────────────────────────────
@@ -193,7 +193,7 @@ test('Scenes Page loads with search and filtering', async ({ page }) => {
   const restoredCount = await page.locator('a[href^="/scenes/"]').count()
   expect(restoredCount).toBe(totalCount)
 
-  await page.screenshot({ path: 'test-results/04-scenes.png', fullPage: true })
+  await page.screenshot({ path: '.testing/results/04-scenes.png', fullPage: true })
 })
 
 // ── Test 5: Scene Editor ─────────────────────────────────────────────────────
@@ -243,7 +243,7 @@ test('Scene Editor shows tabs and light controls', async ({ page }) => {
   const devicesPanel = page.locator('[role="tabpanel"][data-state="active"]')
   await expect(devicesPanel).toBeVisible()
 
-  await page.screenshot({ path: 'test-results/05-scene-editor.png', fullPage: true })
+  await page.screenshot({ path: '.testing/results/05-scene-editor.png', fullPage: true })
 })
 
 // ── Test 6: Devices Page ─────────────────────────────────────────────────────
@@ -271,7 +271,7 @@ test('Devices Page shows device list with search and filter chips', async ({ pag
   const deviceCount = await deviceCards.count()
   expect(deviceCount).toBeGreaterThanOrEqual(1)
 
-  await page.screenshot({ path: 'test-results/06-devices.png', fullPage: true })
+  await page.screenshot({ path: '.testing/results/06-devices.png', fullPage: true })
 })
 
 // ── Test 7: Settings Page ────────────────────────────────────────────────────
@@ -313,7 +313,7 @@ test('Settings Page shows all sections', async ({ page }) => {
   // Uptime
   await expect(page.getByText('Uptime')).toBeVisible()
 
-  await page.screenshot({ path: 'test-results/07-settings.png', fullPage: true })
+  await page.screenshot({ path: '.testing/results/07-settings.png', fullPage: true })
 })
 
 // ── Test 8: Watch Page ───────────────────────────────────────────────────────
@@ -340,7 +340,7 @@ test('Watch Page shows room list with All Off and mode indicator', async ({ page
   await allOffBtn.scrollIntoViewIfNeeded()
   await expect(allOffBtn).toBeVisible()
 
-  await page.screenshot({ path: 'test-results/08-watch.png', fullPage: true })
+  await page.screenshot({ path: '.testing/results/08-watch.png', fullPage: true })
 })
 
 // ── Test 9: Console Error Check ──────────────────────────────────────────────
@@ -478,5 +478,5 @@ test('Form interactions work without crashes', async ({ page }) => {
   const restoredCount = await page.locator('a[href^="/scenes/"]').count()
   expect(restoredCount).toBeGreaterThanOrEqual(filteredCount)
 
-  await page.screenshot({ path: 'test-results/10-form-interactions.png', fullPage: true })
+  await page.screenshot({ path: '.testing/results/10-form-interactions.png', fullPage: true })
 })
