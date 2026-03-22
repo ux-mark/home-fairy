@@ -9,6 +9,6 @@
 
 ## 2026-03-22 — GitHub token lacks PR creation permissions
 - **Severity**: low
-- **Status**: open
+- **Status**: resolved (2026-03-22)
 - `gh pr create` fails with "Resource not accessible by personal access token"
-- Workaround: create PRs manually via GitHub web UI
+- **Resolution**: User updated the personal access token with full repo permissions

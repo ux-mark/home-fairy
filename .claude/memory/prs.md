@@ -26,3 +26,12 @@
 - **Branch cleanup**: done
 - **Summary**: Scene buttons toggle on/off with optimistic updates, WCAG AA contrast fix, Hubitat capability parsing fix for sensors, sensor dropdown in room detail, removed unused priority_threshold field
 - **Files**: `client/src/pages/HomePage.tsx`, `client/src/pages/RoomDetailPage.tsx`, `server/src/routes/hubitat.ts`
+
+## PR #3 — Rename Switches to Devices, add room counts, and homepage UX improvements
+- **Branch**: feature/rename-switches-to-devices → dev
+- **Created**: 2026-03-22
+- **Status**: merged
+- **Merge date**: 2026-03-22
+- **Branch cleanup**: done
+- **Summary**: Renamed Switches tab to Devices, added lights/devices/sensors text counts to rooms listing, removed duplicate active scene badge, made Auto/Manual badge tappable to toggle automation, removed redundant "No active scene" text
+- **Files**: `client/src/pages/HomePage.tsx`, `client/src/pages/RoomDetailPage.tsx`, `client/src/pages/RoomsPage.tsx`
