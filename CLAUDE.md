@@ -251,7 +251,9 @@ UX quality is every agent's responsibility. These standards apply to all fronten
 - Confirmation messages are visible and accurate: "Project deleted successfully"
 - Use the user's language -- avoid technical jargon in UI copy
 - **Never truncate copy.** No `text-overflow: ellipsis`, no `line-clamp`, no overflow hidden on text. Design must accommodate the full copy -- if text doesn't fit, fix the layout, not the text.
-- **Never use ALL CAPS in headings or UI text.** All caps reads as shouting and harms readability. Use sentence case or title case. If visual weight is needed, use font weight or size -- not capitalisation. CSS `text-transform: uppercase` is banned on headings and body copy.
+- **ALL CAPS is considered shouting.** There are very few legitimate reasons to use all caps in UI text. Use sentence case or title case. If visual weight is needed, use font weight or size -- not capitalisation. CSS `text-transform: uppercase` is banned on headings and body copy. If all caps is genuinely considered the right UX decision for a specific element (e.g., a legal disclaimer label, a critical destructive-action warning), the builder must flag it for explicit user validation before implementation. All caps is never silently applied -- it always requires a conversation.
+- **Never use emojis in UI text, headings, buttons, labels, or any user-facing copy.** Emojis are inconsistent across platforms, undermine professionalism, and are not accessible. When a visual cue is needed, use a proper icon from the project's icon library -- never an emoji as a substitute.
+- **Icons must not stand alone without text -- with limited exceptions.** Users interact with dozens of apps and websites; they cannot be expected to know what every icon means. Icons used without accompanying text are a poor UX choice. The only exceptions are icons that are **instantly and universally recognisable**: save (floppy disk), copy, paste, trash/delete, close (×), search (magnifying glass), and similar universally understood symbols. Icons may also be used as **supplementary visual cues alongside text** (e.g., a user icon next to a username, a calendar icon next to a date). In all other cases, icons must be paired with a visible text label. When in doubt, add the label -- an icon with text is never worse than an icon alone. All icons must be sourced from the project's icon library (as specified in `.specs/PROJECT_SPEC.md`). If no icon library is configured, the builder must ask the user to choose one before adding icons.
 
 ### States
 Every view that depends on data must handle these four states:
@@ -326,7 +328,10 @@ The reviewer uses this checklist when reviewing frontend features. Every item mu
 - [ ] Error messages are specific, human-readable, and suggest a next step
 - [ ] Empty state copy guides the user toward their next action
 - [ ] No copy is truncated -- design accommodates full text at all viewports
-- [ ] No ALL CAPS in headings or UI text
+- [ ] No ALL CAPS in headings or UI text (if all caps is used, it was explicitly validated by the user)
+- [ ] No emojis in any user-facing text -- proper icons from the project's icon library used instead
+- [ ] No standalone icons without text labels (except universally recognisable icons: save, copy, paste, trash, close, search)
+- [ ] All icons sourced from the project's icon library -- no emoji substitutes
 
 **Performance:**
 - [ ] LCP < 2.5s on the primary page of this feature
