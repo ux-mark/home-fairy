@@ -78,7 +78,10 @@ router.get('/devices/sync', async (_req: Request, res: Response) => {
       }
 
       // Determine device type based on capabilities
-      const caps = (fullDevice.capabilities ?? []).map((c: string) => c.toLowerCase())
+      // Hubitat returns mixed arrays of strings and objects — filter to strings only
+      const caps = (fullDevice.capabilities ?? [])
+        .filter((c: unknown): c is string => typeof c === 'string')
+        .map(c => c.toLowerCase())
       let deviceType = 'unknown'
       if (caps.includes('motionsensor') || caps.includes('motion sensor')) {
         deviceType = 'motion'
