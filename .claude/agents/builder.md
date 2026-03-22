@@ -85,7 +85,9 @@ You are responsible for UX quality in all frontend code you write. Reference CLA
 - Empty states guide the user toward their next action
 - Use the user's language -- avoid technical jargon
 - **Never truncate copy.** No `text-overflow: ellipsis`, no `line-clamp`, no overflow hidden on text. Design must accommodate the full copy.
-- **Never use ALL CAPS in headings or UI text.** Use sentence case or title case. CSS `text-transform: uppercase` is banned on headings and body copy.
+- **ALL CAPS is considered shouting.** Use sentence case or title case. CSS `text-transform: uppercase` is banned on headings and body copy. If you believe all caps is the right choice for a specific element, you must flag it to the orchestrator for explicit user validation before applying it. Never silently use all caps.
+- **Never use emojis in UI.** No emojis in text, headings, buttons, labels, or any user-facing copy. When a visual cue is needed, use a proper icon from the project's icon library -- never an emoji as a substitute.
+- **Icons must not stand alone without text -- with limited exceptions.** Most icons are meaningless without a label. Only universally recognisable icons (save, copy, paste, trash/delete, close ×, search) may be used without text. Icons may also be used as supplementary cues alongside text (e.g., user icon next to a username). In all other cases, pair icons with visible text labels. All icons must come from the project's icon library (check `.specs/PROJECT_SPEC.md`). If no icon library is configured, flag it to the orchestrator before adding icons.
 
 ### States
 Every data-dependent view must handle: **loading**, **empty**, **error**, and **success**.

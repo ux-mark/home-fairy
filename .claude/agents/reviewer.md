@@ -79,7 +79,10 @@ Reference CLAUDE.md Section 5 for full standards. Check:
 - Empty states guide the user toward their next action
 - No technical jargon in user-facing copy
 - Copy is never truncated (no `text-overflow: ellipsis`, no `line-clamp`, no overflow hidden on text)
-- No ALL CAPS in headings or UI text (no `text-transform: uppercase` on headings/body copy)
+- No ALL CAPS in headings or UI text unless explicitly validated by the user (no `text-transform: uppercase` on headings/body copy without user sign-off)
+- No emojis in any user-facing text -- if visual cues are needed, proper icons from the project's icon library must be used instead
+- No standalone icons without text labels -- only universally recognisable icons (save, copy, paste, trash/delete, close ×, search) may appear without text. All other icons must have visible text labels. Icons used as supplementary cues alongside text (e.g., user icon next to username) are acceptable.
+- All icons sourced from the project's icon library -- no emoji substitutes, no inline SVGs unless the library requires it
 
 **States:**
 - Loading state implemented (skeleton or spinner)
