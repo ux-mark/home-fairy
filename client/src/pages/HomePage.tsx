@@ -460,11 +460,11 @@ function MtaCard() {
                     <>
                       <span className="text-heading text-sm font-medium">
                         {stop.leaveInMinutes != null && stop.leaveInMinutes > 0
-                          ? `Leave in ${stop.leaveInMinutes} min`
+                          ? `Leave within ${stop.leaveInMinutes} min`
                           : 'Leave now'}
                       </span>
                       <span className="text-caption text-xs ml-1.5">
-                        ({displayTrain.routeId} in {displayTrain.minutesAway} min, {buffer} min wait at station)
+                        ({displayTrain.routeId} in {displayTrain.minutesAway} min, {buffer - (stop.leaveInMinutes ?? 0)} min wait at station)
                       </span>
                     </>
                   ) : stop.status === 'orange' ? (
