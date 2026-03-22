@@ -453,7 +453,7 @@ function MtaCard() {
                         Next in {next?.minutesAway ?? displayTrain.minutesAway} min
                       </span>
                       <span className="text-caption text-xs ml-1.5">
-                        (too far to catch)
+                        (won't make it in time)
                       </span>
                     </>
                   ) : stop.status === 'green' ? (
