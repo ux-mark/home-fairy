@@ -5,6 +5,36 @@
 
 ---
 
+## 2026-03-22 — Suppress indicator lights when room is off or locked
+- MTA and weather indicator lights now respect room state (locked, auto disabled, manual scene override)
+- Motion handler checks room via light_rooms table before triggering indicators
+- Weather indicator's periodic timer checks current mode directly (Night/Guest Night) to avoid circular import
+- Files: `server/src/lib/motion-handler.ts`, `server/src/lib/weather-indicator.ts`
+
+## 2026-03-22 — Fix weather timeout 500s and PWA preload warnings
+- Weather API timeouts now return stale cached data instead of 500 errors
+- PWA service worker excludes JS chunks from precache, uses runtime StaleWhileRevalidate caching instead
+- Files: `server/src/lib/weather-client.ts`, `client/vite.config.ts`
+
+## 2026-03-22 — Manual scene override persists during motion
+- Manually activated scenes (e.g. TV) no longer get overridden by the default auto scene on motion events
+- Added `scene_manual` flag to rooms table, set on manual activation, cleared on deactivation/timer expiry
+- Files: `server/src/db/index.ts`, `server/src/lib/motion-handler.ts`, `server/src/lib/scene-executor.ts`, `server/src/routes/scenes.ts`
+
+## 2026-03-22 — Rebrand to Home Fairy + new icon
+- Renamed all user-facing text from "The Fairies" to "Home Fairy" (sidebar, mobile header, PWA manifest, server startup, package.json)
+- Replaced first-draft icon SVG with final design: mushroom-cap cottage with proper fairy wings (scalloped upper lobes, solid lower lobes, vein lines), tilted chimney, arched door, square mullioned windows
+- Database filename, PM2 process name, deploy scripts, and domain left unchanged (would break running system)
+- Files: `client/public/home-fairy-icon.svg`, `client/src/components/layout/AppLayout.tsx`, `client/vite.config.ts`, `server/src/index.ts`, `package.json`
+
+## 2026-03-22 — MTA indicator logic overhaul
+- Fixed `maxWaitMinutes` to represent platform wait tolerance (not departure countdown)
+- Status re-evaluates from catchable trains when first train is missed (green/orange instead of always red)
+- Indicator light now updates every 30s for walkTime+maxWaitMinutes window instead of single snapshot
+- Extracted `MtaIndicatorManager` class — centralised duplicate logic from motion-handler and system routes
+- Removed manual duration config from UI (replaced by computed decision window)
+- Files: `server/src/lib/mta-client.ts`, `server/src/lib/mta-indicator.ts`, `server/src/lib/motion-handler.ts`, `server/src/routes/system.ts`, `client/src/lib/api.ts`, `client/src/pages/SettingsPage.tsx`
+
 ## 2026-03-22 — Scene toggle + sensor filter fix
 - Scene buttons on homepage now toggle on/off (deactivate API was already available, just not wired up)
 - Fixed WCAG AA contrast for active scene buttons in light mode (`text-fairy-700 dark:text-fairy-300`)
