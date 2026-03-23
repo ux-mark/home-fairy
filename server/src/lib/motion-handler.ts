@@ -26,6 +26,7 @@ interface RoomRow {
   timer: number
   current_scene: string | null
   lux: number | null
+  scene_manual: number
 }
 
 interface SceneRow {
@@ -269,6 +270,12 @@ export class MotionHandler {
         return
       }
 
+      // Check for manual scene override — user explicitly activated a scene, skip auto
+      if (room.scene_manual) {
+        log(`Room ${roomName} has manual scene override (${room.current_scene}), skipping auto activation`)
+        return
+      }
+
       // Find highest-priority scene for room + current mode
       const sceneName = this.findSceneForRoom(roomName)
       if (!sceneName) {
@@ -341,6 +348,8 @@ export class MotionHandler {
             log(`Error deactivating scene: ${msg}`)
           }
         }
+        // Clear manual override flag when room goes inactive
+        run('UPDATE rooms SET scene_manual = 0 WHERE name = ?', [roomName])
       }, durationMs)
 
       this.roomTimers.set(roomName, {

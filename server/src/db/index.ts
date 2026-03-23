@@ -29,6 +29,7 @@ export function initDb(): void {
       temperature REAL,
       lux REAL,
       mode_changed INTEGER DEFAULT 0,
+      scene_manual INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -97,6 +98,14 @@ export function initDb(): void {
       UNIQUE(device_id, room_name)
     );
   `)
+
+  // Migration: add scene_manual column to rooms
+  try {
+    db.prepare('SELECT scene_manual FROM rooms LIMIT 1').get()
+  } catch {
+    console.log('[db] Migrating rooms: adding scene_manual column')
+    db.exec('ALTER TABLE rooms ADD COLUMN scene_manual INTEGER DEFAULT 0')
+  }
 
   // Migration: add auto_activate column to scenes
   try {

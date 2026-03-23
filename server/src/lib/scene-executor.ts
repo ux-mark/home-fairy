@@ -437,7 +437,7 @@ export async function deactivateScene(sceneName: string): Promise<void> {
 
   for (const room of rooms) {
     run(
-      `UPDATE rooms SET current_scene = NULL, updated_at = datetime('now') WHERE name = ?`,
+      `UPDATE rooms SET current_scene = NULL, scene_manual = 0, updated_at = datetime('now') WHERE name = ?`,
       [room.name],
     )
   }

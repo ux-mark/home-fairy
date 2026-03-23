@@ -233,6 +233,18 @@ router.post('/:name/activate', async (req: Request, res: Response) => {
   try {
     const name = req.params.name as string
     await activateScene(name)
+
+    // Mark all rooms in this scene as having a manual override so motion
+    // events do not replace the user's chosen scene until the room goes idle.
+    const scene = getOne<SceneRow>('SELECT * FROM scenes WHERE name = ?', [name])
+    if (scene) {
+      let rooms: { name: string }[] = []
+      try { rooms = JSON.parse(scene.rooms) } catch { /* ignore */ }
+      for (const room of rooms) {
+        run('UPDATE rooms SET scene_manual = 1 WHERE name = ?', [room.name])
+      }
+    }
+
     res.json({ success: true, scene: name, action: 'activated' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
