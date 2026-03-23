@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-03-23 — Room locks lost on server restart (in-memory only)
+- **Severity**: critical
+- **Status**: resolved (2026-03-23)
+- Room locks were stored in an in-memory `Set<string>` in `motion-handler.ts` — lost on every server restart
+- With multiple server restarts overnight, locks from Nighttime/Guest Night were silently wiped
+- This allowed MTA indicator, weather indicator, and motion-triggered scenes to activate in locked rooms
+- **Resolution**: Persisted locks to `current_state` table as `locked_rooms` JSON array; loaded on startup (PR #16)
+
+## 2026-03-23 — Sun mode scheduler overwrites Sleep Time mode
+- **Severity**: high
+- **Status**: resolved (2026-03-23)
+- The sun scheduler's catch-up logic and scheduled transitions blindly overwrote any mode, including manually-set "Sleep Time"
+- On restart or midnight refresh, "Sleep Time" was replaced with the sun-calculated mode (e.g. "Night")
+- **Resolution**: Scheduler now checks for "Sleep Time" and skips transitions when set (PR #16)
+
 ## 2026-03-23 — LIFX lights ignore room exclusions during All Off / Nighttime
 - **Severity**: medium
 - **Status**: open
@@ -16,18 +31,15 @@
 
 ## 2026-03-23 — HubDevice type missing `attributes` field
 - **Severity**: low
-- **Status**: open
+- **Status**: resolved (2026-03-23)
 - `client/src/lib/api.ts:142` — `HubDevice` interface doesn't declare `attributes` despite the backend returning it
-- DevicesPage uses `d.attributes as Record<string, unknown>` cast to work around this (`DevicesPage.tsx:519`)
-- Causes TS build error `TS2339: Property 'attributes' does not exist on type 'HubDevice'`
-- **Fix**: Add `attributes: Record<string, unknown>` to the `HubDevice` interface
+- **Resolution**: Added `attributes: Record<string, unknown>` to `HubDevice` interface, removed unsafe cast in DevicesPage (PR #14)
 
 ## 2026-03-23 — Multiple pre-existing unused import/variable TS errors in client
 - **Severity**: low
-- **Status**: open
-- `CollapsibleDeviceGroup.tsx`, `ColorBrightnessPicker.tsx`, `HomePage.tsx`, `RoomDetailPage.tsx`, `SettingsPage.tsx` all have unused imports or variables flagged by `tsc --noEmit`
-- These don't block `tsx` runtime but would block a strict CI build
-- **Fix**: Clean up unused imports/variables across affected files
+- **Status**: resolved (2026-03-23)
+- `CollapsibleDeviceGroup.tsx`, `ColorBrightnessPicker.tsx`, `HomePage.tsx`, `RoomDetailPage.tsx`, `SettingsPage.tsx` all had unused imports or variables
+- **Resolution**: Removed all unused imports/variables, `tsc --noEmit` now passes clean (PR #14)
 
 ## 2026-03-23 — XO-prefixed device names still in use
 - **Severity**: low

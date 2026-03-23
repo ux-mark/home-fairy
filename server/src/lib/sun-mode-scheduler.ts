@@ -44,13 +44,16 @@ class SunModeScheduler {
       }
     }
 
-    // If the current mode doesn't match, set it now
+    // If the current mode doesn't match, set it now — but never overwrite Sleep Time
+    // (Sleep Time is set manually by nighttime/guest-night and should persist until wake mode)
     if (currentShouldBe) {
       const currentModeRow = getOne<{ value: string }>(
         "SELECT value FROM current_state WHERE key = 'mode'",
       )
       const currentMode = currentModeRow?.value
-      if (currentMode !== currentShouldBe.mode) {
+      if (currentMode === 'Sleep Time') {
+        // Don't overwrite — Sleep Time persists until the configured wake mode is reached
+      } else if (currentMode !== currentShouldBe.mode) {
         this.transitionMode(currentShouldBe.mode, currentShouldBe.sunPhase + ' (catch-up)')
       }
     }
@@ -60,6 +63,11 @@ class SunModeScheduler {
       const delay = mapping.time.getTime() - now.getTime()
       if (delay > 0) {
         const timer = setTimeout(() => {
+          // Check mode at transition time — don't overwrite Sleep Time
+          const modeRow = getOne<{ value: string }>(
+            "SELECT value FROM current_state WHERE key = 'mode'",
+          )
+          if (modeRow?.value === 'Sleep Time') return
           this.transitionMode(mapping.mode, mapping.sunPhase)
         }, delay)
         this.timers.push(timer)

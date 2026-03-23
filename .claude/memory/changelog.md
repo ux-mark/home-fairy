@@ -5,6 +5,12 @@
 
 ---
 
+## 2026-03-23 — Persist room locks to database + sun scheduler respects Sleep Time
+- Room locks now stored in `current_state` table as `locked_rooms` JSON array, surviving server restarts
+- On startup, `MotionHandler` constructor loads persisted locks from DB
+- Sun mode scheduler skips catch-up and scheduled transitions when mode is "Sleep Time"
+- Files: `server/src/lib/motion-handler.ts`, `server/src/lib/sun-mode-scheduler.ts`
+
 ## 2026-03-22 — Suppress indicator lights when room is off or locked
 - MTA and weather indicator lights now respect room state (locked, auto disabled, manual scene override)
 - Motion handler checks room via light_rooms table before triggering indicators

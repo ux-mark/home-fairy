@@ -75,12 +75,52 @@ export class MotionHandler {
   private sensorStates: Map<string, 'active' | 'inactive'> = new Map()
   private lockedRooms: Set<string> = new Set()
 
+  constructor() {
+    this.loadLockedRooms()
+  }
+
+  // Load persisted room locks from the database on startup
+  private loadLockedRooms(): void {
+    try {
+      const row = getOne<{ value: string }>(
+        "SELECT value FROM current_state WHERE key = 'locked_rooms'",
+      )
+      if (row?.value) {
+        const rooms: string[] = JSON.parse(row.value)
+        for (const name of rooms) {
+          this.lockedRooms.add(name)
+        }
+        if (this.lockedRooms.size > 0) {
+          log(`Restored ${this.lockedRooms.size} room locks from database`, 'system')
+        }
+      }
+    } catch {
+      // Ignore — first run or corrupt data
+    }
+  }
+
+  // Persist current room locks to the database
+  private persistLockedRooms(): void {
+    try {
+      const value = JSON.stringify([...this.lockedRooms])
+      run(
+        `INSERT INTO current_state (key, value, updated_at)
+         VALUES ('locked_rooms', ?, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        [value],
+      )
+    } catch {
+      console.error('Failed to persist room locks')
+    }
+  }
+
   // Lock rooms — called by nighttime/guest-night endpoints
   lockRooms(roomNames: string[]): void {
     for (const name of roomNames) {
       this.lockedRooms.add(name)
       log(`Room locked: ${name}`)
     }
+    this.persistLockedRooms()
   }
 
   // Unlock all rooms — called when wake mode is reached
@@ -88,6 +128,7 @@ export class MotionHandler {
     if (this.lockedRooms.size > 0) {
       log(`Unlocking ${this.lockedRooms.size} rooms`)
       this.lockedRooms.clear()
+      this.persistLockedRooms()
     }
   }
 
