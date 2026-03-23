@@ -2,7 +2,7 @@
   "name": "thefairies-app",
   "version": "3.0.0",
   "private": true,
-  "description": "The Fairies — Home Automation Control System",
+  "description": "Home Fairy — Home Automation Control System",
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:client": "npm run dev --prefix client",

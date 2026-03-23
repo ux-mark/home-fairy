@@ -149,7 +149,7 @@ timerManager.setOnExpire(async (targetScene, sceneName) => {
 })
 
 httpServer.listen(PORT, () => {
-  console.log(`The Fairies server running on port ${PORT}`)
+  console.log(`Home Fairy server running on port ${PORT}`)
   console.log(`CORS origin: ${CORS_ORIGIN}`)
   sunModeScheduler.init(io)
   weatherIndicator.start()

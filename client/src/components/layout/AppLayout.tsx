@@ -7,6 +7,12 @@ import { useTheme } from '@/hooks/useTheme'
 import type { Theme } from '@/hooks/useTheme'
 import ToastContainer from '@/components/ui/Toast'
 
+function HomeFairyIcon({ className }: { className?: string }) {
+  return (
+    <img src="/home-fairy-icon.svg" alt="" aria-hidden="true" className={className} />
+  )
+}
+
 const NAV_ITEMS = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/rooms', icon: DoorOpen, label: 'Rooms' },
@@ -58,8 +64,8 @@ export default function AppLayout() {
       {/* Desktop sidebar */}
       <aside className="sidebar hidden w-56 shrink-0 border-r md:flex md:flex-col">
         <div className="flex items-center gap-2 border-b px-5 py-4">
-          <Sparkles className="h-5 w-5 text-fairy-400" />
-          <h1 className="text-heading text-lg font-semibold">The Fairies</h1>
+          <HomeFairyIcon className="h-6 w-6" />
+          <h1 className="text-heading text-lg font-semibold">Home Fairy</h1>
         </div>
         {system?.mode && (
           <div className="border-b px-5 py-3">
@@ -96,16 +102,16 @@ export default function AppLayout() {
         {/* Header */}
         <header className="chrome flex items-center justify-between border-b px-4 py-3 md:px-6 md:py-4">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-fairy-400 md:hidden" />
+            <HomeFairyIcon className="h-6 w-6 md:hidden" />
             <h1 className="text-heading text-lg font-semibold md:hidden">
-              The Fairies
+              Home Fairy
             </h1>
             <h2 className="text-heading hidden text-lg font-semibold md:block">
               {NAV_ITEMS.find(
                 n =>
                   n.to === location.pathname ||
                   (n.to !== '/' && location.pathname.startsWith(n.to)),
-              )?.label ?? 'The Fairies'}
+              )?.label ?? 'Home Fairy'}
             </h2>
           </div>
           <div className="flex items-center gap-2">
