@@ -931,7 +931,7 @@ router.post('/nighttime', async (_req: Request, res: Response) => {
     const prefRow = getOne<CurrentStateRow>(
       "SELECT * FROM current_state WHERE key = 'pref_night_exclude_rooms'",
     )
-    let excludeRooms: string[] = ['Bedroom']
+    let excludeRooms: string[] = ['Loo']
     try {
       if (prefRow?.value) excludeRooms = JSON.parse(prefRow.value)
     } catch { /* keep default */ }
@@ -975,7 +975,7 @@ router.post('/guest-night', async (_req: Request, res: Response) => {
     const prefRow = getOne<CurrentStateRow>(
       "SELECT * FROM current_state WHERE key = 'pref_guest_night_exclude_rooms'",
     )
-    let excludeRooms: string[] = ['Bedroom']
+    let excludeRooms: string[] = ['Bedroom', 'Loo']
     try {
       if (prefRow?.value) {
         excludeRooms = JSON.parse(prefRow.value)
