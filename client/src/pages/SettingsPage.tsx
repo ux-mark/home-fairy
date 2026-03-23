@@ -47,7 +47,7 @@ function Section({
 }) {
   return (
     <section className="card rounded-xl border p-5">
-      <h3 className="text-caption mb-4 text-sm font-semibold uppercase tracking-wider">
+      <h3 className="text-caption mb-4 text-sm font-semibold">
         {title}
       </h3>
       {children}
@@ -859,7 +859,7 @@ function SubwaySection() {
               <div className="max-h-64 overflow-y-auto space-y-3">
                 {Object.entries(groupedStops).map(([borough, stops]) => (
                   <div key={borough}>
-                    <p className="text-caption text-xs font-semibold uppercase tracking-wider mb-1.5">
+                    <p className="text-caption text-xs font-semibold tracking-wider mb-1.5">
                       {borough}
                     </p>
                     <div className="space-y-1">
@@ -1594,8 +1594,8 @@ function WeatherIndicatorSection() {
         {/* Colour Reference — interactive preview + customisation */}
         {weatherColors && (
           <div className="mt-2 rounded-lg border p-4" style={{ borderColor: 'var(--border-secondary)' }}>
-            <p className="text-caption text-xs font-semibold uppercase tracking-wider mb-3">
-              Colour Reference
+            <p className="text-caption text-xs font-semibold mb-3">
+              Colour reference
             </p>
 
             {!config.lightId && (
@@ -1838,9 +1838,81 @@ function SystemSection() {
   )
 }
 
+// ── Category accordion ───────────────────────────────────────────────────────
+
+type CategoryId = 'preferences' | 'night-and-schedule' | 'public-transport' | 'weather' | 'system'
+
+function CategoryAccordion({
+  categoryId,
+  label,
+  isOpen,
+  onToggle,
+  children,
+}: {
+  categoryId: CategoryId
+  label: string
+  isOpen: boolean
+  onToggle: () => void
+  children: React.ReactNode
+}) {
+  const headingId = `category-heading-${categoryId}`
+  const panelId = `category-panel-${categoryId}`
+
+  return (
+    <div>
+      <button
+        id={headingId}
+        aria-expanded={isOpen}
+        aria-controls={panelId}
+        onClick={onToggle}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            onToggle()
+          }
+        }}
+        className={cn(
+          'flex w-full items-center justify-between py-3 text-left transition-colors',
+          'min-h-[44px]',
+          !isOpen && 'border-b border-[var(--border-secondary)]',
+        )}
+      >
+        <span className="text-heading text-base font-semibold">{label}</span>
+        <ChevronDown
+          className={cn(
+            'h-5 w-5 text-[var(--text-secondary)] transition-transform duration-300',
+            isOpen && 'rotate-180',
+          )}
+          aria-hidden="true"
+        />
+      </button>
+
+      <div
+        id={panelId}
+        role="region"
+        aria-labelledby={headingId}
+        className="grid transition-all duration-300"
+        style={{ gridTemplateRows: isOpen ? '1fr' : '0fr' }}
+      >
+        <div className="overflow-hidden">
+          <div className="space-y-4 pt-3 pb-2">
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Settings page ───────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
+  const [openCategory, setOpenCategory] = useState<CategoryId | null>('preferences')
+
+  const handleToggle = (id: CategoryId) => {
+    setOpenCategory(prev => (prev === id ? null : id))
+  }
+
   return (
     <div>
       <div className="mb-6 flex items-center gap-2">
@@ -1848,18 +1920,57 @@ export default function SettingsPage() {
         <h1 className="text-heading text-lg font-semibold">Settings</h1>
       </div>
 
-      <div className="space-y-4">
-        <ThemeSection />
-        <GeneralSection />
-        <ModesSection />
-        <NightModeSection />
-        <SunScheduleSection />
-        <SubwaySection />
-        <IndicatorSection />
-        <WeatherIndicatorSection />
-        <DevicesSection />
-        <TimersSection />
-        <SystemSection />
+      <div className="divide-y divide-[var(--border-secondary)]">
+        <CategoryAccordion
+          categoryId="preferences"
+          label="Preferences"
+          isOpen={openCategory === 'preferences'}
+          onToggle={() => handleToggle('preferences')}
+        >
+          <ThemeSection />
+          <GeneralSection />
+          <ModesSection />
+        </CategoryAccordion>
+
+        <CategoryAccordion
+          categoryId="night-and-schedule"
+          label="Night and schedule"
+          isOpen={openCategory === 'night-and-schedule'}
+          onToggle={() => handleToggle('night-and-schedule')}
+        >
+          <NightModeSection />
+          <SunScheduleSection />
+        </CategoryAccordion>
+
+        <CategoryAccordion
+          categoryId="public-transport"
+          label="Public transport"
+          isOpen={openCategory === 'public-transport'}
+          onToggle={() => handleToggle('public-transport')}
+        >
+          <SubwaySection />
+          <IndicatorSection />
+        </CategoryAccordion>
+
+        <CategoryAccordion
+          categoryId="weather"
+          label="Weather"
+          isOpen={openCategory === 'weather'}
+          onToggle={() => handleToggle('weather')}
+        >
+          <WeatherIndicatorSection />
+        </CategoryAccordion>
+
+        <CategoryAccordion
+          categoryId="system"
+          label="System"
+          isOpen={openCategory === 'system'}
+          onToggle={() => handleToggle('system')}
+        >
+          <DevicesSection />
+          <TimersSection />
+          <SystemSection />
+        </CategoryAccordion>
       </div>
     </div>
   )
