@@ -157,9 +157,50 @@ class WeatherIndicator {
     }
   }
 
+  // Check if the indicator light's room blocks activation
+  // (room has auto disabled, manual scene override, or system is in Night/Guest Night mode)
+  private isLightRoomBlocked(lightId: string): boolean {
+    const lightRoom = getOne<{ room_name: string }>(
+      'SELECT room_name FROM light_rooms WHERE light_id = ?',
+      [lightId],
+    )
+    if (!lightRoom) return false // light not assigned to a room — allow
+
+    const room = getOne<{ auto: number; scene_manual: number }>(
+      'SELECT auto, scene_manual FROM rooms WHERE name = ?',
+      [lightRoom.room_name],
+    )
+    if (!room) return false
+
+    if (!room.auto) {
+      run('INSERT INTO logs (message, category) VALUES (?, ?)',
+        [`Weather indicator skipped: room "${lightRoom.room_name}" has automation disabled`, 'weather'])
+      return true
+    }
+    if (room.scene_manual) {
+      run('INSERT INTO logs (message, category) VALUES (?, ?)',
+        [`Weather indicator skipped: room "${lightRoom.room_name}" has manual scene override`, 'weather'])
+      return true
+    }
+
+    // Check if current mode is Night or Guest Night (rooms would be locked)
+    const modeRow = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'mode'")
+    const mode = modeRow?.value ?? ''
+    if (mode === 'Night' || mode === 'Guest Night') {
+      run('INSERT INTO logs (message, category) VALUES (?, ?)',
+        [`Weather indicator skipped: system is in ${mode} mode`, 'weather'])
+      return true
+    }
+
+    return false
+  }
+
   async checkAndUpdate(): Promise<{ condition: string; color: string } | null> {
     const config = this.getConfig()
     if (!config.enabled || !config.lightId) return null
+
+    // Skip if the light's room is blocked
+    if (this.isLightRoomBlocked(config.lightId)) return null
 
     try {
       const weather = await getCurrentWeather()

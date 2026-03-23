@@ -101,6 +101,33 @@ export class MotionHandler {
     return [...this.lockedRooms]
   }
 
+  // Check if an indicator light's room blocks activation
+  // Returns true if the room is locked, has auto disabled, or has a manual scene override
+  private isIndicatorLightBlocked(lightId: string, indicatorName: string): boolean {
+    const lightRoom = getOne<{ room_name: string }>(
+      'SELECT room_name FROM light_rooms WHERE light_id = ?',
+      [lightId],
+    )
+    if (!lightRoom) return false // light not assigned to a room — allow
+
+    const room = getOne<RoomRow>('SELECT * FROM rooms WHERE name = ?', [lightRoom.room_name])
+    if (!room) return false
+
+    if (this.isRoomLocked(lightRoom.room_name)) {
+      log(`${indicatorName} indicator skipped: room "${lightRoom.room_name}" is locked (night mode)`)
+      return true
+    }
+    if (!room.auto) {
+      log(`${indicatorName} indicator skipped: room "${lightRoom.room_name}" has automation disabled`)
+      return true
+    }
+    if (room.scene_manual) {
+      log(`${indicatorName} indicator skipped: room "${lightRoom.room_name}" has manual scene override`)
+      return true
+    }
+    return false
+  }
+
   // Find which room a sensor belongs to by its label
   // Checks both device_rooms table and rooms.sensors JSON column
   private findRoomForSensor(sensorName: string): DeviceRoomRow | undefined {
@@ -201,7 +228,11 @@ export class MotionHandler {
       if (indicatorRow?.value) {
         const indicator: MtaIndicatorConfig = JSON.parse(indicatorRow.value)
         if (indicator.enabled && indicator.sensorName === sensorName && value === 'active') {
-          mtaIndicator.trigger().catch(() => { /* ignore indicator errors */ })
+          if (this.isIndicatorLightBlocked(indicator.lightId, 'MTA')) {
+            // Room is locked, manual, or auto-off — skip
+          } else {
+            mtaIndicator.trigger().catch(() => { /* ignore indicator errors */ })
+          }
         }
       }
     } catch { /* ignore indicator errors */ }
@@ -210,7 +241,11 @@ export class MotionHandler {
     try {
       const weatherConfig = weatherIndicator.getConfig()
       if (weatherConfig.enabled && weatherConfig.mode === 'sensor' && weatherConfig.sensorName === sensorName && value === 'active') {
-        weatherIndicator.triggerOnce()
+        if (this.isIndicatorLightBlocked(weatherConfig.lightId, 'Weather')) {
+          // Room is locked, manual, or auto-off — skip
+        } else {
+          weatherIndicator.triggerOnce()
+        }
       }
     } catch { /* ignore weather indicator errors */ }
 
