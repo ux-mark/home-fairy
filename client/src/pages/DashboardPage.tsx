@@ -8,6 +8,7 @@ import EnergyCard from '@/components/dashboard/EnergyCard'
 import BatteryCard from '@/components/dashboard/BatteryCard'
 import EnvironmentCard from '@/components/dashboard/EnvironmentCard'
 import SunModeCard from '@/components/dashboard/SunModeCard'
+import ActivityCard from '@/components/dashboard/ActivityCard'
 
 function DashboardSkeleton() {
   return (
@@ -88,28 +89,38 @@ export default function DashboardPage() {
             <HomeSummaryStrip insights={data.insights} />
           )}
 
-          {/* Detail cards */}
-          <div className="grid gap-4 md:grid-cols-2">
-            <EnergyCard
-              power={data.power}
-              insights={data.insights?.energy ?? null}
-            />
-            <BatteryCard
-              battery={data.battery}
-              insights={data.insights?.battery ?? null}
-            />
-            <EnvironmentCard
-              weather={data.weather}
-              rooms={data.rooms}
-              tempInsights={data.insights?.temperature ?? null}
-              luxInsights={data.insights?.lux ?? null}
-            />
-            <SunModeCard
-              mode={data.mode}
-              sunSchedule={data.sunSchedule}
-              sunPhase={data.sunPhase}
-              sunTimes={data.sunTimes}
-            />
+          {/* Detail cards — main column (2/3) + side column (1/3) on desktop */}
+          <div className="grid gap-4 md:grid-cols-3">
+            {/* Main column */}
+            <div className="space-y-4 md:col-span-2">
+              <EnergyCard
+                power={data.power}
+                insights={data.insights?.energy ?? null}
+                currencySymbol={data.currencySymbol}
+              />
+              <EnvironmentCard
+                weather={data.weather}
+                rooms={data.rooms}
+                tempInsights={data.insights?.temperature ?? null}
+                luxInsights={data.insights?.lux ?? null}
+              />
+              {data.insights?.activity && (
+                <ActivityCard activity={data.insights.activity} />
+              )}
+            </div>
+            {/* Side column */}
+            <div className="space-y-4">
+              <BatteryCard
+                battery={data.battery}
+                insights={data.insights?.battery ?? null}
+              />
+              <SunModeCard
+                mode={data.mode}
+                sunSchedule={data.sunSchedule}
+                sunPhase={data.sunPhase}
+                sunTimes={data.sunTimes}
+              />
+            </div>
           </div>
         </div>
       )}

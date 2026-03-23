@@ -138,6 +138,11 @@ router.get('/summary', async (_req: Request, res: Response) => {
     )
     const energyRate = energyRateRow?.value ? Number(energyRateRow.value) : 0.30
 
+    const currencyRow = getOne<CurrentStateRow>(
+      "SELECT value FROM current_state WHERE key = 'pref_currency_symbol'",
+    )
+    const currencySymbol = currencyRow?.value || '$'
+
     // Compute insights from current state + historical data
     const insights = computeInsights({
       power,
@@ -158,6 +163,7 @@ router.get('/summary', async (_req: Request, res: Response) => {
       sunTimes,
       weather,
       nightStatus,
+      currencySymbol,
       insights,
     })
   } catch (err) {
@@ -354,6 +360,161 @@ router.get('/device/:id/context', (req: Request, res: Response) => {
       updatedAt: device?.updated_at || null,
       historySources,
     })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// GET /room/:name — room intelligence (environment, energy, activity, battery health)
+router.get('/room/:name', (req: Request, res: Response) => {
+  try {
+    const roomName = decodeURIComponent(String(req.params.name))
+
+    const room = getOne<{ temperature: number | null; lux: number | null; last_active: string | null }>(
+      'SELECT temperature, lux, last_active FROM rooms WHERE name = ?',
+      [roomName],
+    )
+
+    const temperatureHistory = getAll<{ value: number; recorded_at: string }>(
+      `SELECT value, recorded_at FROM device_history
+       WHERE source = 'temperature' AND source_id = ? AND recorded_at > datetime('now', '-1 day')
+       ORDER BY recorded_at`,
+      [roomName],
+    )
+
+    const roomDevices = getAll<{
+      id: number; label: string; device_type: string;
+      power: string | null; energy: string | null; battery: string | null
+    }>(
+      `SELECT h.id, h.label, dr.device_type,
+              json_extract(h.attributes, '$.power') as power,
+              json_extract(h.attributes, '$.energy') as energy,
+              json_extract(h.attributes, '$.battery') as battery
+       FROM device_rooms dr
+       JOIN hub_devices h ON CAST(h.id AS TEXT) = dr.device_id
+       WHERE dr.room_name = ?`,
+      [roomName],
+    )
+
+    const totalWatts = roomDevices.reduce((sum, d) => sum + (d.power ? Number(d.power) : 0), 0)
+    const devices = roomDevices.map((d) => ({
+      id: d.id, label: d.label, device_type: d.device_type,
+      power: d.power ? Number(d.power) : 0,
+      energy: d.energy ? Number(d.energy) : null,
+      battery: d.battery ? Number(d.battery) : null,
+    }))
+
+    const events24h = (db.prepare(
+      `SELECT COUNT(*) as count FROM room_activity
+       WHERE room_name = ? AND event_type = 'motion_active' AND recorded_at > datetime('now', '-1 day')`,
+    ).get(roomName) as { count: number })?.count || 0
+
+    const hourlyRaw = getAll<{ hour: number; count: number }>(
+      `SELECT CAST(strftime('%H', recorded_at) AS INTEGER) as hour, COUNT(*) as count
+       FROM room_activity WHERE room_name = ? AND event_type = 'motion_active'
+         AND recorded_at > datetime('now', '-7 days')
+       GROUP BY strftime('%H', recorded_at) ORDER BY hour`,
+      [roomName],
+    )
+    const hourlyPattern = Array.from({ length: 24 }, (_, i) => ({
+      hour: i, count: hourlyRaw.find((h) => h.hour === i)?.count || 0,
+    }))
+
+    const batteryDevices = devices.filter((d) => d.battery !== null).map((d) => {
+      const drain = db.prepare(
+        `SELECT MAX(value) as mx, MIN(value) as mn,
+                (julianday(MAX(recorded_at)) - julianday(MIN(recorded_at))) as days
+         FROM device_history WHERE source = 'battery' AND source_id = ? AND recorded_at > datetime('now', '-14 days')`,
+      ).get(d.label) as { mx: number; mn: number; days: number } | undefined
+      const drainPerDay = drain && drain.days > 1 ? Math.round(((drain.mx - drain.mn) / drain.days) * 100) / 100 : null
+      let status: 'ok' | 'low' | 'critical' = 'ok'
+      if (d.battery! < 5) status = 'critical'
+      else if (d.battery! < 15) status = 'low'
+      return {
+        id: d.id, label: d.label, battery: d.battery!, status,
+        drainPerDay,
+        predictedDaysRemaining: drainPerDay && drainPerDay > 0 ? Math.round(d.battery! / drainPerDay) : null,
+      }
+    })
+
+    res.json({
+      temperature: room?.temperature ?? null, lux: room?.lux ?? null,
+      lastActive: room?.last_active ?? null, temperatureHistory,
+      totalWatts, devices, events24h, hourlyPattern, batteryDevices,
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// GET /device/:id/insights — device-specific computed insights
+router.get('/device/:id/insights', (req: Request, res: Response) => {
+  try {
+    const deviceId = String(req.params.id)
+    const device = getOne<{ label: string; attributes: string }>(
+      'SELECT label, attributes FROM hub_devices WHERE id = ?', [Number(deviceId)],
+    )
+    if (!device) { res.status(404).json({ error: 'Device not found' }); return }
+
+    const attrs = JSON.parse(device.attributes || '{}')
+    const label = device.label
+
+    const rateRow = getOne<CurrentStateRow>("SELECT value FROM current_state WHERE key = 'pref_energy_rate'")
+    const energyRate = rateRow?.value ? Number(rateRow.value) : 0.30
+    const curRow = getOne<CurrentStateRow>("SELECT value FROM current_state WHERE key = 'pref_currency_symbol'")
+    const currencySymbol = curRow?.value || '$'
+
+    let powerIns = null
+    if (attrs.power !== undefined) {
+      const cw = Number(attrs.power)
+      const avg = db.prepare(
+        `SELECT AVG(value) as v FROM device_history WHERE source = 'power' AND source_id = ? AND recorded_at > datetime('now', '-7 days')`,
+      ).get(label) as { v: number | null } | undefined
+      const avg7d = avg?.v != null ? Math.round(avg.v * 10) / 10 : null
+      const total = (db.prepare(
+        `SELECT SUM(CAST(json_extract(attributes, '$.power') AS REAL)) as t FROM hub_devices WHERE json_extract(attributes, '$.power') IS NOT NULL`,
+      ).get() as { t: number | null })?.t || 1
+      powerIns = {
+        currentWatts: cw, averageWatts7d: avg7d,
+        overUnderPercent: avg7d && avg7d > 0 ? Math.round(((cw - avg7d) / avg7d) * 100) : null,
+        percentOfTotal: Math.round((cw / total) * 100),
+        dailyCostImpact: energyRate > 0 ? Math.round(((cw * 24) / 1000) * energyRate * 100) / 100 : null,
+        currencySymbol,
+      }
+    }
+
+    let batteryIns = null
+    if (attrs.battery !== undefined) {
+      const drain = db.prepare(
+        `SELECT MAX(value) as mx, MIN(value) as mn, (julianday(MAX(recorded_at)) - julianday(MIN(recorded_at))) as days
+         FROM device_history WHERE source = 'battery' AND source_id = ? AND recorded_at > datetime('now', '-14 days')`,
+      ).get(label) as { mx: number; mn: number; days: number } | undefined
+      const dpd = drain && drain.days > 1 ? Math.round(((drain.mx - drain.mn) / drain.days) * 100) / 100 : null
+      batteryIns = {
+        currentLevel: Number(attrs.battery), drainPerDay: dpd,
+        predictedDaysRemaining: dpd && dpd > 0 ? Math.round(Number(attrs.battery) / dpd) : null,
+      }
+    }
+
+    let tempIns = null
+    if (attrs.temperature !== undefined) {
+      const avg = db.prepare(
+        `SELECT AVG(value) as v FROM device_history WHERE source = 'temperature' AND source_id = ? AND recorded_at > datetime('now', '-30 days')`,
+      ).get(label) as { v: number | null } | undefined
+      tempIns = { currentTemp: Number(attrs.temperature), avgTemp30d: avg?.v != null ? Math.round(avg.v * 100) / 100 : null }
+    }
+
+    const roomAssn = getOne<{ room_name: string }>('SELECT room_name FROM device_rooms WHERE device_id = ?', [deviceId])
+    const roomDevices = roomAssn
+      ? getAll<{ id: number; label: string; device_type: string }>(
+          `SELECT h.id, h.label, dr.device_type FROM device_rooms dr JOIN hub_devices h ON CAST(h.id AS TEXT) = dr.device_id WHERE dr.room_name = ? AND dr.device_id != ?`,
+          [roomAssn.room_name, deviceId],
+        )
+      : []
+
+    res.json({ insights: { power: powerIns, battery: batteryIns, temperature: tempIns }, roomDevices, currencySymbol })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: msg })

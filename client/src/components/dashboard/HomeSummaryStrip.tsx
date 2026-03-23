@@ -31,16 +31,27 @@ function formatCost(cost: number): string {
 
 interface PillProps {
   ariaLabel: string
+  scrollTargetId: string
   children: React.ReactNode
 }
 
-function Pill({ ariaLabel, children }: PillProps) {
+function Pill({ ariaLabel, scrollTargetId, children }: PillProps) {
+  function handleClick() {
+    document.getElementById(scrollTargetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
   return (
     <section
       aria-label={ariaLabel}
-      className="card rounded-xl border p-4"
+      className="card rounded-xl border p-4 cursor-pointer hover:border-fairy-500/30 transition-colors"
     >
-      {children}
+      <button
+        onClick={handleClick}
+        className="w-full text-left"
+        aria-label={`${ariaLabel} — scroll to details`}
+      >
+        {children}
+      </button>
     </section>
   )
 }
@@ -65,7 +76,7 @@ function PillHeader({ icon, label }: PillHeaderProps) {
 
 function EnergyPill({ energy }: { energy: InsightsData['energy'] }) {
   return (
-    <Pill ariaLabel="Energy usage summary">
+    <Pill ariaLabel="Energy usage summary" scrollTargetId="energy-card">
       <PillHeader
         icon={<Zap className="h-4 w-4 shrink-0 text-amber-400" aria-hidden="true" />}
         label="Energy"
@@ -99,7 +110,7 @@ function EnergyPill({ energy }: { energy: InsightsData['energy'] }) {
 
 function TemperaturePill({ temperature }: { temperature: InsightsData['temperature'] }) {
   return (
-    <Pill ariaLabel="Temperature summary">
+    <Pill ariaLabel="Temperature summary" scrollTargetId="environment-card">
       <PillHeader
         icon={<Thermometer className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />}
         label="Temperature"
@@ -161,7 +172,7 @@ function TrendIcon({ trend }: TrendIconProps) {
 
 function BrightnessPill({ lux }: { lux: InsightsData['lux'] }) {
   return (
-    <Pill ariaLabel="Brightness summary">
+    <Pill ariaLabel="Brightness summary" scrollTargetId="environment-card">
       <PillHeader
         icon={<Sun className="h-4 w-4 shrink-0 text-yellow-400" aria-hidden="true" />}
         label="Brightness"
@@ -190,7 +201,7 @@ function BrightnessPill({ lux }: { lux: InsightsData['lux'] }) {
 
 function BatteryPill({ battery }: { battery: InsightsData['battery'] }) {
   return (
-    <Pill ariaLabel="Battery fleet summary">
+    <Pill ariaLabel="Battery fleet summary" scrollTargetId="battery-card">
       <PillHeader
         icon={<Battery className="h-4 w-4 shrink-0 text-green-400" aria-hidden="true" />}
         label="Batteries"

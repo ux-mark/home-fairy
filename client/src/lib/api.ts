@@ -289,7 +289,57 @@ export interface DashboardSummary {
     wind_speed: number
   } | null
   nightStatus: NightStatus
+  currencySymbol: string
   insights: InsightsData | null
+}
+
+export interface ActivityInsights {
+  roomRanking: Array<{ room: string; events24h: number; peakHours: string }>
+  dailyTrend: Array<{ day: string; totalEvents: number }>
+  mostActiveRoom: { room: string; events24h: number } | null
+  quietestRoom: { room: string; events24h: number } | null
+}
+
+export interface RoomIntelligenceData {
+  temperature: number | null
+  lux: number | null
+  lastActive: string | null
+  temperatureHistory: Array<{ value: number; recorded_at: string }>
+  totalWatts: number
+  devices: Array<{
+    id: number; label: string; device_type: string
+    power: number; energy: number | null; battery: number | null
+  }>
+  events24h: number
+  hourlyPattern: Array<{ hour: number; count: number }>
+  batteryDevices: Array<{
+    id: number; label: string; battery: number; status: string
+    drainPerDay: number | null; predictedDaysRemaining: number | null
+  }>
+}
+
+export interface DeviceInsightsData {
+  insights: {
+    power: {
+      currentWatts: number
+      averageWatts7d: number | null
+      overUnderPercent: number | null
+      percentOfTotal: number
+      dailyCostImpact: number | null
+      currencySymbol: string
+    } | null
+    battery: {
+      currentLevel: number
+      drainPerDay: number | null
+      predictedDaysRemaining: number | null
+    } | null
+    temperature: {
+      currentTemp: number
+      avgTemp30d: number | null
+    } | null
+  }
+  roomDevices: Array<{ id: number; label: string; device_type: string }>
+  currencySymbol: string
 }
 
 export interface InsightsData {
@@ -297,6 +347,7 @@ export interface InsightsData {
   temperature: TemperatureInsights | null
   lux: LuxInsights | null
   battery: BatteryInsights | null
+  activity: ActivityInsights | null
   attention: AttentionItem[]
 }
 
@@ -645,6 +696,10 @@ export const api = {
       }),
     getDeviceContext: (deviceId: string) =>
       fetchApi<DeviceContext>('/dashboard/device/' + encodeURIComponent(deviceId) + '/context'),
+    getDeviceInsights: (deviceId: string) =>
+      fetchApi<DeviceInsightsData>('/dashboard/device/' + encodeURIComponent(deviceId) + '/insights'),
+    getRoomInsights: (roomName: string) =>
+      fetchApi<RoomIntelligenceData>('/dashboard/room/' + encodeURIComponent(roomName)),
   },
   hubitat: {
     getDevices: () => fetchApi<HubDevice[]>('/hubitat/devices'),

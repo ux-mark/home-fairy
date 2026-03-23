@@ -92,14 +92,76 @@ function DeviceRow({ device, maxWatts, anomaly }: DeviceRowProps) {
   )
 }
 
+// ── Energy narrative ──────────────────────────────────────────────────────────
+
+interface EnergyNarrativeProps {
+  insights: EnergyInsights
+}
+
+function EnergyNarrative({ insights }: EnergyNarrativeProps) {
+  const { overUnderPercent, totalWatts, averageWattsThisHour } = insights
+
+  if (overUnderPercent == null) {
+    return (
+      <p className="text-body text-sm">
+        Collecting data to establish your energy baseline. Trends will appear within a week.
+      </p>
+    )
+  }
+
+  if (overUnderPercent > 30) {
+    return (
+      <p className="text-body text-sm">
+        Your home is using{' '}
+        <span className="font-semibold text-heading">{overUnderPercent}% more</span>{' '}
+        energy than usual for this time of day. Currently{' '}
+        <span className="font-semibold text-heading">{totalWatts.toFixed(0)} W</span>
+        {averageWattsThisHour != null && (
+          <>
+            {' '}— typically{' '}
+            <span className="font-semibold text-heading">{averageWattsThisHour.toFixed(0)} W</span>{' '}
+            at this hour
+          </>
+        )}
+        .
+      </p>
+    )
+  }
+
+  if (overUnderPercent >= 5) {
+    return (
+      <p className="text-body text-sm">
+        Energy usage is slightly above your weekly average.
+      </p>
+    )
+  }
+
+  if (overUnderPercent >= -5) {
+    return (
+      <p className="text-body text-sm">
+        Energy usage is typical for this time of day.
+      </p>
+    )
+  }
+
+  return (
+    <p className="text-body text-sm">
+      Energy usage is{' '}
+      <span className="font-semibold text-heading">{Math.abs(overUnderPercent)}% below</span>{' '}
+      your weekly average.
+    </p>
+  )
+}
+
 // ── EnergyCard ────────────────────────────────────────────────────────────────
 
 interface EnergyCardProps {
   power: PowerDevice[]
   insights?: EnergyInsights | null
+  currencySymbol?: string
 }
 
-export default function EnergyCard({ power, insights }: EnergyCardProps) {
+export default function EnergyCard({ power, insights, currencySymbol = '$' }: EnergyCardProps) {
   const [chartExpanded, setChartExpanded] = useState(false)
 
   // Sort highest power first
@@ -127,7 +189,7 @@ export default function EnergyCard({ power, insights }: EnergyCardProps) {
   // ── Empty state ──────────────────────────────────────────────────────────────
   if (power.length === 0) {
     return (
-      <section aria-label="Energy usage" className="card rounded-xl border p-5">
+      <section id="energy-card" aria-label="Energy usage" className="card rounded-xl border p-5">
         <header className="mb-4 flex items-center gap-2">
           <Zap className="h-4 w-4 text-amber-400" aria-hidden="true" />
           <h2 className="text-heading text-base font-semibold">Energy</h2>
@@ -144,7 +206,7 @@ export default function EnergyCard({ power, insights }: EnergyCardProps) {
   }
 
   return (
-    <section aria-label="Energy usage" className="card rounded-xl border p-5">
+    <section id="energy-card" aria-label="Energy usage" className="card rounded-xl border p-5">
       {/* Header */}
       <header className="mb-1 flex items-center gap-2">
         <Zap className="h-4 w-4 text-amber-400" aria-hidden="true" />
@@ -152,7 +214,7 @@ export default function EnergyCard({ power, insights }: EnergyCardProps) {
       </header>
 
       {/* Total */}
-      <div className="mb-4">
+      <div className="mb-3">
         <p className="text-caption text-sm">
           <span className="text-heading text-2xl font-semibold tabular-nums">
             {totalWatts.toFixed(1)}
@@ -166,10 +228,17 @@ export default function EnergyCard({ power, insights }: EnergyCardProps) {
         </p>
         {insights?.dailyCostEstimate != null && (
           <p className="text-caption mt-0.5 text-xs">
-            Estimated daily cost: £{insights.dailyCostEstimate.toFixed(2)}
+            Estimated daily cost: {currencySymbol}{insights.dailyCostEstimate.toFixed(2)}
           </p>
         )}
       </div>
+
+      {/* Narrative */}
+      {insights && (
+        <div className="mb-4">
+          <EnergyNarrative insights={insights} />
+        </div>
+      )}
 
       {/* Device list */}
       <ul

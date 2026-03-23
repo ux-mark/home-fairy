@@ -109,6 +109,17 @@ export function initDb(): void {
 
     CREATE INDEX IF NOT EXISTS idx_device_history_lookup
       ON device_history (source, source_id, recorded_at);
+
+    CREATE TABLE IF NOT EXISTS room_activity (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_name TEXT NOT NULL,
+      sensor_name TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      recorded_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_room_activity_lookup
+      ON room_activity (room_name, recorded_at);
   `)
 
   // Migration: add scene_manual column to rooms

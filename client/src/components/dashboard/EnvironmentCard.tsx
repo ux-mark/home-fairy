@@ -359,6 +359,7 @@ export default function EnvironmentCard({
   if (!hasAnyData) {
     return (
       <section
+        id="environment-card"
         aria-label="Environment"
         className="card rounded-xl border p-5"
       >
@@ -391,6 +392,7 @@ export default function EnvironmentCard({
 
   return (
     <section
+      id="environment-card"
       aria-label="Environment"
       className={cn('card rounded-xl border p-5')}
     >

@@ -1,6 +1,6 @@
 import { useState, useId } from 'react'
 import { Link } from 'react-router-dom'
-import { Battery, AlertTriangle } from 'lucide-react'
+import { Battery, AlertTriangle, ChevronDown } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -178,6 +178,104 @@ function BatteryDeviceRow({ device, drainRate }: DeviceRowProps) {
   )
 }
 
+// ── Urgency band ──────────────────────────────────────────────────────────────
+
+type UrgencyBand = 'attention' | 'monitor' | 'healthy'
+
+interface UrgencyBandItem {
+  device: BatteryDevice
+  drainRate?: DrainRateEntry
+}
+
+const BAND_CONFIG: Record<
+  UrgencyBand,
+  { label: string; bgClass: string; headerColorClass: string }
+> = {
+  attention: {
+    label: 'Needs attention',
+    bgClass: 'bg-red-500/5',
+    headerColorClass: 'text-red-400',
+  },
+  monitor: {
+    label: 'Monitor',
+    bgClass: 'bg-amber-500/5',
+    headerColorClass: 'text-amber-400',
+  },
+  healthy: {
+    label: 'Healthy',
+    bgClass: 'bg-green-500/5',
+    headerColorClass: 'text-green-400',
+  },
+}
+
+function classifyDevice(
+  device: BatteryDevice,
+  drainRate: DrainRateEntry | undefined,
+): UrgencyBand {
+  const daysRemaining = drainRate?.predictedDaysRemaining ?? null
+  const level = device.battery ?? 0
+  const isUrgentStatus = device.status === 'critical' || device.status === 'low'
+
+  if (daysRemaining != null && daysRemaining < 30) return 'attention'
+  if (isUrgentStatus) return 'attention'
+  if (daysRemaining != null && daysRemaining <= 90) return 'monitor'
+  if (daysRemaining == null && level > 50) return 'healthy'
+  if (daysRemaining != null && daysRemaining > 90) return 'healthy'
+  return 'monitor'
+}
+
+interface UrgencyBandSectionProps {
+  band: UrgencyBand
+  items: UrgencyBandItem[]
+  defaultOpen: boolean
+}
+
+function UrgencyBandSection({ band, items, defaultOpen }: UrgencyBandSectionProps) {
+  const [open, setOpen] = useState(defaultOpen)
+  const config = BAND_CONFIG[band]
+  const headingId = `band-heading-${band}`
+  const regionId = `band-region-${band}`
+
+  return (
+    <div className={cn('rounded-lg p-3', config.bgClass)}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={regionId}
+        id={headingId}
+        onClick={() => setOpen(prev => !prev)}
+        className={cn(
+          'flex w-full items-center justify-between gap-2 text-sm font-medium',
+          config.headerColorClass,
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <span>
+          {items.length} {items.length === 1 ? 'device' : 'devices'} — {config.label}
+        </span>
+        <ChevronDown
+          className={cn('h-4 w-4 shrink-0 transition-transform', open ? 'rotate-180' : '')}
+          aria-hidden="true"
+        />
+      </button>
+
+      {open && (
+        <ul
+          id={regionId}
+          role="list"
+          aria-labelledby={headingId}
+          className="mt-2 space-y-1.5"
+        >
+          {items.map(({ device, drainRate }) => (
+            <BatteryDeviceRow key={device.id} device={device} drainRate={drainRate} />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 // ── BatteryCard ───────────────────────────────────────────────────────────────
 
 interface BatteryCardProps {
@@ -213,7 +311,7 @@ export default function BatteryCard({ battery, insights }: BatteryCardProps) {
   // ── Empty state ──────────────────────────────────────────────────────────────
   if (battery.length === 0) {
     return (
-      <section aria-label="Battery health" className="card rounded-xl border p-5">
+      <section id="battery-card" aria-label="Battery health" className="card rounded-xl border p-5">
         <header className="mb-4 flex items-center gap-2">
           <Battery className="h-4 w-4 text-green-400" aria-hidden="true" />
           <h2 className="text-heading text-base font-semibold">Battery health</h2>
@@ -230,7 +328,7 @@ export default function BatteryCard({ battery, insights }: BatteryCardProps) {
 
   if (allHealthy && !listExpanded) {
     return (
-      <section aria-label="Battery health" className="card rounded-xl border p-5">
+      <section id="battery-card" aria-label="Battery health" className="card rounded-xl border p-5">
         <header className="mb-4 flex items-center gap-2">
           <Battery className="h-4 w-4 text-green-400" aria-hidden="true" />
           <h2 className="text-heading text-base font-semibold">Battery health</h2>
@@ -262,7 +360,7 @@ export default function BatteryCard({ battery, insights }: BatteryCardProps) {
   }
 
   return (
-    <section aria-label="Battery health" className="card rounded-xl border p-5">
+    <section id="battery-card" aria-label="Battery health" className="card rounded-xl border p-5">
       {/* Header */}
       <header className="mb-4 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -292,19 +390,44 @@ export default function BatteryCard({ battery, insights }: BatteryCardProps) {
         </div>
       )}
 
-      {/* Device list */}
-      <ul
-        role="list"
-        aria-label="Battery-powered devices"
-        className="space-y-1.5"
-      >
-        {sorted.map(device => {
-          const drainRate = insights?.deviceDrainRates.find(r => r.label === device.label)
+      {/* Device list — urgency bands when insights available, flat list otherwise */}
+      {insights?.deviceDrainRates != null ? (
+        (() => {
+          const bands: Record<UrgencyBand, UrgencyBandItem[]> = {
+            attention: [],
+            monitor: [],
+            healthy: [],
+          }
+          sorted.forEach(device => {
+            const drainRate = insights.deviceDrainRates.find(r => r.label === device.label)
+            const band = classifyDevice(device, drainRate)
+            bands[band].push({ device, drainRate })
+          })
           return (
-            <BatteryDeviceRow key={device.id} device={device} drainRate={drainRate} />
+            <div className="space-y-2">
+              {bands.attention.length > 0 && (
+                <UrgencyBandSection band="attention" items={bands.attention} defaultOpen={true} />
+              )}
+              {bands.monitor.length > 0 && (
+                <UrgencyBandSection band="monitor" items={bands.monitor} defaultOpen={true} />
+              )}
+              {bands.healthy.length > 0 && (
+                <UrgencyBandSection band="healthy" items={bands.healthy} defaultOpen={false} />
+              )}
+            </div>
           )
-        })}
-      </ul>
+        })()
+      ) : (
+        <ul
+          role="list"
+          aria-label="Battery-powered devices"
+          className="space-y-1.5"
+        >
+          {sorted.map(device => (
+            <BatteryDeviceRow key={device.id} device={device} />
+          ))}
+        </ul>
+      )}
 
       {/* Chart section */}
       <div className="mt-4 border-t pt-4" style={{ borderColor: 'var(--border-primary)' }}>

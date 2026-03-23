@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-03-23 — UX overhaul: layered drill-down, activity tracking, room intelligence
+- Energy/battery data surfaced on device cards (power watts, energy kWh, battery %) with sort-by-power/battery options
+- Room activity tracking: new room_activity table, motion events recorded, activity insights (room ranking, hourly patterns, daily trends)
+- ActivityCard on dashboard: room ranking, peak hours, 7-day activity bar chart
+- Room intelligence: new collapsible section on room detail pages showing environment, energy, activity, and battery health per room
+- Device detail page restructured: headline insights first (watts comparison, battery prediction, cost impact), then charts, then context, raw attributes collapsed at bottom
+- Clickable dashboard summary pills scroll to their corresponding detail cards
+- Energy narrative: contextual text explaining whether usage is above/below/normal
+- Battery replacement timeline with urgency bands (needs attention/monitor/healthy)
+- Dashboard layout: main+side column on desktop (energy/environment/activity + battery/sun)
+- Currency symbol configurable in Settings (used for energy cost displays)
+- Critical attention banner on home page linking to Insights when issues need attention
+- Home page room cards link to Insights for critical alerts
+- Files: 14+ files modified across server and client
+
 ## 2026-03-23 — Aggregate insights, trend analysis, and attention CTAs
 - Insights engine: server-side computation of energy, temperature, lux, and battery analytics with 10-minute cache
 - Energy: total watts, over/under comparison to 7-day hourly average, daily cost estimate, device anomaly detection, peak hours

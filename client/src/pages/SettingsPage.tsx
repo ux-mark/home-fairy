@@ -155,6 +155,22 @@ function GeneralSection() {
           aria-label="Energy rate per kWh"
         />
       </div>
+
+      <div className="flex items-center justify-between">
+        <div>
+          <span className="text-heading text-sm">Currency symbol</span>
+          <p className="text-caption text-xs">Used for energy cost displays</p>
+        </div>
+        <input
+          type="text"
+          maxLength={3}
+          placeholder="$"
+          value={prefs?.currency_symbol ?? ''}
+          onChange={(e) => mutation.mutate({ key: 'currency_symbol', value: e.target.value })}
+          className="w-16 rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-center text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          aria-label="Currency symbol"
+        />
+      </div>
     </Section>
   )
 }

@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Thermometer, Sun, Clock, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock } from 'lucide-react'
+import { Thermometer, Sun, Clock, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock, AlertTriangle, ChevronRight } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
@@ -515,6 +516,13 @@ export default function HomePage() {
     refetchInterval: 10_000,
   })
 
+  const { data: dashboardData } = useQuery({
+    queryKey: ['dashboard', 'summary'],
+    queryFn: api.dashboard.getSummary,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  })
+
   const unlockMutation = useMutation({
     mutationFn: api.system.unlockNight,
     onSuccess: () => {
@@ -649,6 +657,19 @@ export default function HomePage() {
         onSelect={mode => setModeMutation.mutate(mode)}
         isPending={setModeMutation.isPending}
       />
+
+      {dashboardData?.insights?.attention?.some(a => a.severity === 'critical') && (
+        <Link
+          to="/dashboard"
+          className="mb-4 flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-3 transition-colors hover:bg-red-500/10 min-h-[44px]"
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" aria-hidden="true" />
+          <span className="text-sm text-red-400">
+            {dashboardData.insights.attention.filter(a => a.severity === 'critical').length} item{dashboardData.insights.attention.filter(a => a.severity === 'critical').length !== 1 ? 's' : ''} need{dashboardData.insights.attention.filter(a => a.severity === 'critical').length === 1 ? 's' : ''} attention
+          </span>
+          <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-red-400 opacity-50" aria-hidden="true" />
+        </Link>
+      )}
 
       <section aria-label="Rooms">
         <div className="mb-3 flex items-center justify-between">
