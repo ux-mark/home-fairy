@@ -31,30 +31,39 @@ export async function getCurrentWeather(): Promise<WeatherData> {
     throw new Error('Missing OPENWEATHER_API, LATITUDE, or LONGITUDE env vars')
   }
 
-  const res = await axios.get(
-    'https://api.openweathermap.org/data/3.0/onecall',
-    {
-      params: {
-        lat,
-        lon,
-        appid: apiKey,
-        units: 'metric',
+  try {
+    const res = await axios.get(
+      'https://api.openweathermap.org/data/3.0/onecall',
+      {
+        params: {
+          lat,
+          lon,
+          appid: apiKey,
+          units: 'metric',
+        },
+        timeout: 10000,
       },
-      timeout: 10000,
-    },
-  )
+    )
 
-  const current = res.data.current
-  const weather: WeatherData = {
-    temp: current.temp,
-    description: current.weather?.[0]?.description ?? '',
-    main: current.weather?.[0]?.main ?? '',
-    id: current.weather?.[0]?.id ?? 0,
-    icon: current.weather?.[0]?.icon ?? '',
-    humidity: current.humidity,
-    wind_speed: current.wind_speed,
+    const current = res.data.current
+    const weather: WeatherData = {
+      temp: current.temp,
+      description: current.weather?.[0]?.description ?? '',
+      main: current.weather?.[0]?.main ?? '',
+      id: current.weather?.[0]?.id ?? 0,
+      icon: current.weather?.[0]?.icon ?? '',
+      humidity: current.humidity,
+      wind_speed: current.wind_speed,
+    }
+
+    cache = { data: weather, fetchedAt: Date.now() }
+    return weather
+  } catch (err) {
+    // Return stale cache on network errors instead of failing
+    if (cache) {
+      console.warn('Weather API failed, returning stale cache:', err instanceof Error ? err.message : String(err))
+      return cache.data
+    }
+    throw err
   }
-
-  cache = { data: weather, fetchedAt: Date.now() }
-  return weather
 }
