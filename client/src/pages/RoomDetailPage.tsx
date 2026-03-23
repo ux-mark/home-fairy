@@ -271,15 +271,16 @@ function AssignedDeviceRow({
       <button
         onClick={onToggleExclude}
         className={cn(
-          'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px] flex items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
           isExcluded
             ? 'bg-amber-500/15 text-amber-400'
             : 'text-caption hover:text-body hover:surface',
         )}
-        aria-label={isExcluded ? `Include ${assignment.device_label} in All Off` : `Exclude ${assignment.device_label} from All Off`}
-        title={isExcluded ? 'Kept on during All Off (click to include)' : 'Keep on during All Off'}
+        aria-label={isExcluded ? `Remove keep-on protection from ${assignment.device_label}` : `Protect ${assignment.device_label} from being turned off`}
+        aria-pressed={isExcluded}
       >
-        <Shield className="h-4 w-4" />
+        <Shield className="h-3.5 w-3.5" />
+        <span>Keep on</span>
       </button>
       <button
         onClick={onRemove}

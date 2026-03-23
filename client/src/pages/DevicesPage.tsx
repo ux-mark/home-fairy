@@ -15,6 +15,7 @@ import {
   List,
   Settings,
   Loader2,
+  Shield,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Light, DeviceRoomAssignment, HubDevice, LightRoom, DeviceUsage } from '@/lib/api'
@@ -317,6 +318,22 @@ function HubDeviceCard({ device }: { device: UnifiedDevice }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['hubitat'] }),
   })
 
+  const isKeepOn = !!device.deviceRoom?.config?.exclude_from_all_off
+
+  const toggleKeepOn = useMutation({
+    mutationFn: () =>
+      api.hubitat.updateDeviceConfig(
+        device.hubDevice!.id.toString(),
+        device.deviceRoom!.room_name,
+        { exclude_from_all_off: !isKeepOn },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hubitat', 'device-rooms'] })
+      toast({ message: isKeepOn ? `${device.label} will now turn off with All Off` : `${device.label} will stay on during All Off` })
+    },
+    onError: () => toast({ message: 'Failed to update device setting', type: 'error' }),
+  })
+
   const isDimmer = device.kind === 'dimmer'
 
   return (
@@ -341,6 +358,27 @@ function HubDeviceCard({ device }: { device: UnifiedDevice }) {
         )}
 
         <KindBadge kind={device.kind} />
+
+        {device.deviceRoom && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleKeepOn.mutate()
+            }}
+            disabled={toggleKeepOn.isPending}
+            className={cn(
+              'flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              isKeepOn
+                ? 'bg-amber-500/15 text-amber-400'
+                : 'text-caption hover:bg-amber-500/10 hover:text-amber-300',
+            )}
+            aria-label={isKeepOn ? `Remove keep-on protection from ${device.label}` : `Protect ${device.label} from being turned off`}
+            aria-pressed={isKeepOn}
+          >
+            <Shield className="h-3 w-3" />
+            <span>Keep on</span>
+          </button>
+        )}
 
         <button
           onClick={() => toggleMutation.mutate()}

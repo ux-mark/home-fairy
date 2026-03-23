@@ -286,6 +286,48 @@ router.post('/device-rooms', (req: Request, res: Response) => {
   }
 })
 
+// PATCH /device-rooms/:deviceId/:roomName/config — merge config fields
+router.patch(
+  '/device-rooms/:deviceId/:roomName/config',
+  (req: Request, res: Response) => {
+    try {
+      const { config } = req.body as { config?: Record<string, unknown> }
+      if (!config || typeof config !== 'object') {
+        res.status(400).json({ error: 'config object is required' })
+        return
+      }
+
+      const existing = getOne<DeviceRoomRow>(
+        'SELECT * FROM device_rooms WHERE device_id = ? AND room_name = ?',
+        [req.params.deviceId, req.params.roomName],
+      )
+      if (!existing) {
+        res.status(404).json({ error: 'Device-room assignment not found' })
+        return
+      }
+
+      let existingConfig: Record<string, unknown> = {}
+      try { existingConfig = JSON.parse(existing.config) } catch { existingConfig = {} }
+
+      const mergedConfig = { ...existingConfig, ...config }
+
+      run(
+        'UPDATE device_rooms SET config = ? WHERE device_id = ? AND room_name = ?',
+        [JSON.stringify(mergedConfig), req.params.deviceId, req.params.roomName],
+      )
+
+      const updated = getOne<DeviceRoomRow>(
+        'SELECT * FROM device_rooms WHERE device_id = ? AND room_name = ?',
+        [req.params.deviceId, req.params.roomName],
+      )
+      res.json({ ...updated!, config: JSON.parse(updated!.config) })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      res.status(500).json({ error: msg })
+    }
+  },
+)
+
 // DELETE /device-rooms/:deviceId/:roomName — remove device from room
 router.delete(
   '/device-rooms/:deviceId/:roomName',

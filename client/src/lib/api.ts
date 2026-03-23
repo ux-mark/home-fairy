@@ -517,5 +517,14 @@ export const api = {
           encodeURIComponent(roomName),
         { method: 'DELETE' },
       ),
+    updateDeviceConfig: (deviceId: string, roomName: string, config: Record<string, unknown>) =>
+      fetchApi<DeviceRoomAssignment>(
+        '/hubitat/device-rooms/' +
+          encodeURIComponent(deviceId) +
+          '/' +
+          encodeURIComponent(roomName) +
+          '/config',
+        { method: 'PATCH', body: JSON.stringify({ config }) },
+      ),
   },
 }
