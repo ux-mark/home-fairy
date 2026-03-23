@@ -126,6 +126,15 @@
 - **Summary**: Room locks persisted to current_state DB table (survive restarts); sun scheduler skips transitions when mode is Sleep Time
 - **Files**: `server/src/lib/motion-handler.ts`, `server/src/lib/sun-mode-scheduler.ts`
 
+## PR #17 — Add Insights dashboard with device data, energy monitoring, and history
+- **Branch**: feature/dashboard-insights → dev
+- **Created**: 2026-03-23
+- **Status**: open
+- **Merge date**: —
+- **Branch cleanup**: pending
+- **Summary**: New Insights page with Energy, Battery, Environment, Sun/Mode cards. Historical data infrastructure (device_history table, 10-min snapshots, indefinite retention). Power/energy event capture from Hubitat. Dashboard aggregate API. Chart.js integration. Device detail page. Data management in Settings. Socket.io real-time updates. 6th nav item. User personas documented.
+- **Files**: 28 files changed (12 new, 16 modified) — see PR for full list
+
 ## PR #12 — Update default exclude rooms for night modes
 - **Branch**: fix/nighttime-default-exclude-rooms → dev
 - **Created**: 2026-03-22
