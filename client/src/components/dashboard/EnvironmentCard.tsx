@@ -106,13 +106,15 @@ function OutdoorSection({
   )
 }
 
-// ── Temperature insights summary ──────────────────────────────────────────────
+// ── Temperature + brightness insights summary ─────────────────────────────────
 
 function TempInsightsSummary({
   tempInsights,
+  luxInsights,
   unit,
 }: {
   tempInsights: TemperatureInsights
+  luxInsights?: LuxInsights | null
   unit: 'C' | 'F'
 }) {
   const avgDisplay = toDisplay(tempInsights.houseAvgTemp, unit)
@@ -173,6 +175,19 @@ function TempInsightsSummary({
       {deltaText && (
         <p className="text-caption mt-1 text-xs">{deltaText}</p>
       )}
+
+      {/* Brightness summary — shown inline here so the lux section is not separate */}
+      {luxInsights && (
+        <p className="text-caption mt-1 text-xs">
+          {capitaliseFirst(luxInsights.brightnessLevel)},{' '}
+          {luxInsights.houseAvgLux} lux average
+          {luxInsights.overUnderLuxPercent !== null && (
+            <span className="ml-1.5 inline-flex align-middle">
+              <OverUnderBadge percent={luxInsights.overUnderLuxPercent} size="sm" />
+            </span>
+          )}
+        </p>
+      )}
     </div>
   )
 }
@@ -209,6 +224,12 @@ function RoomRow({ room, unit, outlier }: RoomRowProps) {
         <span className="text-heading text-sm font-semibold tabular-nums">
           {formatTemp(room.temperature!, unit)}
         </span>
+        {/* Lux shown on the same row in muted text, below the temperature */}
+        {room.lux !== null && (
+          <p className="text-caption text-xs leading-snug">
+            {room.lux} lux
+          </p>
+        )}
         {outlier && (
           <p
             className={cn(
@@ -218,11 +239,6 @@ function RoomRow({ room, unit, outlier }: RoomRowProps) {
           >
             {Math.abs(Math.round(toDisplay(Math.abs(outlier.deviation), unit) - toDisplay(0, unit)))}°{' '}
             {isWarmer ? 'warmer' : 'cooler'} than average
-          </p>
-        )}
-        {!outlier && room.lux !== null && (
-          <p className="text-caption text-xs leading-snug">
-            {room.lux} lux
           </p>
         )}
       </div>
@@ -311,10 +327,12 @@ function IndoorSection({
   rooms,
   unit,
   tempInsights,
+  luxInsights,
 }: {
   rooms: RoomEntry[]
   unit: 'C' | 'F'
   tempInsights?: TemperatureInsights | null
+  luxInsights?: LuxInsights | null
 }) {
   const roomsWithTemp = rooms.filter(r => r.temperature !== null)
 
@@ -335,7 +353,11 @@ function IndoorSection({
       <h3 className="text-caption mb-2 text-xs font-medium">Indoors</h3>
 
       {tempInsights && (
-        <TempInsightsSummary tempInsights={tempInsights} unit={unit} />
+        <TempInsightsSummary
+          tempInsights={tempInsights}
+          luxInsights={luxInsights}
+          unit={unit}
+        />
       )}
 
       <div className="space-y-2">
@@ -355,7 +377,7 @@ function IndoorSection({
         {/* All rooms band — defaults closed */}
         {normalRooms.length > 0 && (
           <RoomBand
-            label={`${normalRooms.length} ${normalRooms.length === 1 ? 'room' : 'rooms'}`}
+            label={`All rooms (${normalRooms.length})`}
             items={normalRooms}
             unit={unit}
             outlierMap={outlierMap}
@@ -363,55 +385,6 @@ function IndoorSection({
           />
         )}
       </div>
-    </div>
-  )
-}
-
-// ── Lux section ───────────────────────────────────────────────────────────────
-
-function LuxSection({ luxInsights }: { luxInsights: LuxInsights }) {
-  // Sort ranking brightest to darkest (defensive copy)
-  const ranked = [...luxInsights.roomRanking].sort((a, b) => b.lux - a.lux)
-
-  return (
-    <div className="mb-5">
-      <h3 className="text-caption mb-2 text-xs font-medium">Brightness</h3>
-
-      {/* Main brightness summary */}
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <span className="text-heading text-base font-semibold">
-          {capitaliseFirst(luxInsights.brightnessLevel)}
-        </span>
-        <span className="text-caption text-xs">
-          {luxInsights.houseAvgLux} lux average
-        </span>
-        <OverUnderBadge
-          percent={luxInsights.overUnderLuxPercent}
-          size="sm"
-        />
-      </div>
-
-      {/* Room brightness ranking */}
-      {ranked.length > 0 && (
-        <ul
-          role="list"
-          aria-label="Room brightness ranking"
-          className="divide-y"
-          style={{ borderColor: 'var(--border-primary)' }}
-        >
-          {ranked.map(entry => (
-            <li
-              key={entry.room}
-              className="flex items-center justify-between gap-3 py-2"
-            >
-              <span className="text-body text-sm">{entry.room}</span>
-              <span className="text-caption text-xs tabular-nums">
-                {entry.lux} lux
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   )
 }
@@ -517,10 +490,9 @@ export default function EnvironmentCard({
           rooms={rooms}
           unit={unit}
           tempInsights={tempInsights}
+          luxInsights={luxInsights}
         />
       )}
-
-      {luxInsights && <LuxSection luxInsights={luxInsights} />}
 
       {hasIndoor && chartRoom && (
         <TempChartSection roomName={chartRoom.name} />

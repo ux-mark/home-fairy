@@ -1,4 +1,4 @@
-import { Zap, Thermometer, Sun, Battery, ArrowUp, ArrowDown, Minus } from 'lucide-react'
+import { Thermometer, Sun, Battery, ArrowUp, ArrowDown, Minus } from 'lucide-react'
 import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
 import type { InsightsData } from '@/lib/api'
 
@@ -17,14 +17,6 @@ interface HomeSummaryStripProps {
 function capitaliseBrightnessLevel(level: string): string {
   if (!level) return level
   return level.charAt(0).toUpperCase() + level.slice(1)
-}
-
-/**
- * Format a cost estimate as a locale currency string without a symbol,
- * since the unit label is rendered separately.
- */
-function formatCost(cost: number): string {
-  return cost.toFixed(2)
 }
 
 // ── Pill wrapper ──────────────────────────────────────────────────────────────
@@ -69,40 +61,6 @@ function PillHeader({ icon, label }: PillHeaderProps) {
       {icon}
       <span className="text-caption text-xs font-medium">{label}</span>
     </div>
-  )
-}
-
-// ── Energy pill ───────────────────────────────────────────────────────────────
-
-function EnergyPill({ energy }: { energy: InsightsData['energy'] }) {
-  return (
-    <Pill ariaLabel="Energy usage summary" scrollTargetId="energy-card">
-      <PillHeader
-        icon={<Zap className="h-4 w-4 shrink-0 text-amber-400" aria-hidden="true" />}
-        label="Energy"
-      />
-
-      {energy ? (
-        <div className="space-y-1.5">
-          <div className="flex items-baseline gap-1.5 flex-wrap">
-            <span className="text-heading text-xl font-semibold tabular-nums">
-              {energy.totalWatts.toFixed(1)}
-            </span>
-            <span className="text-caption text-xs">W</span>
-          </div>
-
-          <OverUnderBadge percent={energy.overUnderPercent} />
-
-          {energy.dailyCostEstimate !== null && (
-            <p className="text-caption text-xs">
-              ~${formatCost(energy.dailyCostEstimate)}/day estimated
-            </p>
-          )}
-        </div>
-      ) : (
-        <p className="text-caption text-sm">No power data</p>
-      )}
-    </Pill>
   )
 }
 
@@ -257,11 +215,10 @@ function BatteryStatusLine({ fleetHealth }: { fleetHealth: FleetHealth }) {
 export default function HomeSummaryStrip({ insights }: HomeSummaryStripProps) {
   return (
     <div
-      className="grid grid-cols-2 gap-3 md:grid-cols-4"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-3"
       role="region"
       aria-label="Home summary"
     >
-      <EnergyPill energy={insights.energy} />
       <TemperaturePill temperature={insights.temperature} />
       <BrightnessPill lux={insights.lux} />
       <BatteryPill battery={insights.battery} />

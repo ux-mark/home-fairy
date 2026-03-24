@@ -23,6 +23,30 @@ function powerIntensityClass(watts: number, maxWatts: number): string {
   return 'text-green-400'
 }
 
+// ── Inline device trend chart ─────────────────────────────────────────────────
+
+function DeviceTrendChart({ deviceLabel }: { deviceLabel: string }) {
+  const { data: historyData, isLoading } = useQuery({
+    queryKey: ['dashboard', 'history', 'power', deviceLabel, '24h'],
+    queryFn: () => api.dashboard.getHistory('power', deviceLabel, '24h'),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  return (
+    <div className="mt-2 pb-2">
+      <TimeSeriesChart
+        data={historyData?.data ?? []}
+        label={deviceLabel}
+        color="#f59e0b"
+        unit="W"
+        height={100}
+        loading={isLoading}
+        emptyMessage="Power trends will appear as data is collected."
+      />
+    </div>
+  )
+}
+
 // ── Power device row ──────────────────────────────────────────────────────────
 
 interface DeviceRowProps {
@@ -32,61 +56,101 @@ interface DeviceRowProps {
 }
 
 function DeviceRow({ device, maxWatts, anomaly }: DeviceRowProps) {
+  const [expanded, setExpanded] = useState(false)
   const isOn = device.switch === 'on'
   const intensityClass = powerIntensityClass(device.power, maxWatts)
+  const rowId = `device-trend-${device.id}`
 
   return (
     <li
       className={cn(
-        'flex items-start gap-3 py-2.5',
+        'py-1',
         anomaly && 'border-l-2 border-l-amber-500 pl-2',
       )}
     >
-      {/* On/off indicator — paired with text label so colour is not the sole signal */}
-      <span
-        aria-label={isOn ? 'On' : 'Off'}
-        title={isOn ? 'On' : 'Off'}
+      {/* Main device row — clickable to expand trend */}
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={rowId}
+        onClick={() => setExpanded(prev => !prev)}
         className={cn(
-          'mt-1 h-2 w-2 shrink-0 rounded-full',
-          isOn ? 'bg-fairy-500' : 'bg-slate-600',
+          'flex w-full items-start gap-3 py-1.5 text-left',
+          'rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
         )}
-      />
+      >
+        {/* On/off indicator — paired with text label so colour is not the sole signal */}
+        <span
+          aria-label={isOn ? 'On' : 'Off'}
+          title={isOn ? 'On' : 'Off'}
+          className={cn(
+            'mt-1 h-2 w-2 shrink-0 rounded-full',
+            isOn ? 'bg-fairy-500' : 'bg-slate-600',
+          )}
+        />
 
-      {/* Device info */}
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium leading-snug">
-          <Link
-            to={'/devices/' + device.id}
-            className="text-fairy-400 hover:underline"
-          >
-            {device.label}
-          </Link>
-        </p>
-        {device.room_name && (
-          <p className="text-caption text-xs leading-snug">
-            {device.room_name}
+        {/* Device info */}
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium leading-snug">
+            <Link
+              to={'/devices/' + device.id}
+              className="text-fairy-400 hover:underline"
+              onClick={e => e.stopPropagation()}
+            >
+              {device.label}
+            </Link>
           </p>
-        )}
-        {device.energy !== null && device.energy !== undefined && (
-          <p className="text-caption text-xs leading-snug">
-            {device.energy.toFixed(2)} kWh total
-          </p>
-        )}
-      </div>
-
-      {/* Power value — colour reinforces scale but watt number is always visible */}
-      <div className="shrink-0 text-right">
-        <div className="flex items-center gap-1.5">
-          <span className={cn('text-sm font-semibold tabular-nums', intensityClass)}>
-            {device.power.toFixed(1)} W
-          </span>
-          {anomaly && (
-            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-400">
-              {Math.round(anomaly.percentAbove)}% above normal
-            </span>
+          {device.room_name && (
+            <p className="text-caption text-xs leading-snug">
+              {device.room_name}
+            </p>
+          )}
+          {device.energy !== null && device.energy !== undefined && (
+            <p className="text-caption text-xs leading-snug">
+              {device.energy.toFixed(2)} kWh total
+            </p>
           )}
         </div>
-        <span className="sr-only"> watts, device is {isOn ? 'on' : 'off'}</span>
+
+        {/* Power value + expand chevron */}
+        <div className="shrink-0 text-right">
+          <div className="flex items-center gap-1.5">
+            <span className={cn('text-sm font-semibold tabular-nums', intensityClass)}>
+              {device.power.toFixed(1)} W
+            </span>
+            {anomaly && (
+              <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-400">
+                {Math.round(anomaly.percentAbove)}% above normal
+              </span>
+            )}
+            <ChevronDown
+              className={cn(
+                'h-3.5 w-3.5 shrink-0 text-caption transition-transform',
+                expanded ? 'rotate-180' : '',
+              )}
+              aria-hidden="true"
+            />
+          </div>
+          <span className="sr-only"> watts, device is {isOn ? 'on' : 'off'}</span>
+        </div>
+      </button>
+
+      {/* Inline trend chart — rendered only when expanded */}
+      <div
+        id={rowId}
+        role="region"
+        aria-label={`24-hour power trend for ${device.label}`}
+        style={{
+          display: 'grid',
+          gridTemplateRows: expanded ? '1fr' : '0fr',
+          overflow: 'hidden',
+          transition: 'grid-template-rows 200ms ease',
+        }}
+      >
+        <div style={{ minHeight: 0 }}>
+          {expanded && <DeviceTrendChart deviceLabel={device.label} />}
+        </div>
       </div>
     </li>
   )
@@ -235,8 +299,6 @@ interface EnergyCardProps {
 }
 
 export default function EnergyCard({ power, insights, currencySymbol = '$' }: EnergyCardProps) {
-  const [chartExpanded, setChartExpanded] = useState(false)
-
   // Sort highest power first
   const sorted = [...power].sort((a, b) => b.power - a.power)
   const maxWatts = sorted[0]?.power ?? 0
@@ -251,18 +313,6 @@ export default function EnergyCard({ power, insights, currencySymbol = '$' }: En
   const anomalyDeviceIds = new Set((insights?.deviceAnomalies ?? []).map(a => a.deviceId))
   const anomalyDevices = sorted.filter(d => anomalyDeviceIds.has(d.id))
   const normalDevices = sorted.filter(d => !anomalyDeviceIds.has(d.id))
-
-  // Track trend for the highest-drawing device
-  const topDevice = sorted[0]
-  const {
-    data: historyData,
-    isLoading: historyLoading,
-  } = useQuery({
-    queryKey: ['dashboard', 'history', 'power', topDevice?.label, '24h'],
-    queryFn: () => api.dashboard.getHistory('power', topDevice!.label, '24h'),
-    enabled: !!topDevice && chartExpanded,
-    staleTime: 5 * 60 * 1000,
-  })
 
   // ── Empty state ──────────────────────────────────────────────────────────────
   if (power.length === 0) {
@@ -349,50 +399,12 @@ export default function EnergyCard({ power, insights, currencySymbol = '$' }: En
         {/* All devices band — defaults closed */}
         {normalDevices.length > 0 && (
           <DeviceBand
-            label={`${normalDevices.length} ${normalDevices.length === 1 ? 'device' : 'devices'}`}
+            label={`All devices (${normalDevices.length})`}
             items={normalDevices}
             maxWatts={maxWatts}
             anomalyMap={anomalyMap}
             defaultOpen={false}
           />
-        )}
-      </div>
-
-      {/* Chart section */}
-      <div className="mt-4 border-t pt-4" style={{ borderColor: 'var(--border-primary)' }}>
-        <button
-          type="button"
-          aria-expanded={chartExpanded}
-          aria-controls="energy-trend-chart"
-          onClick={() => setChartExpanded(prev => !prev)}
-          className={cn(
-            'flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-            'text-body hover:bg-[var(--bg-tertiary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'min-h-[44px]',
-          )}
-        >
-          <span>
-            {topDevice
-              ? `24-hour trend — ${topDevice.label}`
-              : '24-hour trend'}
-          </span>
-          <span className={cn('text-caption text-xs transition-transform', chartExpanded ? 'rotate-180' : '')}>
-            {chartExpanded ? 'Hide' : 'Show'}
-          </span>
-        </button>
-
-        {chartExpanded && (
-          <div id="energy-trend-chart" className="mt-3">
-            <TimeSeriesChart
-              data={historyData?.data ?? []}
-              label={topDevice?.label ?? 'Power'}
-              color="#f59e0b"
-              unit="W"
-              height={160}
-              loading={historyLoading}
-              emptyMessage="Power trends will appear as data is collected."
-            />
-          </div>
         )}
       </div>
     </section>
