@@ -16,6 +16,7 @@ import motionRoutes from './routes/motion.js'
 import dashboardRoutes from './routes/dashboard.js'
 import { motionHandler } from './lib/motion-handler.js'
 import { sunModeScheduler } from './lib/sun-mode-scheduler.js'
+import { timeTriggerScheduler } from './lib/time-trigger-scheduler.js'
 import { timerManager } from './lib/timer-manager.js'
 import { activateScene } from './lib/scene-executor.js'
 import { weatherIndicator } from './lib/weather-indicator.js'
@@ -214,6 +215,7 @@ httpServer.listen(PORT, () => {
   console.log(`Home Fairy server running on port ${PORT}`)
   console.log(`CORS origin: ${CORS_ORIGIN}`)
   sunModeScheduler.init(io)
+  timeTriggerScheduler.init(io)
   weatherIndicator.start()
   startHistoryCollector()
 })

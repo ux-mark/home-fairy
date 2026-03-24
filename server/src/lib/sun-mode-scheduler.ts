@@ -1,5 +1,5 @@
 import { getSunTimes, type SunTimes } from './sun-tracker.js'
-import { getOne, run } from '../db/index.js'
+import { getOne, getAll, run } from '../db/index.js'
 import type { Server as SocketServer } from 'socket.io'
 import { motionHandler } from './motion-handler.js'
 
@@ -7,16 +7,6 @@ interface SunModeMapping {
   sunPhase: string
   mode: string
   time: Date
-}
-
-// Default mappings -- these can be overridden via settings
-const DEFAULT_SUN_MODE_MAP: Record<string, string> = {
-  nightEnd: 'Early Morning',     // ~5:30am astronomical dawn
-  dawn: 'Morning',               // civil dawn
-  solarNoon: 'Afternoon',        // midday
-  goldenHour: 'Evening',         // ~1hr before sunset
-  dusk: 'Late Evening',          // civil dusk
-  night: 'Night',                // astronomical night
 }
 
 class SunModeScheduler {
@@ -35,6 +25,7 @@ class SunModeScheduler {
     const sunTimes = getSunTimes()
     const now = new Date()
     const mappings = this.getMappings(sunTimes)
+    const sleepMode = this.getSleepModeName()
 
     // Find what the current mode SHOULD be based on which transitions have passed
     let currentShouldBe: SunModeMapping | null = null
@@ -44,15 +35,15 @@ class SunModeScheduler {
       }
     }
 
-    // If the current mode doesn't match, set it now — but never overwrite Sleep Time
-    // (Sleep Time is set manually by nighttime/guest-night and should persist until wake mode)
+    // If the current mode doesn't match, set it now — but never overwrite the configured sleep mode
+    // (sleep mode is set manually by nighttime/guest-night and should persist until wake mode)
     if (currentShouldBe) {
       const currentModeRow = getOne<{ value: string }>(
         "SELECT value FROM current_state WHERE key = 'mode'",
       )
       const currentMode = currentModeRow?.value
-      if (currentMode === 'Sleep Time') {
-        // Don't overwrite — Sleep Time persists until the configured wake mode is reached
+      if (sleepMode && currentMode === sleepMode) {
+        // Don't overwrite — sleep mode persists until the configured wake mode is reached
       } else if (currentMode !== currentShouldBe.mode) {
         this.transitionMode(currentShouldBe.mode, currentShouldBe.sunPhase + ' (catch-up)')
       }
@@ -63,11 +54,12 @@ class SunModeScheduler {
       const delay = mapping.time.getTime() - now.getTime()
       if (delay > 0) {
         const timer = setTimeout(() => {
-          // Check mode at transition time — don't overwrite Sleep Time
+          // Check mode at transition time — don't overwrite the configured sleep mode
           const modeRow = getOne<{ value: string }>(
             "SELECT value FROM current_state WHERE key = 'mode'",
           )
-          if (modeRow?.value === 'Sleep Time') return
+          const sleepModeName = this.getSleepModeName()
+          if (sleepModeName && modeRow?.value === sleepModeName) return
           this.transitionMode(mapping.mode, mapping.sunPhase)
         }, delay)
         this.timers.push(timer)
@@ -77,18 +69,32 @@ class SunModeScheduler {
     this.logSchedule(mappings)
   }
 
+  refreshFromDb() {
+    this.scheduleToday()
+  }
+
   private getMappings(sunTimes: SunTimes): SunModeMapping[] {
+    const triggers = getAll<{ mode_name: string; sun_event: string }>(
+      "SELECT mode_name, sun_event FROM mode_triggers WHERE trigger_type = 'sun' AND enabled = 1"
+    )
     const mappings: SunModeMapping[] = []
     const timesRecord: Record<string, string> = { ...sunTimes }
-    for (const [phase, mode] of Object.entries(DEFAULT_SUN_MODE_MAP)) {
-      const iso = timesRecord[phase]
+    for (const trigger of triggers) {
+      const iso = timesRecord[trigger.sun_event]
       if (!iso) continue
       const time = new Date(iso)
       if (!isNaN(time.getTime())) {
-        mappings.push({ sunPhase: phase, mode, time })
+        mappings.push({ sunPhase: trigger.sun_event, mode: trigger.mode_name, time })
       }
     }
     return mappings.sort((a, b) => a.time.getTime() - b.time.getTime())
+  }
+
+  private getSleepModeName(): string | null {
+    const row = getOne<{ value: string }>(
+      "SELECT value FROM current_state WHERE key = 'sleep_mode_name'"
+    )
+    return row?.value || null
   }
 
   private transitionMode(mode: string, sunPhase: string) {

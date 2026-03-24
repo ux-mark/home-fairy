@@ -173,6 +173,30 @@ export interface SunScheduleEntry {
   isPast: boolean
 }
 
+export interface ModeTrigger {
+  id: number
+  type: 'sun' | 'time'
+  sunEvent?: string
+  time?: string
+  days?: number[]
+  priority: number
+  enabled: boolean
+}
+
+export interface ModeWithTriggers {
+  name: string
+  triggers: ModeTrigger[]
+  isSleepMode: boolean
+}
+
+export interface ModeDependencies {
+  scenes: { name: string; icon: string }[]
+  isCurrentMode: boolean
+  isWakeMode: boolean
+  isSleepMode: boolean
+  triggerCount: number
+}
+
 export interface SubwayArrival {
   routeId: string
   direction: 'N' | 'S'
@@ -610,16 +634,41 @@ export const api = {
       }>('/system/weather'),
     getSunTimes: () => fetchApi<Record<string, string>>('/system/sun'),
     getSunSchedule: () => fetchApi<SunScheduleEntry[]>('/system/sun-schedule'),
-    getModes: () => fetchApi<string[]>('/system/modes'),
+    getModes: () => fetchApi<ModeWithTriggers[]>('/system/modes'),
     addMode: (mode: string) =>
       fetchApi<string[]>('/system/modes', {
         method: 'POST',
         body: JSON.stringify({ mode }),
       }),
+    renameMode: (oldName: string, newName: string) =>
+      fetchApi<{ name: string; updatedScenes: number }>(
+        '/system/modes/' + encodeURIComponent(oldName),
+        { method: 'PUT', body: JSON.stringify({ name: newName }) },
+      ),
     deleteMode: (mode: string) =>
-      fetchApi<string[]>('/system/modes/' + encodeURIComponent(mode), {
-        method: 'DELETE',
-      }),
+      fetchApi<{ modes: string[]; affectedScenes: number }>(
+        '/system/modes/' + encodeURIComponent(mode),
+        { method: 'DELETE' },
+      ),
+    getModeDependencies: (mode: string) =>
+      fetchApi<ModeDependencies>(
+        '/system/modes/' + encodeURIComponent(mode) + '/dependencies',
+      ),
+    addTrigger: (mode: string, trigger: { type: 'sun' | 'time'; sunEvent?: string; time?: string; days?: number[]; priority?: number }) =>
+      fetchApi<ModeTrigger>(
+        '/system/modes/' + encodeURIComponent(mode) + '/triggers',
+        { method: 'POST', body: JSON.stringify(trigger) },
+      ),
+    updateTrigger: (mode: string, triggerId: number, data: Partial<{ type: 'sun' | 'time'; sunEvent?: string; time?: string; days?: number[]; priority?: number; enabled?: boolean }>) =>
+      fetchApi<ModeTrigger>(
+        '/system/modes/' + encodeURIComponent(mode) + '/triggers/' + triggerId,
+        { method: 'PUT', body: JSON.stringify(data) },
+      ),
+    deleteTrigger: (mode: string, triggerId: number) =>
+      fetchApi<{ success: boolean }>(
+        '/system/modes/' + encodeURIComponent(mode) + '/triggers/' + triggerId,
+        { method: 'DELETE' },
+      ),
     getTimers: () =>
       fetchApi<
         {

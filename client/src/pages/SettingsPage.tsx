@@ -1,4 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
+import { ModesList } from '@/components/modes/ModesList'
+import ModeDetail from '@/components/modes/ModeDetail'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
@@ -30,8 +32,8 @@ import {
 } from 'lucide-react'
 import { HsvColorPicker } from 'react-colorful'
 import { api } from '@/lib/api'
-import type { SunScheduleEntry, ConfiguredStop, MtaStop, MtaIndicatorConfig, WeatherIndicatorConfig, DashboardStats } from '@/lib/api'
-import { cn, hsbToHex, formatTime } from '@/lib/utils'
+import type { ConfiguredStop, MtaStop, MtaIndicatorConfig, WeatherIndicatorConfig, DashboardStats } from '@/lib/api'
+import { cn, hsbToHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { useTheme } from '@/hooks/useTheme'
 import type { Theme } from '@/hooks/useTheme'
@@ -175,90 +177,22 @@ function GeneralSection() {
   )
 }
 
-// ── Modes section ───────────────────────────────────────────────────────────
+// ── Modes section (uses new ModesList/ModeDetail components) ────────────────
 
 function ModesSection() {
-  const queryClient = useQueryClient()
-  const { toast } = useToast()
-  const [newMode, setNewMode] = useState('')
+  const [selectedMode, setSelectedMode] = useState<string | null>(null)
 
-  const { data: modes } = useQuery({
-    queryKey: ['system', 'modes'],
-    queryFn: api.system.getModes,
-  })
-
-  const addMutation = useMutation({
-    mutationFn: api.system.addMode,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['system', 'modes'] })
-      queryClient.invalidateQueries({ queryKey: ['system', 'current'] })
-      setNewMode('')
-      toast({ message: 'Mode added' })
-    },
-    onError: () => toast({ message: 'Failed to add mode', type: 'error' }),
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: api.system.deleteMode,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['system', 'modes'] })
-      queryClient.invalidateQueries({ queryKey: ['system', 'current'] })
-      toast({ message: 'Mode removed' })
-    },
-    onError: () => toast({ message: 'Failed to remove mode', type: 'error' }),
-  })
-
-  const handleAdd = () => {
-    const trimmed = newMode.trim()
-    if (!trimmed) return
-    addMutation.mutate(trimmed)
-  }
-
-  const handleDelete = (mode: string) => {
-    if (!confirm(`Remove mode "${mode}"?`)) return
-    deleteMutation.mutate(mode)
+  if (selectedMode) {
+    return (
+      <ModeDetail
+        modeName={selectedMode}
+        onBack={() => setSelectedMode(null)}
+      />
+    )
   }
 
   return (
-    <Section title="Modes">
-      <div className="mb-4 flex gap-2">
-        <input
-          type="text"
-          value={newMode}
-          onChange={e => setNewMode(e.target.value)}
-          onKeyDown={e => e.key === 'Enter' && handleAdd()}
-          placeholder="New mode name..."
-          className="input-field flex-1 rounded-lg border px-3 py-2 text-sm placeholder:text-[var(--text-muted)] focus:border-fairy-500 focus:outline-none"
-        />
-        <button
-          onClick={handleAdd}
-          disabled={!newMode.trim() || addMutation.isPending}
-          className="flex items-center gap-1.5 rounded-lg bg-fairy-500 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-fairy-600 disabled:opacity-50"
-        >
-          <Plus className="h-4 w-4" />
-          Add
-        </button>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {modes?.map(mode => (
-          <span
-            key={mode}
-            className="surface inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm text-heading"
-          >
-            {mode}
-            <button
-              onClick={() => handleDelete(mode)}
-              className="rounded-full p-0.5 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-red-400"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </span>
-        ))}
-        {modes?.length === 0 && (
-          <p className="text-caption text-sm">No modes configured.</p>
-        )}
-      </div>
-    </Section>
+    <ModesList onSelectMode={setSelectedMode} />
   )
 }
 
@@ -453,52 +387,7 @@ function NightModeSection() {
   )
 }
 
-// ── Sun Schedule section ────────────────────────────────────────────────────
-
-function SunScheduleSection() {
-  const { data: schedule } = useQuery({
-    queryKey: ['system', 'sun-schedule'],
-    queryFn: api.system.getSunSchedule,
-    refetchInterval: 60_000,
-  })
-
-  const formatPhase = (phase: string) =>
-    phase.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())
-
-  return (
-    <Section title="Sun Schedule">
-      {schedule && schedule.length > 0 ? (
-        <div className="space-y-2">
-          {schedule.map((entry: SunScheduleEntry) => (
-            <div
-              key={entry.sunPhase}
-              className={cn(
-                'surface flex items-center justify-between rounded-lg px-3 py-2',
-                entry.isPast && 'opacity-40',
-              )}
-            >
-              <div className="flex items-center gap-2">
-                <Sun className="h-4 w-4 text-amber-400" />
-                <div>
-                  <p className="text-heading text-sm">{entry.mode}</p>
-                  <p className="text-caption text-xs">{formatPhase(entry.sunPhase)}</p>
-                </div>
-              </div>
-              <span className="font-mono text-sm text-[var(--text-secondary)]">
-                {formatTime(entry.time)}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 text-sm text-caption">
-          <Sun className="h-4 w-4" />
-          No sun schedule available
-        </div>
-      )}
-    </Section>
-  )
-}
+// SunScheduleSection removed — sun schedule is now shown per-mode in ModeDetail triggers
 
 // ── Devices section ─────────────────────────────────────────────────────────
 
@@ -2131,7 +2020,7 @@ function SystemSection() {
 
 // ── Category accordion ───────────────────────────────────────────────────────
 
-type CategoryId = 'preferences' | 'night-and-schedule' | 'public-transport' | 'weather' | 'system'
+type CategoryId = 'preferences' | 'modes-and-schedule' | 'public-transport' | 'weather' | 'system'
 
 function CategoryAccordion({
   categoryId,
@@ -2220,17 +2109,16 @@ export default function SettingsPage() {
         >
           <ThemeSection />
           <GeneralSection />
-          <ModesSection />
         </CategoryAccordion>
 
         <CategoryAccordion
-          categoryId="night-and-schedule"
-          label="Night and schedule"
-          isOpen={openCategory === 'night-and-schedule'}
-          onToggle={() => handleToggle('night-and-schedule')}
+          categoryId="modes-and-schedule"
+          label="Modes and schedule"
+          isOpen={openCategory === 'modes-and-schedule'}
+          onToggle={() => handleToggle('modes-and-schedule')}
         >
+          <ModesSection />
           <NightModeSection />
-          <SunScheduleSection />
         </CategoryAccordion>
 
         <CategoryAccordion

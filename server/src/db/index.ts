@@ -143,6 +143,21 @@ export function initDb(): void {
       ON notifications (read, dismissed, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_notifications_dedup
       ON notifications (dedup_key, dismissed);
+
+    CREATE TABLE IF NOT EXISTS mode_triggers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mode_name TEXT NOT NULL,
+      trigger_type TEXT NOT NULL CHECK(trigger_type IN ('sun', 'time')),
+      sun_event TEXT,
+      trigger_time TEXT,
+      trigger_days TEXT,
+      priority INTEGER DEFAULT 0,
+      enabled INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_mode_triggers_mode
+      ON mode_triggers (mode_name);
   `)
 
   // Migration: add scene_manual column to rooms
@@ -198,6 +213,52 @@ export function initDb(): void {
     }
   } catch (e) {
     console.error('[db] Migration warning:', e)
+  }
+
+  // Migration: seed default mode triggers if mode_triggers table is empty
+  try {
+    const triggerCount = db.prepare('SELECT COUNT(*) as cnt FROM mode_triggers').get() as { cnt: number }
+    if (triggerCount.cnt === 0) {
+      console.log('[db] Seeding default sun mode triggers')
+      const defaultSunTriggers = [
+        { mode: 'Early Morning', event: 'nightEnd', priority: 10 },
+        { mode: 'Morning', event: 'dawn', priority: 10 },
+        { mode: 'Afternoon', event: 'solarNoon', priority: 10 },
+        { mode: 'Evening', event: 'goldenHour', priority: 10 },
+        { mode: 'Late Evening', event: 'dusk', priority: 10 },
+        { mode: 'Night', event: 'night', priority: 10 },
+      ]
+      const insertTrigger = db.prepare(
+        `INSERT INTO mode_triggers (mode_name, trigger_type, sun_event, priority)
+         VALUES (?, 'sun', ?, ?)`
+      )
+      for (const t of defaultSunTriggers) {
+        insertTrigger.run(t.mode, t.event, t.priority)
+      }
+
+      // Ensure all_modes includes defaults if not already set
+      const modesRow = db.prepare("SELECT value FROM current_state WHERE key = 'all_modes'").get() as { value: string } | undefined
+      let allModes: string[] = []
+      try { allModes = modesRow?.value ? JSON.parse(modesRow.value) : [] } catch { allModes = [] }
+      if (allModes.length === 0) {
+        allModes = ['Early Morning', 'Morning', 'Afternoon', 'Evening', 'Late Evening', 'Night', 'Sleep Time']
+        db.prepare(
+          `INSERT INTO current_state (key, value, updated_at) VALUES ('all_modes', ?, datetime('now'))
+           ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+        ).run(JSON.stringify(allModes))
+      }
+
+      // Set default sleep mode name if not already set
+      const sleepRow = db.prepare("SELECT value FROM current_state WHERE key = 'sleep_mode_name'").get() as { value: string } | undefined
+      if (!sleepRow) {
+        db.prepare(
+          `INSERT INTO current_state (key, value, updated_at) VALUES ('sleep_mode_name', 'Sleep Time', datetime('now'))
+           ON CONFLICT(key) DO NOTHING`
+        ).run()
+      }
+    }
+  } catch (e) {
+    console.error('[db] Migration warning (mode_triggers seed):', e)
   }
 }
 
