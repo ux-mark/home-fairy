@@ -289,9 +289,6 @@ export class MotionHandler {
 
       // Check lux threshold — skip activation if room is very bright
       // Default 500 lux: a well-lit room is ~300-500, direct sunlight 1000+
-      // The old system used priorityThreshold (0-100) for scene priority, NOT lux.
-      // Lux threshold is configurable per room in the future.
-      // For now, only skip if extremely bright (likely already lit or direct sun)
       const luxThresholdPref = getOne<{ value: string }>(
         "SELECT value FROM current_state WHERE key = 'pref_lux_threshold'",
       )

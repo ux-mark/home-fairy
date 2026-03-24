@@ -163,9 +163,10 @@ Automatically transitions modes based on sun position (SunCalc). On server start
 3. Use in a page component with TanStack Query (useQuery/useMutation)
 
 ### Modifying the database schema
-1. Add migration in `server/src/db/index.ts` (try-catch ALTER TABLE pattern)
+1. Update the CREATE TABLE statement in `server/src/db/index.ts`
 2. Update relevant route interfaces and parseX functions
 3. Update frontend types in `client/src/lib/api.ts`
+4. Delete and recreate the local database to apply schema changes
 
 ## Architecture Notes
 - Monorepo: `client/` (React SPA) + `server/` (Express API)

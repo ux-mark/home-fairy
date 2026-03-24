@@ -119,8 +119,7 @@ export function debounce<T extends (...args: any[]) => any>(fn: T, ms: number): 
   return debounced as T & { cancel: () => void }
 }
 
-// Default modes — these are overridden by API data from /api/system/current
-// The actual modes come from the database (all_modes in current_state table)
+// Default modes — overridden by API data from /api/system/current (reads from modes table)
 export const DEFAULT_MODES = [
   'Early Morning',
   'Morning',

@@ -115,7 +115,8 @@ export interface SceneCommand {
   power?: 'on' | 'off'
   duration?: number
   command?: string
-  id?: string
+  device_id?: number | string
+  value?: string | number
   effect?: LightEffect
   effect_params?: EffectParams
 }
@@ -145,7 +146,6 @@ export interface HubDevice {
   device_name: string
   device_type: string
   capabilities: string[]
-  room_name: string | null
   attributes: Record<string, unknown>
 }
 

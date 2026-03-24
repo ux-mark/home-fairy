@@ -16,8 +16,6 @@ interface LightCommand {
   duration?: number
 }
 
-// lifx_scene type removed — all scenes migrated to per-light lifx_light commands
-
 interface AllOffCommand {
   type: 'all_off'
   duration?: number
@@ -46,7 +44,7 @@ interface FairyDeviceCommand {
   type: 'fairy_device'
   name: string
   command: string
-  id?: string  // brightness as string (legacy format)
+  brightness?: number
 }
 
 interface FairySceneCommand {
@@ -59,7 +57,6 @@ interface SceneTimerCommand {
   type: 'scene_timer'
   name: string
   command: string  // target scene to activate after delay
-  id?: string      // delay in seconds (legacy format)
   duration?: number
 }
 
@@ -319,13 +316,13 @@ export async function activateScene(sceneName: string): Promise<void> {
             [cmd.name],
           )
           if (fairyDev?.ip) {
-            const brightness = cmd.id ? parseInt(cmd.id, 10) : 100
+            const brightness = cmd.brightness ?? 100
             if (cmd.command.toLowerCase() === 'off') {
               await fairyDeviceClient.turnOff(fairyDev.ip)
             } else {
               await fairyDeviceClient.setBrightness(fairyDev.ip, Math.round(brightness * 2.55))
             }
-            log(`Fairy device ${cmd.name}: ${cmd.command} (brightness: ${cmd.id || 'default'})`)
+            log(`Fairy device ${cmd.name}: ${cmd.command} (brightness: ${brightness})`)
           } else {
             log(`Fairy device not found: ${cmd.name}`)
           }
@@ -345,7 +342,7 @@ export async function activateScene(sceneName: string): Promise<void> {
         }
 
         case 'scene_timer': {
-          const delaySec = cmd.duration || (cmd.id ? parseInt(cmd.id, 10) : 300)
+          const delaySec = cmd.duration ?? 300
           const targetScene = cmd.command || cmd.name
           timerManager.createTimer(sceneName, targetScene, delaySec)
           log(`Scene timer: activate "${targetScene}" in ${delaySec}s`)

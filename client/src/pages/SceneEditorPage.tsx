@@ -888,7 +888,7 @@ export default function SceneEditorPage() {
     (device: DeviceRoomAssignment, on: boolean) => {
       setDeviceCommands(prev => {
         const filtered = prev.filter(
-          c => !(c.type === 'hubitat_device' && c.id === String(device.device_id)),
+          c => !(c.type === 'hubitat_device' && c.device_id === String(device.device_id)),
         )
         if (on) {
           return [
@@ -896,7 +896,7 @@ export default function SceneEditorPage() {
             {
               type: 'hubitat_device' as const,
               name: device.device_label,
-              id: String(device.device_id),
+              device_id: String(device.device_id),
               command: 'on',
             },
           ]
@@ -911,7 +911,7 @@ export default function SceneEditorPage() {
     (device: DeviceRoomAssignment, level: number) => {
       setDeviceCommands(prev =>
         prev.map(c =>
-          c.type === 'hubitat_device' && c.id === String(device.device_id)
+          c.type === 'hubitat_device' && c.device_id === String(device.device_id)
             ? { ...c, command: 'on', brightness: level / 100 }
             : c,
         ),
@@ -983,7 +983,7 @@ export default function SceneEditorPage() {
       setDeviceCommands(prev =>
         prev.map(c =>
           c.type === 'fairy_device' && c.name === device.device_label
-            ? { ...c, id: String(brightness) }
+            ? { ...c, brightness }
             : c,
         ),
       )
@@ -1221,7 +1221,7 @@ export default function SceneEditorPage() {
                   <div className="space-y-3">
                     {categorizedDevices.switches.map(device => {
                       const cmd = deviceCommands.find(
-                        c => c.type === 'hubitat_device' && c.id === String(device.device_id),
+                        c => c.type === 'hubitat_device' && c.device_id === String(device.device_id),
                       )
                       const isOn = !!cmd
                       const isDimmer = device.device_type.toLowerCase().includes('dimmer')
@@ -1282,7 +1282,7 @@ export default function SceneEditorPage() {
                       )
                       const isOn = !!cmd
                       const pattern = cmd?.command || 'Morning'
-                      const rawBrightness = cmd?.id ? parseInt(cmd.id, 10) : 100
+                      const rawBrightness = cmd?.brightness ?? 100
 
                       return (
                         <FairyDeviceCard

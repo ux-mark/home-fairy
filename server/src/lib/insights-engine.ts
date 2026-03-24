@@ -579,7 +579,7 @@ function computeAttentionItems(
       })
     }
   } catch {
-    // Ignore — notifications table may not exist yet during migration
+    // Ignore notification query errors
   }
 
   return items
