@@ -57,16 +57,28 @@ export function useDashboardSocket(): void {
       queryClient.invalidateQueries({ queryKey: ['rooms'] })
     }
 
+    function handleNotificationNew() {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+    }
+
+    function handleNotificationUpdate() {
+      queryClient.invalidateQueries({ queryKey: ['notifications'] })
+    }
+
     s.on('hubitat:event', handleHubitatEvent)
     s.on('mode:change', handleModeChange)
     s.on('mode_changed', handleModeChange)  // emitted by sun-mode-scheduler
     s.on('scene:change', handleSceneChange)
+    s.on('notification:new', handleNotificationNew)
+    s.on('notification:update', handleNotificationUpdate)
 
     return () => {
       s.off('hubitat:event', handleHubitatEvent)
       s.off('mode:change', handleModeChange)
       s.off('mode_changed', handleModeChange)
       s.off('scene:change', handleSceneChange)
+      s.off('notification:new', handleNotificationNew)
+      s.off('notification:update', handleNotificationUpdate)
     }
   }, [queryClient])
 }

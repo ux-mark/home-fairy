@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { useTheme } from '@/hooks/useTheme'
 import type { Theme } from '@/hooks/useTheme'
 import ToastContainer from '@/components/ui/Toast'
+import NotificationBell from '@/components/notifications/NotificationBell'
 
 function HomeFairyIcon({ className }: { className?: string }) {
   return (
@@ -116,6 +117,7 @@ export default function AppLayout() {
             </h2>
           </div>
           <div className="flex items-center gap-2">
+            <NotificationBell />
             <ThemeToggle />
             {system?.mode && (
               <span className="inline-flex items-center rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400">
