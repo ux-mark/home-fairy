@@ -9,6 +9,7 @@ import {
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import type { ChartOptions, ChartData } from 'chart.js'
+import { parseServerDate } from '@/lib/utils'
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip)
 
@@ -35,11 +36,12 @@ export interface TimeSeriesChartProps {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Parse an ISO-8601 or date string into a Date object safely.
+ * Parse a server timestamp into a Date object safely, treating bare
+ * SQLite datetime strings as UTC (via parseServerDate).
  * Returns null if the string cannot be parsed.
  */
 function parseDate(raw: string): Date | null {
-  const d = new Date(raw)
+  const d = parseServerDate(raw)
   return isNaN(d.getTime()) ? null : d
 }
 

@@ -137,9 +137,9 @@ function computeEnergyInsights(power: PowerDevice[], energyRate: number): Energy
         SELECT SUM(value) as hourly_total
         FROM device_history
         WHERE source = 'power'
-          AND CAST(strftime('%H', recorded_at) AS INTEGER) = CAST(strftime('%H', 'now') AS INTEGER)
+          AND CAST(strftime('%H', recorded_at, 'localtime') AS INTEGER) = CAST(strftime('%H', 'now', 'localtime') AS INTEGER)
           AND recorded_at > datetime('now', '-7 days')
-        GROUP BY strftime('%Y-%m-%d %H', recorded_at)
+        GROUP BY strftime('%Y-%m-%d %H', recorded_at, 'localtime')
       )
     `).get() as { avg_watts: number | null } | undefined
 
@@ -162,7 +162,7 @@ function computeEnergyInsights(power: PowerDevice[], energyRate: number): Energy
       `SELECT source_id, AVG(value) as avg_watts
        FROM device_history
        WHERE source = 'power'
-         AND CAST(strftime('%H', recorded_at) AS INTEGER) = CAST(strftime('%H', 'now') AS INTEGER)
+         AND CAST(strftime('%H', recorded_at, 'localtime') AS INTEGER) = CAST(strftime('%H', 'now', 'localtime') AS INTEGER)
          AND recorded_at > datetime('now', '-7 days')
        GROUP BY source_id`,
     )
@@ -186,23 +186,23 @@ function computeEnergyInsights(power: PowerDevice[], energyRate: number): Energy
   const dailyKwhHistory = getAll<{ day: string; total_kwh: number }>(
     `SELECT day, SUM(daily_kwh) as total_kwh FROM (
        SELECT source_id,
-              date(recorded_at) as day,
+              date(recorded_at, 'localtime') as day,
               MAX(value) - MIN(value) as daily_kwh
        FROM device_history
        WHERE source = 'energy'
          AND recorded_at > datetime('now', '-7 days')
-       GROUP BY source_id, date(recorded_at)
+       GROUP BY source_id, date(recorded_at, 'localtime')
      ) GROUP BY day ORDER BY day`,
   ).map((r) => ({ day: r.day, totalKwh: Math.round(r.total_kwh * 100) / 100 }))
 
   // Peak usage hours (top 3)
   const peakHours = getAll<{ hour: number; avg_watts: number }>(
-    `SELECT CAST(strftime('%H', recorded_at) AS INTEGER) as hour,
+    `SELECT CAST(strftime('%H', recorded_at, 'localtime') AS INTEGER) as hour,
             AVG(value) as avg_watts
      FROM device_history
      WHERE source = 'power'
        AND recorded_at > datetime('now', '-7 days')
-     GROUP BY strftime('%H', recorded_at)
+     GROUP BY strftime('%H', recorded_at, 'localtime')
      ORDER BY avg_watts DESC LIMIT 3`,
   ).map((r) => ({ hour: r.hour, avgWatts: Math.round(r.avg_watts * 10) / 10 }))
 
@@ -323,7 +323,7 @@ function computeLuxInsights(rooms: RoomData[]): LuxInsights | null {
       SELECT AVG(value) as avg_lux
       FROM device_history
       WHERE source = 'lux'
-        AND CAST(strftime('%H', recorded_at) AS INTEGER) = CAST(strftime('%H', 'now') AS INTEGER)
+        AND CAST(strftime('%H', recorded_at, 'localtime') AS INTEGER) = CAST(strftime('%H', 'now', 'localtime') AS INTEGER)
         AND recorded_at > datetime('now', '-7 days')
     `).get() as { avg_lux: number | null } | undefined
 

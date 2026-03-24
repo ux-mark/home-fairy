@@ -13,7 +13,7 @@ import {
 import { Line } from 'react-chartjs-2'
 import type { ChartOptions, ChartData } from 'chart.js'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, parseServerDate } from '@/lib/utils'
 import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
 import type { DashboardSummary, TemperatureInsights, LuxInsights, HistoryPoint } from '@/lib/api'
 
@@ -415,16 +415,16 @@ const ROOM_PALETTE = [
 const CHART_GRID_COLOR = 'rgba(148, 163, 184, 0.15)'
 const CHART_TICK_COLOR = 'rgb(148, 163, 184)'
 
-/** Parse an ISO-8601 string into HH:MM (24-hour). Returns raw string on failure. */
+/** Parse a server timestamp into HH:MM (24-hour local time). Returns raw string on failure. */
 function formatChartTime(raw: string): string {
-  const d = new Date(raw)
+  const d = parseServerDate(raw)
   if (isNaN(d.getTime())) return raw
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
-/** Format a full readable timestamp for tooltips. */
+/** Format a full readable timestamp for tooltips (local time). */
 function formatChartTooltipTime(raw: string): string {
-  const d = new Date(raw)
+  const d = parseServerDate(raw)
   if (isNaN(d.getTime())) return raw
   return d.toLocaleString('en-GB', {
     weekday: 'short',

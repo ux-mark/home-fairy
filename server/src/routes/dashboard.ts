@@ -209,10 +209,10 @@ router.get('/history/:source/:sourceId', (req: Request, res: Response) => {
     if (aggregate) {
       data = getAll(
         `SELECT AVG(value) as value, MIN(value) as min, MAX(value) as max,
-                strftime('%Y-%m-%d %H:00:00', recorded_at) as recorded_at
+                strftime('%Y-%m-%d %H:00:00', recorded_at, 'localtime') as recorded_at
          FROM device_history
          WHERE source = ? AND source_id = ? AND recorded_at > ${cutoff}
-         GROUP BY strftime('%Y-%m-%d %H', recorded_at)
+         GROUP BY strftime('%Y-%m-%d %H', recorded_at, 'localtime')
          ORDER BY recorded_at`,
         [source, sourceId],
       )
@@ -411,10 +411,10 @@ router.get('/room/:name', (req: Request, res: Response) => {
     ).get(roomName) as { count: number })?.count || 0
 
     const hourlyRaw = getAll<{ hour: number; count: number }>(
-      `SELECT CAST(strftime('%H', recorded_at) AS INTEGER) as hour, COUNT(*) as count
+      `SELECT CAST(strftime('%H', recorded_at, 'localtime') AS INTEGER) as hour, COUNT(*) as count
        FROM room_activity WHERE room_name = ? AND event_type = 'motion_active'
          AND recorded_at > datetime('now', '-7 days')
-       GROUP BY strftime('%H', recorded_at) ORDER BY hour`,
+       GROUP BY strftime('%H', recorded_at, 'localtime') ORDER BY hour`,
       [roomName],
     )
     const hourlyPattern = Array.from({ length: 24 }, (_, i) => ({
