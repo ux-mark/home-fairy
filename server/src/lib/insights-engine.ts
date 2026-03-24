@@ -1,4 +1,5 @@
 import { getAll, db } from '../db/index.js'
+import { notificationService } from './notification-service.js'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ export interface BatteryInsights {
 export interface AttentionItem {
   id: string
   severity: 'critical' | 'warning' | 'info'
-  category: 'battery' | 'energy' | 'temperature'
+  category: 'battery' | 'energy' | 'temperature' | 'device_error' | 'scene'
   title: string
   description: string
   deviceId: number | null
@@ -559,6 +560,26 @@ function computeAttentionItems(
       deviceId: null,
       deviceLabel: null,
     })
+  }
+
+  // Recent device errors from notification system
+  try {
+    const deviceErrors = notificationService.getRecentDeviceErrors(60)
+    for (const err of deviceErrors) {
+      items.push({
+        id: `device-error-${err.id}`,
+        severity: err.severity as AttentionItem['severity'],
+        category: 'device_error',
+        title: err.title,
+        description: err.occurrence_count > 1
+          ? `${err.message} (${err.occurrence_count} occurrences)`
+          : err.message,
+        deviceId: null,
+        deviceLabel: err.source_label,
+      })
+    }
+  } catch {
+    // Ignore — notifications table may not exist yet during migration
   }
 
   return items

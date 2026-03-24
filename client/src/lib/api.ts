@@ -400,11 +400,29 @@ export interface BatteryInsights {
 export interface AttentionItem {
   id: string
   severity: 'critical' | 'warning' | 'info'
-  category: 'battery' | 'energy' | 'temperature'
+  category: 'battery' | 'energy' | 'temperature' | 'device_error' | 'scene'
   title: string
   description: string
   deviceId: number | null
   deviceLabel: string | null
+}
+
+export interface AppNotification {
+  id: number
+  severity: 'info' | 'warning' | 'critical'
+  category: string
+  title: string
+  message: string
+  source_type: string | null
+  source_id: string | null
+  source_label: string | null
+  dedup_key: string | null
+  occurrence_count: number
+  first_occurred_at: string
+  last_occurred_at: string
+  read: number
+  dismissed: number
+  created_at: string
 }
 
 export interface HistoryPoint {
@@ -660,6 +678,25 @@ export const api = {
       fetchApi<Record<string, { color: string; hex: string }>>('/system/weather/custom-colors', { method: 'PUT', body: JSON.stringify({ condition, color, hex }) }),
     resetWeatherCustomColors: () =>
       fetchApi<{ success: boolean }>('/system/weather/custom-colors', { method: 'DELETE' }),
+    notifications: {
+      getAll: (params?: { limit?: number; unreadOnly?: boolean; category?: string }) => {
+        const qs = new URLSearchParams()
+        if (params?.limit) qs.set('limit', String(params.limit))
+        if (params?.unreadOnly) qs.set('unread_only', 'true')
+        if (params?.category) qs.set('category', params.category)
+        const q = qs.toString()
+        return fetchApi<AppNotification[]>('/system/notifications' + (q ? '?' + q : ''))
+      },
+      getUnreadCount: () => fetchApi<{ count: number }>('/system/notifications/count'),
+      markRead: (id: number) =>
+        fetchApi<{ success: boolean }>('/system/notifications/' + id + '/read', { method: 'PATCH' }),
+      markAllRead: () =>
+        fetchApi<{ success: boolean }>('/system/notifications/read-all', { method: 'POST' }),
+      dismiss: (id: number) =>
+        fetchApi<{ success: boolean }>('/system/notifications/' + id + '/dismiss', { method: 'POST' }),
+      dismissAll: () =>
+        fetchApi<{ success: boolean }>('/system/notifications/dismiss-all', { method: 'POST' }),
+    },
     getLogs: (limit?: number, category?: string) => {
       const params = new URLSearchParams()
       if (limit) params.set('limit', String(limit))

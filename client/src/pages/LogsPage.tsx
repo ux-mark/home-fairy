@@ -5,7 +5,7 @@ import { ArrowLeft, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn, formatDateTime } from '@/lib/utils'
 
-const CATEGORIES = ['hubitat', 'scene', 'motion', 'lifx', 'system', 'battery', 'weather', 'timer'] as const
+const CATEGORIES = ['hubitat', 'scene', 'motion', 'lifx', 'system', 'battery', 'weather', 'timer', 'device_error'] as const
 
 function formatTimestamp(dateStr: string) {
   return formatDateTime(dateStr, { second: '2-digit' })
