@@ -40,7 +40,7 @@ function ModeSelector({
 }) {
   return (
     <section aria-label="System mode" className="mb-6">
-      <h2 className="text-body mb-3 text-sm font-medium">Current Mode</h2>
+      <h2 className="text-heading mb-3 text-sm font-semibold">Current Mode</h2>
       <div className="flex flex-wrap gap-2">
         {modes.map(mode => (
           <button
@@ -674,7 +674,7 @@ export default function HomePage() {
 
       <section aria-label="Rooms">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-body text-sm font-medium">Rooms</h2>
+          <h2 className="text-heading text-sm font-semibold">Rooms</h2>
           {rooms && (
             <span className="text-caption text-xs">
               {rooms.length} room{rooms.length !== 1 ? 's' : ''}

@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ChevronDown } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { RoomIntelligenceData } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
+import { Accordion } from '@/components/ui/Accordion'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -214,10 +214,7 @@ function BatteryRow({ data }: { data: RoomIntelligenceData }) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function RoomIntelligence({ roomName }: RoomIntelligenceProps) {
-  const [isOpen, setIsOpen] = useState(true)
-
-  const headingId = `room-intelligence-heading-${roomName.toLowerCase().replace(/\s+/g, '-')}`
-  const panelId = `room-intelligence-panel-${roomName.toLowerCase().replace(/\s+/g, '-')}`
+  const [isOpen, setIsOpen] = useState(false)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['dashboard', 'room', roomName],
@@ -241,49 +238,23 @@ export default function RoomIntelligence({ roomName }: RoomIntelligenceProps) {
   }
 
   return (
-    <div className="card rounded-xl border mb-4">
-      {/* Toggle button */}
-      <button
-        id={headingId}
-        aria-expanded={isOpen}
-        aria-controls={panelId}
-        onClick={() => setIsOpen(prev => !prev)}
-        className={cn(
-          'flex w-full items-center justify-between px-4 py-3 text-left transition-colors',
-          'min-h-[44px]',
-          !isOpen && 'border-b border-transparent',
-        )}
+    <section className="mb-4">
+      <Accordion
+        id="room-intelligence"
+        title="Room overview"
+        open={isOpen}
+        onToggle={() => setIsOpen(prev => !prev)}
       >
-        <span className="text-heading text-base font-semibold">Room overview</span>
-        <ChevronDown
-          className={cn(
-            'h-5 w-5 text-[var(--text-secondary)] transition-transform duration-300',
-            isOpen && 'rotate-180',
-          )}
-          aria-hidden="true"
-        />
-      </button>
-
-      {/* Collapsible content */}
-      <div
-        id={panelId}
-        role="region"
-        aria-labelledby={headingId}
-        className="grid transition-all duration-300"
-        style={{ gridTemplateRows: isOpen ? '1fr' : '0fr' }}
-      >
-        <div className="overflow-hidden">
-          <div className="space-y-5 px-4 pt-1 pb-4">
-            <EnvironmentRow data={data} />
-            <div className="border-t border-[var(--border-secondary)]" aria-hidden="true" />
-            <EnergyRow data={data} />
-            <div className="border-t border-[var(--border-secondary)]" aria-hidden="true" />
-            <ActivityRow data={data} />
-            <div className="border-t border-[var(--border-secondary)]" aria-hidden="true" />
-            <BatteryRow data={data} />
-          </div>
+        <div className="space-y-5 pt-1">
+          <EnvironmentRow data={data} />
+          <div className="border-t border-[var(--border-secondary)]" aria-hidden="true" />
+          <EnergyRow data={data} />
+          <div className="border-t border-[var(--border-secondary)]" aria-hidden="true" />
+          <ActivityRow data={data} />
+          <div className="border-t border-[var(--border-secondary)]" aria-hidden="true" />
+          <BatteryRow data={data} />
         </div>
-      </div>
-    </div>
+      </Accordion>
+    </section>
   )
 }

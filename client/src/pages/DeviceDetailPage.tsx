@@ -1,11 +1,15 @@
 import { useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeft, ChevronRight, ChevronDown } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { api, type DeviceInsightsData } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
 import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
+import { BackLink } from '@/components/ui/BackLink'
+import { TypeBadge } from '@/components/ui/Badge'
+import { Accordion } from '@/components/ui/Accordion'
+import { FilterChip } from '@/components/ui/FilterChip'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -297,145 +301,52 @@ const PERIODS: { value: Period; label: string }[] = [
   { value: '30d', label: '30 days' },
 ]
 
-function PeriodTabs({
-  value,
-  onChange,
-}: {
-  value: Period
-  onChange: (period: Period) => void
-}) {
+function PeriodTabs({ value, onChange }: { value: Period; onChange: (period: Period) => void }) {
   return (
-    <div
-      className="flex gap-1"
-      role="tablist"
-      aria-label="Select history time period"
-    >
+    <div className="flex gap-1" role="tablist" aria-label="Select history time period">
       {PERIODS.map(p => (
-        <button
+        <FilterChip
           key={p.value}
-          role="tab"
-          aria-selected={value === p.value}
+          label={p.label}
+          active={value === p.value}
           onClick={() => onChange(p.value)}
-          className={cn(
-            'min-h-[40px] rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            value === p.value
-              ? 'bg-fairy-500 text-white'
-              : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
-          )}
-        >
-          {p.label}
-        </button>
+        />
       ))}
     </div>
   )
 }
 
-// ── Device type badge ─────────────────────────────────────────────────────────
-
-function DeviceTypeBadge({ type }: { type: string }) {
-  const colours: Record<string, string> = {
-    switch: 'bg-blue-500/15 text-blue-400',
-    dimmer: 'bg-purple-500/15 text-purple-400',
-    sensor: 'bg-cyan-500/15 text-cyan-400',
-    twinkly: 'bg-pink-500/15 text-pink-400',
-    fairy: 'bg-cyan-500/15 text-cyan-400',
-  }
-  const cls = colours[type.toLowerCase()] ?? 'bg-slate-500/15 text-slate-400'
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold',
-        cls,
-      )}
-    >
-      {type}
-    </span>
-  )
-}
-
 // ── All attributes collapsible ────────────────────────────────────────────────
 
-function AllAttributesSection({
-  attributeEntries,
-}: {
-  attributeEntries: [string, unknown][]
-}) {
+function AllAttributesSection({ attributeEntries }: { attributeEntries: [string, unknown][] }) {
   const [isOpen, setIsOpen] = useState(false)
-  const headingId = 'all-attributes-heading'
-  const panelId = 'all-attributes-panel'
-
   if (attributeEntries.length === 0) return null
 
   return (
-    <section aria-labelledby={headingId}>
-      <div className="card rounded-xl border px-5">
-        <button
-          id={headingId}
-          aria-expanded={isOpen}
-          aria-controls={panelId}
-          onClick={() => setIsOpen(o => !o)}
-          className={cn(
-            'flex w-full items-center justify-between py-4 text-left transition-colors',
-            'min-h-[44px]',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            !isOpen && 'border-b border-[var(--border-secondary)]',
-          )}
-        >
-          <span className="text-sm font-semibold text-heading">
-            All attributes
-          </span>
-          <ChevronDown
-            className={cn(
-              'h-4 w-4 text-[var(--text-secondary)] transition-transform duration-300',
-              isOpen && 'rotate-180',
-            )}
-            aria-hidden="true"
-          />
-        </button>
-
-        <div
-          id={panelId}
-          role="region"
-          aria-labelledby={headingId}
-          className="grid transition-all duration-300"
-          style={{ gridTemplateRows: isOpen ? '1fr' : '0fr' }}
-        >
-          <div className="overflow-hidden">
-            <dl className="divide-y divide-[var(--border-secondary)] pb-2">
-              {attributeEntries.map(([key, value]) => {
-                const highlighted = isHighlightedAttribute(key)
-                const unit = attributeUnit(key)
-                const formatted = formatAttributeValue(value)
-
-                return (
-                  <div
-                    key={key}
-                    className="flex items-baseline justify-between gap-4 py-2.5 first:pt-3"
-                  >
-                    <dt className="shrink-0 text-sm text-body capitalize">
-                      {key.replace(/_/g, ' ')}
-                    </dt>
-                    <dd
-                      className={cn(
-                        'text-right text-sm tabular-nums',
-                        highlighted ? 'font-semibold text-heading' : 'text-body',
-                      )}
-                    >
-                      {formatted}
-                      {unit && (
-                        <span className="ml-0.5 text-xs text-caption">
-                          {unit}
-                        </span>
-                      )}
-                    </dd>
-                  </div>
-                )
-              })}
-            </dl>
-          </div>
-        </div>
-      </div>
+    <section>
+      <Accordion
+        id="all-attributes"
+        title="All attributes"
+        open={isOpen}
+        onToggle={() => setIsOpen(prev => !prev)}
+      >
+        <dl className="divide-y divide-[var(--border-secondary)]">
+          {attributeEntries.map(([key, value]) => {
+            const highlighted = isHighlightedAttribute(key)
+            const unit = attributeUnit(key)
+            const formatted = formatAttributeValue(value)
+            return (
+              <div key={key} className="flex items-baseline justify-between gap-4 py-2.5 first:pt-0">
+                <dt className="shrink-0 text-sm text-body capitalize">{key.replace(/_/g, ' ')}</dt>
+                <dd className={cn('text-right text-sm tabular-nums', highlighted ? 'font-semibold text-heading' : 'text-body')}>
+                  {formatted}
+                  {unit && <span className="ml-0.5 text-xs text-caption">{unit}</span>}
+                </dd>
+              </div>
+            )
+          })}
+        </dl>
+      </Accordion>
     </section>
   )
 }
@@ -444,7 +355,6 @@ function AllAttributesSection({
 
 export default function DeviceDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
   const [period, setPeriod] = useState<Period>('24h')
 
   // Fetch all hub devices and find the one matching :id
@@ -499,18 +409,7 @@ export default function DeviceDetailPage() {
   if (isError) {
     return (
       <div>
-        <button
-          onClick={() => navigate(-1)}
-          className={cn(
-            'mb-6 flex min-h-[44px] items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium',
-            'surface text-body transition-colors hover:brightness-95 dark:hover:brightness-110',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
-          aria-label="Go back"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Back
-        </button>
+        <BackLink to="/devices" label="All Devices" />
 
         <div
           className="card rounded-xl border p-5"
@@ -520,12 +419,12 @@ export default function DeviceDetailPage() {
           <p className="text-sm text-red-400">
             Could not load device details. The device may be offline.
           </p>
-          <button
-            onClick={() => navigate(-1)}
-            className="mt-4 rounded-lg bg-fairy-500/15 px-4 py-2 text-sm font-medium text-fairy-400 transition-colors hover:bg-fairy-500/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          <Link
+            to="/devices"
+            className="mt-4 inline-block rounded-lg bg-fairy-500/15 px-4 py-2 text-sm font-medium text-fairy-400 transition-colors hover:bg-fairy-500/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           >
-            Go back
-          </button>
+            All Devices
+          </Link>
         </div>
       </div>
     )
@@ -536,18 +435,7 @@ export default function DeviceDetailPage() {
   if (!device) {
     return (
       <div>
-        <button
-          onClick={() => navigate(-1)}
-          className={cn(
-            'mb-6 flex min-h-[44px] items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium',
-            'surface text-body transition-colors hover:brightness-95 dark:hover:brightness-110',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
-          aria-label="Go back"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Back
-        </button>
+        <BackLink to="/devices" label="All Devices" />
 
         <div
           className="card rounded-xl border p-5"
@@ -555,12 +443,12 @@ export default function DeviceDetailPage() {
           aria-live="assertive"
         >
           <p className="text-sm text-body">Device not found.</p>
-          <button
-            onClick={() => navigate(-1)}
-            className="mt-4 rounded-lg bg-fairy-500/15 px-4 py-2 text-sm font-medium text-fairy-400 transition-colors hover:bg-fairy-500/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          <Link
+            to="/devices"
+            className="mt-4 inline-block rounded-lg bg-fairy-500/15 px-4 py-2 text-sm font-medium text-fairy-400 transition-colors hover:bg-fairy-500/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           >
-            Go back
-          </button>
+            All Devices
+          </Link>
         </div>
       </div>
     )
@@ -578,23 +466,12 @@ export default function DeviceDetailPage() {
     <div className="space-y-6">
       {/* ── 1. Header ────────────────────────────────────────────────────── */}
       <header>
-        <button
-          onClick={() => navigate(-1)}
-          className={cn(
-            'mb-4 flex min-h-[44px] items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium',
-            'surface text-body transition-colors hover:brightness-95 dark:hover:brightness-110',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
-          aria-label="Go back to devices list"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Back
-        </button>
+        <BackLink to="/devices" label="All Devices" />
 
         <h1 className="text-heading text-xl font-semibold">{device.label}</h1>
 
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <DeviceTypeBadge type={device.device_type} />
+          <TypeBadge type={device.device_type} />
           {device.device_name && device.device_name !== device.label && (
             <span className="text-xs text-caption">{device.device_name}</span>
           )}

@@ -2,7 +2,6 @@ import { useState, useMemo, useCallback } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft,
   Plus,
   X,
   Zap,
@@ -11,16 +10,15 @@ import {
   WifiOff,
   Lightbulb,
   Trash2,
-  Search,
   ToggleLeft,
   Activity,
   CheckSquare,
   Square,
   Shield,
   Star,
-  ChevronDown,
   ChevronRight,
   Sparkles,
+  Check,
 } from 'lucide-react'
 import * as Switch from '@radix-ui/react-switch'
 import * as Tabs from '@radix-ui/react-tabs'
@@ -28,7 +26,10 @@ import { api } from '@/lib/api'
 import type { Light, LightAssignment, Sensor, HubDevice, DeviceRoomAssignment } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
-import { CollapsibleDeviceGroup } from '@/components/ui/CollapsibleDeviceGroup'
+import { Accordion } from '@/components/ui/Accordion'
+import { BackLink } from '@/components/ui/BackLink'
+import { TypeBadge } from '@/components/ui/Badge'
+import { SearchInput } from '@/components/ui/SearchInput'
 import RoomIntelligence from '@/components/room/RoomIntelligence'
 import { getScenesForRoom, getModesForRoom, sortScenesByPriority, getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 
@@ -42,48 +43,6 @@ function toAssignment(light: Light): LightAssignment {
     min_kelvin: light.product.capabilities.min_kelvin,
     max_kelvin: light.product.capabilities.max_kelvin,
   }
-}
-
-// ── Sticky search input ─────────────────────────────────────────────────────
-
-function StickySearch({
-  value,
-  onChange,
-  placeholder,
-  matchSummary,
-}: {
-  value: string
-  onChange: (val: string) => void
-  placeholder: string
-  matchSummary?: string
-}) {
-  return (
-    <div className="sticky top-0 z-10 pb-3 pt-1 chrome">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-caption" />
-        <input
-          type="search"
-          placeholder={placeholder}
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface pl-10 pr-10 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-        />
-        {value && (
-          <button
-            type="button"
-            onClick={() => onChange('')}
-            className="absolute right-2 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-md text-caption hover:text-heading transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-            aria-label="Clear search"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-      {matchSummary && value.trim() && (
-        <p className="mt-1.5 text-[11px] text-caption">{matchSummary}</p>
-      )}
-    </div>
-  )
 }
 
 // ── Compact available light row ─────────────────────────────────────────────
@@ -234,25 +193,6 @@ function AssignedLightRow({
   )
 }
 
-// ── Device type badge ────────────────────────────────────────────────────────
-
-const deviceTypeBadgeClasses: Record<string, string> = {
-  switch: 'bg-blue-500/15 text-blue-400',
-  dimmer: 'bg-purple-500/15 text-purple-400',
-  contact: 'bg-amber-500/15 text-amber-400',
-  twinkly: 'bg-pink-500/15 text-pink-400',
-  fairy: 'bg-cyan-500/15 text-cyan-400',
-}
-
-function DeviceTypeBadge({ type }: { type: string }) {
-  const cls = deviceTypeBadgeClasses[type] ?? 'surface text-body'
-  return (
-    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', cls)}>
-      {type}
-    </span>
-  )
-}
-
 // ── Assigned device row ─────────────────────────────────────────────────────
 
 function AssignedDeviceRow({
@@ -273,7 +213,7 @@ function AssignedDeviceRow({
           {assignment.device_label}
         </p>
       </div>
-      <DeviceTypeBadge type={assignment.device_type} />
+      <TypeBadge type={assignment.device_type} />
       <button
         onClick={onToggleExclude}
         className={cn(
@@ -338,7 +278,7 @@ function AvailableDeviceRow({
       <span className="min-w-0 flex-1 truncate text-sm font-medium text-heading">
         {device.label}
       </span>
-      <DeviceTypeBadge type={device.device_type} />
+      <TypeBadge type={device.device_type} />
       {!multiSelectMode && (
         <button
           onClick={onAdd}
@@ -373,9 +313,33 @@ export default function RoomDetailPage() {
   const [deviceMultiSelect, setDeviceMultiSelect] = useState(false)
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<Set<string>>(new Set())
 
-  // Scenes section state
+  // Section accordion state
+  const [settingsOpen, setSettingsOpen] = useState(true)
   const [scenesOpen, setScenesOpen] = useState(false)
+  const [devicesOpen, setDevicesOpen] = useState(false)
   const [selectedMode, setSelectedMode] = useState<string | null>(null)
+
+  // Open groups state for available lights and devices
+  const [openLightGroups, setOpenLightGroups] = useState<Set<string>>(new Set())
+  const [openDeviceGroups, setOpenDeviceGroups] = useState<Set<string>>(new Set())
+
+  const toggleLightGroup = (name: string) => {
+    setOpenLightGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
+
+  const toggleDeviceGroup = (name: string) => {
+    setOpenDeviceGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
 
   // Fetch room detail
   const { data: room, isLoading: roomLoading } = useQuery({
@@ -970,13 +934,7 @@ export default function RoomDetailPage() {
     <div className="pb-40">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="mb-6">
-        <Link
-          to="/rooms"
-          className="mb-3 inline-flex items-center gap-1.5 text-sm text-body transition-colors hover:text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          All Rooms
-        </Link>
+        <BackLink to="/rooms" label="All Rooms" className="mb-3" />
 
         <div className="flex items-center gap-3">
           <h2 className="text-xl font-semibold text-heading">
@@ -1012,73 +970,77 @@ export default function RoomDetailPage() {
 
       {/* ── Settings card ───────────────────────────────────────────────────── */}
       <section className="mb-8">
-        <h3 className="mb-3 text-sm font-medium text-body">
-          Room Settings
-        </h3>
-        <div className="space-y-4 rounded-xl card border p-4">
-          {/* Auto toggle */}
-          <div className="flex items-center justify-between">
-            <label
-              htmlFor="auto-toggle"
-              className="text-sm font-medium text-heading"
-            >
-              Automation
-            </label>
-            <Switch.Root
-              id="auto-toggle"
-              checked={effectiveAuto}
-              onCheckedChange={c => {
-                setAutoEnabled(c)
-                markDirty()
-              }}
-              className={cn(
-                'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
-                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                effectiveAuto ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
-              )}
-            >
-              <Switch.Thumb
+        <Accordion
+          id="room-settings"
+          title="Room Settings"
+          open={settingsOpen}
+          onToggle={() => setSettingsOpen(prev => !prev)}
+        >
+          <div className="space-y-4">
+            {/* Auto toggle */}
+            <div className="flex items-center justify-between">
+              <label
+                htmlFor="auto-toggle"
+                className="text-sm font-medium text-heading"
+              >
+                Automation
+              </label>
+              <Switch.Root
+                id="auto-toggle"
+                checked={effectiveAuto}
+                onCheckedChange={c => {
+                  setAutoEnabled(c)
+                  markDirty()
+                }}
                 className={cn(
-                  'block h-5 w-5 rounded-full bg-white shadow transition-transform',
-                  effectiveAuto ? 'translate-x-6' : 'translate-x-1',
+                  'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                  effectiveAuto ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
                 )}
-              />
-            </Switch.Root>
-          </div>
+              >
+                <Switch.Thumb
+                  className={cn(
+                    'block h-5 w-5 rounded-full bg-white shadow transition-transform',
+                    effectiveAuto ? 'translate-x-6' : 'translate-x-1',
+                  )}
+                />
+              </Switch.Root>
+            </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-body">
-                Auto-off after inactivity (min)
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={effectiveTimer}
-                onChange={e => {
-                  setTimer(Number(e.target.value))
-                  markDirty()
-                }}
-                className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-body">
-                Display Order
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={effectiveOrder}
-                onChange={e => {
-                  setDisplayOrder(Number(e.target.value))
-                  markDirty()
-                }}
-                className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-body">
+                  Auto-off after inactivity (min)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={effectiveTimer}
+                  onChange={e => {
+                    setTimer(Number(e.target.value))
+                    markDirty()
+                  }}
+                  className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-body">
+                  Display Order
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={effectiveOrder}
+                  onChange={e => {
+                    setDisplayOrder(Number(e.target.value))
+                    markDirty()
+                  }}
+                  className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                />
+              </div>
             </div>
           </div>
-        </div>
+        </Accordion>
       </section>
 
       {/* ── Scenes ──────────────────────────────────────────────────────────── */}
@@ -1090,169 +1052,136 @@ export default function RoomDetailPage() {
           : roomScenes
         const sortedScenes = sortScenesByPriority(filteredScenes, name ?? '')
         const currentMode = system?.mode ?? ''
-        const headingId = 'scenes-section-heading'
-        const panelId = 'scenes-section-panel'
 
         return (
           <section className="mb-8">
-            <button
-              id={headingId}
-              aria-expanded={scenesOpen}
-              aria-controls={panelId}
-              onClick={() => setScenesOpen(prev => !prev)}
-              className={cn(
-                'flex w-full items-center justify-between py-3 text-left transition-colors',
-                'min-h-[44px]',
-                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                !scenesOpen && 'border-b border-[var(--border-secondary)]',
-              )}
+            <Accordion
+              id="room-scenes"
+              title="Scenes"
+              open={scenesOpen}
+              onToggle={() => setScenesOpen(prev => !prev)}
+              count={roomScenes.length}
             >
-              <span className="flex items-center gap-2">
-                <span className="text-heading text-base font-semibold">Scenes</span>
-                {roomScenes.length > 0 && (
-                  <span className="rounded-full bg-fairy-500/15 px-2 py-0.5 text-[10px] font-bold text-fairy-400">
-                    {roomScenes.length}
-                  </span>
-                )}
-              </span>
-              <ChevronDown
-                className={cn(
-                  'h-5 w-5 text-[var(--text-secondary)] transition-transform duration-300',
-                  scenesOpen && 'rotate-180',
-                )}
-                aria-hidden="true"
-              />
-            </button>
-
-            <div
-              id={panelId}
-              role="region"
-              aria-labelledby={headingId}
-              className="grid transition-all duration-300"
-              style={{ gridTemplateRows: scenesOpen ? '1fr' : '0fr' }}
-            >
-              <div className="overflow-hidden">
-                <div className="pt-3 pb-2">
-                  {/* Mode pills */}
-                  {modesForRoom.length > 0 && (
-                    <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Filter scenes by mode">
+              <div className="pt-1 pb-2">
+                {/* Mode pills */}
+                {modesForRoom.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Filter scenes by mode">
+                    <button
+                      type="button"
+                      aria-pressed={selectedMode === null}
+                      onClick={() => setSelectedMode(null)}
+                      className={cn(
+                        'min-h-[44px] rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
+                        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                        selectedMode === null
+                          ? 'bg-fairy-500 text-white'
+                          : 'surface text-body hover:text-heading',
+                      )}
+                    >
+                      All
+                    </button>
+                    {modesForRoom.map(mode => (
                       <button
+                        key={mode}
                         type="button"
-                        aria-pressed={selectedMode === null}
-                        onClick={() => setSelectedMode(null)}
+                        aria-pressed={selectedMode === mode}
+                        onClick={() => setSelectedMode(prev => (prev === mode ? null : mode))}
                         className={cn(
                           'min-h-[44px] rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
                           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                          selectedMode === null
+                          selectedMode === mode
                             ? 'bg-fairy-500 text-white'
                             : 'surface text-body hover:text-heading',
                         )}
                       >
-                        All
+                        {mode}
                       </button>
-                      {modesForRoom.map(mode => (
-                        <button
-                          key={mode}
-                          type="button"
-                          aria-pressed={selectedMode === mode}
-                          onClick={() => setSelectedMode(prev => (prev === mode ? null : mode))}
-                          className={cn(
-                            'min-h-[44px] rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
-                            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                            selectedMode === mode
-                              ? 'bg-fairy-500 text-white'
-                              : 'surface text-body hover:text-heading',
-                          )}
-                        >
-                          {mode}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                    ))}
+                  </div>
+                )}
 
-                  {/* Scene rows */}
-                  {sortedScenes.length === 0 ? (
-                    <div className="rounded-xl card border p-6 text-center">
-                      <Sparkles className="mx-auto mb-3 h-8 w-8 text-[var(--text-caption)]" aria-hidden="true" />
-                      <p className="text-sm text-body">No scenes are assigned to this room yet.</p>
-                      <p className="mt-1 text-xs text-[var(--text-caption)]">
-                        Visit the{' '}
-                        <Link to="/scenes" className="text-fairy-400 underline hover:text-fairy-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
-                          Scenes page
-                        </Link>
-                        {' '}to create or assign scenes.
-                      </p>
-                    </div>
-                  ) : (
-                    <ul className="divide-y divide-[var(--border-secondary)]">
-                      {sortedScenes.map(scene => {
-                        const isActive = room?.current_scene === scene.name
-                        const season = isSceneInSeason(scene)
-                        const isDefault = currentMode
-                          ? getDefaultScene(allScenes ?? [], name ?? '', currentMode)?.name === scene.name
-                          : false
+                {/* Scene rows */}
+                {sortedScenes.length === 0 ? (
+                  <div className="rounded-xl card border p-6 text-center">
+                    <Sparkles className="mx-auto mb-3 h-8 w-8 text-[var(--text-caption)]" aria-hidden="true" />
+                    <p className="text-sm text-body">No scenes are assigned to this room yet.</p>
+                    <p className="mt-1 text-xs text-[var(--text-caption)]">
+                      Visit the{' '}
+                      <Link to="/scenes" className="text-fairy-400 underline hover:text-fairy-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
+                        Scenes page
+                      </Link>
+                      {' '}to create or assign scenes.
+                    </p>
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-[var(--border-secondary)]">
+                    {sortedScenes.map(scene => {
+                      const isActive = room?.current_scene === scene.name
+                      const season = isSceneInSeason(scene)
+                      const isDefault = currentMode
+                        ? getDefaultScene(allScenes ?? [], name ?? '', currentMode)?.name === scene.name
+                        : false
 
-                        return (
-                          <li key={scene.name}>
-                            <Link
-                              to={`/scenes/${encodeURIComponent(scene.name)}`}
-                              className={cn(
-                                'group flex min-h-[44px] items-center gap-3 py-3 transition-colors',
-                                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded-lg',
-                              )}
+                      return (
+                        <li key={scene.name}>
+                          <Link
+                            to={`/scenes/${encodeURIComponent(scene.name)}`}
+                            className={cn(
+                              'group flex min-h-[44px] items-center gap-3 py-3 transition-colors',
+                              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded-lg',
+                            )}
+                          >
+                            {/* Scene icon */}
+                            <div
+                              className="surface flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-base"
+                              aria-hidden="true"
                             >
-                              {/* Scene icon */}
-                              <div
-                                className="surface flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-base"
-                                aria-hidden="true"
-                              >
-                                {scene.icon || <Sparkles className="h-4 w-4 text-[var(--text-caption)]" />}
+                              {scene.icon || <Sparkles className="h-4 w-4 text-[var(--text-caption)]" />}
+                            </div>
+
+                            {/* Name and badges */}
+                            <div className="min-w-0 flex-1">
+                              <span className="text-sm font-medium text-heading">{scene.name}</span>
+                              <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                                {isDefault && (
+                                  <span className="flex items-center gap-1 rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400">
+                                    <Star className="h-3 w-3" fill="currentColor" aria-hidden="true" />
+                                    Default
+                                  </span>
+                                )}
+                                {season.hasSeason && (
+                                  <span className={cn(
+                                    'rounded-full px-2 py-0.5 text-[10px] font-medium',
+                                    season.inSeason
+                                      ? 'bg-emerald-500/10 text-emerald-400'
+                                      : 'bg-[var(--surface)] text-[var(--text-caption)]',
+                                  )}>
+                                    {season.label}
+                                  </span>
+                                )}
                               </div>
+                            </div>
 
-                              {/* Name and badges */}
-                              <div className="min-w-0 flex-1">
-                                <span className="text-sm font-medium text-heading">{scene.name}</span>
-                                <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                                  {isDefault && (
-                                    <span className="flex items-center gap-1 rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400">
-                                      <Star className="h-3 w-3" fill="currentColor" aria-hidden="true" />
-                                      Default
-                                    </span>
-                                  )}
-                                  {season.hasSeason && (
-                                    <span className={cn(
-                                      'rounded-full px-2 py-0.5 text-[10px] font-medium',
-                                      season.inSeason
-                                        ? 'bg-emerald-500/10 text-emerald-400'
-                                        : 'bg-[var(--surface)] text-[var(--text-caption)]',
-                                    )}>
-                                      {season.label}
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
+                            {/* Active indicator */}
+                            {isActive && (
+                              <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-fairy-400" aria-label="Currently active">
+                                <span className="h-2 w-2 rounded-full bg-fairy-400" aria-hidden="true" />
+                                Active
+                              </span>
+                            )}
 
-                              {/* Active indicator */}
-                              {isActive && (
-                                <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-fairy-400" aria-label="Currently active">
-                                  <span className="h-2 w-2 rounded-full bg-fairy-400" aria-hidden="true" />
-                                  Active
-                                </span>
-                              )}
-
-                              <ChevronRight
-                                className="h-4 w-4 shrink-0 text-[var(--text-caption)] transition-colors group-hover:text-[var(--text-secondary)]"
-                                aria-hidden="true"
-                              />
-                            </Link>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  )}
-                </div>
+                            <ChevronRight
+                              className="h-4 w-4 shrink-0 text-[var(--text-caption)] transition-colors group-hover:text-[var(--text-secondary)]"
+                              aria-hidden="true"
+                            />
+                          </Link>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                )}
               </div>
-            </div>
+            </Accordion>
           </section>
         )
       })()}
@@ -1262,8 +1191,13 @@ export default function RoomDetailPage() {
 
       {/* ── Devices section with tabs ───────────────────────────────────────── */}
       <section className="mb-8">
-        <h3 className="mb-3 text-sm font-medium text-body">Devices</h3>
-
+        <Accordion
+          id="room-devices"
+          title="Devices"
+          open={devicesOpen}
+          onToggle={() => setDevicesOpen(prev => !prev)}
+          count={effectiveAssigned.length + filteredDeviceAssignments.length}
+        >
         <Tabs.Root value={activeTab} onValueChange={setActiveTab}>
           <Tabs.List className="mb-4 flex gap-1 overflow-x-auto rounded-xl card p-1">
             <Tabs.Trigger
@@ -1331,11 +1265,12 @@ export default function RoomDetailPage() {
           {/* ── Lights tab ───────────────────────────────────────────────────── */}
           <Tabs.Content value="lights" className="space-y-4">
             {/* Sticky search */}
-            <StickySearch
+            <SearchInput
               value={lightSearch}
               onChange={setLightSearch}
               placeholder="Search lights by name..."
               matchSummary={lightMatchSummary}
+              sticky
             />
 
             {/* Multi-select toolbar */}
@@ -1423,33 +1358,51 @@ export default function RoomDetailPage() {
               {filteredAvailableByGroup.size > 0 ? (
                 <div className="space-y-2">
                   {Array.from(filteredAvailableByGroup.entries()).map(
-                    ([groupName, lights]) => (
-                      <CollapsibleDeviceGroup
-                        key={groupName}
-                        title={groupName}
-                        count={lights.length}
-                        totalInGroup={allLightsByGroup.get(groupName)?.length ?? lights.length}
-                        defaultOpen={isSearchingLights}
-                        onAssignAll={() => handleAssignAllInGroup(lights)}
-                        fullyAssigned={isGroupFullyAssigned(groupName)}
-                      >
-                        <div className="space-y-1">
-                          {lights.map(light => (
-                            <AvailableLightRow
-                              key={light.id}
-                              light={light}
-                              onAdd={() => handleAssign(light)}
-                              onIdentify={() =>
-                                identifyMutation.mutate(`id:${light.id}`)
-                              }
-                              multiSelectMode={lightMultiSelect}
-                              selected={selectedLightIds.has(light.id)}
-                              onToggleSelect={() => toggleLightSelect(light.id)}
-                            />
-                          ))}
-                        </div>
-                      </CollapsibleDeviceGroup>
-                    ),
+                    ([groupName, lights]) => {
+                      const fullyAssigned = isGroupFullyAssigned(groupName)
+                      const isOpen = isSearchingLights || openLightGroups.has(groupName)
+                      return (
+                        <Accordion
+                          key={groupName}
+                          id={`light-group-${groupName}`}
+                          title={groupName}
+                          open={isOpen}
+                          onToggle={() => toggleLightGroup(groupName)}
+                          count={lights.length}
+                          trailing={
+                            fullyAssigned ? (
+                              <Check className="h-3.5 w-3.5 text-fairy-400" aria-label="All assigned" />
+                            ) : lights.length > 0 ? (
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); handleAssignAllInGroup(lights) }}
+                                className="flex items-center gap-1 rounded-lg px-2.5 min-h-[36px] text-[11px] font-medium text-fairy-400 transition-colors hover:bg-fairy-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                                aria-label={`Assign all ${lights.length} from ${groupName}`}
+                              >
+                                <Plus className="h-3 w-3" />
+                                Assign all
+                              </button>
+                            ) : null
+                          }
+                        >
+                          <div className="space-y-1">
+                            {lights.map(light => (
+                              <AvailableLightRow
+                                key={light.id}
+                                light={light}
+                                onAdd={() => handleAssign(light)}
+                                onIdentify={() =>
+                                  identifyMutation.mutate(`id:${light.id}`)
+                                }
+                                multiSelectMode={lightMultiSelect}
+                                selected={selectedLightIds.has(light.id)}
+                                onToggleSelect={() => toggleLightSelect(light.id)}
+                              />
+                            ))}
+                          </div>
+                        </Accordion>
+                      )
+                    },
                   )}
                 </div>
               ) : availableByGroup.size > 0 && lightSearch.trim() ? (
@@ -1493,11 +1446,12 @@ export default function RoomDetailPage() {
           {/* ── Switches tab ─────────────────────────────────────────────────── */}
           <Tabs.Content value="switches" className="space-y-4">
             {/* Sticky search */}
-            <StickySearch
+            <SearchInput
               value={deviceSearch}
               onChange={setDeviceSearch}
               placeholder="Search devices by name..."
               matchSummary={deviceMatchSummary}
+              sticky
             />
 
             {/* Multi-select toolbar */}
@@ -1582,29 +1536,46 @@ export default function RoomDetailPage() {
               {filteredAvailableDevicesByType.size > 0 ? (
                 <div className="space-y-2">
                   {Array.from(filteredAvailableDevicesByType.entries()).map(
-                    ([typeName, devices]) => (
-                      <CollapsibleDeviceGroup
-                        key={typeName}
-                        title={deviceTypeLabels[typeName] ?? typeName}
-                        count={devices.length}
-                        totalInGroup={availableDevicesByType.get(typeName)?.length ?? devices.length}
-                        defaultOpen={isSearchingDevices}
-                        onAssignAll={() => handleAssignAllDevicesInType(devices)}
-                      >
-                        <div className="space-y-1">
-                          {devices.map(device => (
-                            <AvailableDeviceRow
-                              key={device.id}
-                              device={device}
-                              onAdd={() => handleAssignDevice(device)}
-                              multiSelectMode={deviceMultiSelect}
-                              selected={selectedDeviceIds.has(String(device.id))}
-                              onToggleSelect={() => toggleDeviceSelect(String(device.id))}
-                            />
-                          ))}
-                        </div>
-                      </CollapsibleDeviceGroup>
-                    ),
+                    ([typeName, devices]) => {
+                      const groupLabel = deviceTypeLabels[typeName] ?? typeName
+                      const isOpen = isSearchingDevices || openDeviceGroups.has(typeName)
+                      return (
+                        <Accordion
+                          key={typeName}
+                          id={`device-group-${typeName}`}
+                          title={groupLabel}
+                          open={isOpen}
+                          onToggle={() => toggleDeviceGroup(typeName)}
+                          count={devices.length}
+                          trailing={
+                            devices.length > 0 ? (
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); handleAssignAllDevicesInType(devices) }}
+                                className="flex items-center gap-1 rounded-lg px-2.5 min-h-[36px] text-[11px] font-medium text-fairy-400 transition-colors hover:bg-fairy-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                                aria-label={`Assign all ${devices.length} from ${groupLabel}`}
+                              >
+                                <Plus className="h-3 w-3" />
+                                Assign all
+                              </button>
+                            ) : null
+                          }
+                        >
+                          <div className="space-y-1">
+                            {devices.map(device => (
+                              <AvailableDeviceRow
+                                key={device.id}
+                                device={device}
+                                onAdd={() => handleAssignDevice(device)}
+                                multiSelectMode={deviceMultiSelect}
+                                selected={selectedDeviceIds.has(String(device.id))}
+                                onToggleSelect={() => toggleDeviceSelect(String(device.id))}
+                              />
+                            ))}
+                          </div>
+                        </Accordion>
+                      )
+                    },
                   )}
                 </div>
               ) : availableDevicesByType.size > 0 && deviceSearch.trim() ? (
@@ -1698,6 +1669,7 @@ export default function RoomDetailPage() {
             })()}
           </Tabs.Content>
         </Tabs.Root>
+        </Accordion>
       </section>
 
       {/* ── Danger zone ────────────────────────────────────────────────────── */}

@@ -11,6 +11,7 @@ const SceneEditorPage = React.lazy(() => import('@/pages/SceneEditorPage'))
 const DashboardPage = React.lazy(() => import('@/pages/DashboardPage'))
 const DevicesPage = React.lazy(() => import('@/pages/DevicesPage'))
 const DeviceDetailPage = React.lazy(() => import('@/pages/DeviceDetailPage'))
+const LightDetailPage = React.lazy(() => import('@/pages/LightDetailPage'))
 const WatchPage = React.lazy(() => import('@/pages/WatchPage'))
 const SettingsPage = React.lazy(() => import('@/pages/SettingsPage'))
 const LogsPage = React.lazy(() => import('@/pages/LogsPage'))
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/devices" element={<DevicesPage />} />
           <Route path="/devices/:id" element={<DeviceDetailPage />} />
+          <Route path="/lights/:id" element={<LightDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/logs" element={<LogsPage />} />
         </Route>

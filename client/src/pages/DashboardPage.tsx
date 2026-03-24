@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query'
-import { BarChart3 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useDashboardSocket } from '@/hooks/useSocket'
 import AttentionBar from '@/components/dashboard/AttentionBar'
@@ -64,9 +63,8 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center gap-2">
-        <BarChart3 className="h-5 w-5 text-fairy-400" />
-        <h1 className="text-heading text-lg font-semibold">Insights</h1>
+      <div className="mb-6">
+        <h2 className="text-heading text-sm font-semibold">Insights</h2>
       </div>
 
       {isLoading && <DashboardSkeleton />}

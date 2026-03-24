@@ -24,6 +24,8 @@ import {
   getModesForRoom,
   formatRelativeTime,
 } from '@/lib/scene-utils'
+import { SearchInput } from '@/components/ui/SearchInput'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 // ---------------------------------------------------------------------------
 // Skeleton
@@ -362,24 +364,6 @@ function FlatSceneRow({ scene, isActive, label }: FlatSceneRowProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Empty state
-// ---------------------------------------------------------------------------
-
-function EmptyState({ icon: Icon, message, sub }: {
-  icon: React.ElementType
-  message: string
-  sub?: string
-}) {
-  return (
-    <div className="rounded-xl border border-dashed py-12 text-center" style={{ borderColor: 'var(--border-secondary)' }}>
-      <Icon className="text-caption mx-auto mb-3 h-8 w-8" aria-hidden="true" />
-      <p className="text-body text-sm">{message}</p>
-      {sub && <p className="text-caption mt-1 text-xs">{sub}</p>}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -532,7 +516,7 @@ export default function ScenesPage() {
     <div>
       {/* Header */}
       <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-heading text-base font-semibold">Scenes</h2>
+        <h2 className="text-heading text-sm font-semibold">Scenes</h2>
         <button
           onClick={() => createMutation.mutate()}
           disabled={createMutation.isPending}
@@ -544,29 +528,13 @@ export default function ScenesPage() {
       </div>
 
       {/* Search — always visible */}
-      <div className="relative mb-4">
-        <Search
-          className="text-caption absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
-          aria-hidden="true"
-        />
-        <input
-          type="search"
-          placeholder="Search by name, tag, room, or mode..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          aria-label="Search scenes"
-          className="input-field h-11 w-full rounded-lg border pl-10 pr-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-        />
-        {search && (
-          <button
-            onClick={() => setSearch('')}
-            aria-label="Clear search"
-            className="text-caption absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 transition-colors hover:text-[var(--text-secondary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-          >
-            ×
-          </button>
-        )}
-      </div>
+      <SearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Search by name, tag, room, or mode..."
+        label="Search scenes"
+        className="mb-4"
+      />
 
       {/* Loading skeleton */}
       {isLoading ? (

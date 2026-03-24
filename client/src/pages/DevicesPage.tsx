@@ -10,7 +10,6 @@ import {
   ChevronDown,
   ChevronUp,
   ChevronRight,
-  X,
   LayoutGrid,
   List,
   Settings,
@@ -21,6 +20,10 @@ import { api } from '@/lib/api'
 import type { Light, DeviceRoomAssignment, HubDevice } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
+import { TypeBadge } from '@/components/ui/Badge'
+import { FilterChip } from '@/components/ui/FilterChip'
+import { SearchInput } from '@/components/ui/SearchInput'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -38,24 +41,6 @@ interface UnifiedDevice {
   deviceRoom?: DeviceRoomAssignment
 }
 
-// ── Device type badge ─────────────────────────────────────────────────────────
-
-const kindColors: Record<string, string> = {
-  lifx: 'bg-amber-500/15 text-amber-400',
-  switch: 'bg-blue-500/15 text-blue-400',
-  dimmer: 'bg-purple-500/15 text-purple-400',
-  twinkly: 'bg-pink-500/15 text-pink-400',
-  fairy: 'bg-cyan-500/15 text-cyan-400',
-}
-
-function KindBadge({ kind }: { kind: string }) {
-  const cls = kindColors[kind] ?? 'surface text-body'
-  return (
-    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', cls)}>
-      {kind === 'lifx' ? 'Light' : kind}
-    </span>
-  )
-}
 
 // ── Light usage detail panel ──────────────────────────────────────────────────
 
@@ -196,18 +181,18 @@ function LightCard({ device }: { device: UnifiedDevice }) {
           style={{ backgroundColor: isOn ? colorHex : '#475569' }}
           aria-hidden="true"
         />
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="min-w-0 flex-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        <Link
+          to={`/lights/${light.id}`}
+          className={cn('block min-w-0 flex-1 text-left', 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500')}
         >
-          <p className={cn('truncate text-sm font-medium', isOn ? 'text-heading' : 'text-body')}>
+          <p className={cn('truncate text-sm font-medium hover:text-fairy-400 transition-colors', isOn ? 'text-heading' : 'text-body')}>
             {light.label}
           </p>
           <p className="text-caption mt-0.5 truncate text-xs">
             {device.roomName ?? light.group.name}
             {isOn && ` · ${Math.round(light.brightness * 100)}%`}
           </p>
-        </button>
+        </Link>
 
         {device.roomName && (
           <Link
@@ -360,7 +345,7 @@ function HubDeviceCard({ device }: { device: UnifiedDevice }) {
           </Link>
         )}
 
-        <KindBadge kind={device.kind} />
+        <TypeBadge type={device.kind} />
 
         {device.deviceRoom && (
           <button
@@ -600,7 +585,7 @@ export default function DevicesPage() {
     <div>
       {/* Header */}
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="text-body text-sm font-medium">All Devices</h2>
+        <h2 className="text-heading text-sm font-semibold">All Devices</h2>
         <button
           onClick={() => {
             queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] })
@@ -621,52 +606,24 @@ export default function DevicesPage() {
       {/* Filter chips */}
       <div className="mb-4 flex gap-1.5 overflow-x-auto pb-1">
         {filterTabs.map(tab => (
-          <button
+          <FilterChip
             key={tab.value}
+            label={tab.label}
+            active={filter === tab.value}
             onClick={() => setFilter(tab.value)}
-            className={cn(
-              'shrink-0 rounded-lg px-3 py-2 text-sm font-medium transition-colors min-h-[40px]',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              filter === tab.value
-                ? 'bg-fairy-500 text-white'
-                : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
-            )}
-          >
-            {tab.label}
-            {tab.count > 0 && (
-              <span className={cn(
-                'ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-none',
-                filter === tab.value ? 'bg-white/20' : 'bg-fairy-500/15 text-fairy-400',
-              )}>
-                {tab.count}
-              </span>
-            )}
-          </button>
+            count={tab.count}
+          />
         ))}
       </div>
 
       {/* Search + group toggle */}
       <div className="mb-4 flex gap-2">
-        <div className="relative flex-1">
-          <Search className="text-caption absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
-          <input
-            type="search"
-            placeholder="Search by device name or room..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="input-field h-11 w-full rounded-lg border pl-10 pr-10 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-          />
-          {search && (
-            <button
-              type="button"
-              onClick={() => setSearch('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-md text-caption hover:text-heading transition-colors"
-              aria-label="Clear search"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          )}
-        </div>
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search by device name or room..."
+          className="flex-1"
+        />
         <button
           onClick={() => setGroupMode(prev => prev === 'room' ? 'type' : 'room')}
           className={cn(
@@ -717,27 +674,24 @@ export default function DevicesPage() {
           )}
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed py-12 text-center" style={{ borderColor: 'var(--border-secondary)' }}>
-          {search.trim() || filter !== 'all' ? (
-            <>
-              <Search className="text-caption mx-auto mb-3 h-8 w-8" />
-              <p className="text-body text-sm">No devices match the current filter.</p>
-              <button
-                onClick={() => { setSearch(''); setFilter('all') }}
-                className="mt-2 text-xs text-fairy-400 hover:underline"
-              >
-                Clear filters
-              </button>
-            </>
-          ) : (
-            <>
-              <p className="text-body text-sm">No devices found.</p>
-              <p className="text-caption mt-1 text-xs">
-                Make sure your lights and hubs are powered on and connected.
-              </p>
-            </>
+        <EmptyState
+          icon={Search}
+          message={search.trim() || filter !== 'all'
+            ? 'No devices match the current filter.'
+            : 'No devices found.'}
+          sub={search.trim() || filter !== 'all'
+            ? undefined
+            : 'Make sure your lights and hubs are powered on and connected.'}
+        >
+          {(search.trim() || filter !== 'all') && (
+            <button
+              onClick={() => { setSearch(''); setFilter('all') }}
+              className="mt-2 text-xs text-fairy-400 hover:underline"
+            >
+              Clear filters
+            </button>
           )}
-        </div>
+        </EmptyState>
       )}
     </div>
   )
