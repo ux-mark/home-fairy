@@ -1,4 +1,5 @@
-import { Thermometer, Cloud, Droplets, Wind, ArrowUp, ArrowDown, Minus } from 'lucide-react'
+import { useState } from 'react'
+import { Thermometer, Cloud, Droplets, Wind, ArrowUp, ArrowDown, Minus, ChevronDown } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -176,9 +177,135 @@ function TempInsightsSummary({
   )
 }
 
-// ── Indoor rooms section ──────────────────────────────────────────────────────
+// ── Room row ──────────────────────────────────────────────────────────────────
 
 type RoomEntry = DashboardSummary['rooms'][number]
+
+interface RoomRowProps {
+  room: RoomEntry
+  unit: 'C' | 'F'
+  outlier?: TemperatureInsights['roomOutliers'][number] | null
+}
+
+function RoomRow({ room, unit, outlier }: RoomRowProps) {
+  const isWarmer = outlier ? outlier.deviation > 0 : false
+  const highlightClass = outlier
+    ? isWarmer
+      ? 'bg-amber-500/5 rounded-lg -mx-2 px-2'
+      : 'bg-blue-500/5 rounded-lg -mx-2 px-2'
+    : ''
+
+  return (
+    <li
+      className={cn(
+        'flex items-center justify-between gap-3 py-2.5',
+        highlightClass,
+      )}
+    >
+      <span className="text-heading text-sm font-medium leading-snug">
+        {room.name}
+      </span>
+      <div className="shrink-0 text-right">
+        <span className="text-heading text-sm font-semibold tabular-nums">
+          {formatTemp(room.temperature!, unit)}
+        </span>
+        {outlier && (
+          <p
+            className={cn(
+              'text-xs leading-snug',
+              isWarmer ? 'text-amber-400' : 'text-blue-400',
+            )}
+          >
+            {Math.abs(Math.round(toDisplay(Math.abs(outlier.deviation), unit) - toDisplay(0, unit)))}°{' '}
+            {isWarmer ? 'warmer' : 'cooler'} than average
+          </p>
+        )}
+        {!outlier && room.lux !== null && (
+          <p className="text-caption text-xs leading-snug">
+            {room.lux} lux
+          </p>
+        )}
+      </div>
+    </li>
+  )
+}
+
+// ── Room band ─────────────────────────────────────────────────────────────────
+
+interface RoomBandProps {
+  label: string
+  items: RoomEntry[]
+  unit: 'C' | 'F'
+  outlierMap: Map<string, TemperatureInsights['roomOutliers'][number]>
+  defaultOpen: boolean
+  accentClass?: string
+  headerColorClass?: string
+}
+
+function RoomBand({
+  label,
+  items,
+  unit,
+  outlierMap,
+  defaultOpen,
+  accentClass,
+  headerColorClass,
+}: RoomBandProps) {
+  const [isOpen, setIsOpen] = useState(defaultOpen)
+  const bandId = `room-band-${label.toLowerCase().replace(/\s+/g, '-')}`
+  const headingId = `${bandId}-heading`
+
+  return (
+    <div className={cn('rounded-lg p-3', accentClass ?? 'bg-slate-500/5')}>
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-controls={bandId}
+        id={headingId}
+        onClick={() => setIsOpen(prev => !prev)}
+        className={cn(
+          'flex w-full items-center justify-between gap-2 text-sm font-medium',
+          headerColorClass ?? 'text-body',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <span>{label}</span>
+        <ChevronDown
+          className={cn('h-4 w-4 shrink-0 transition-transform', isOpen ? 'rotate-180' : '')}
+          aria-hidden="true"
+        />
+      </button>
+
+      <div
+        id={bandId}
+        role="region"
+        aria-labelledby={headingId}
+        style={{ display: 'grid', gridTemplateRows: isOpen ? '1fr' : '0fr', overflow: 'hidden', transition: 'grid-template-rows 200ms ease' }}
+      >
+        <div style={{ minHeight: 0 }}>
+          <ul
+            role="list"
+            aria-label={label}
+            className="mt-1 divide-y"
+            style={{ borderColor: 'var(--border-primary)' }}
+          >
+            {items.map(room => (
+              <RoomRow
+                key={room.name}
+                room={room}
+                unit={unit}
+                outlier={outlierMap.get(room.name) ?? null}
+              />
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Indoor rooms section ──────────────────────────────────────────────────────
 
 function IndoorSection({
   rooms,
@@ -198,6 +325,11 @@ function IndoorSection({
     (tempInsights?.roomOutliers ?? []).map(o => [o.room, o]),
   )
 
+  // Separate rooms: outliers vs non-outliers
+  const outlierRoomNames = new Set((tempInsights?.roomOutliers ?? []).map(o => o.room))
+  const outlierRooms = roomsWithTemp.filter(r => outlierRoomNames.has(r.name))
+  const normalRooms = roomsWithTemp.filter(r => !outlierRoomNames.has(r.name))
+
   return (
     <div className="mb-5">
       <h3 className="text-caption mb-2 text-xs font-medium">Indoors</h3>
@@ -206,57 +338,31 @@ function IndoorSection({
         <TempInsightsSummary tempInsights={tempInsights} unit={unit} />
       )}
 
-      <ul
-        role="list"
-        aria-label="Room temperatures"
-        className="divide-y"
-        style={{ borderColor: 'var(--border-primary)' }}
-      >
-        {roomsWithTemp.map(room => {
-          const outlier = outlierMap.get(room.name)
-          const isWarmer = outlier ? outlier.deviation > 0 : false
-          const highlightClass = outlier
-            ? isWarmer
-              ? 'bg-amber-500/5 rounded-lg -mx-2 px-2'
-              : 'bg-blue-500/5 rounded-lg -mx-2 px-2'
-            : ''
+      <div className="space-y-2">
+        {/* Outliers band — only shown when outliers exist, defaults open */}
+        {outlierRooms.length > 0 && (
+          <RoomBand
+            label={`${outlierRooms.length} ${outlierRooms.length === 1 ? 'room' : 'rooms'} outside normal range`}
+            items={outlierRooms}
+            unit={unit}
+            outlierMap={outlierMap}
+            defaultOpen={true}
+            accentClass="bg-amber-500/5"
+            headerColorClass="text-amber-400"
+          />
+        )}
 
-          return (
-            <li
-              key={room.name}
-              className={cn(
-                'flex items-center justify-between gap-3 py-2.5',
-                highlightClass,
-              )}
-            >
-              <span className="text-heading text-sm font-medium leading-snug">
-                {room.name}
-              </span>
-              <div className="shrink-0 text-right">
-                <span className="text-heading text-sm font-semibold tabular-nums">
-                  {formatTemp(room.temperature!, unit)}
-                </span>
-                {outlier && (
-                  <p
-                    className={cn(
-                      'text-xs leading-snug',
-                      isWarmer ? 'text-amber-400' : 'text-blue-400',
-                    )}
-                  >
-                    {Math.abs(Math.round(toDisplay(Math.abs(outlier.deviation), unit) - toDisplay(0, unit)))}°{' '}
-                    {isWarmer ? 'warmer' : 'cooler'} than average
-                  </p>
-                )}
-                {!outlier && room.lux !== null && (
-                  <p className="text-caption text-xs leading-snug">
-                    {room.lux} lux
-                  </p>
-                )}
-              </div>
-            </li>
-          )
-        })}
-      </ul>
+        {/* All rooms band — defaults closed */}
+        {normalRooms.length > 0 && (
+          <RoomBand
+            label={`${normalRooms.length} ${normalRooms.length === 1 ? 'room' : 'rooms'}`}
+            items={normalRooms}
+            unit={unit}
+            outlierMap={outlierMap}
+            defaultOpen={false}
+          />
+        )}
+      </div>
     </div>
   )
 }

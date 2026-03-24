@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Zap } from 'lucide-react'
+import { Zap, ChevronDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
@@ -153,6 +153,79 @@ function EnergyNarrative({ insights }: EnergyNarrativeProps) {
   )
 }
 
+// ── Device band ───────────────────────────────────────────────────────────────
+
+interface DeviceBandProps {
+  label: string
+  items: PowerDevice[]
+  maxWatts: number
+  anomalyMap: Map<number, EnergyInsights['deviceAnomalies'][number]>
+  defaultOpen: boolean
+  accentClass?: string
+}
+
+function DeviceBand({
+  label,
+  items,
+  maxWatts,
+  anomalyMap,
+  defaultOpen,
+  accentClass,
+}: DeviceBandProps) {
+  const [isOpen, setIsOpen] = useState(defaultOpen)
+  const bandId = `device-band-${label.toLowerCase().replace(/\s+/g, '-')}`
+  const headingId = `${bandId}-heading`
+
+  return (
+    <div className={cn('rounded-lg p-3', accentClass ?? 'bg-slate-500/5')}>
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-controls={bandId}
+        id={headingId}
+        onClick={() => setIsOpen(prev => !prev)}
+        className={cn(
+          'flex w-full items-center justify-between gap-2 text-sm font-medium',
+          accentClass ? 'text-amber-400' : 'text-body',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <span>{label}</span>
+        <ChevronDown
+          className={cn('h-4 w-4 shrink-0 transition-transform', isOpen ? 'rotate-180' : '')}
+          aria-hidden="true"
+        />
+      </button>
+
+      <div
+        id={bandId}
+        role="region"
+        aria-labelledby={headingId}
+        style={{ display: 'grid', gridTemplateRows: isOpen ? '1fr' : '0fr', overflow: 'hidden', transition: 'grid-template-rows 200ms ease' }}
+      >
+        <div style={{ minHeight: 0 }}>
+          <ul
+            role="list"
+            aria-label={label}
+            className="mt-1 divide-y"
+            style={{ borderColor: 'var(--border-primary)' }}
+          >
+            {items.map(device => (
+              <DeviceRow
+                key={device.id}
+                device={device}
+                maxWatts={maxWatts}
+                anomaly={anomalyMap.get(device.id) ?? null}
+              />
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── EnergyCard ────────────────────────────────────────────────────────────────
 
 interface EnergyCardProps {
@@ -173,6 +246,11 @@ export default function EnergyCard({ power, insights, currencySymbol = '$' }: En
   const anomalyMap = new Map(
     (insights?.deviceAnomalies ?? []).map(a => [a.deviceId, a]),
   )
+
+  // Separate devices: anomalies vs rest
+  const anomalyDeviceIds = new Set((insights?.deviceAnomalies ?? []).map(a => a.deviceId))
+  const anomalyDevices = sorted.filter(d => anomalyDeviceIds.has(d.id))
+  const normalDevices = sorted.filter(d => !anomalyDeviceIds.has(d.id))
 
   // Track trend for the highest-drawing device
   const topDevice = sorted[0]
@@ -235,31 +313,14 @@ export default function EnergyCard({ power, insights, currencySymbol = '$' }: En
 
       {/* Narrative */}
       {insights && (
-        <div className="mb-4">
+        <div className="mb-3">
           <EnergyNarrative insights={insights} />
         </div>
       )}
 
-      {/* Device list */}
-      <ul
-        role="list"
-        aria-label="Power-consuming devices"
-        className="divide-y"
-        style={{ borderColor: 'var(--border-primary)' }}
-      >
-        {sorted.map(device => (
-          <DeviceRow
-            key={device.id}
-            device={device}
-            maxWatts={maxWatts}
-            anomaly={anomalyMap.get(device.id) ?? null}
-          />
-        ))}
-      </ul>
-
-      {/* Peak hours callout */}
+      {/* Peak hours callout — in summary area, above device bands */}
       {insights?.peakHours && insights.peakHours.length > 0 && (
-        <p className="text-caption mt-3 text-xs">
+        <p className="text-caption mb-4 text-xs">
           Peak usage hours:{' '}
           {insights.peakHours
             .map(({ hour }) => {
@@ -270,6 +331,32 @@ export default function EnergyCard({ power, insights, currencySymbol = '$' }: En
             .join(', ')}
         </p>
       )}
+
+      {/* Device bands */}
+      <div className="space-y-2">
+        {/* Anomalies band — only shown when anomalies exist, defaults open */}
+        {anomalyDevices.length > 0 && (
+          <DeviceBand
+            label={`${anomalyDevices.length} ${anomalyDevices.length === 1 ? 'device' : 'devices'} above normal`}
+            items={anomalyDevices}
+            maxWatts={maxWatts}
+            anomalyMap={anomalyMap}
+            defaultOpen={true}
+            accentClass="bg-amber-500/5"
+          />
+        )}
+
+        {/* All devices band — defaults closed */}
+        {normalDevices.length > 0 && (
+          <DeviceBand
+            label={`${normalDevices.length} ${normalDevices.length === 1 ? 'device' : 'devices'}`}
+            items={normalDevices}
+            maxWatts={maxWatts}
+            anomalyMap={anomalyMap}
+            defaultOpen={false}
+          />
+        )}
+      </div>
 
       {/* Chart section */}
       <div className="mt-4 border-t pt-4" style={{ borderColor: 'var(--border-primary)' }}>
