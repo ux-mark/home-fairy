@@ -25,6 +25,7 @@ import type { Light, LightAssignment, Sensor, HubDevice, DeviceRoomAssignment } 
 import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { CollapsibleDeviceGroup } from '@/components/ui/CollapsibleDeviceGroup'
+import RoomIntelligence from '@/components/room/RoomIntelligence'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1037,6 +1038,9 @@ export default function RoomDetailPage() {
           </div>
         </div>
       </section>
+
+      {/* ── Room intelligence ───────────────────────────────────────────────── */}
+      <RoomIntelligence roomName={name!} />
 
       {/* ── Devices section with tabs ───────────────────────────────────────── */}
       <section className="mb-8">

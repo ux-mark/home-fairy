@@ -8,7 +8,9 @@ const RoomsPage = React.lazy(() => import('@/pages/RoomsPage'))
 const RoomDetailPage = React.lazy(() => import('@/pages/RoomDetailPage'))
 const ScenesPage = React.lazy(() => import('@/pages/ScenesPage'))
 const SceneEditorPage = React.lazy(() => import('@/pages/SceneEditorPage'))
+const DashboardPage = React.lazy(() => import('@/pages/DashboardPage'))
 const DevicesPage = React.lazy(() => import('@/pages/DevicesPage'))
+const DeviceDetailPage = React.lazy(() => import('@/pages/DeviceDetailPage'))
 const WatchPage = React.lazy(() => import('@/pages/WatchPage'))
 const SettingsPage = React.lazy(() => import('@/pages/SettingsPage'))
 const LogsPage = React.lazy(() => import('@/pages/LogsPage'))
@@ -34,7 +36,9 @@ export default function App() {
           <Route path="/rooms/:name" element={<RoomDetailPage />} />
           <Route path="/scenes" element={<ScenesPage />} />
           <Route path="/scenes/:name" element={<SceneEditorPage />} />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/devices" element={<DevicesPage />} />
+          <Route path="/devices/:id" element={<DeviceDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/logs" element={<LogsPage />} />
         </Route>

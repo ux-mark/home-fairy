@@ -7,7 +7,7 @@ The Fairies v3 — a home automation control system with a React frontend and Ex
 - **Language**: TypeScript (frontend and backend)
 - **Frontend**: React 19, Vite, Tailwind CSS v4, Radix UI, react-colorful (HSV picker), TanStack Query, Socket.io client, PWA
 - **Backend**: Express 5, better-sqlite3, Socket.io, axios, Zod validation, SunCalc, gtfs-realtime-bindings
-- **Database**: SQLite with WAL mode. Tables: rooms, scenes, light_rooms, device_rooms, hub_devices, current_state, logs
+- **Database**: SQLite with WAL mode. Tables: rooms, scenes, light_rooms, device_rooms, hub_devices, current_state, logs, device_history
 - **Package manager**: npm
 - **Process manager (production)**: PM2
 
@@ -16,17 +16,18 @@ The Fairies v3 — a home automation control system with a React frontend and Ex
 thefairies-app/
 ├── client/          React + Vite + TypeScript + Tailwind CSS v4
 │   ├── src/
-│   │   ├── pages/          7 pages (Home, Rooms, RoomDetail, Scenes, SceneEditor, Devices, Settings, Watch, Logs)
-│   │   ├── components/     Layout (AppLayout, WatchLayout) + UI components
+│   │   ├── pages/          Home, Dashboard, Rooms, RoomDetail, Scenes, SceneEditor, Devices, DeviceDetail, Settings, Watch, Logs
+│   │   ├── components/     Layout (AppLayout, WatchLayout) + UI + dashboard cards
 │   │   ├── hooks/          useToast, useTheme
 │   │   └── lib/            api.ts (API client + types), utils.ts
 │   └── vite.config.ts      Vite config with PWA + proxy to :3001
 ├── server/          Express 5 + TypeScript + SQLite (better-sqlite3)
 │   ├── src/
-│   │   ├── routes/         lifx, rooms, scenes, lights, hubitat, motion, system
+│   │   ├── routes/         lifx, rooms, scenes, lights, hubitat, motion, system, dashboard
 │   │   ├── lib/            lifx-client, hubitat-client, twinkly-client, fairy-device-client,
 │   │   │                   scene-executor, motion-handler, timer-manager, sun-mode-scheduler,
-│   │   │                   weather-client, weather-indicator, mta-client, mta-stops
+│   │   │                   weather-client, weather-indicator, mta-client, mta-stops,
+│   │   │                   history-collector
 │   │   ├── db/             SQLite setup + migrations
 │   │   └── index.ts        Express server entry point
 │   ├── scripts/            Migration and seed scripts

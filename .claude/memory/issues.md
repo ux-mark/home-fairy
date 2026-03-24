@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-03-23 — Direct URL access to SPA routes returns 404 in production
+- **Severity**: medium
+- **Status**: open
+- **Description**: In production (PM2), navigating directly to `/dashboard`, `/devices/123`, `/rooms/Living`, or any non-root route returns a 404 error. The Express server serves static files from `client/dist` via `express.static()` but has no SPA fallback to serve `index.html` for unmatched routes.
+- **Impact**: Users can't bookmark or share deep links. Refreshing the browser on any page other than `/` shows a 404. Only affects production — Vite dev server handles this correctly.
+- **Fix**: Add a catch-all route after static middleware: `app.get('*', (req, res) => res.sendFile(path.join(clientDist, 'index.html')))` — must be placed after all API routes and static file serving.
+- **Note**: Pre-existing issue, not introduced by dashboard feature.
+
 ## 2026-03-23 — Room locks lost on server restart (in-memory only)
 - **Severity**: critical
 - **Status**: resolved (2026-03-23)

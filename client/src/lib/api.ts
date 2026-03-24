@@ -245,6 +245,197 @@ export interface NightStatus {
   wakeMode: string
 }
 
+// ── Dashboard types ──────────────────────────────────────────────────────────
+
+export interface BatteryDevice {
+  id: number
+  label: string
+  device_type: string
+  battery: number | null
+  status: 'ok' | 'low' | 'critical'
+  updated_at: string
+}
+
+export interface PowerDevice {
+  id: number
+  label: string
+  room_name: string | null
+  power: number
+  energy: number | null
+  switch: 'on' | 'off'
+}
+
+export interface DashboardSummary {
+  mode: string
+  allModes: string[]
+  rooms: Array<{
+    name: string
+    temperature: number | null
+    lux: number | null
+    current_scene: string | null
+    last_active: string | null
+    auto: number
+  }>
+  battery: BatteryDevice[]
+  power: PowerDevice[]
+  sunSchedule: SunScheduleEntry[]
+  sunPhase: string
+  sunTimes: Record<string, string>
+  weather: {
+    temp: number
+    description: string
+    icon: string
+    humidity: number
+    wind_speed: number
+  } | null
+  nightStatus: NightStatus
+  currencySymbol: string
+  insights: InsightsData | null
+}
+
+export interface ActivityInsights {
+  roomRanking: Array<{ room: string; events24h: number; peakHours: string }>
+  dailyTrend: Array<{ day: string; totalEvents: number }>
+  mostActiveRoom: { room: string; events24h: number } | null
+  quietestRoom: { room: string; events24h: number } | null
+}
+
+export interface RoomIntelligenceData {
+  temperature: number | null
+  lux: number | null
+  lastActive: string | null
+  temperatureHistory: Array<{ value: number; recorded_at: string }>
+  totalWatts: number
+  devices: Array<{
+    id: number; label: string; device_type: string
+    power: number; energy: number | null; battery: number | null
+  }>
+  events24h: number
+  hourlyPattern: Array<{ hour: number; count: number }>
+  batteryDevices: Array<{
+    id: number; label: string; battery: number; status: string
+    drainPerDay: number | null; predictedDaysRemaining: number | null
+  }>
+}
+
+export interface DeviceInsightsData {
+  insights: {
+    power: {
+      currentWatts: number
+      averageWatts7d: number | null
+      overUnderPercent: number | null
+      percentOfTotal: number
+      dailyCostImpact: number | null
+      currencySymbol: string
+    } | null
+    battery: {
+      currentLevel: number
+      drainPerDay: number | null
+      predictedDaysRemaining: number | null
+    } | null
+    temperature: {
+      currentTemp: number
+      avgTemp30d: number | null
+    } | null
+  }
+  roomDevices: Array<{ id: number; label: string; device_type: string }>
+  currencySymbol: string
+}
+
+export interface InsightsData {
+  energy: EnergyInsights | null
+  temperature: TemperatureInsights | null
+  lux: LuxInsights | null
+  battery: BatteryInsights | null
+  activity: ActivityInsights | null
+  attention: AttentionItem[]
+}
+
+export interface EnergyInsights {
+  totalWatts: number
+  averageWattsThisHour: number | null
+  overUnderPercent: number | null
+  dailyCostEstimate: number | null
+  energyRate: number
+  dailyKwhHistory: Array<{ day: string; totalKwh: number }>
+  peakHours: Array<{ hour: number; avgWatts: number }>
+  deviceAnomalies: Array<{
+    deviceId: number
+    label: string
+    currentWatts: number
+    averageWatts: number
+    percentAbove: number
+  }>
+}
+
+export interface TemperatureInsights {
+  houseAvgTemp: number
+  houseAvgTemp30d: number | null
+  overUnderTemp: number | null
+  trend: 'warming' | 'cooling' | 'stable'
+  roomOutliers: Array<{ room: string; temp: number; deviation: number }>
+  indoorOutdoorDelta: number | null
+}
+
+export interface LuxInsights {
+  houseAvgLux: number
+  houseAvgLuxThisHour: number | null
+  overUnderLuxPercent: number | null
+  brightnessLevel: 'dark' | 'dim' | 'moderate' | 'bright' | 'very bright'
+  roomRanking: Array<{ room: string; lux: number }>
+}
+
+export interface BatteryInsights {
+  fleetHealth: { healthy: number; low: number; critical: number; total: number }
+  deviceDrainRates: Array<{
+    deviceId: number
+    label: string
+    drainPerDay: number | null
+    predictedDaysRemaining: number | null
+    isAnomalous: boolean
+  }>
+  worstDevice: { label: string; predictedDaysRemaining: number | null } | null
+}
+
+export interface AttentionItem {
+  id: string
+  severity: 'critical' | 'warning' | 'info'
+  category: 'battery' | 'energy' | 'temperature'
+  title: string
+  description: string
+  deviceId: number | null
+  deviceLabel: string | null
+}
+
+export interface HistoryPoint {
+  value: number
+  min?: number
+  max?: number
+  recorded_at: string
+}
+
+export interface HistoryResponse {
+  data: HistoryPoint[]
+  count: number
+  period: string
+}
+
+export interface DashboardStats {
+  totalRows: number
+  oldestRecord: string | null
+  sources: Array<{ source: string; count: number }>
+  dbSizeBytes: number
+  dbSizeMB: number
+}
+
+export interface DeviceContext {
+  rooms: Array<{ room_name: string; config: Record<string, unknown> }>
+  scenes: string[]
+  lastEvent: string | null
+  updatedAt: string | null
+  historySources: Array<{ source: string; count: number }>
+}
+
 export interface CombinedMtaStatus {
   overallStatus: 'green' | 'orange' | 'red' | 'none'
   overallMessage: string
@@ -486,6 +677,29 @@ export const api = {
         }[]
       >('/system/logs' + (qs ? '?' + qs : ''))
     },
+  },
+  dashboard: {
+    getSummary: () => fetchApi<DashboardSummary>('/dashboard/summary'),
+    getHistory: (source: string, sourceId: string, period?: string) =>
+      fetchApi<HistoryResponse>(
+        '/dashboard/history/' +
+          encodeURIComponent(source) +
+          '/' +
+          encodeURIComponent(sourceId) +
+          (period ? '?period=' + period : ''),
+      ),
+    getStats: () => fetchApi<DashboardStats>('/dashboard/stats'),
+    deleteHistory: (options: { all?: boolean; olderThan?: string; source?: string }) =>
+      fetchApi<{ deleted: number }>('/dashboard/history', {
+        method: 'DELETE',
+        body: JSON.stringify(options),
+      }),
+    getDeviceContext: (deviceId: string) =>
+      fetchApi<DeviceContext>('/dashboard/device/' + encodeURIComponent(deviceId) + '/context'),
+    getDeviceInsights: (deviceId: string) =>
+      fetchApi<DeviceInsightsData>('/dashboard/device/' + encodeURIComponent(deviceId) + '/insights'),
+    getRoomInsights: (roomName: string) =>
+      fetchApi<RoomIntelligenceData>('/dashboard/room/' + encodeURIComponent(roomName)),
   },
   hubitat: {
     getDevices: () => fetchApi<HubDevice[]>('/hubitat/devices'),

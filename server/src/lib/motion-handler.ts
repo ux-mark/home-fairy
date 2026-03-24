@@ -299,6 +299,14 @@ export class MotionHandler {
 
     const roomName = deviceRoom.room_name
 
+    // Record activity for analytics
+    try {
+      run(
+        'INSERT INTO room_activity (room_name, sensor_name, event_type) VALUES (?, ?, ?)',
+        [roomName, sensorName, `motion_${value}`],
+      )
+    } catch { /* don't let activity tracking break motion handling */ }
+
     if (value === 'active') {
       log(`Motion active: ${sensorName} in ${roomName}`)
 

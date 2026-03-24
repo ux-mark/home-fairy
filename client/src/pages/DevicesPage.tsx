@@ -340,11 +340,14 @@ function HubDeviceCard({ device }: { device: UnifiedDevice }) {
     <div className="card rounded-xl border transition-colors">
       <div className="flex items-center gap-3 p-4">
         <div className="min-w-0 flex-1">
-          <p className={cn('truncate text-sm font-medium', device.isOn ? 'text-heading' : 'text-body')}>
+          <Link
+            to={`/devices/${device.hubDevice!.id}`}
+            className={cn('block text-sm font-medium hover:text-fairy-400 transition-colors', device.isOn ? 'text-heading' : 'text-body')}
+          >
             {device.label}
-          </p>
+          </Link>
           {device.roomName && (
-            <p className="text-caption mt-0.5 truncate text-xs">{device.roomName}</p>
+            <p className="text-caption mt-0.5 text-xs">{device.roomName}</p>
           )}
         </div>
 

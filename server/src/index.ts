@@ -13,11 +13,13 @@ import lightsRoutes from './routes/lights.js'
 import systemRoutes from './routes/system.js'
 import hubitatRoutes from './routes/hubitat.js'
 import motionRoutes from './routes/motion.js'
+import dashboardRoutes from './routes/dashboard.js'
 import { motionHandler } from './lib/motion-handler.js'
 import { sunModeScheduler } from './lib/sun-mode-scheduler.js'
 import { timerManager } from './lib/timer-manager.js'
 import { activateScene } from './lib/scene-executor.js'
 import { weatherIndicator } from './lib/weather-indicator.js'
+import { startHistoryCollector } from './lib/history-collector.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -46,6 +48,7 @@ app.use('/api/lights', lightsRoutes)
 app.use('/api/system', systemRoutes)
 app.use('/api/hubitat', hubitatRoutes)
 app.use('/api/motion', motionRoutes)
+app.use('/api/dashboard', dashboardRoutes)
 
 // Hubitat webhook handler
 app.post('/hubitat', async (req, res) => {
@@ -108,6 +111,41 @@ app.post('/hubitat', async (req, res) => {
         }
         break
       }
+
+      case 'power': {
+        // Smart plug real-time power draw (watts)
+        run(
+          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.power', ?), updated_at = datetime('now') WHERE label = ?`,
+          [Number(eventValue), displayName],
+        )
+        run(
+          'INSERT INTO device_history (source, source_id, value) VALUES (?, ?, ?)',
+          ['power', displayName, Number(eventValue)],
+        )
+        break
+      }
+
+      case 'energy': {
+        // Smart plug cumulative energy usage (kWh)
+        run(
+          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.energy', ?), updated_at = datetime('now') WHERE label = ?`,
+          [Number(eventValue), displayName],
+        )
+        run(
+          'INSERT INTO device_history (source, source_id, value) VALUES (?, ?, ?)',
+          ['energy', displayName, Number(eventValue)],
+        )
+        break
+      }
+
+      case 'switch': {
+        // Track on/off state changes in attributes
+        run(
+          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.switch', ?), updated_at = datetime('now') WHERE label = ?`,
+          [eventValue, displayName],
+        )
+        break
+      }
     }
 
     // Emit to connected clients for real-time UI updates
@@ -153,6 +191,7 @@ httpServer.listen(PORT, () => {
   console.log(`CORS origin: ${CORS_ORIGIN}`)
   sunModeScheduler.init(io)
   weatherIndicator.start()
+  startHistoryCollector()
 })
 
 export { io }

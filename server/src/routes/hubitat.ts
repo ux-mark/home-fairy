@@ -109,6 +109,19 @@ router.get('/devices/sync', async (_req: Request, res: Response) => {
         newCount++
       }
 
+      // Flatten attributes from Hubitat array format [{name, currentValue}] to {name: currentValue}
+      let flatAttrs: Record<string, unknown> = {}
+      const rawAttrs = fullDevice.attributes
+      if (Array.isArray(rawAttrs)) {
+        for (const attr of rawAttrs) {
+          if (attr && typeof attr === 'object' && 'name' in attr && 'currentValue' in attr) {
+            flatAttrs[(attr as { name: string }).name] = (attr as { currentValue: unknown }).currentValue
+          }
+        }
+      } else if (rawAttrs && typeof rawAttrs === 'object') {
+        flatAttrs = rawAttrs as Record<string, unknown>
+      }
+
       run(
         `INSERT INTO hub_devices (id, label, device_name, device_type, capabilities, attributes, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
@@ -125,7 +138,7 @@ router.get('/devices/sync', async (_req: Request, res: Response) => {
           fullDevice.name ?? null,
           deviceType,
           JSON.stringify(fullDevice.capabilities ?? []),
-          JSON.stringify(fullDevice.attributes ?? {}),
+          JSON.stringify(flatAttrs),
         ],
       )
     }

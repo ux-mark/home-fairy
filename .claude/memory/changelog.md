@@ -5,6 +5,50 @@
 
 ---
 
+## 2026-03-23 — UX overhaul: layered drill-down, activity tracking, room intelligence
+- Energy/battery data surfaced on device cards (power watts, energy kWh, battery %) with sort-by-power/battery options
+- Room activity tracking: new room_activity table, motion events recorded, activity insights (room ranking, hourly patterns, daily trends)
+- ActivityCard on dashboard: room ranking, peak hours, 7-day activity bar chart
+- Room intelligence: new collapsible section on room detail pages showing environment, energy, activity, and battery health per room
+- Device detail page restructured: headline insights first (watts comparison, battery prediction, cost impact), then charts, then context, raw attributes collapsed at bottom
+- Clickable dashboard summary pills scroll to their corresponding detail cards
+- Energy narrative: contextual text explaining whether usage is above/below/normal
+- Battery replacement timeline with urgency bands (needs attention/monitor/healthy)
+- Dashboard layout: main+side column on desktop (energy/environment/activity + battery/sun)
+- Currency symbol configurable in Settings (used for energy cost displays)
+- Critical attention banner on home page linking to Insights when issues need attention
+- Home page room cards link to Insights for critical alerts
+- Files: 14+ files modified across server and client
+
+## 2026-03-23 — Aggregate insights, trend analysis, and attention CTAs
+- Insights engine: server-side computation of energy, temperature, lux, and battery analytics with 10-minute cache
+- Energy: total watts, over/under comparison to 7-day hourly average, daily cost estimate, device anomaly detection, peak hours
+- Temperature: house average, 30-day comparison, warming/cooling trend, room outliers, indoor/outdoor delta
+- Lux: house average brightness, level classification, comparison to normal for this hour, room ranking
+- Battery: fleet health score, per-device drain rates, predicted days remaining, anomalous drain detection
+- Attention bar: prioritised alerts (critical/warning/info) with CTAs linking to device detail pages
+- Home summary strip: 4 stat pills (energy, temperature, brightness, battery fleet) with over/under badges and trend arrows
+- OverUnderBadge reusable component for percentage comparisons
+- Enhanced EnergyCard: anomaly highlights, device links, peak hours, cost estimate
+- Enhanced BatteryCard: fleet health, drain rates, predicted replacement, anomalous drain highlights
+- Enhanced EnvironmentCard: house average with trend arrow, room outlier highlights, lux section with brightness ranking
+- Energy rate preference in Settings for cost estimates
+- Files: server/src/lib/insights-engine.ts, server/src/routes/dashboard.ts, client/src/lib/api.ts, client/src/pages/DashboardPage.tsx, client/src/components/dashboard/*.tsx, client/src/pages/SettingsPage.tsx
+
+## 2026-03-23 — Dashboard, device insights, and historical data infrastructure
+- New "Insights" page at /dashboard with 4 dashboard cards: Energy, Battery, Environment, Sun and Mode
+- Historical data infrastructure: device_history table, 10-minute snapshot collector, indefinite retention
+- Hubitat webhook now captures power (watts) and energy (kWh) events from smart plugs
+- Dashboard aggregate API endpoint (GET /api/dashboard/summary) reduces frontend from 6+ requests to 1
+- History API with time-series aggregation (24h full resolution, 7d+ hourly averages)
+- Chart.js integration with reusable TimeSeriesChart component (dark theme, responsive)
+- Device detail page at /devices/:id showing full attributes, room/scene context, and history charts
+- Data management section in Settings: view DB size, delete history by age/source/all with VACUUM
+- Socket.io client integration: real-time dashboard updates on Hubitat events and mode changes
+- 6th nav item "Insights" with BarChart3 icon added to sidebar and mobile bottom nav
+- User personas documented: Homeowner, Guest, Commuter, Away User
+- Files: server/src/db/index.ts, server/src/index.ts, server/src/lib/history-collector.ts, server/src/routes/dashboard.ts, client/src/pages/DashboardPage.tsx, client/src/pages/DeviceDetailPage.tsx, client/src/components/dashboard/*.tsx, client/src/hooks/useSocket.ts, client/src/lib/api.ts, client/src/components/layout/AppLayout.tsx, client/src/App.tsx, client/src/pages/SettingsPage.tsx, client/src/pages/DevicesPage.tsx
+
 ## 2026-03-23 — Persist room locks to database + sun scheduler respects Sleep Time
 - Room locks now stored in `current_state` table as `locked_rooms` JSON array, surviving server restarts
 - On startup, `MotionHandler` constructor loads persisted locks from DB
