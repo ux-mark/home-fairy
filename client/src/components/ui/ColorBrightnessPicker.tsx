@@ -6,11 +6,17 @@
  * the same colour space that LIFX uses. This means what the user sees
  * in the picker matches exactly what the physical light will show.
  *
- * For white-only lights (has_color=false), shows a kelvin temperature
- * slider instead of the colour picker.
+ * For colour lights (has_color=true):
+ *   - The rectangle controls hue (x-axis) and saturation (y-axis going down
+ *     from full to desaturated). The V channel of the HsvColorPicker maps
+ *     to brightness — dragging vertically in the rectangle changes brightness
+ *     directly. No separate brightness slider is shown.
+ *   - onChange emits { color } where color.v is brightness (0-100).
  *
- * Brightness is handled as a separate slider below the picker because
- * LIFX treats brightness independently from colour (hue + saturation).
+ * For white-only lights (has_color=false):
+ *   - Shows a kelvin temperature slider instead of the colour rectangle.
+ *   - A separate brightness slider is shown because there is no rectangle
+ *     to encode brightness.
  */
 import { useCallback, useEffect, useMemo } from 'react'
 import { HsvColorPicker } from 'react-colorful'
@@ -24,10 +30,17 @@ export interface HsvColor {
 
 interface ColorBrightnessPickerProps {
   hasColor: boolean
-  /** HSV colour — h: 0-360, s: 0-100 (maps to LIFX saturation 0-1), v is ignored (use brightness instead) */
+  /**
+   * HSV colour — h: 0-360, s: 0-100, v: 0-100.
+   * For colour lights, v IS the brightness — the rectangle's Y-axis encodes it.
+   * For white-only lights, v is ignored and brightness is controlled separately.
+   */
   color: HsvColor
   kelvin: number
-  /** Brightness 0-100 (maps to LIFX brightness 0-1) */
+  /**
+   * Brightness 0-100. Used only when hasColor is false (white-only/kelvin lights).
+   * For colour lights, read brightness from color.v instead.
+   */
   brightness: number
   minKelvin?: number
   maxKelvin?: number
@@ -63,9 +76,10 @@ export default function ColorBrightnessPicker({
   const handleColorChange = useCallback(
     (c: { h: number; s: number; v: number }) => {
       // react-colorful HsvColorPicker reports h: 0-360, s: 0-100, v: 0-100
+      // v encodes brightness — dragging vertically in the rectangle adjusts it.
       const update: HsvColor = { h: c.h, s: c.s, v: c.v }
-      onChange({ color: update })
-      debouncedLiveChange?.({ color: update })
+      onChange({ color: update, brightness: c.v })
+      debouncedLiveChange?.({ color: update, brightness: c.v })
     },
     [onChange, debouncedLiveChange],
   )
@@ -88,15 +102,17 @@ export default function ColorBrightnessPicker({
     [onChange, debouncedLiveChange],
   )
 
+  // For colour lights, brightness comes from color.v (the rectangle's Y-axis).
+  // For kelvin lights, brightness is the separate slider value.
+  const effectiveBrightness = hasColor ? color.v : brightness
+
   // Preview colour hex — uses HSB→RGB conversion matching LIFX
   const previewHex = hasColor
-    ? hsbToHex(color.h, color.s / 100, brightness / 100)
+    ? hsbToHex(color.h, color.s / 100, effectiveBrightness / 100)
     : kelvinToHex(kelvin)
 
-  // Brightness gradient: dark → current colour at full brightness
-  const fullBrightnessHex = hasColor
-    ? hsbToHex(color.h, color.s / 100, 1)
-    : previewHex
+  // Brightness gradient for kelvin-mode slider: dark → current colour at full brightness
+  const fullBrightnessHex = previewHex
   const brightnessGradient = `linear-gradient(to right, #0a0a0a, ${fullBrightnessHex})`
 
   // Kelvin gradient: warm amber → neutral → cool blue-white
@@ -110,14 +126,14 @@ export default function ColorBrightnessPicker({
           className="h-10 w-10 shrink-0 rounded-full shadow-inner"
           style={{
             backgroundColor: previewHex,
-            opacity: Math.max(brightness / 100, 0.08),
+            opacity: Math.max(effectiveBrightness / 100, 0.08),
             border: '2px solid var(--border-secondary, #334155)',
           }}
           aria-hidden="true"
         />
         <div className="text-sm" style={{ color: 'var(--text-secondary, #94a3b8)' }}>
           {hasColor
-            ? `H:${Math.round(color.h)}° S:${Math.round(color.s)}% B:${brightness}%`
+            ? `H:${Math.round(color.h)}° S:${Math.round(color.s)}% B:${Math.round(color.v)}%`
             : `${kelvin}K · ${brightness}%`}
         </div>
       </div>
@@ -161,27 +177,30 @@ export default function ColorBrightnessPicker({
         </div>
       )}
 
-      {/* Brightness slider */}
-      <div className="space-y-2">
-        <label
-          className="flex items-center justify-between text-xs font-medium"
-          style={{ color: 'var(--text-secondary, #94a3b8)' }}
-        >
-          <span>Brightness</span>
-          <span style={{ color: 'var(--text-primary, #f1f5f9)' }}>{brightness}%</span>
-        </label>
-        <input
-          type="range"
-          min={0}
-          max={100}
-          step={1}
-          value={brightness}
-          onChange={handleBrightnessChange}
-          className="fairy-slider w-full"
-          style={{ background: brightnessGradient }}
-          aria-label="Brightness"
-        />
-      </div>
+      {/* Brightness slider — only for white-only (kelvin) lights.
+          For colour lights, brightness is encoded in color.v via the picker rectangle. */}
+      {!hasColor && (
+        <div className="space-y-2">
+          <label
+            className="flex items-center justify-between text-xs font-medium"
+            style={{ color: 'var(--text-secondary, #94a3b8)' }}
+          >
+            <span>Brightness</span>
+            <span style={{ color: 'var(--text-primary, #f1f5f9)' }}>{brightness}%</span>
+          </label>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={brightness}
+            onChange={handleBrightnessChange}
+            className="fairy-slider w-full"
+            style={{ background: brightnessGradient }}
+            aria-label="Brightness"
+          />
+        </div>
+      )}
 
       {/* Scoped styles for picker and sliders */}
       <style>{`
