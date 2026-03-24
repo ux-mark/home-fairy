@@ -120,6 +120,29 @@ export function initDb(): void {
 
     CREATE INDEX IF NOT EXISTS idx_room_activity_lookup
       ON room_activity (room_name, recorded_at);
+
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      severity TEXT NOT NULL CHECK(severity IN ('info', 'warning', 'critical')),
+      category TEXT NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      source_type TEXT,
+      source_id TEXT,
+      source_label TEXT,
+      dedup_key TEXT,
+      occurrence_count INTEGER DEFAULT 1,
+      first_occurred_at TEXT DEFAULT (datetime('now')),
+      last_occurred_at TEXT DEFAULT (datetime('now')),
+      read INTEGER DEFAULT 0,
+      dismissed INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_notifications_unread
+      ON notifications (read, dismissed, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_notifications_dedup
+      ON notifications (dedup_key, dismissed);
   `)
 
   // Migration: add scene_manual column to rooms

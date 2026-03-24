@@ -20,6 +20,7 @@ import { timerManager } from './lib/timer-manager.js'
 import { activateScene } from './lib/scene-executor.js'
 import { weatherIndicator } from './lib/weather-indicator.js'
 import { startHistoryCollector } from './lib/history-collector.js'
+import { notificationService } from './lib/notification-service.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -102,12 +103,32 @@ app.post('/hubitat', async (req, res) => {
             'INSERT INTO logs (message, category) VALUES (?, ?)',
             [`Critical battery: ${displayName} at ${batteryLevel}%`, 'battery'],
           )
+          notificationService.create({
+            severity: 'critical',
+            category: 'battery',
+            title: `${displayName} battery critical`,
+            message: `${displayName} at ${batteryLevel}% — replace soon`,
+            sourceType: 'sensor',
+            sourceId: String(displayName),
+            sourceLabel: displayName,
+            dedupKey: `battery_critical:${displayName}`,
+          })
         } else if (batteryLevel < 15) {
           console.warn(`Low battery: ${displayName} at ${batteryLevel}%`)
           run(
             'INSERT INTO logs (message, category) VALUES (?, ?)',
             [`Low battery: ${displayName} at ${batteryLevel}%`, 'battery'],
           )
+          notificationService.create({
+            severity: 'warning',
+            category: 'battery',
+            title: `${displayName} battery low`,
+            message: `${displayName} at ${batteryLevel}%`,
+            sourceType: 'sensor',
+            sourceId: String(displayName),
+            sourceLabel: displayName,
+            dedupKey: `battery_low:${displayName}`,
+          })
         }
         break
       }
@@ -170,6 +191,9 @@ io.on('connection', (socket) => {
     console.log(`Client disconnected: ${socket.id}`)
   })
 })
+
+// Wire notification service to Socket.io for real-time client push
+notificationService.setEmitter((event, data) => io.emit(event, data))
 
 // Wire up scene timer expiry — activate the target scene when the timer fires
 timerManager.setOnExpire(async (targetScene, sceneName) => {

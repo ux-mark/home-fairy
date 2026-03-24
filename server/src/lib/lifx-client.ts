@@ -53,6 +53,21 @@ async function withRetry<T>(fn: () => Promise<AxiosResponse<T>>): Promise<AxiosR
 
 // ── State types ───────────────────────────────────────────────────────────────
 
+export interface SetStatesResultItem {
+  id: string
+  status: 'ok' | 'timed_out' | 'offline'
+  label: string
+}
+
+export interface SetStatesOperationResult {
+  operation?: Record<string, unknown>
+  results?: SetStatesResultItem[]
+}
+
+export interface SetStatesResponse {
+  results: SetStatesOperationResult[]
+}
+
 export interface BatchState {
   selector: string
   power?: string
@@ -114,7 +129,7 @@ export const lifxClient = {
   ) =>
     withRetry(() =>
       lifxApi.put('/lights/states', { states, defaults }),
-    ).then((r) => r.data),
+    ).then((r) => r.data as SetStatesResponse),
 
   // ── Effects ───────────────────────────────────────────────────────────────
 

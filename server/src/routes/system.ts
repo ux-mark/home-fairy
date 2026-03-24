@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { getAll, getOne, run, db } from '../db/index.js'
+import { notificationService } from '../lib/notification-service.js'
 import { getCurrentWeather } from '../lib/weather-client.js'
 import { getSunTimes, getCurrentSunPhase } from '../lib/sun-tracker.js'
 import { timerManager } from '../lib/timer-manager.js'
@@ -1039,6 +1040,78 @@ router.post('/night/unlock', (_req: Request, res: Response) => {
       "INSERT INTO logs (message, category, created_at) VALUES (?, 'system', datetime('now'))",
       ['Manual night unlock: all rooms unlocked'],
     )
+    res.json({ success: true })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+// GET /notifications — list notifications
+router.get('/notifications', (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200)
+    const unreadOnly = req.query.unread_only === 'true'
+    const category = req.query.category as string | undefined
+
+    const notifications = notificationService.getAll({ limit, unreadOnly, category })
+    res.json(notifications)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// GET /notifications/count — unread count (lightweight, for badge)
+router.get('/notifications/count', (_req: Request, res: Response) => {
+  try {
+    const count = notificationService.getUnreadCount()
+    res.json({ count })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// PATCH /notifications/:id/read — mark as read
+router.patch('/notifications/:id/read', (req: Request, res: Response) => {
+  try {
+    notificationService.markRead(Number(req.params.id))
+    res.json({ success: true })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// POST /notifications/read-all — mark all as read
+router.post('/notifications/read-all', (_req: Request, res: Response) => {
+  try {
+    notificationService.markAllRead()
+    res.json({ success: true })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// POST /notifications/:id/dismiss — dismiss single
+router.post('/notifications/:id/dismiss', (req: Request, res: Response) => {
+  try {
+    notificationService.dismiss(Number(req.params.id))
+    res.json({ success: true })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// POST /notifications/dismiss-all — dismiss all
+router.post('/notifications/dismiss-all', (_req: Request, res: Response) => {
+  try {
+    notificationService.dismissAll()
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
