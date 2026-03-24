@@ -15,6 +15,7 @@ interface SceneRow {
   active_from: string | null
   active_to: string | null
   auto_activate: number
+  last_activated_at: string | null
   created_at: string
   updated_at: string
 }
@@ -48,6 +49,7 @@ function parseScene(row: SceneRow) {
     active_from: row.active_from ?? null,
     active_to: row.active_to ?? null,
     auto_activate: Boolean(row.auto_activate ?? 1),
+    last_activated_at: row.last_activated_at ?? null,
   }
 }
 

@@ -1,10 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Thermometer, Sun, Clock, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock, AlertTriangle, ChevronRight } from 'lucide-react'
+import { Thermometer, Sun, Clock, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock, AlertTriangle, ChevronRight, Star } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import type { Room, Scene } from '@/lib/api'
+import { getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
 
 // ── Skeleton loader ──────────────────────────────────────────────────────────
@@ -87,21 +88,16 @@ function RoomCard({
     const rooms = Array.isArray(s.rooms) ? s.rooms : []
     const modes = Array.isArray(s.modes) ? s.modes : []
     // Skip out-of-season scenes
-    if (s.active_from && s.active_to) {
-      const now = new Date()
-      const today = (now.getMonth() + 1) * 100 + now.getDate()
-      const [fm, fd] = s.active_from.split('-').map(Number)
-      const [tm, td] = s.active_to.split('-').map(Number)
-      const from = fm * 100 + fd, to = tm * 100 + td
-      const inRange = from <= to ? (today >= from && today <= to) : (today >= from || today <= to)
-      if (!inRange) return false
-    }
+    const { inSeason } = isSceneInSeason(s)
+    if (!inSeason) return false
     return (
       rooms.some(r => r?.name === room.name) &&
       modes.some(m => (m ?? '').toLowerCase() === currentMode.toLowerCase())
     )
   })
-  const displayScenes = roomScenes.slice(0, 4)
+  const sortedScenes = [...roomScenes].sort((a, b) => a.name.localeCompare(b.name))
+  const displayScenes = sortedScenes.slice(0, 4)
+  const defaultScene = getDefaultScene(scenes, room.name, currentMode)
 
   return (
     <div className="card rounded-xl border p-4 transition-colors" style={{ borderColor: 'var(--border-primary)' }}>
@@ -166,7 +162,7 @@ function RoomCard({
                 onClick={() => onToggleScene(scene.name, isActive)}
                 aria-pressed={isActive}
                 className={cn(
-                  'flex min-h-[36px] items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
+                  'flex min-h-[44px] items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
                   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                   isActive
                     ? 'bg-fairy-500/20 text-fairy-700 dark:text-fairy-300'
@@ -175,6 +171,11 @@ function RoomCard({
               >
                 {scene.icon && <span className="text-sm">{scene.icon}</span>}
                 {scene.name}
+                {defaultScene?.name === scene.name && (
+                  <span className="flex items-center gap-0.5 text-fairy-400" aria-label="Default scene for this mode">
+                    <Star className="h-2.5 w-2.5" fill="currentColor" />
+                  </span>
+                )}
               </button>
             )
           })}

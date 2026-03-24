@@ -390,6 +390,12 @@ export async function activateScene(sceneName: string): Promise<void> {
       [sceneName, room.name],
     )
   }
+
+  // Track when this scene was last activated
+  run(
+    `UPDATE scenes SET last_activated_at = datetime('now') WHERE name = ?`,
+    [sceneName],
+  )
 }
 
 export async function deactivateScene(sceneName: string): Promise<void> {

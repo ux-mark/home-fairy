@@ -185,6 +185,23 @@ export function initDb(): void {
     db.exec("ALTER TABLE scenes ADD COLUMN active_to TEXT")
   }
 
+  // Migration: add last_activated_at column to scenes for tracking activation history
+  try {
+    db.prepare('SELECT last_activated_at FROM scenes LIMIT 1').get()
+  } catch {
+    console.log('[db] Migrating scenes: adding last_activated_at column')
+    db.exec('ALTER TABLE scenes ADD COLUMN last_activated_at TEXT DEFAULT NULL')
+    // Backfill from logs table
+    db.exec(`
+      UPDATE scenes SET last_activated_at = (
+        SELECT MAX(created_at) FROM logs
+        WHERE message LIKE 'Activating scene: ' || scenes.name
+        AND category = 'scene'
+      )
+    `)
+    console.log('[db] Backfilled last_activated_at from logs')
+  }
+
   // Migration: fix device_rooms CHECK constraint if it doesn't include twinkly/fairy
   // This handles databases created before the constraint was updated
   try {
