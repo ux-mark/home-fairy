@@ -968,8 +968,9 @@ export default function RoomDetailPage() {
         )}
       </div>
 
+      <div className="space-y-4">
       {/* ── Settings card ───────────────────────────────────────────────────── */}
-      <section className="mb-8">
+      <section>
         <Accordion
           id="room-settings"
           title="Room Settings"
@@ -1054,7 +1055,7 @@ export default function RoomDetailPage() {
         const currentMode = system?.mode ?? ''
 
         return (
-          <section className="mb-8">
+          <section>
             <Accordion
               id="room-scenes"
               title="Scenes"
@@ -1190,7 +1191,7 @@ export default function RoomDetailPage() {
       <RoomIntelligence roomName={name!} />
 
       {/* ── Devices section with tabs ───────────────────────────────────────── */}
-      <section className="mb-8">
+      <section>
         <Accordion
           id="room-devices"
           title="Devices"
@@ -1671,9 +1672,10 @@ export default function RoomDetailPage() {
         </Tabs.Root>
         </Accordion>
       </section>
+      </div>
 
       {/* ── Danger zone ────────────────────────────────────────────────────── */}
-      <section className="mb-8">
+      <section className="mt-8">
         <h3 className="mb-3 text-sm font-medium text-red-400">Danger Zone</h3>
         <button
           onClick={() => {

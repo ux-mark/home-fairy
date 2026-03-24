@@ -4,16 +4,11 @@ import { Link } from 'react-router-dom'
 import {
   RefreshCw,
   Power,
-  Wifi,
-  WifiOff,
   Search,
   ChevronDown,
   ChevronUp,
-  ChevronRight,
   LayoutGrid,
   List,
-  Settings,
-  Loader2,
   Shield,
 } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -42,117 +37,12 @@ interface UnifiedDevice {
 }
 
 
-// ── Light usage detail panel ──────────────────────────────────────────────────
-
-function LightUsagePanel({ lightId, roomName }: { lightId: string; roomName: string | null }) {
-  const { data: usage, isLoading } = useQuery({
-    queryKey: ['lifx', 'usage', lightId],
-    queryFn: () => api.lifx.getUsage(lightId),
-    staleTime: 60_000,
-  })
-
-  if (isLoading) {
-    return (
-      <div className="border-t px-4 py-3 flex items-center justify-center gap-2 text-caption text-xs">
-        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        <span>Loading usage info...</span>
-      </div>
-    )
-  }
-
-  if (!usage) return null
-
-  return (
-    <div className="border-t px-4 py-3 space-y-2.5">
-      {/* Room assignment */}
-      {(usage.room || roomName) ? (
-        <Link
-          to={`/rooms/${encodeURIComponent(usage.room || roomName!)}`}
-          className="flex min-h-[44px] items-center gap-2 rounded-lg px-2 -mx-2 text-sm text-fairy-400 transition-colors hover:bg-fairy-500/10"
-        >
-          <span className="text-body text-xs font-medium">Room:</span>
-          <span className="flex-1 truncate">{usage.room || roomName}</span>
-          <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />
-        </Link>
-      ) : (
-        <Link
-          to="/rooms"
-          className="flex min-h-[44px] items-center gap-2 rounded-lg px-2 -mx-2 text-sm text-caption transition-colors hover:bg-fairy-500/10"
-        >
-          <span className="flex-1">Not assigned to any room</span>
-          <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />
-        </Link>
-      )}
-
-      {/* Scenes */}
-      {usage.scenes.length > 0 ? (
-        <div>
-          <p className="text-caption text-xs font-medium mb-1 px-2">
-            Used in {usage.scenes.length} scene{usage.scenes.length !== 1 ? 's' : ''}:
-          </p>
-          <div className="space-y-0.5">
-            {usage.scenes.map(scene => (
-              <Link
-                key={scene.name}
-                to={`/scenes/${encodeURIComponent(scene.name)}`}
-                className="flex min-h-[44px] items-center gap-2 rounded-lg px-2 -mx-2 text-sm text-fairy-400 transition-colors hover:bg-fairy-500/10"
-              >
-                <span className="text-base leading-none" aria-hidden="true">
-                  {scene.icon}
-                </span>
-                <span className="flex-1 truncate">{scene.name}</span>
-                <ChevronRight className="h-4 w-4 shrink-0 opacity-60" />
-              </Link>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <p className="text-caption text-xs px-2">Not used in any scenes</p>
-      )}
-
-      {/* Indicator role */}
-      {usage.indicatorRole === 'subway' && (
-        <Link
-          to="/settings"
-          className="flex min-h-[44px] items-center gap-2 rounded-lg px-2 -mx-2 transition-colors hover:bg-indigo-500/10"
-        >
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full bg-indigo-500/10 px-2.5 py-1 text-xs font-medium text-indigo-400"
-          >
-            <span aria-hidden="true">&#x1F687;</span>
-            Subway indicator light
-          </span>
-          <span className="flex-1" />
-          <Settings className="h-3.5 w-3.5 text-indigo-400 opacity-60" />
-        </Link>
-      )}
-      {usage.indicatorRole === 'weather' && (
-        <Link
-          to="/settings"
-          className="flex min-h-[44px] items-center gap-2 rounded-lg px-2 -mx-2 transition-colors hover:bg-amber-500/10"
-        >
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-400"
-          >
-            <span aria-hidden="true">&#x1F324;&#xFE0F;</span>
-            Weather indicator light
-          </span>
-          <span className="flex-1" />
-          <Settings className="h-3.5 w-3.5 text-amber-400 opacity-60" />
-        </Link>
-      )}
-    </div>
-  )
-}
-
 // ── LIFX Light card ───────────────────────────────────────────────────────────
 
 function LightCard({ device }: { device: UnifiedDevice }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const [expanded, setExpanded] = useState(false)
   const light = device.light!
-  const [brightness, setBrightness] = useState(Math.round(light.brightness * 100))
 
   const isOn = light.power === 'on'
   const colorHex = getLightColorHex(light)
@@ -162,16 +52,6 @@ function LightCard({ device }: { device: UnifiedDevice }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }),
     onError: () => toast({ message: 'Failed to toggle light', type: 'error' }),
   })
-
-  const setStateMutation = useMutation({
-    mutationFn: (b: number) =>
-      api.lifx.setState(`id:${light.id}`, { brightness: b / 100, duration: 0.3 }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }),
-  })
-
-  const handleBrightnessCommit = () => {
-    setStateMutation.mutate(brightness)
-  }
 
   return (
     <div className="card rounded-xl border transition-colors">
@@ -203,13 +83,7 @@ function LightCard({ device }: { device: UnifiedDevice }) {
           </Link>
         )}
 
-        <span title={light.connected ? 'Connected' : 'Disconnected'}>
-          {light.connected ? (
-            <Wifi className="h-3.5 w-3.5 text-fairy-500" />
-          ) : (
-            <WifiOff className="h-3.5 w-3.5 text-red-400" />
-          )}
-        </span>
+        <TypeBadge type="lifx" />
 
         <button
           onClick={() => toggleMutation.mutate()}
@@ -224,55 +98,7 @@ function LightCard({ device }: { device: UnifiedDevice }) {
         >
           <Power className="h-4 w-4" />
         </button>
-
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="text-caption flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors hover:text-[var(--text-secondary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-          aria-label={expanded ? 'Collapse' : 'Expand'}
-        >
-          {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </button>
       </div>
-
-      {expanded && isOn && (
-        <div className="border-t px-4 py-3">
-          <label className="text-body mb-2 flex items-center justify-between text-xs font-medium">
-            <span>Brightness</span>
-            <span className="text-heading">{brightness}%</span>
-          </label>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={brightness}
-            onChange={e => setBrightness(Number(e.target.value))}
-            onPointerUp={handleBrightnessCommit}
-            onKeyUp={e => {
-              if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') handleBrightnessCommit()
-            }}
-            className="h-11 w-full cursor-pointer appearance-none rounded-lg"
-            style={{
-              background: `linear-gradient(to right, var(--bg-primary), ${colorHex})`,
-            }}
-            aria-label={`Brightness for ${light.label}`}
-          />
-          <div className="text-caption mt-2 flex items-center gap-2 text-xs">
-            <div
-              className="h-4 w-4 rounded-full border"
-              style={{ backgroundColor: colorHex, borderColor: 'var(--border-secondary)' }}
-            />
-            {light.product.capabilities.has_color ? (
-              <span>H:{Math.round(light.color.hue)}° S:{Math.round(light.color.saturation * 100)}%</span>
-            ) : (
-              <span>{light.color.kelvin}K</span>
-            )}
-            <span style={{ color: 'var(--border-secondary)' }}>·</span>
-            <span>{light.product.name}</span>
-          </div>
-        </div>
-      )}
-
-      {expanded && <LightUsagePanel lightId={light.id} roomName={device.roomName} />}
     </div>
   )
 }

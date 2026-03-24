@@ -238,7 +238,7 @@ export default function RoomIntelligence({ roomName }: RoomIntelligenceProps) {
   }
 
   return (
-    <section className="mb-4">
+    <section>
       <Accordion
         id="room-intelligence"
         title="Room overview"
