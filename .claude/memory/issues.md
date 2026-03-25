@@ -69,6 +69,12 @@
 - Now that `exclude_from_all_off` config exists, these devices should be renamed to drop the "XO" prefix and have their config flag set instead
 - **Impact**: Cosmetic — the XO prefix no longer has functional meaning but may confuse users
 
+## 2026-03-25 — Sleep mode blocks wake mode trigger, system stuck in Sleep
+- **Severity**: critical
+- **Status**: resolved (2026-03-25)
+- **Description**: Both `sun-mode-scheduler` and `time-trigger-scheduler` unconditionally skipped all mode transitions when the current mode was the configured sleep mode, including the wake mode trigger (e.g. Morning). This left the system permanently stuck in Sleep until manually changed.
+- **Resolution**: Sleep-mode guard now checks if the target mode is the configured wake mode (`pref_night_wake_mode`) — if so, the transition proceeds. (PR #28)
+
 ## 2026-03-22 — GitHub token lacks PR creation permissions
 - **Severity**: low
 - **Status**: resolved (2026-03-22)

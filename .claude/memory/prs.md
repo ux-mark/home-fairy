@@ -219,6 +219,15 @@
 ## PR #26 — Replace Hubitat Kasa integration with direct python-kasa sidecar
 - **Branch**: feature/kasa-direct-integration → dev
 - **Created**: 2026-03-24
-- **Status**: open
+- **Status**: merged
+- **Merge date**: 2026-03-25
+- **Branch cleanup**: pending
 - **Summary**: Python FastAPI sidecar using python-kasa for direct local Kasa device control. New kasa_devices table, Express HTTP client + poller, Kasa API routes, scene/system integration, Kasa Setup page, DevicesPage/DeviceDetailPage Kasa support, HS300 per-outlet monitoring, PM2 config, deploy script updates.
 - **Files**: 8 new + 14 modified — server/kasa/* (4 Python), kasa-client.ts, kasa-poller.ts, routes/kasa.ts, KasaSetupPage.tsx, db/index.ts, index.ts, scene-executor.ts, scenes.ts, system.ts, history-collector.ts, api.ts, DevicesPage.tsx, DeviceDetailPage.tsx, SettingsPage.tsx, App.tsx, Badge.tsx, ecosystem.config.cjs, deploy-to-pi.sh, .gitignore, PROJECT_SPEC.md
+
+## PR #28 — Fix sleep mode blocking wake mode trigger
+- **Branch**: fix/sleep-mode-wake-trigger → dev
+- **Created**: 2026-03-25
+- **Status**: open
+- **Summary**: Both sun and time schedulers unconditionally blocked all transitions during sleep mode, including the wake mode trigger. Fixed to allow wake mode transitions through the sleep guard.
+- **Files**: server/src/lib/sun-mode-scheduler.ts, server/src/lib/time-trigger-scheduler.ts
