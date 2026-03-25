@@ -34,28 +34,14 @@ export function isSceneInSeason(scene: Scene): { hasSeason: boolean; inSeason: b
 }
 
 /**
- * Get the default scene for a room in a given mode.
- * Default = highest priority auto_activate scene that is in-season.
+ * Look up the auto scene name for a room+mode from the auto scenes map.
  */
-export function getDefaultScene(scenes: Scene[], roomName: string, mode: string): Scene | null {
-  const candidates = scenes.filter(s => {
-    if (s.auto_activate === false) return false
-    const rooms = Array.isArray(s.rooms) ? s.rooms : []
-    const modes = Array.isArray(s.modes) ? s.modes : []
-    if (!rooms.some(r => r?.name === roomName)) return false
-    if (!modes.some(m => (m ?? '').toLowerCase() === mode.toLowerCase())) return false
-    const { inSeason } = isSceneInSeason(s)
-    return inSeason
-  })
-
-  if (candidates.length === 0) return null
-
-  // Find the highest priority scene for this room
-  return candidates.reduce((best, scene) => {
-    const bestPriority = best.rooms.find(r => r.name === roomName)?.priority ?? 0
-    const scenePriority = scene.rooms.find(r => r.name === roomName)?.priority ?? 0
-    return scenePriority > bestPriority ? scene : best
-  })
+export function getAutoScene(
+  autoScenes: Record<string, Record<string, string>> | undefined,
+  roomName: string,
+  mode: string,
+): string | null {
+  return autoScenes?.[roomName]?.[mode] ?? null
 }
 
 /**
@@ -71,18 +57,6 @@ export function isStaleScene(scene: Scene, days = 90): boolean {
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - days)
   return lastActivated < cutoff
-}
-
-/**
- * Sort scenes by priority (descending) for a specific room, then alphabetically.
- */
-export function sortScenesByPriority(scenes: Scene[], roomName: string): Scene[] {
-  return [...scenes].sort((a, b) => {
-    const aPriority = a.rooms.find(r => r.name === roomName)?.priority ?? 0
-    const bPriority = b.rooms.find(r => r.name === roomName)?.priority ?? 0
-    if (bPriority !== aPriority) return bPriority - aPriority
-    return a.name.localeCompare(b.name)
-  })
 }
 
 /**

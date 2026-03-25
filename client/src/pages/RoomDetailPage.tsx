@@ -15,7 +15,6 @@ import {
   CheckSquare,
   Square,
   Shield,
-  Star,
   ChevronRight,
   Sparkles,
   Check,
@@ -31,7 +30,7 @@ import { BackLink } from '@/components/ui/BackLink'
 import { TypeBadge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
 import RoomIntelligence from '@/components/room/RoomIntelligence'
-import { getScenesForRoom, getModesForRoom, sortScenesByPriority, getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
+import { getScenesForRoom, getModesForRoom, getAutoScene, isSceneInSeason } from '@/lib/scene-utils'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -317,7 +316,6 @@ export default function RoomDetailPage() {
   const [settingsOpen, setSettingsOpen] = useState(true)
   const [scenesOpen, setScenesOpen] = useState(false)
   const [devicesOpen, setDevicesOpen] = useState(false)
-  const [selectedMode, setSelectedMode] = useState<string | null>(null)
 
   // Open groups state for available lights and devices
   const [openLightGroups, setOpenLightGroups] = useState<Set<string>>(new Set())
@@ -390,10 +388,21 @@ export default function RoomDetailPage() {
     queryFn: api.scenes.getAll,
   })
 
-  // Fetch system current (for current mode)
-  const { data: system } = useQuery({
-    queryKey: ['system', 'current'],
-    queryFn: api.system.getCurrent,
+  // Fetch auto scene assignments for this room
+  const { data: roomAutoScenes } = useQuery({
+    queryKey: ['room-auto-scenes', name],
+    queryFn: () => api.roomAutoScenes.getForRoom(name!),
+    enabled: !!name,
+  })
+
+  // Mutation to set/clear auto scene for a room+mode
+  const setAutoSceneMutation = useMutation({
+    mutationFn: ({ mode, scene }: { mode: string; scene: string | null }) =>
+      api.roomAutoScenes.set(name!, mode, scene),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['room-auto-scenes', name], data)
+      queryClient.invalidateQueries({ queryKey: ['room-auto-scenes'] })
+    },
   })
 
   // Room settings state
@@ -1090,15 +1099,10 @@ export default function RoomDetailPage() {
         </Accordion>
       </section>
 
-      {/* ── Scenes ──────────────────────────────────────────────────────────── */}
+      {/* ── Scenes (mode-grouped) ────────────────────────────────────────────── */}
       {(() => {
         const roomScenes = allScenes && name ? getScenesForRoom(allScenes, name) : []
         const modesForRoom = allScenes && name ? getModesForRoom(allScenes, name) : []
-        const filteredScenes = selectedMode
-          ? roomScenes.filter(s => (Array.isArray(s.modes) ? s.modes : []).some(m => (m ?? '').toLowerCase() === selectedMode.toLowerCase()))
-          : roomScenes
-        const sortedScenes = sortScenesByPriority(filteredScenes, name ?? '')
-        const currentMode = system?.mode ?? ''
 
         return (
           <section>
@@ -1110,45 +1114,7 @@ export default function RoomDetailPage() {
               count={roomScenes.length}
             >
               <div className="pt-1 pb-2">
-                {/* Mode pills */}
-                {modesForRoom.length > 0 && (
-                  <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Filter scenes by mode">
-                    <button
-                      type="button"
-                      aria-pressed={selectedMode === null}
-                      onClick={() => setSelectedMode(null)}
-                      className={cn(
-                        'min-h-[44px] rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
-                        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                        selectedMode === null
-                          ? 'bg-fairy-500 text-white'
-                          : 'surface text-body hover:text-heading',
-                      )}
-                    >
-                      All
-                    </button>
-                    {modesForRoom.map(mode => (
-                      <button
-                        key={mode}
-                        type="button"
-                        aria-pressed={selectedMode === mode}
-                        onClick={() => setSelectedMode(prev => (prev === mode ? null : mode))}
-                        className={cn(
-                          'min-h-[44px] rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
-                          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                          selectedMode === mode
-                            ? 'bg-fairy-500 text-white'
-                            : 'surface text-body hover:text-heading',
-                        )}
-                      >
-                        {mode}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Scene rows */}
-                {sortedScenes.length === 0 ? (
+                {roomScenes.length === 0 ? (
                   <div className="rounded-xl card border p-6 text-center">
                     <Sparkles className="mx-auto mb-3 h-8 w-8 text-[var(--text-caption)]" aria-hidden="true" />
                     <p className="text-sm text-body">No scenes are assigned to this room yet.</p>
@@ -1161,71 +1127,113 @@ export default function RoomDetailPage() {
                     </p>
                   </div>
                 ) : (
-                  <ul className="divide-y divide-[var(--border-secondary)]">
-                    {sortedScenes.map(scene => {
-                      const isActive = room?.current_scene === scene.name
-                      const season = isSceneInSeason(scene)
-                      const isDefault = currentMode
-                        ? getDefaultScene(allScenes ?? [], name ?? '', currentMode)?.name === scene.name
-                        : false
+                  <div className="space-y-4">
+                    {modesForRoom.map(mode => {
+                      const scenesInMode = roomScenes
+                        .filter(s => (Array.isArray(s.modes) ? s.modes : []).some(m => (m ?? '').toLowerCase() === mode.toLowerCase()))
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                      if (scenesInMode.length === 0) return null
+                      const autoSceneName = getAutoScene(roomAutoScenes ? { [name ?? '']: roomAutoScenes } : undefined, name ?? '', mode)
 
                       return (
-                        <li key={scene.name}>
-                          <Link
-                            to={`/scenes/${encodeURIComponent(scene.name)}`}
-                            className={cn(
-                              'group flex min-h-[44px] items-center gap-3 py-3 transition-colors',
-                              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded-lg',
-                            )}
-                          >
-                            {/* Scene icon */}
-                            <div
-                              className="surface flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-base"
-                              aria-hidden="true"
-                            >
-                              {scene.icon || <Sparkles className="h-4 w-4 text-[var(--text-caption)]" />}
-                            </div>
+                        <div key={mode}>
+                          <h4 className="mb-1.5 text-xs font-semibold text-caption">{mode}</h4>
+                          <ul className="divide-y divide-[var(--border-secondary)] rounded-xl card border overflow-hidden">
+                            {scenesInMode.map(scene => {
+                              const isActive = room?.current_scene === scene.name
+                              const season = isSceneInSeason(scene)
+                              const isAuto = scene.name === autoSceneName
+                              const canBeAuto = scene.auto_activate !== false
 
-                            {/* Name and badges */}
-                            <div className="min-w-0 flex-1">
-                              <span className="text-sm font-medium text-heading">{scene.name}</span>
-                              <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                                {isDefault && (
-                                  <span className="flex items-center gap-1 rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400">
-                                    <Star className="h-3 w-3" fill="currentColor" aria-hidden="true" />
-                                    Default
-                                  </span>
-                                )}
-                                {season.hasSeason && (
-                                  <span className={cn(
-                                    'rounded-full px-2 py-0.5 text-[10px] font-medium',
-                                    season.inSeason
-                                      ? 'bg-emerald-500/10 text-emerald-400'
-                                      : 'bg-[var(--surface)] text-[var(--text-caption)]',
-                                  )}>
-                                    {season.label}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
+                              return (
+                                <li key={scene.name} className={cn(
+                                  'flex items-center gap-3 px-3 py-2.5',
+                                  isAuto && 'bg-fairy-500/5',
+                                )}>
+                                  {/* Auto scene radio control */}
+                                  {canBeAuto && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.preventDefault()
+                                        setAutoSceneMutation.mutate({
+                                          mode,
+                                          scene: isAuto ? null : scene.name,
+                                        })
+                                      }}
+                                      aria-label={isAuto ? `Clear ${scene.name} as auto scene for ${mode}` : `Set ${scene.name} as auto scene for ${mode}`}
+                                      className={cn(
+                                        'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+                                        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                                        isAuto
+                                          ? 'border-fairy-500 bg-fairy-500'
+                                          : 'border-[var(--border-secondary)] hover:border-fairy-400',
+                                      )}
+                                    >
+                                      {isAuto && (
+                                        <Activity className="h-3 w-3 text-white" aria-hidden="true" />
+                                      )}
+                                    </button>
+                                  )}
+                                  {!canBeAuto && <span className="w-5 shrink-0" />}
 
-                            {/* Active indicator */}
-                            {isActive && (
-                              <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-fairy-400" aria-label="Currently active">
-                                <span className="h-2 w-2 rounded-full bg-fairy-400" aria-hidden="true" />
-                                Active
-                              </span>
-                            )}
+                                  {/* Link to scene editor */}
+                                  <Link
+                                    to={`/scenes/${encodeURIComponent(scene.name)}`}
+                                    className={cn(
+                                      'group flex min-h-[44px] flex-1 items-center gap-3 transition-colors',
+                                      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded-lg',
+                                    )}
+                                  >
+                                    <div
+                                      className="surface flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-base"
+                                      aria-hidden="true"
+                                    >
+                                      {scene.icon || <Sparkles className="h-4 w-4 text-[var(--text-caption)]" />}
+                                    </div>
 
-                            <ChevronRight
-                              className="h-4 w-4 shrink-0 text-[var(--text-caption)] transition-colors group-hover:text-[var(--text-secondary)]"
-                              aria-hidden="true"
-                            />
-                          </Link>
-                        </li>
+                                    <div className="min-w-0 flex-1">
+                                      <span className="text-sm font-medium text-heading">{scene.name}</span>
+                                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                                        {isAuto && (
+                                          <span className="flex items-center gap-1 rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400">
+                                            <Activity className="h-3 w-3" aria-hidden="true" />
+                                            Auto
+                                          </span>
+                                        )}
+                                        {season.hasSeason && (
+                                          <span className={cn(
+                                            'rounded-full px-2 py-0.5 text-[10px] font-medium',
+                                            season.inSeason
+                                              ? 'bg-emerald-500/10 text-emerald-400'
+                                              : 'bg-[var(--surface)] text-[var(--text-caption)]',
+                                          )}>
+                                            {season.label}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {isActive && (
+                                      <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-fairy-400" aria-label="Currently active">
+                                        <span className="h-2 w-2 rounded-full bg-fairy-400" aria-hidden="true" />
+                                        Active
+                                      </span>
+                                    )}
+
+                                    <ChevronRight
+                                      className="h-4 w-4 shrink-0 text-[var(--text-caption)] transition-colors group-hover:text-[var(--text-secondary)]"
+                                      aria-hidden="true"
+                                    />
+                                  </Link>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        </div>
                       )
                     })}
-                  </ul>
+                  </div>
                 )}
               </div>
             </Accordion>

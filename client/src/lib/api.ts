@@ -65,7 +65,6 @@ export interface Scene {
 
 export interface SceneRoom {
   name: string
-  priority: number
 }
 
 export type LightEffect = 'breathe' | 'pulse' | 'move'
@@ -598,6 +597,16 @@ export const api = {
     getRateLimit: () => fetchApi<RateLimitStatus>('/lifx/rate-limit'),
     getUsage: (lightId: string) =>
       fetchApi<DeviceUsage>('/lifx/lights/' + encodeURIComponent(lightId) + '/usage'),
+  },
+  roomAutoScenes: {
+    getAll: () => fetchApi<Record<string, Record<string, string>>>('/rooms/auto-scenes'),
+    getForRoom: (name: string) =>
+      fetchApi<Record<string, string>>('/rooms/' + encodeURIComponent(name) + '/auto-scenes'),
+    set: (roomName: string, mode: string, scene: string | null) =>
+      fetchApi<Record<string, string>>('/rooms/' + encodeURIComponent(roomName) + '/auto-scene', {
+        method: 'PUT',
+        body: JSON.stringify({ mode, scene }),
+      }),
   },
   rooms: {
     getAll: () => fetchApi<Room[]>('/rooms'),

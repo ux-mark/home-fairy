@@ -105,7 +105,6 @@ interface SceneRow {
 
 interface RoomInfo {
   name: string
-  priority: number
 }
 
 function log(message: string, category = 'scene'): void {
@@ -216,10 +215,10 @@ export async function activateScene(sceneName: string): Promise<void> {
   }
 
   const commands: Command[] = JSON.parse(scene.commands)
-  const rooms = getAll<{ room_name: string; priority: number }>(
-    'SELECT room_name, priority FROM scene_rooms WHERE scene_name = ?',
+  const rooms = getAll<{ room_name: string }>(
+    'SELECT room_name FROM scene_rooms WHERE scene_name = ?',
     [sceneName],
-  ).map(r => ({ name: r.room_name, priority: r.priority }))
+  ).map(r => ({ name: r.room_name }))
 
   log(`Activating scene: ${sceneName}`)
 
@@ -431,10 +430,10 @@ export async function deactivateScene(sceneName: string): Promise<void> {
     throw new Error(`Scene not found: ${sceneName}`)
   }
 
-  const rooms = getAll<{ room_name: string; priority: number }>(
-    'SELECT room_name, priority FROM scene_rooms WHERE scene_name = ?',
+  const rooms = getAll<{ room_name: string }>(
+    'SELECT room_name FROM scene_rooms WHERE scene_name = ?',
     [sceneName],
-  ).map(r => ({ name: r.room_name, priority: r.priority }))
+  ).map(r => ({ name: r.room_name }))
   const commands: Command[] = JSON.parse(scene.commands)
 
   log(`Deactivating scene: ${sceneName}`)

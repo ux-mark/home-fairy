@@ -8,7 +8,7 @@ import {
   Sparkles,
   Search,
   CalendarDays,
-  Star,
+  Activity,
   Clock,
 } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -17,9 +17,8 @@ import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import {
   isSceneInSeason,
-  getDefaultScene,
+  getAutoScene,
   isStaleScene,
-  sortScenesByPriority,
   getModesForRoom,
   formatRelativeTime,
 } from '@/lib/scene-utils'
@@ -69,11 +68,11 @@ function SceneIcon({ icon }: { icon: string }) {
 interface SceneRowProps {
   scene: Scene
   isActive: boolean
-  isDefault: boolean
+  isAuto: boolean
   showRoomBadges?: boolean
 }
 
-function SceneRow({ scene, isActive, isDefault, showRoomBadges }: SceneRowProps) {
+function SceneRow({ scene, isActive, isAuto, showRoomBadges }: SceneRowProps) {
   const season = isSceneInSeason(scene)
   const roomList = Array.isArray(scene.rooms) ? scene.rooms : []
 
@@ -92,10 +91,10 @@ function SceneRow({ scene, isActive, isDefault, showRoomBadges }: SceneRowProps)
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-heading text-sm font-medium">{scene.name}</span>
-          {isDefault && (
-            <span className="flex items-center gap-0.5 text-xs font-medium text-amber-400">
-              <Star className="h-3 w-3" fill="currentColor" aria-hidden="true" />
-              Default
+          {isAuto && (
+            <span className="flex items-center gap-0.5 text-xs font-medium text-fairy-400">
+              <Activity className="h-3 w-3" aria-hidden="true" />
+              Auto
             </span>
           )}
           {isActive && (
@@ -149,6 +148,7 @@ interface RoomAccordionProps {
   allScenes: Scene[]
   filteredScenes: Scene[]
   activeSceneNames: Set<string>
+  autoScenes: Record<string, Record<string, string>> | undefined
   isOpen: boolean
   onToggle: () => void
 }
@@ -158,6 +158,7 @@ function RoomAccordion({
   allScenes,
   filteredScenes,
   activeSceneNames,
+  autoScenes,
   isOpen,
   onToggle,
 }: RoomAccordionProps) {
@@ -182,7 +183,7 @@ function RoomAccordion({
               m => (m ?? '').toLowerCase() === activeMode.toLowerCase(),
             ),
           )
-    return sortScenesByPriority(byMode, roomName)
+    return [...byMode].sort((a, b) => a.name.localeCompare(b.name))
   }, [filteredScenes, roomName, activeMode])
 
   const hasActiveScene = displayScenes.some(s => activeSceneNames.has(s.name))
@@ -235,17 +236,17 @@ function RoomAccordion({
       {/* Scene rows */}
       {displayScenes.length > 0 ? (
         displayScenes.map(scene => {
-          const defaultScene =
+          const autoSceneName =
             activeMode !== 'All'
-              ? getDefaultScene(allScenes, roomName, activeMode)
+              ? getAutoScene(autoScenes, roomName, activeMode)
               : null
-          const isDefault = defaultScene?.name === scene.name
+          const isAuto = autoSceneName === scene.name
           return (
             <SceneRow
               key={scene.name}
               scene={scene}
               isActive={activeSceneNames.has(scene.name)}
-              isDefault={isDefault}
+              isAuto={isAuto}
             />
           )
         })
@@ -340,6 +341,11 @@ export default function ScenesPage() {
   const { data: rooms } = useQuery({
     queryKey: ['rooms'],
     queryFn: api.rooms.getAll,
+  })
+
+  const { data: autoScenes } = useQuery({
+    queryKey: ['room-auto-scenes'],
+    queryFn: api.roomAutoScenes.getAll,
   })
 
   // Active scene names from room data
@@ -614,6 +620,7 @@ export default function ScenesPage() {
                       allScenes={scenes}
                       filteredScenes={filteredScenes}
                       activeSceneNames={activeSceneNames}
+                      autoScenes={autoScenes}
                       isOpen={computedOpenRooms.has(roomName)}
                       onToggle={() => toggleRoom(roomName)}
                     />
@@ -634,7 +641,7 @@ export default function ScenesPage() {
                         key={scene.name}
                         scene={scene}
                         isActive={activeSceneNames.has(scene.name)}
-                        isDefault={false}
+                        isAuto={false}
                       />
                     ))}
                   </Accordion>

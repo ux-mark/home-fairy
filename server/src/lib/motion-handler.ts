@@ -28,12 +28,10 @@ interface RoomRow {
   scene_manual: number
 }
 
-interface SceneRow {
-  name: string
-  auto_activate: number
+interface AutoSceneRow {
+  scene_name: string
   active_from: string | null
   active_to: string | null
-  priority: number
 }
 
 function log(message: string, category = 'motion'): void {
@@ -169,46 +167,41 @@ export class MotionHandler {
     )
   }
 
-  // Find the highest-priority scene for a room in the current mode
-  // Only considers scenes with auto_activate = true
+  // Find the auto scene for a room in the current mode via room_auto_scenes lookup
   private findSceneForRoom(roomName: string): string | null {
     const mode = getCurrentMode()
 
-    // Query for best matching scene: auto_activate, matches room and mode, highest priority
-    const candidates = getAll<{ name: string; priority: number; active_from: string | null; active_to: string | null }>(
-      `SELECT s.name, sr.priority, s.active_from, s.active_to
-       FROM scenes s
-       JOIN scene_rooms sr ON s.name = sr.scene_name
-       JOIN scene_modes sm ON s.name = sm.scene_name
-       WHERE s.auto_activate = 1 AND sr.room_name = ? AND sm.mode_name = ?
-       ORDER BY sr.priority DESC`,
+    // Direct lookup: what is the designated auto scene for this room+mode?
+    const row = getOne<AutoSceneRow>(
+      `SELECT ras.scene_name, s.active_from, s.active_to
+       FROM room_auto_scenes ras
+       JOIN scenes s ON ras.scene_name = s.name
+       WHERE ras.room_name = ? AND ras.mode_name = ? AND s.auto_activate = 1`,
       [roomName, mode],
     )
 
-    // Filter by seasonal date range (can't easily do this in SQL with wraparound logic)
-    for (const candidate of candidates) {
-      if (candidate.active_from && candidate.active_to) {
-        const now = new Date()
-        const month = now.getMonth() + 1
-        const day = now.getDate()
-        const today = month * 100 + day
+    if (!row) return null
 
-        const [fromM, fromD] = candidate.active_from.split('-').map(Number)
-        const [toM, toD] = candidate.active_to.split('-').map(Number)
-        const from = fromM * 100 + fromD
-        const to = toM * 100 + toD
+    // Check seasonal date range
+    if (row.active_from && row.active_to) {
+      const now = new Date()
+      const month = now.getMonth() + 1
+      const day = now.getDate()
+      const today = month * 100 + day
 
-        const inRange = from <= to
-          ? (today >= from && today <= to)
-          : (today >= from || today <= to)
+      const [fromM, fromD] = row.active_from.split('-').map(Number)
+      const [toM, toD] = row.active_to.split('-').map(Number)
+      const from = fromM * 100 + fromD
+      const to = toM * 100 + toD
 
-        if (!inRange) continue
-      }
+      const inRange = from <= to
+        ? (today >= from && today <= to)
+        : (today >= from || today <= to)
 
-      return candidate.name
+      if (!inRange) return null
     }
 
-    return null
+    return row.scene_name
   }
 
   async handleMotionEvent(
@@ -321,7 +314,7 @@ export class MotionHandler {
         return
       }
 
-      // Find highest-priority scene for room + current mode
+      // Find auto scene for room + current mode
       const sceneName = this.findSceneForRoom(roomName)
       if (!sceneName) {
         log(`No scene found for room ${roomName} in current mode`)

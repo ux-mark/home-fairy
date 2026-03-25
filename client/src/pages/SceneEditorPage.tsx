@@ -839,14 +839,8 @@ export default function SceneEditorPage() {
     if (exists) {
       setSceneRooms(sceneRooms.filter(r => r.name !== roomName))
     } else {
-      setSceneRooms([...sceneRooms, { name: roomName, priority: 50 }])
+      setSceneRooms([...sceneRooms, { name: roomName }])
     }
-  }
-
-  const handleRoomPriorityChange = (roomName: string, priority: number) => {
-    setSceneRooms(
-      sceneRooms.map(r => (r.name === roomName ? { ...r, priority } : r)),
-    )
   }
 
   const handleModeToggle = (mode: string) => {
@@ -1439,26 +1433,6 @@ export default function SceneEditorPage() {
                     <span className="min-w-0 flex-1 text-sm font-medium text-heading">
                       {room.name}
                     </span>
-                    {inScene && (
-                      <div className="flex items-center gap-2">
-                        <label className="text-xs text-caption">
-                          Priority
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={inScene.priority}
-                          onChange={e =>
-                            handleRoomPriorityChange(
-                              room.name,
-                              Number(e.target.value),
-                            )
-                          }
-                          className="input-field h-9 w-16 rounded-lg border px-2 text-center text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                        />
-                      </div>
-                    )}
                   </div>
                 )
               })}

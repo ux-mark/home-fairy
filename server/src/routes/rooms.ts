@@ -82,6 +82,24 @@ const updateRoomSchema = z.object({
   last_active: z.string().nullable().optional(),
 })
 
+// GET /auto-scenes — bulk: all auto scene assignments for all rooms
+router.get('/auto-scenes', (_req: Request, res: Response) => {
+  try {
+    const rows = getAll<{ room_name: string; mode_name: string; scene_name: string }>(
+      'SELECT room_name, mode_name, scene_name FROM room_auto_scenes',
+    )
+    const result: Record<string, Record<string, string>> = {}
+    for (const r of rows) {
+      if (!result[r.room_name]) result[r.room_name] = {}
+      result[r.room_name][r.mode_name] = r.scene_name
+    }
+    res.json(result)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
 // GET / — list all rooms
 router.get('/', (_req: Request, res: Response) => {
   try {
@@ -172,6 +190,95 @@ router.put('/:name', (req: Request, res: Response) => {
 
     const updated = getOne<RoomRow>('SELECT * FROM rooms WHERE name = ?', [req.params.name])
     res.json(parseRoom(updated!))
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors })
+      return
+    }
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// GET /:name/auto-scenes — get auto scene assignments for a room (all modes)
+router.get('/:name/auto-scenes', (req: Request, res: Response) => {
+  try {
+    const existing = getOne<RoomRow>('SELECT * FROM rooms WHERE name = ?', [req.params.name])
+    if (!existing) {
+      res.status(404).json({ error: 'Room not found' })
+      return
+    }
+    const rows = getAll<{ mode_name: string; scene_name: string }>(
+      'SELECT mode_name, scene_name FROM room_auto_scenes WHERE room_name = ?',
+      [req.params.name],
+    )
+    const result: Record<string, string> = {}
+    for (const r of rows) {
+      result[r.mode_name] = r.scene_name
+    }
+    res.json(result)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// PUT /:name/auto-scene — set or clear auto scene for a room+mode combo
+router.put('/:name/auto-scene', (req: Request, res: Response) => {
+  try {
+    const existing = getOne<RoomRow>('SELECT * FROM rooms WHERE name = ?', [req.params.name])
+    if (!existing) {
+      res.status(404).json({ error: 'Room not found' })
+      return
+    }
+
+    const body = z.object({
+      mode: z.string().min(1),
+      scene: z.string().min(1).nullable(),
+    }).parse(req.body)
+
+    if (body.scene === null) {
+      // Clear auto scene for this room+mode
+      run('DELETE FROM room_auto_scenes WHERE room_name = ? AND mode_name = ?', [req.params.name, body.mode])
+    } else {
+      // Validate: scene exists, has auto_activate, is assigned to room and mode
+      const scene = getOne<{ name: string; auto_activate: number }>('SELECT name, auto_activate FROM scenes WHERE name = ?', [body.scene])
+      if (!scene) {
+        res.status(400).json({ error: 'Scene not found' })
+        return
+      }
+      if (!scene.auto_activate) {
+        res.status(400).json({ error: 'Scene is not eligible for auto activation' })
+        return
+      }
+      const inRoom = getOne<{ scene_name: string }>('SELECT scene_name FROM scene_rooms WHERE scene_name = ? AND room_name = ?', [body.scene, req.params.name])
+      if (!inRoom) {
+        res.status(400).json({ error: 'Scene is not assigned to this room' })
+        return
+      }
+      const inMode = getOne<{ scene_name: string }>('SELECT scene_name FROM scene_modes WHERE scene_name = ? AND mode_name = ?', [body.scene, body.mode])
+      if (!inMode) {
+        res.status(400).json({ error: 'Scene is not assigned to this mode' })
+        return
+      }
+
+      run(
+        `INSERT INTO room_auto_scenes (room_name, mode_name, scene_name) VALUES (?, ?, ?)
+         ON CONFLICT(room_name, mode_name) DO UPDATE SET scene_name = excluded.scene_name`,
+        [req.params.name, body.mode, body.scene],
+      )
+    }
+
+    // Return updated auto scenes for this room
+    const rows = getAll<{ mode_name: string; scene_name: string }>(
+      'SELECT mode_name, scene_name FROM room_auto_scenes WHERE room_name = ?',
+      [req.params.name],
+    )
+    const result: Record<string, string> = {}
+    for (const r of rows) {
+      result[r.mode_name] = r.scene_name
+    }
+    res.json(result)
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: 'Validation failed', details: err.errors })

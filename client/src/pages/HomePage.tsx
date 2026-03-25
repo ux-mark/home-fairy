@@ -1,11 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Thermometer, Sun, Clock, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock, AlertTriangle, ChevronRight, Star } from 'lucide-react'
+import { Thermometer, Sun, Clock, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock, AlertTriangle, ChevronRight, Activity } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import type { Room, Scene } from '@/lib/api'
-import { getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
+import { getAutoScene, isSceneInSeason } from '@/lib/scene-utils'
 import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
 
 // ── Skeleton loader ──────────────────────────────────────────────────────────
@@ -70,6 +70,7 @@ function RoomCard({
   room,
   scenes,
   currentMode,
+  autoScenes,
   onToggleScene,
   onToggleAuto,
   isLocked,
@@ -77,17 +78,15 @@ function RoomCard({
   room: Room
   scenes: Scene[]
   currentMode: string
+  autoScenes: Record<string, Record<string, string>> | undefined
   onToggleScene: (name: string, isActive: boolean) => void
   onToggleAuto: () => void
   isLocked?: boolean
 }) {
-  // Filter scenes: auto-activate only, match room + mode, in season
+  // Show ALL scenes for room + mode, in season (no auto_activate filter)
   const roomScenes = scenes.filter(s => {
-    // Only show scenes marked for automatic activation
-    if (s.auto_activate === false) return false
     const rooms = Array.isArray(s.rooms) ? s.rooms : []
     const modes = Array.isArray(s.modes) ? s.modes : []
-    // Skip out-of-season scenes
     const { inSeason } = isSceneInSeason(s)
     if (!inSeason) return false
     return (
@@ -95,9 +94,15 @@ function RoomCard({
       modes.some(m => (m ?? '').toLowerCase() === currentMode.toLowerCase())
     )
   })
-  const sortedScenes = [...roomScenes].sort((a, b) => a.name.localeCompare(b.name))
-  const displayScenes = sortedScenes.slice(0, 4)
-  const defaultScene = getDefaultScene(scenes, room.name, currentMode)
+
+  const autoSceneName = getAutoScene(autoScenes, room.name, currentMode)
+
+  // Sort: auto scene first, then alphabetical
+  const sortedScenes = [...roomScenes].sort((a, b) => {
+    if (a.name === autoSceneName) return -1
+    if (b.name === autoSceneName) return 1
+    return a.name.localeCompare(b.name)
+  })
 
   return (
     <div className="card rounded-xl border p-4 transition-colors" style={{ borderColor: 'var(--border-primary)' }}>
@@ -133,7 +138,7 @@ function RoomCard({
           {room.temperature !== null && (
             <span className="flex items-center gap-1">
               <Thermometer className="h-3.5 w-3.5" />
-              {room.temperature !== null && Math.round(room.temperature * 10) / 10}°C
+              {room.temperature !== null && Math.round(room.temperature * 10) / 10}&deg;C
             </span>
           )}
           {room.lux !== null && (
@@ -151,11 +156,12 @@ function RoomCard({
         {formatTimeAgo(room.last_active)}
       </div>
 
-      {/* Quick scene buttons */}
-      {displayScenes.length > 0 && (
+      {/* Quick scene buttons — all scenes, no limit */}
+      {sortedScenes.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {displayScenes.map(scene => {
+          {sortedScenes.map(scene => {
             const isActive = room.current_scene === scene.name
+            const isAuto = scene.name === autoSceneName
             return (
               <button
                 key={scene.name}
@@ -169,13 +175,11 @@ function RoomCard({
                     : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
                 )}
               >
+                {isAuto && (
+                  <Activity className="h-3 w-3 text-fairy-400" aria-label="Auto scene for this mode" />
+                )}
                 {scene.icon && <span className="text-sm">{scene.icon}</span>}
                 {scene.name}
-                {defaultScene?.name === scene.name && (
-                  <span className="flex items-center gap-0.5 text-fairy-400" aria-label="Default scene for this mode">
-                    <Star className="h-2.5 w-2.5" fill="currentColor" />
-                  </span>
-                )}
               </button>
             )
           })}
@@ -222,7 +226,7 @@ function WeatherCard() {
       <div className="flex-1">
         <div className="flex items-baseline gap-2">
           <span className="text-heading text-2xl font-semibold">
-            {displayTemp}°{unit}
+            {displayTemp}&deg;{unit}
           </span>
           <span className="text-body text-sm capitalize">
             {weather.description}
@@ -281,9 +285,6 @@ function QuickActions() {
     },
     onError: () => toast({ message: 'Failed to set guest night', type: 'error' }),
   })
-
-  // Also invalidate night status from QuickActions context
-  // This is handled by the queryKey: ['system'] invalidation above
 
   const anyPending = allOffMutation.isPending || nighttimeMutation.isPending || guestNightMutation.isPending
 
@@ -417,7 +418,6 @@ function MtaCard() {
           const DirIcon = stop.config.direction === 'S' ? ArrowDown : ArrowUp
           const dotColor = STATUS_DOT_COLORS[stop.status]
           const next = stop.nextArrival
-          // Use catchableTrain when available (re-evaluated status from a later train)
           const displayTrain = stop.catchableTrain ?? next
           const buffer = displayTrain ? displayTrain.minutesAway - stop.config.walkTime : 0
 
@@ -515,6 +515,11 @@ export default function HomePage() {
     queryKey: ['system', 'night-status'],
     queryFn: api.system.getNightStatus,
     refetchInterval: 10_000,
+  })
+
+  const { data: autoScenes } = useQuery({
+    queryKey: ['room-auto-scenes'],
+    queryFn: api.roomAutoScenes.getAll,
   })
 
   const { data: dashboardData } = useQuery({
@@ -698,6 +703,7 @@ export default function HomePage() {
                   room={room}
                   scenes={scenes ?? []}
                   currentMode={currentMode}
+                  autoScenes={autoScenes}
                   onToggleScene={(name, isActive) =>
                     isActive
                       ? deactivateSceneMutation.mutate(name)

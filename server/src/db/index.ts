@@ -184,7 +184,6 @@ export function initDb(): void {
     CREATE TABLE IF NOT EXISTS scene_rooms (
       scene_name TEXT NOT NULL REFERENCES scenes(name) ON UPDATE CASCADE ON DELETE CASCADE,
       room_name TEXT NOT NULL REFERENCES rooms(name) ON UPDATE CASCADE ON DELETE CASCADE,
-      priority INTEGER DEFAULT 0,
       PRIMARY KEY (scene_name, room_name)
     );
 
@@ -193,10 +192,68 @@ export function initDb(): void {
       mode_name TEXT NOT NULL REFERENCES modes(name) ON UPDATE CASCADE ON DELETE CASCADE,
       PRIMARY KEY (scene_name, mode_name)
     );
+
+    CREATE TABLE IF NOT EXISTS room_auto_scenes (
+      room_name TEXT NOT NULL REFERENCES rooms(name) ON UPDATE CASCADE ON DELETE CASCADE,
+      mode_name TEXT NOT NULL REFERENCES modes(name) ON UPDATE CASCADE ON DELETE CASCADE,
+      scene_name TEXT NOT NULL REFERENCES scenes(name) ON UPDATE CASCADE ON DELETE CASCADE,
+      PRIMARY KEY (room_name, mode_name)
+    );
   `)
+
+  // Migrate: priority column → room_auto_scenes table
+  migrateScenePriority()
 
   // Seed defaults for a fresh database
   seedDefaults()
+}
+
+function migrateScenePriority(): void {
+  // Check if scene_rooms still has a priority column
+  const cols = db.prepare("PRAGMA table_info(scene_rooms)").all() as { name: string }[]
+  const hasPriority = cols.some(c => c.name === 'priority')
+  if (!hasPriority) return
+
+  console.log('[db] Migrating scene priority → room_auto_scenes')
+
+  db.transaction(() => {
+    // Populate room_auto_scenes from existing priority data:
+    // For each room+mode combo, pick the highest-priority auto_activate scene
+    const autoScenes = db.prepare(`
+      SELECT sr.room_name, sm.mode_name, sr.scene_name, sr.priority
+      FROM scene_rooms sr
+      JOIN scene_modes sm ON sr.scene_name = sm.scene_name
+      JOIN scenes s ON sr.scene_name = s.name
+      WHERE s.auto_activate = 1
+      ORDER BY sr.room_name, sm.mode_name, sr.priority DESC
+    `).all() as { room_name: string; mode_name: string; scene_name: string; priority: number }[]
+
+    const seen = new Set<string>()
+    const insert = db.prepare(
+      'INSERT OR IGNORE INTO room_auto_scenes (room_name, mode_name, scene_name) VALUES (?, ?, ?)',
+    )
+    for (const row of autoScenes) {
+      const key = `${row.room_name}::${row.mode_name}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      insert.run(row.room_name, row.mode_name, row.scene_name)
+    }
+
+    // Recreate scene_rooms without the priority column
+    db.exec(`
+      CREATE TABLE scene_rooms_new (
+        scene_name TEXT NOT NULL REFERENCES scenes(name) ON UPDATE CASCADE ON DELETE CASCADE,
+        room_name TEXT NOT NULL REFERENCES rooms(name) ON UPDATE CASCADE ON DELETE CASCADE,
+        PRIMARY KEY (scene_name, room_name)
+      );
+      INSERT INTO scene_rooms_new (scene_name, room_name)
+        SELECT scene_name, room_name FROM scene_rooms;
+      DROP TABLE scene_rooms;
+      ALTER TABLE scene_rooms_new RENAME TO scene_rooms;
+    `)
+
+    console.log(`[db] Migrated ${seen.size} auto scene assignments, removed priority column`)
+  })()
 }
 
 function seedDefaults(): void {

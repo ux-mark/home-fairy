@@ -35,10 +35,10 @@ function parseScene(row: SceneRow) {
   try { commands = JSON.parse(row.commands) } catch { commands = [] }
   try { tags = JSON.parse(row.tags) } catch { tags = [] }
 
-  const rooms = getAll<{ room_name: string; priority: number }>(
-    'SELECT room_name, priority FROM scene_rooms WHERE scene_name = ?',
+  const rooms = getAll<{ room_name: string }>(
+    'SELECT room_name FROM scene_rooms WHERE scene_name = ?',
     [row.name],
-  ).map(r => ({ name: r.room_name, priority: r.priority }))
+  ).map(r => ({ name: r.room_name }))
 
   const modes = getAll<{ mode_name: string }>(
     'SELECT mode_name FROM scene_modes WHERE scene_name = ?',
@@ -90,7 +90,7 @@ const commandSchema = z.object({
 const createSceneSchema = z.object({
   name: z.string().min(1),
   icon: z.string().optional(),
-  rooms: z.array(z.object({ name: z.string(), priority: z.union([z.number(), z.string().transform(Number)]) })).optional(),
+  rooms: z.array(z.object({ name: z.string() })).optional(),
   modes: z.array(z.string()).optional(),
   commands: z.array(commandSchema).optional(),
   tags: z.array(z.string()).optional(),
@@ -102,7 +102,7 @@ const createSceneSchema = z.object({
 const updateSceneSchema = z.object({
   name: z.string().min(1).optional(),
   icon: z.string().optional(),
-  rooms: z.array(z.object({ name: z.string(), priority: z.union([z.number(), z.string().transform(Number)]) })).optional(),
+  rooms: z.array(z.object({ name: z.string() })).optional(),
   modes: z.array(z.string()).optional(),
   commands: z.array(commandSchema).optional(),
   tags: z.array(z.string()).optional(),
@@ -134,7 +134,7 @@ router.get('/:name', (req: Request, res: Response) => {
 
     // Get lights for each room in the scene
     const roomLights: Record<string, LightRoomRow[]> = {}
-    for (const room of parsed.rooms as { name: string; priority: number }[]) {
+    for (const room of parsed.rooms as { name: string }[]) {
       roomLights[room.name] = getAll<LightRoomRow>(
         'SELECT * FROM light_rooms WHERE room_name = ?',
         [room.name],
@@ -170,9 +170,9 @@ router.post('/', (req: Request, res: Response) => {
 
       // Insert room assignments
       if (body.rooms) {
-        const insertRoom = db.prepare('INSERT INTO scene_rooms (scene_name, room_name, priority) VALUES (?, ?, ?)')
+        const insertRoom = db.prepare('INSERT INTO scene_rooms (scene_name, room_name) VALUES (?, ?)')
         for (const room of body.rooms) {
-          insertRoom.run(body.name, room.name, Number(room.priority) || 0)
+          insertRoom.run(body.name, room.name)
         }
       }
 
@@ -232,18 +232,49 @@ router.put('/:name', (req: Request, res: Response) => {
       const lookupName = body.name ?? req.params.name
 
       if (body.rooms !== undefined) {
+        // Clean up room_auto_scenes for rooms no longer in this scene
+        const newRoomNames = body.rooms.map(r => r.name)
+        const oldRoomNames = getAll<{ room_name: string }>(
+          'SELECT room_name FROM scene_rooms WHERE scene_name = ?', [lookupName],
+        ).map(r => r.room_name)
+        const removedRooms = oldRoomNames.filter(rn => !newRoomNames.includes(rn))
+        if (removedRooms.length > 0) {
+          const placeholders = removedRooms.map(() => '?').join(',')
+          run(
+            `DELETE FROM room_auto_scenes WHERE scene_name = ? AND room_name IN (${placeholders})`,
+            [lookupName, ...removedRooms],
+          )
+        }
+
         run('DELETE FROM scene_rooms WHERE scene_name = ?', [lookupName])
-        const insertRoom = db.prepare('INSERT INTO scene_rooms (scene_name, room_name, priority) VALUES (?, ?, ?)')
+        const insertRoom = db.prepare('INSERT INTO scene_rooms (scene_name, room_name) VALUES (?, ?)')
         for (const room of body.rooms) {
-          insertRoom.run(lookupName, room.name, Number(room.priority) || 0)
+          insertRoom.run(lookupName, room.name)
         }
       }
       if (body.modes !== undefined) {
+        // Clean up room_auto_scenes for modes no longer assigned to this scene
+        const removedModes = getAll<{ mode_name: string }>(
+          'SELECT mode_name FROM scene_modes WHERE scene_name = ?', [lookupName],
+        ).map(m => m.mode_name).filter(mn => !body.modes!.includes(mn))
+        if (removedModes.length > 0) {
+          const placeholders = removedModes.map(() => '?').join(',')
+          run(
+            `DELETE FROM room_auto_scenes WHERE scene_name = ? AND mode_name IN (${placeholders})`,
+            [lookupName, ...removedModes],
+          )
+        }
+
         run('DELETE FROM scene_modes WHERE scene_name = ?', [lookupName])
         const insertMode = db.prepare('INSERT INTO scene_modes (scene_name, mode_name) VALUES (?, ?)')
         for (const mode of body.modes) {
           insertMode.run(lookupName, mode)
         }
+      }
+
+      // If auto_activate toggled off, remove all room_auto_scenes entries for this scene
+      if (body.auto_activate === false) {
+        run('DELETE FROM room_auto_scenes WHERE scene_name = ?', [lookupName])
       }
     })
 
