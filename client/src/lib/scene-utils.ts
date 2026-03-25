@@ -34,14 +34,14 @@ export function isSceneInSeason(scene: Scene): { hasSeason: boolean; inSeason: b
 }
 
 /**
- * Look up the auto scene name for a room+mode from the auto scenes map.
+ * Look up the default scene name for a room+mode from the default scenes map.
  */
-export function getAutoScene(
-  autoScenes: Record<string, Record<string, string>> | undefined,
+export function getDefaultScene(
+  defaultScenes: Record<string, Record<string, string>> | undefined,
   roomName: string,
   mode: string,
 ): string | null {
-  return autoScenes?.[roomName]?.[mode] ?? null
+  return defaultScenes?.[roomName]?.[mode] ?? null
 }
 
 /**

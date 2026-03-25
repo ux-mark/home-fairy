@@ -82,11 +82,11 @@ const updateRoomSchema = z.object({
   last_active: z.string().nullable().optional(),
 })
 
-// GET /auto-scenes — bulk: all auto scene assignments for all rooms
-router.get('/auto-scenes', (_req: Request, res: Response) => {
+// GET /default-scenes — bulk: all default scene assignments for all rooms
+router.get('/default-scenes', (_req: Request, res: Response) => {
   try {
     const rows = getAll<{ room_name: string; mode_name: string; scene_name: string }>(
-      'SELECT room_name, mode_name, scene_name FROM room_auto_scenes',
+      'SELECT room_name, mode_name, scene_name FROM room_default_scenes',
     )
     const result: Record<string, Record<string, string>> = {}
     for (const r of rows) {
@@ -200,8 +200,8 @@ router.put('/:name', (req: Request, res: Response) => {
   }
 })
 
-// GET /:name/auto-scenes — get auto scene assignments for a room (all modes)
-router.get('/:name/auto-scenes', (req: Request, res: Response) => {
+// GET /:name/default-scenes — get default scene assignments for a room (all modes)
+router.get('/:name/default-scenes', (req: Request, res: Response) => {
   try {
     const existing = getOne<RoomRow>('SELECT * FROM rooms WHERE name = ?', [req.params.name])
     if (!existing) {
@@ -209,7 +209,7 @@ router.get('/:name/auto-scenes', (req: Request, res: Response) => {
       return
     }
     const rows = getAll<{ mode_name: string; scene_name: string }>(
-      'SELECT mode_name, scene_name FROM room_auto_scenes WHERE room_name = ?',
+      'SELECT mode_name, scene_name FROM room_default_scenes WHERE room_name = ?',
       [req.params.name],
     )
     const result: Record<string, string> = {}
@@ -223,8 +223,8 @@ router.get('/:name/auto-scenes', (req: Request, res: Response) => {
   }
 })
 
-// PUT /:name/auto-scene — set or clear auto scene for a room+mode combo
-router.put('/:name/auto-scene', (req: Request, res: Response) => {
+// PUT /:name/default-scene — set or clear default scene for a room+mode combo
+router.put('/:name/default-scene', (req: Request, res: Response) => {
   try {
     const existing = getOne<RoomRow>('SELECT * FROM rooms WHERE name = ?', [req.params.name])
     if (!existing) {
@@ -238,17 +238,13 @@ router.put('/:name/auto-scene', (req: Request, res: Response) => {
     }).parse(req.body)
 
     if (body.scene === null) {
-      // Clear auto scene for this room+mode
-      run('DELETE FROM room_auto_scenes WHERE room_name = ? AND mode_name = ?', [req.params.name, body.mode])
+      // Clear default scene for this room+mode
+      run('DELETE FROM room_default_scenes WHERE room_name = ? AND mode_name = ?', [req.params.name, body.mode])
     } else {
-      // Validate: scene exists, has auto_activate, is assigned to room and mode
-      const scene = getOne<{ name: string; auto_activate: number }>('SELECT name, auto_activate FROM scenes WHERE name = ?', [body.scene])
+      // Validate: scene exists, is assigned to room and mode
+      const scene = getOne<{ name: string }>('SELECT name FROM scenes WHERE name = ?', [body.scene])
       if (!scene) {
         res.status(400).json({ error: 'Scene not found' })
-        return
-      }
-      if (!scene.auto_activate) {
-        res.status(400).json({ error: 'Scene is not eligible for auto activation' })
         return
       }
       const inRoom = getOne<{ scene_name: string }>('SELECT scene_name FROM scene_rooms WHERE scene_name = ? AND room_name = ?', [body.scene, req.params.name])
@@ -263,15 +259,15 @@ router.put('/:name/auto-scene', (req: Request, res: Response) => {
       }
 
       run(
-        `INSERT INTO room_auto_scenes (room_name, mode_name, scene_name) VALUES (?, ?, ?)
+        `INSERT INTO room_default_scenes (room_name, mode_name, scene_name) VALUES (?, ?, ?)
          ON CONFLICT(room_name, mode_name) DO UPDATE SET scene_name = excluded.scene_name`,
         [req.params.name, body.mode, body.scene],
       )
     }
 
-    // Return updated auto scenes for this room
+    // Return updated default scenes for this room
     const rows = getAll<{ mode_name: string; scene_name: string }>(
-      'SELECT mode_name, scene_name FROM room_auto_scenes WHERE room_name = ?',
+      'SELECT mode_name, scene_name FROM room_default_scenes WHERE room_name = ?',
       [req.params.name],
     )
     const result: Record<string, string> = {}

@@ -30,7 +30,7 @@ import { BackLink } from '@/components/ui/BackLink'
 import { TypeBadge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
 import RoomIntelligence from '@/components/room/RoomIntelligence'
-import { getScenesForRoom, getModesForRoom, getAutoScene, isSceneInSeason } from '@/lib/scene-utils'
+import { getScenesForRoom, getModesForRoom, getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -388,20 +388,20 @@ export default function RoomDetailPage() {
     queryFn: api.scenes.getAll,
   })
 
-  // Fetch auto scene assignments for this room
-  const { data: roomAutoScenes } = useQuery({
-    queryKey: ['room-auto-scenes', name],
-    queryFn: () => api.roomAutoScenes.getForRoom(name!),
+  // Fetch default scene assignments for this room
+  const { data: roomDefaultScenes } = useQuery({
+    queryKey: ['room-default-scenes', name],
+    queryFn: () => api.roomDefaultScenes.getForRoom(name!),
     enabled: !!name,
   })
 
-  // Mutation to set/clear auto scene for a room+mode
-  const setAutoSceneMutation = useMutation({
+  // Mutation to set/clear default scene for a room+mode
+  const setDefaultSceneMutation = useMutation({
     mutationFn: ({ mode, scene }: { mode: string; scene: string | null }) =>
-      api.roomAutoScenes.set(name!, mode, scene),
+      api.roomDefaultScenes.set(name!, mode, scene),
     onSuccess: (data) => {
-      queryClient.setQueryData(['room-auto-scenes', name], data)
-      queryClient.invalidateQueries({ queryKey: ['room-auto-scenes'] })
+      queryClient.setQueryData(['room-default-scenes', name], data)
+      queryClient.invalidateQueries({ queryKey: ['room-default-scenes'] })
     },
   })
 
@@ -1133,7 +1133,7 @@ export default function RoomDetailPage() {
                         .filter(s => (Array.isArray(s.modes) ? s.modes : []).some(m => (m ?? '').toLowerCase() === mode.toLowerCase()))
                         .sort((a, b) => a.name.localeCompare(b.name))
                       if (scenesInMode.length === 0) return null
-                      const autoSceneName = getAutoScene(roomAutoScenes ? { [name ?? '']: roomAutoScenes } : undefined, name ?? '', mode)
+                      const defaultSceneName = getDefaultScene(roomDefaultScenes ? { [name ?? '']: roomDefaultScenes } : undefined, name ?? '', mode)
 
                       return (
                         <div key={mode}>
@@ -1142,40 +1142,36 @@ export default function RoomDetailPage() {
                             {scenesInMode.map(scene => {
                               const isActive = room?.current_scene === scene.name
                               const season = isSceneInSeason(scene)
-                              const isAuto = scene.name === autoSceneName
-                              const canBeAuto = scene.auto_activate !== false
+                              const isDefault = scene.name === defaultSceneName
 
                               return (
                                 <li key={scene.name} className={cn(
                                   'flex items-center gap-3 px-3 py-2.5',
-                                  isAuto && 'bg-fairy-500/5',
+                                  isDefault && 'bg-fairy-500/5',
                                 )}>
-                                  {/* Auto scene radio control */}
-                                  {canBeAuto && (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => {
-                                        e.preventDefault()
-                                        setAutoSceneMutation.mutate({
-                                          mode,
-                                          scene: isAuto ? null : scene.name,
-                                        })
-                                      }}
-                                      aria-label={isAuto ? `Clear ${scene.name} as auto scene for ${mode}` : `Set ${scene.name} as auto scene for ${mode}`}
-                                      className={cn(
-                                        'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
-                                        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                                        isAuto
-                                          ? 'border-fairy-500 bg-fairy-500'
-                                          : 'border-[var(--border-secondary)] hover:border-fairy-400',
-                                      )}
-                                    >
-                                      {isAuto && (
-                                        <Activity className="h-3 w-3 text-white" aria-hidden="true" />
-                                      )}
-                                    </button>
-                                  )}
-                                  {!canBeAuto && <span className="w-5 shrink-0" />}
+                                  {/* Default scene radio control */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      setDefaultSceneMutation.mutate({
+                                        mode,
+                                        scene: isDefault ? null : scene.name,
+                                      })
+                                    }}
+                                    aria-label={isDefault ? `Clear ${scene.name} as default scene for ${mode}` : `Set ${scene.name} as default scene for ${mode}`}
+                                    className={cn(
+                                      'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+                                      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                                      isDefault
+                                        ? 'border-fairy-500 bg-fairy-500'
+                                        : 'border-[var(--border-secondary)] hover:border-fairy-400',
+                                    )}
+                                  >
+                                    {isDefault && (
+                                      <Activity className="h-3 w-3 text-white" aria-hidden="true" />
+                                    )}
+                                  </button>
 
                                   {/* Link to scene editor */}
                                   <Link
@@ -1195,10 +1191,10 @@ export default function RoomDetailPage() {
                                     <div className="min-w-0 flex-1">
                                       <span className="text-sm font-medium text-heading">{scene.name}</span>
                                       <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                                        {isAuto && (
+                                        {isDefault && (
                                           <span className="flex items-center gap-1 rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400">
                                             <Activity className="h-3 w-3" aria-hidden="true" />
-                                            Auto
+                                            Default
                                           </span>
                                         )}
                                         {season.hasSeason && (

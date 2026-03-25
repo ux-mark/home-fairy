@@ -35,7 +35,6 @@ export function initDb(): void {
       icon TEXT DEFAULT '',
       commands TEXT DEFAULT '[]',
       tags TEXT DEFAULT '[]',
-      auto_activate INTEGER DEFAULT 1,
       active_from TEXT,
       active_to TEXT,
       last_activated_at TEXT DEFAULT NULL,
@@ -193,7 +192,7 @@ export function initDb(): void {
       PRIMARY KEY (scene_name, mode_name)
     );
 
-    CREATE TABLE IF NOT EXISTS room_auto_scenes (
+    CREATE TABLE IF NOT EXISTS room_default_scenes (
       room_name TEXT NOT NULL REFERENCES rooms(name) ON UPDATE CASCADE ON DELETE CASCADE,
       mode_name TEXT NOT NULL REFERENCES modes(name) ON UPDATE CASCADE ON DELETE CASCADE,
       scene_name TEXT NOT NULL REFERENCES scenes(name) ON UPDATE CASCADE ON DELETE CASCADE,
@@ -201,11 +200,56 @@ export function initDb(): void {
     );
   `)
 
-  // Migrate: priority column → room_auto_scenes table
+  // Migrate: rename room_auto_scenes → room_default_scenes
+  migrateAutoToDefault()
+
+  // Migrate: drop auto_activate column from scenes
+  migrateDropAutoActivate()
+
+  // Migrate: priority column → room_default_scenes table
   migrateScenePriority()
 
   // Seed defaults for a fresh database
   seedDefaults()
+}
+
+function migrateAutoToDefault(): void {
+  // Rename room_auto_scenes to room_default_scenes if old table exists and new one doesn't
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]
+  const hasOld = tables.some(t => t.name === 'room_auto_scenes')
+  const hasNew = tables.some(t => t.name === 'room_default_scenes')
+  if (!hasOld || hasNew) return
+
+  console.log('[db] Migrating room_auto_scenes → room_default_scenes')
+  db.exec('ALTER TABLE room_auto_scenes RENAME TO room_default_scenes')
+  console.log('[db] Renamed room_auto_scenes to room_default_scenes')
+}
+
+function migrateDropAutoActivate(): void {
+  // Drop auto_activate column from scenes table if it exists
+  const cols = db.prepare("PRAGMA table_info(scenes)").all() as { name: string }[]
+  const hasAutoActivate = cols.some(c => c.name === 'auto_activate')
+  if (!hasAutoActivate) return
+
+  console.log('[db] Migrating scenes: dropping auto_activate column')
+  db.exec(`
+    CREATE TABLE scenes_new (
+      name TEXT PRIMARY KEY,
+      icon TEXT DEFAULT '',
+      commands TEXT DEFAULT '[]',
+      tags TEXT DEFAULT '[]',
+      active_from TEXT,
+      active_to TEXT,
+      last_activated_at TEXT DEFAULT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+    INSERT INTO scenes_new (name, icon, commands, tags, active_from, active_to, last_activated_at, created_at, updated_at)
+      SELECT name, icon, commands, tags, active_from, active_to, last_activated_at, created_at, updated_at FROM scenes;
+    DROP TABLE scenes;
+    ALTER TABLE scenes_new RENAME TO scenes;
+  `)
+  console.log('[db] Removed auto_activate column from scenes')
 }
 
 function migrateScenePriority(): void {
@@ -214,25 +258,23 @@ function migrateScenePriority(): void {
   const hasPriority = cols.some(c => c.name === 'priority')
   if (!hasPriority) return
 
-  console.log('[db] Migrating scene priority → room_auto_scenes')
+  console.log('[db] Migrating scene priority → room_default_scenes')
 
   db.transaction(() => {
-    // Populate room_auto_scenes from existing priority data:
-    // For each room+mode combo, pick the highest-priority auto_activate scene
-    const autoScenes = db.prepare(`
+    // Populate room_default_scenes from existing priority data:
+    // For each room+mode combo, pick the highest-priority scene
+    const defaultScenes = db.prepare(`
       SELECT sr.room_name, sm.mode_name, sr.scene_name, sr.priority
       FROM scene_rooms sr
       JOIN scene_modes sm ON sr.scene_name = sm.scene_name
-      JOIN scenes s ON sr.scene_name = s.name
-      WHERE s.auto_activate = 1
       ORDER BY sr.room_name, sm.mode_name, sr.priority DESC
     `).all() as { room_name: string; mode_name: string; scene_name: string; priority: number }[]
 
     const seen = new Set<string>()
     const insert = db.prepare(
-      'INSERT OR IGNORE INTO room_auto_scenes (room_name, mode_name, scene_name) VALUES (?, ?, ?)',
+      'INSERT OR IGNORE INTO room_default_scenes (room_name, mode_name, scene_name) VALUES (?, ?, ?)',
     )
-    for (const row of autoScenes) {
+    for (const row of defaultScenes) {
       const key = `${row.room_name}::${row.mode_name}`
       if (seen.has(key)) continue
       seen.add(key)
@@ -252,7 +294,7 @@ function migrateScenePriority(): void {
       ALTER TABLE scene_rooms_new RENAME TO scene_rooms;
     `)
 
-    console.log(`[db] Migrated ${seen.size} auto scene assignments, removed priority column`)
+    console.log(`[db] Migrated ${seen.size} default scene assignments, removed priority column`)
   })()
 }
 

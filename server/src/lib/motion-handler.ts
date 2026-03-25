@@ -28,7 +28,7 @@ interface RoomRow {
   scene_manual: number
 }
 
-interface AutoSceneRow {
+interface DefaultSceneRow {
   scene_name: string
   active_from: string | null
   active_to: string | null
@@ -167,16 +167,16 @@ export class MotionHandler {
     )
   }
 
-  // Find the auto scene for a room in the current mode via room_auto_scenes lookup
+  // Find the default scene for a room in the current mode via room_default_scenes lookup
   private findSceneForRoom(roomName: string): string | null {
     const mode = getCurrentMode()
 
-    // Direct lookup: what is the designated auto scene for this room+mode?
-    const row = getOne<AutoSceneRow>(
-      `SELECT ras.scene_name, s.active_from, s.active_to
-       FROM room_auto_scenes ras
-       JOIN scenes s ON ras.scene_name = s.name
-       WHERE ras.room_name = ? AND ras.mode_name = ? AND s.auto_activate = 1`,
+    // Direct lookup: what is the designated default scene for this room+mode?
+    const row = getOne<DefaultSceneRow>(
+      `SELECT rds.scene_name, s.active_from, s.active_to
+       FROM room_default_scenes rds
+       JOIN scenes s ON rds.scene_name = s.name
+       WHERE rds.room_name = ? AND rds.mode_name = ?`,
       [roomName, mode],
     )
 

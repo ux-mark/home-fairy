@@ -12,7 +12,6 @@ interface SceneRow {
   tags: string
   active_from: string | null
   active_to: string | null
-  auto_activate: number
   last_activated_at: string | null
   created_at: string
   updated_at: string
@@ -53,7 +52,6 @@ function parseScene(row: SceneRow) {
     tags: Array.isArray(tags) ? tags : [],
     active_from: row.active_from ?? null,
     active_to: row.active_to ?? null,
-    auto_activate: Boolean(row.auto_activate ?? 1),
     last_activated_at: row.last_activated_at ?? null,
   }
 }
@@ -96,7 +94,6 @@ const createSceneSchema = z.object({
   tags: z.array(z.string()).optional(),
   active_from: z.string().regex(/^\d{2}-\d{2}$/).nullable().optional(),
   active_to: z.string().regex(/^\d{2}-\d{2}$/).nullable().optional(),
-  auto_activate: z.boolean().optional(),
 })
 
 const updateSceneSchema = z.object({
@@ -108,7 +105,6 @@ const updateSceneSchema = z.object({
   tags: z.array(z.string()).optional(),
   active_from: z.string().regex(/^\d{2}-\d{2}$/).nullable().optional(),
   active_to: z.string().regex(/^\d{2}-\d{2}$/).nullable().optional(),
-  auto_activate: z.boolean().optional(),
 })
 
 // GET / — list all scenes
@@ -155,8 +151,8 @@ router.post('/', (req: Request, res: Response) => {
 
     const createTransaction = db.transaction(() => {
       run(
-        `INSERT INTO scenes (name, icon, commands, tags, active_from, active_to, auto_activate)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO scenes (name, icon, commands, tags, active_from, active_to)
+         VALUES (?, ?, ?, ?, ?, ?)`,
         [
           body.name,
           body.icon ?? '',
@@ -164,7 +160,6 @@ router.post('/', (req: Request, res: Response) => {
           JSON.stringify(body.tags ?? []),
           body.active_from ?? null,
           body.active_to ?? null,
-          body.auto_activate !== undefined ? Number(body.auto_activate) : 1,
         ],
       )
 
@@ -219,7 +214,6 @@ router.put('/:name', (req: Request, res: Response) => {
       if (body.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(body.tags)) }
       if (body.active_from !== undefined) { fields.push('active_from = ?'); values.push(body.active_from) }
       if (body.active_to !== undefined) { fields.push('active_to = ?'); values.push(body.active_to) }
-      if (body.auto_activate !== undefined) { fields.push('auto_activate = ?'); values.push(Number(body.auto_activate)) }
 
       if (fields.length > 0) {
         fields.push("updated_at = datetime('now')")
@@ -232,7 +226,7 @@ router.put('/:name', (req: Request, res: Response) => {
       const lookupName = body.name ?? req.params.name
 
       if (body.rooms !== undefined) {
-        // Clean up room_auto_scenes for rooms no longer in this scene
+        // Clean up room_default_scenes for rooms no longer in this scene
         const newRoomNames = body.rooms.map(r => r.name)
         const oldRoomNames = getAll<{ room_name: string }>(
           'SELECT room_name FROM scene_rooms WHERE scene_name = ?', [lookupName],
@@ -241,7 +235,7 @@ router.put('/:name', (req: Request, res: Response) => {
         if (removedRooms.length > 0) {
           const placeholders = removedRooms.map(() => '?').join(',')
           run(
-            `DELETE FROM room_auto_scenes WHERE scene_name = ? AND room_name IN (${placeholders})`,
+            `DELETE FROM room_default_scenes WHERE scene_name = ? AND room_name IN (${placeholders})`,
             [lookupName, ...removedRooms],
           )
         }
@@ -253,14 +247,14 @@ router.put('/:name', (req: Request, res: Response) => {
         }
       }
       if (body.modes !== undefined) {
-        // Clean up room_auto_scenes for modes no longer assigned to this scene
+        // Clean up room_default_scenes for modes no longer assigned to this scene
         const removedModes = getAll<{ mode_name: string }>(
           'SELECT mode_name FROM scene_modes WHERE scene_name = ?', [lookupName],
         ).map(m => m.mode_name).filter(mn => !body.modes!.includes(mn))
         if (removedModes.length > 0) {
           const placeholders = removedModes.map(() => '?').join(',')
           run(
-            `DELETE FROM room_auto_scenes WHERE scene_name = ? AND mode_name IN (${placeholders})`,
+            `DELETE FROM room_default_scenes WHERE scene_name = ? AND mode_name IN (${placeholders})`,
             [lookupName, ...removedModes],
           )
         }
@@ -270,11 +264,6 @@ router.put('/:name', (req: Request, res: Response) => {
         for (const mode of body.modes) {
           insertMode.run(lookupName, mode)
         }
-      }
-
-      // If auto_activate toggled off, remove all room_auto_scenes entries for this scene
-      if (body.auto_activate === false) {
-        run('DELETE FROM room_auto_scenes WHERE scene_name = ?', [lookupName])
       }
     })
 

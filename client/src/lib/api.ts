@@ -59,7 +59,6 @@ export interface Scene {
   tags: string[]
   active_from?: string | null // "MM-DD" format
   active_to?: string | null   // "MM-DD" format
-  auto_activate?: boolean     // false = manual only, true = motion-triggered + shown on room cards
   last_activated_at?: string | null
 }
 
@@ -598,12 +597,12 @@ export const api = {
     getUsage: (lightId: string) =>
       fetchApi<DeviceUsage>('/lifx/lights/' + encodeURIComponent(lightId) + '/usage'),
   },
-  roomAutoScenes: {
-    getAll: () => fetchApi<Record<string, Record<string, string>>>('/rooms/auto-scenes'),
+  roomDefaultScenes: {
+    getAll: () => fetchApi<Record<string, Record<string, string>>>('/rooms/default-scenes'),
     getForRoom: (name: string) =>
-      fetchApi<Record<string, string>>('/rooms/' + encodeURIComponent(name) + '/auto-scenes'),
+      fetchApi<Record<string, string>>('/rooms/' + encodeURIComponent(name) + '/default-scenes'),
     set: (roomName: string, mode: string, scene: string | null) =>
-      fetchApi<Record<string, string>>('/rooms/' + encodeURIComponent(roomName) + '/auto-scene', {
+      fetchApi<Record<string, string>>('/rooms/' + encodeURIComponent(roomName) + '/default-scene', {
         method: 'PUT',
         body: JSON.stringify({ mode, scene }),
       }),

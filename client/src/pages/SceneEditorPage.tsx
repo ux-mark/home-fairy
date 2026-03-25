@@ -18,6 +18,7 @@ import {
   Timer,
   Link2,
   CalendarDays,
+  Activity,
 } from 'lucide-react'
 import * as Tabs from '@radix-ui/react-tabs'
 import * as Switch from '@radix-ui/react-switch'
@@ -491,6 +492,11 @@ export default function SceneEditorPage() {
     queryFn: api.kasa.getDevices,
   })
 
+  const { data: allDefaultScenes } = useQuery({
+    queryKey: ['room-default-scenes'],
+    queryFn: api.roomDefaultScenes.getAll,
+  })
+
   const availableModes = systemCurrent?.all_modes ?? [...DEFAULT_MODES]
 
   // ── Form state ───────────────────────────────────────────────────────────
@@ -522,9 +528,6 @@ export default function SceneEditorPage() {
   const [sceneTimerDuration, setSceneTimerDuration] = useState(300)
   const [chainSceneEnabled, setChainSceneEnabled] = useState(false)
   const [chainSceneTarget, setChainSceneTarget] = useState('')
-
-  // Auto-activate (show on room cards + motion-triggered)
-  const [autoActivate, setAutoActivate] = useState(true)
 
   // Season date range state
   const [seasonEnabled, setSeasonEnabled] = useState(false)
@@ -608,9 +611,6 @@ export default function SceneEditorPage() {
         setChainSceneEnabled(true)
         setChainSceneTarget(chainCmd.name || '')
       }
-
-      // Initialize auto-activate
-      setAutoActivate(scene.auto_activate !== false)
 
       // Initialize season date range
       if (scene.active_from && scene.active_to) {
@@ -789,7 +789,6 @@ export default function SceneEditorPage() {
         active_to: seasonEnabled
           ? `${String(seasonToMonth).padStart(2, '0')}-${String(seasonToDay).padStart(2, '0')}`
           : null,
-        auto_activate: autoActivate,
       }
 
       return api.scenes.update(name!, data)
@@ -810,6 +809,15 @@ export default function SceneEditorPage() {
     },
     onError: () =>
       toast({ message: 'Failed to delete scene', type: 'error' }),
+  })
+
+  const setDefaultSceneMutation = useMutation({
+    mutationFn: ({ roomName, mode, scene }: { roomName: string; mode: string; scene: string | null }) =>
+      api.roomDefaultScenes.set(roomName, mode, scene),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['room-default-scenes'] })
+    },
+    onError: () => toast({ message: 'Failed to update default scene', type: 'error' }),
   })
 
   // ── Handlers ───────────────────────────────────────────────────────────
@@ -1467,37 +1475,70 @@ export default function SceneEditorPage() {
             </div>
           </section>
 
-          {/* Auto-activate */}
+          {/* Default scene */}
           <section>
-            <h3 className="mb-3 text-sm font-medium text-body">Automation</h3>
-            <div className="card rounded-lg border p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-heading text-sm font-medium">Auto-activate</p>
-                  <p className="text-caption text-xs mt-0.5">
-                    {autoActivate
-                      ? 'This scene can be triggered by motion sensors and appears on room cards'
-                      : 'This scene is manual only — activate it from the Scenes page or Quick Actions'}
-                  </p>
-                </div>
-                <Switch.Root
-                  checked={autoActivate}
-                  onCheckedChange={setAutoActivate}
-                  className={cn(
-                    'relative h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors',
-                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                    autoActivate ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
-                  )}
-                >
-                  <Switch.Thumb
-                    className={cn(
-                      'block h-4 w-4 rounded-full bg-white shadow transition-transform',
-                      autoActivate ? 'translate-x-5' : 'translate-x-1',
-                    )}
-                  />
-                </Switch.Root>
-              </div>
-            </div>
+            <h3 className="mb-3 text-sm font-medium text-body">Default scene</h3>
+            <p className="mb-3 text-xs text-caption">
+              Set this scene as the default for a room and mode. The default scene activates automatically when motion is detected.
+            </p>
+            {sceneRooms.length === 0 ? (
+              <p className="text-xs text-caption">Assign this scene to at least one room to set it as a default.</p>
+            ) : modes.length === 0 ? (
+              <p className="text-xs text-caption">Assign this scene to at least one mode to set it as a default.</p>
+            ) : (
+              <ul className="space-y-2">
+                {sceneRooms.flatMap(sceneRoom =>
+                  modes.map(mode => {
+                    const currentDefault = allDefaultScenes?.[sceneRoom.name]?.[mode] ?? null
+                    const isThisDefault = currentDefault === name
+                    const replacingScene = !isThisDefault && currentDefault
+                      ? allScenes?.find(s => s.name === currentDefault)
+                      : null
+
+                    return (
+                      <li key={`${sceneRoom.name}::${mode}`} className="card rounded-lg border p-3">
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDefaultSceneMutation.mutate({
+                                roomName: sceneRoom.name,
+                                mode,
+                                scene: isThisDefault ? null : (name ?? null),
+                              })
+                            }}
+                            aria-label={isThisDefault
+                              ? `Clear as default scene for ${sceneRoom.name} / ${mode}`
+                              : `Set as default scene for ${sceneRoom.name} / ${mode}`}
+                            className={cn(
+                              'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+                              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                              isThisDefault
+                                ? 'border-fairy-500 bg-fairy-500'
+                                : 'border-[var(--border-secondary)] hover:border-fairy-400',
+                            )}
+                          >
+                            {isThisDefault && (
+                              <Activity className="h-3 w-3 text-white" aria-hidden="true" />
+                            )}
+                          </button>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-heading">
+                              {sceneRoom.name} / {mode}
+                            </p>
+                            {replacingScene && (
+                              <p className="mt-0.5 text-xs text-caption">
+                                Currently &quot;{replacingScene.name}&quot; is the default. Setting this scene will replace it.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    )
+                  })
+                )}
+              </ul>
+            )}
           </section>
 
           {/* Season */}

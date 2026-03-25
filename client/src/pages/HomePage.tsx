@@ -5,7 +5,7 @@ import { api } from '@/lib/api'
 import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import type { Room, Scene } from '@/lib/api'
-import { getAutoScene, isSceneInSeason } from '@/lib/scene-utils'
+import { getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
 
 // ── Skeleton loader ──────────────────────────────────────────────────────────
@@ -70,7 +70,7 @@ function RoomCard({
   room,
   scenes,
   currentMode,
-  autoScenes,
+  defaultScenes,
   onToggleScene,
   onToggleAuto,
   isLocked,
@@ -78,12 +78,12 @@ function RoomCard({
   room: Room
   scenes: Scene[]
   currentMode: string
-  autoScenes: Record<string, Record<string, string>> | undefined
+  defaultScenes: Record<string, Record<string, string>> | undefined
   onToggleScene: (name: string, isActive: boolean) => void
   onToggleAuto: () => void
   isLocked?: boolean
 }) {
-  // Show ALL scenes for room + mode, in season (no auto_activate filter)
+  // Show ALL scenes for room + mode, in season
   const roomScenes = scenes.filter(s => {
     const rooms = Array.isArray(s.rooms) ? s.rooms : []
     const modes = Array.isArray(s.modes) ? s.modes : []
@@ -95,12 +95,12 @@ function RoomCard({
     )
   })
 
-  const autoSceneName = getAutoScene(autoScenes, room.name, currentMode)
+  const defaultSceneName = getDefaultScene(defaultScenes, room.name, currentMode)
 
-  // Sort: auto scene first, then alphabetical
+  // Sort: default scene first, then alphabetical
   const sortedScenes = [...roomScenes].sort((a, b) => {
-    if (a.name === autoSceneName) return -1
-    if (b.name === autoSceneName) return 1
+    if (a.name === defaultSceneName) return -1
+    if (b.name === defaultSceneName) return 1
     return a.name.localeCompare(b.name)
   })
 
@@ -161,7 +161,7 @@ function RoomCard({
         <div className="flex flex-wrap gap-1.5">
           {sortedScenes.map(scene => {
             const isActive = room.current_scene === scene.name
-            const isAuto = scene.name === autoSceneName
+            const isDefault = scene.name === defaultSceneName
             return (
               <button
                 key={scene.name}
@@ -175,8 +175,8 @@ function RoomCard({
                     : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
                 )}
               >
-                {isAuto && (
-                  <Activity className="h-3 w-3 text-fairy-400" aria-label="Auto scene for this mode" />
+                {isDefault && (
+                  <Activity className="h-3 w-3 text-fairy-400" aria-label="Default scene for this mode" />
                 )}
                 {scene.icon && <span className="text-sm">{scene.icon}</span>}
                 {scene.name}
@@ -517,9 +517,9 @@ export default function HomePage() {
     refetchInterval: 10_000,
   })
 
-  const { data: autoScenes } = useQuery({
-    queryKey: ['room-auto-scenes'],
-    queryFn: api.roomAutoScenes.getAll,
+  const { data: defaultScenes } = useQuery({
+    queryKey: ['room-default-scenes'],
+    queryFn: api.roomDefaultScenes.getAll,
   })
 
   const { data: dashboardData } = useQuery({
@@ -703,7 +703,7 @@ export default function HomePage() {
                   room={room}
                   scenes={scenes ?? []}
                   currentMode={currentMode}
-                  autoScenes={autoScenes}
+                  defaultScenes={defaultScenes}
                   onToggleScene={(name, isActive) =>
                     isActive
                       ? deactivateSceneMutation.mutate(name)

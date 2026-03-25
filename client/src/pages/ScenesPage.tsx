@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import {
   isSceneInSeason,
-  getAutoScene,
+  getDefaultScene,
   isStaleScene,
   getModesForRoom,
   formatRelativeTime,
@@ -68,11 +68,11 @@ function SceneIcon({ icon }: { icon: string }) {
 interface SceneRowProps {
   scene: Scene
   isActive: boolean
-  isAuto: boolean
+  isDefault: boolean
   showRoomBadges?: boolean
 }
 
-function SceneRow({ scene, isActive, isAuto, showRoomBadges }: SceneRowProps) {
+function SceneRow({ scene, isDefault, isActive, showRoomBadges }: SceneRowProps) {
   const season = isSceneInSeason(scene)
   const roomList = Array.isArray(scene.rooms) ? scene.rooms : []
 
@@ -91,10 +91,10 @@ function SceneRow({ scene, isActive, isAuto, showRoomBadges }: SceneRowProps) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-heading text-sm font-medium">{scene.name}</span>
-          {isAuto && (
+          {isDefault && (
             <span className="flex items-center gap-0.5 text-xs font-medium text-fairy-400">
               <Activity className="h-3 w-3" aria-hidden="true" />
-              Auto
+              Default
             </span>
           )}
           {isActive && (
@@ -148,7 +148,7 @@ interface RoomAccordionProps {
   allScenes: Scene[]
   filteredScenes: Scene[]
   activeSceneNames: Set<string>
-  autoScenes: Record<string, Record<string, string>> | undefined
+  defaultScenes: Record<string, Record<string, string>> | undefined
   isOpen: boolean
   onToggle: () => void
 }
@@ -158,7 +158,7 @@ function RoomAccordion({
   allScenes,
   filteredScenes,
   activeSceneNames,
-  autoScenes,
+  defaultScenes,
   isOpen,
   onToggle,
 }: RoomAccordionProps) {
@@ -236,17 +236,17 @@ function RoomAccordion({
       {/* Scene rows */}
       {displayScenes.length > 0 ? (
         displayScenes.map(scene => {
-          const autoSceneName =
+          const defaultSceneName =
             activeMode !== 'All'
-              ? getAutoScene(autoScenes, roomName, activeMode)
+              ? getDefaultScene(defaultScenes, roomName, activeMode)
               : null
-          const isAuto = autoSceneName === scene.name
+          const isDefault = defaultSceneName === scene.name
           return (
             <SceneRow
               key={scene.name}
               scene={scene}
               isActive={activeSceneNames.has(scene.name)}
-              isAuto={isAuto}
+              isDefault={isDefault}
             />
           )
         })
@@ -343,9 +343,9 @@ export default function ScenesPage() {
     queryFn: api.rooms.getAll,
   })
 
-  const { data: autoScenes } = useQuery({
-    queryKey: ['room-auto-scenes'],
-    queryFn: api.roomAutoScenes.getAll,
+  const { data: defaultScenes } = useQuery({
+    queryKey: ['room-default-scenes'],
+    queryFn: api.roomDefaultScenes.getAll,
   })
 
   // Active scene names from room data
@@ -620,7 +620,7 @@ export default function ScenesPage() {
                       allScenes={scenes}
                       filteredScenes={filteredScenes}
                       activeSceneNames={activeSceneNames}
-                      autoScenes={autoScenes}
+                      defaultScenes={defaultScenes}
                       isOpen={computedOpenRooms.has(roomName)}
                       onToggle={() => toggleRoom(roomName)}
                     />
@@ -641,7 +641,7 @@ export default function ScenesPage() {
                         key={scene.name}
                         scene={scene}
                         isActive={activeSceneNames.has(scene.name)}
-                        isAuto={false}
+                        isDefault={false}
                       />
                     ))}
                   </Accordion>
