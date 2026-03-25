@@ -232,6 +232,9 @@ function migrateDropAutoActivate(): void {
   if (!hasAutoActivate) return
 
   console.log('[db] Migrating scenes: dropping auto_activate column')
+  // Disable FK constraints during table recreation to avoid CASCADE deletes
+  // on scene_rooms, scene_modes, and room_default_scenes
+  db.pragma('foreign_keys = OFF')
   db.exec(`
     CREATE TABLE scenes_new (
       name TEXT PRIMARY KEY,
@@ -249,6 +252,7 @@ function migrateDropAutoActivate(): void {
     DROP TABLE scenes;
     ALTER TABLE scenes_new RENAME TO scenes;
   `)
+  db.pragma('foreign_keys = ON')
   console.log('[db] Removed auto_activate column from scenes')
 }
 
