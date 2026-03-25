@@ -12,7 +12,7 @@ import {
   Shield,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { Light, DeviceRoomAssignment, HubDevice } from '@/lib/api'
+import type { Light, DeviceRoomAssignment, HubDevice, KasaDevice } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { TypeBadge } from '@/components/ui/Badge'
@@ -22,18 +22,19 @@ import { EmptyState } from '@/components/ui/EmptyState'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type DeviceFilter = 'all' | 'lights' | 'switches' | 'twinkly' | 'fairy'
+type DeviceFilter = 'all' | 'lights' | 'switches' | 'twinkly' | 'fairy' | 'kasa'
 type GroupMode = 'room' | 'type'
 
 interface UnifiedDevice {
   key: string
-  kind: 'lifx' | 'switch' | 'dimmer' | 'twinkly' | 'fairy'
+  kind: 'lifx' | 'switch' | 'dimmer' | 'twinkly' | 'fairy' | 'kasa'
   label: string
   roomName: string | null
   isOn: boolean
   light?: Light
   hubDevice?: HubDevice
   deviceRoom?: DeviceRoomAssignment
+  kasaDevice?: KasaDevice
 }
 
 
@@ -244,10 +245,141 @@ function HubDeviceCard({ device }: { device: UnifiedDevice }) {
   )
 }
 
+// ── Kasa device card ──────────────────────────────────────────────────────────
+
+function KasaDeviceCard({ device }: { device: UnifiedDevice }) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const kasa = device.kasaDevice!
+
+  const toggleMutation = useMutation({
+    mutationFn: () => api.kasa.sendCommand(kasa.id, device.isOn ? 'off' : 'on'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kasa', 'devices'] })
+      toast({ message: `${device.label} turned ${device.isOn ? 'off' : 'on'}` })
+    },
+    onError: () => toast({ message: `Failed to control ${device.label}`, type: 'error' }),
+  })
+
+  const attrs = kasa.attributes
+  const powerWatts = attrs.power
+  const energyKwh = attrs.energy
+
+  // Kasa plug/strip/outlet badge label
+  const badgeLabel =
+    kasa.device_type === 'plug' ? 'Kasa plug'
+    : kasa.device_type === 'strip' ? 'Kasa strip'
+    : kasa.device_type === 'outlet' ? 'Kasa outlet'
+    : kasa.device_type === 'switch' ? 'Kasa switch'
+    : 'Kasa dimmer'
+
+  return (
+    <div className="card rounded-xl border transition-colors">
+      <div className="flex items-center gap-3 p-4">
+        {/* Online/offline indicator */}
+        <div
+          className={cn(
+            'h-2 w-2 shrink-0 rounded-full',
+            kasa.is_online ? 'bg-emerald-400' : 'bg-slate-500',
+          )}
+          aria-hidden="true"
+          title={kasa.is_online ? 'Online' : 'Offline'}
+        />
+
+        <div className="min-w-0 flex-1">
+          <Link
+            to={`/devices/kasa/${encodeURIComponent(kasa.id)}`}
+            className={cn(
+              'block text-sm font-medium hover:text-fairy-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              device.isOn ? 'text-heading' : 'text-body',
+            )}
+          >
+            {device.label}
+          </Link>
+          <p className="text-caption mt-0.5 text-xs">
+            {device.roomName && <span>{device.roomName} · </span>}
+            {kasa.model && <span>{kasa.model}</span>}
+            {device.isOn && kasa.has_emeter && typeof powerWatts === 'number' && (
+              <span> · {powerWatts.toFixed(1)} W</span>
+            )}
+            {typeof energyKwh === 'number' && energyKwh > 0 && (
+              <span> · {energyKwh.toFixed(2)} kWh</span>
+            )}
+          </p>
+        </div>
+
+        {device.roomName && (
+          <Link
+            to={`/rooms/${encodeURIComponent(device.roomName)}`}
+            className="hidden shrink-0 rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400 hover:bg-fairy-500/20 transition-colors sm:inline-flex"
+          >
+            {device.roomName}
+          </Link>
+        )}
+
+        <TypeBadge type={kasa.device_type} label={badgeLabel} />
+
+        <button
+          onClick={() => toggleMutation.mutate()}
+          disabled={toggleMutation.isPending || !kasa.is_online}
+          className={cn(
+            'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            !kasa.is_online && 'cursor-not-allowed opacity-40',
+            device.isOn && kasa.is_online
+              ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
+              : 'text-caption hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-secondary)]',
+          )}
+          aria-label={
+            !kasa.is_online
+              ? `${device.label} is offline`
+              : `Turn ${device.label} ${device.isOn ? 'off' : 'on'}`
+          }
+        >
+          <Power className="h-4 w-4" />
+        </button>
+      </div>
+
+      {/* Child outlets for strip devices */}
+      {kasa.children && kasa.children.length > 0 && (
+        <div className="divide-y divide-[var(--border-secondary)] border-t">
+          {kasa.children.map(child => {
+            const childOn = child.attributes.switch === 'on'
+            const childPower = child.attributes.power
+            return (
+              <div key={child.id} className="flex items-center gap-3 px-4 py-3 pl-8">
+                <div
+                  className={cn(
+                    'h-1.5 w-1.5 shrink-0 rounded-full',
+                    childOn ? 'bg-emerald-400' : 'bg-slate-500',
+                  )}
+                  aria-hidden="true"
+                />
+                <div className="min-w-0 flex-1">
+                  <Link
+                    to={`/devices/kasa/${encodeURIComponent(child.id)}`}
+                    className="block text-xs font-medium text-body hover:text-fairy-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                  >
+                    {child.label}
+                  </Link>
+                  {childOn && kasa.has_emeter && typeof childPower === 'number' && (
+                    <p className="text-caption text-[10px]">{childPower.toFixed(1)} W</p>
+                  )}
+                </div>
+                <TypeBadge type="outlet" label="Kasa outlet" />
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Unified device card dispatcher ────────────────────────────────────────────
 
 function DeviceCard({ device }: { device: UnifiedDevice }) {
   if (device.kind === 'lifx') return <LightCard device={device} />
+  if (device.kind === 'kasa') return <KasaDeviceCard device={device} />
   return <HubDeviceCard device={device} />
 }
 
@@ -276,6 +408,14 @@ export default function DevicesPage() {
     queryFn: api.hubitat.getDevices,
   })
 
+  const {
+    data: kasaDevices,
+    isLoading: kasaLoading,
+  } = useQuery({
+    queryKey: ['kasa', 'devices'],
+    queryFn: api.kasa.getDevices,
+  })
+
   const { data: lightAssignments } = useQuery({
     queryKey: ['lights', 'rooms'],
     queryFn: api.lights.getRoomAssignments,
@@ -286,7 +426,7 @@ export default function DevicesPage() {
     queryFn: api.hubitat.getDeviceRooms,
   })
 
-  const isLoading = lightsLoading || hubLoading
+  const isLoading = lightsLoading || hubLoading || kasaLoading
 
   // Build light ID -> room name map
   const lightRoomMap = useMemo(() => {
@@ -344,8 +484,27 @@ export default function DevicesPage() {
       }
     }
 
+    // Kasa devices — only show top-level devices (plugs/strips/standalone switches).
+    // Strip children (outlets) are rendered inline within the KasaDeviceCard.
+    if (kasaDevices) {
+      for (const d of kasaDevices) {
+        // Skip outlets that belong to a strip — they render as children
+        if (d.parent_id !== null) continue
+
+        const assignment = deviceRoomMap.get(d.id)
+        devices.push({
+          key: `kasa-${d.id}`,
+          kind: 'kasa',
+          label: d.label,
+          roomName: assignment?.room_name ?? null,
+          isOn: d.attributes.switch === 'on',
+          kasaDevice: d,
+        })
+      }
+    }
+
     return devices
-  }, [lights, hubDevices, lightRoomMap, deviceRoomMap])
+  }, [lights, hubDevices, kasaDevices, lightRoomMap, deviceRoomMap])
 
   // Filter
   const filtered = useMemo(() => {
@@ -356,6 +515,8 @@ export default function DevicesPage() {
         result = result.filter(d => d.kind === 'lifx')
       } else if (filter === 'switches') {
         result = result.filter(d => d.kind === 'switch' || d.kind === 'dimmer')
+      } else if (filter === 'kasa') {
+        result = result.filter(d => d.kind === 'kasa')
       } else {
         result = result.filter(d => d.kind === filter)
       }
@@ -366,7 +527,9 @@ export default function DevicesPage() {
       result = result.filter(
         d =>
           d.label.toLowerCase().includes(q) ||
-          (d.roomName ?? '').toLowerCase().includes(q),
+          (d.roomName ?? '').toLowerCase().includes(q) ||
+          // Also search Kasa model
+          (d.kasaDevice?.model ?? '').toLowerCase().includes(q),
       )
     }
 
@@ -391,17 +554,20 @@ export default function DevicesPage() {
     return { groups, unassigned }
   }, [filtered, groupMode])
 
+  const kasaCount = useMemo(() => allDevices.filter(d => d.kind === 'kasa').length, [allDevices])
+
   const filterTabs: { value: DeviceFilter; label: string; count: number }[] = useMemo(() => [
     { value: 'all', label: 'All', count: allDevices.length },
     { value: 'lights', label: 'Lights', count: allDevices.filter(d => d.kind === 'lifx').length },
     { value: 'switches', label: 'Switches', count: allDevices.filter(d => d.kind === 'switch' || d.kind === 'dimmer').length },
     { value: 'twinkly', label: 'Twinkly', count: allDevices.filter(d => d.kind === 'twinkly').length },
     { value: 'fairy', label: 'Fairy', count: allDevices.filter(d => d.kind === 'fairy').length },
-  ], [allDevices])
+    { value: 'kasa', label: 'Kasa', count: kasaCount },
+  ], [allDevices, kasaCount])
 
   const groupLabel = (key: string) => {
     if (groupMode === 'type') {
-      const labels: Record<string, string> = { lifx: 'LIFX Lights', switch: 'Switches', dimmer: 'Dimmers', twinkly: 'Twinkly', fairy: 'Fairy' }
+      const labels: Record<string, string> = { lifx: 'LIFX Lights', switch: 'Switches', dimmer: 'Dimmers', twinkly: 'Twinkly', fairy: 'Fairy', kasa: 'Kasa' }
       return labels[key] ?? key
     }
     return key
@@ -416,6 +582,7 @@ export default function DevicesPage() {
           onClick={() => {
             queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] })
             queryClient.invalidateQueries({ queryKey: ['hubitat'] })
+            queryClient.invalidateQueries({ queryKey: ['kasa'] })
           }}
           disabled={lightsFetching}
           className={cn(

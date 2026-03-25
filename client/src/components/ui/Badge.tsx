@@ -11,6 +11,10 @@ const typeColors: Record<string, string> = {
   twinkly: 'bg-pink-500/15 text-pink-400',
   fairy: 'bg-cyan-500/15 text-cyan-400',
   motion: 'bg-green-500/15 text-green-400',
+  // Kasa device types
+  plug: 'bg-teal-500/15 text-teal-400',
+  strip: 'bg-teal-500/15 text-teal-400',
+  outlet: 'bg-teal-500/15 text-teal-400',
 }
 
 interface TypeBadgeProps {

@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
-import { ChevronRight } from 'lucide-react'
-import { api, type DeviceInsightsData } from '@/lib/api'
+import { useParams, useMatch, Link } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { ChevronRight, Power } from 'lucide-react'
+import { api, type DeviceInsightsData, type KasaDevice } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
 import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
@@ -10,6 +10,7 @@ import { BackLink } from '@/components/ui/BackLink'
 import { TypeBadge } from '@/components/ui/Badge'
 import { Accordion } from '@/components/ui/Accordion'
 import { FilterChip } from '@/components/ui/FilterChip'
+import { useToast } from '@/hooks/useToast'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -67,6 +68,9 @@ function attributeUnit(key: string): string {
   if (lower === 'battery') return '%'
   if (lower === 'energy') return 'kWh'
   if (lower === 'temperature') return '°'
+  if (lower === 'power') return 'W'
+  if (lower === 'voltage') return 'V'
+  if (lower === 'current') return 'A'
   return ''
 }
 
@@ -256,6 +260,145 @@ function HeadlineInsights({
   )
 }
 
+// ── Kasa at-a-glance section ──────────────────────────────────────────────────
+
+function formatRuntime(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
+}
+
+function rssiLabel(rssi: number | null): { text: string; color: string } {
+  if (rssi === null) return { text: 'Unknown', color: 'text-caption' }
+  if (rssi >= -50) return { text: 'Strong', color: 'text-emerald-400' }
+  if (rssi >= -70) return { text: 'Good', color: 'text-amber-400' }
+  return { text: 'Weak', color: 'text-red-400' }
+}
+
+function KasaAtAGlance({ device }: { device: KasaDevice }) {
+  const attrs = device.attributes
+  const hasAny =
+    typeof attrs.power === 'number' ||
+    typeof attrs.voltage === 'number' ||
+    typeof attrs.current === 'number' ||
+    typeof attrs.runtime_today === 'number' ||
+    typeof attrs.energy === 'number'
+
+  if (!hasAny) return null
+
+  return (
+    <section aria-labelledby="kasa-glance-heading">
+      <div className="card rounded-xl border p-5">
+        <h2 id="kasa-glance-heading" className="mb-4 text-sm font-semibold text-heading">
+          At a glance
+        </h2>
+        <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          {typeof attrs.power === 'number' && (
+            <div>
+              <dt className="text-xs text-caption">Power draw</dt>
+              <dd className="mt-0.5 text-xl font-bold tabular-nums text-heading">
+                {attrs.power.toFixed(1)}<span className="ml-0.5 text-sm font-normal text-caption">W</span>
+              </dd>
+            </div>
+          )}
+          {typeof attrs.voltage === 'number' && (
+            <div>
+              <dt className="text-xs text-caption">Voltage</dt>
+              <dd className="mt-0.5 text-xl font-bold tabular-nums text-heading">
+                {attrs.voltage.toFixed(1)}<span className="ml-0.5 text-sm font-normal text-caption">V</span>
+              </dd>
+            </div>
+          )}
+          {typeof attrs.current === 'number' && (
+            <div>
+              <dt className="text-xs text-caption">Current</dt>
+              <dd className="mt-0.5 text-xl font-bold tabular-nums text-heading">
+                {attrs.current.toFixed(3)}<span className="ml-0.5 text-sm font-normal text-caption">A</span>
+              </dd>
+            </div>
+          )}
+          {typeof attrs.energy === 'number' && (
+            <div>
+              <dt className="text-xs text-caption">Total energy</dt>
+              <dd className="mt-0.5 text-xl font-bold tabular-nums text-heading">
+                {attrs.energy.toFixed(2)}<span className="ml-0.5 text-sm font-normal text-caption">kWh</span>
+              </dd>
+            </div>
+          )}
+          {typeof attrs.runtime_today === 'number' && (
+            <div>
+              <dt className="text-xs text-caption">Runtime today</dt>
+              <dd className="mt-0.5 text-xl font-bold tabular-nums text-heading">
+                {formatRuntime(attrs.runtime_today)}
+              </dd>
+            </div>
+          )}
+          {typeof attrs.runtime_month === 'number' && (
+            <div>
+              <dt className="text-xs text-caption">Runtime this month</dt>
+              <dd className="mt-0.5 text-xl font-bold tabular-nums text-heading">
+                {formatRuntime(attrs.runtime_month)}
+              </dd>
+            </div>
+          )}
+        </dl>
+      </div>
+    </section>
+  )
+}
+
+// ── Kasa device info section ───────────────────────────────────────────────────
+
+function KasaDeviceInfo({ device }: { device: KasaDevice }) {
+  const signal = rssiLabel(device.rssi)
+
+  const rows: { label: string; value: string | null | undefined }[] = [
+    { label: 'Model', value: device.model },
+    { label: 'Firmware', value: device.firmware },
+    { label: 'Hardware', value: device.hardware },
+    { label: 'IP address', value: device.ip_address },
+    { label: 'MAC address', value: device.id },
+  ]
+
+  return (
+    <section aria-labelledby="kasa-info-heading">
+      <div className="card rounded-xl border p-5">
+        <h2 id="kasa-info-heading" className="mb-4 text-sm font-semibold text-heading">
+          Device info
+        </h2>
+        <dl className="divide-y divide-[var(--border-secondary)]">
+          {rows.map(({ label, value }) =>
+            value ? (
+              <div key={label} className="flex items-baseline justify-between gap-4 py-2.5 first:pt-0">
+                <dt className="shrink-0 text-sm text-body">{label}</dt>
+                <dd className="text-right text-sm font-medium tabular-nums text-heading">{value}</dd>
+              </div>
+            ) : null,
+          )}
+          {device.rssi !== null && (
+            <div className="flex items-baseline justify-between gap-4 py-2.5">
+              <dt className="shrink-0 text-sm text-body">Signal</dt>
+              <dd className={cn('text-right text-sm font-medium', signal.color)}>
+                {signal.text}
+                <span className="ml-1.5 text-xs text-caption">({device.rssi} dBm)</span>
+              </dd>
+            </div>
+          )}
+          {device.last_seen && (
+            <div className="flex items-baseline justify-between gap-4 py-2.5">
+              <dt className="shrink-0 text-sm text-body">Last seen</dt>
+              <dd className="text-right text-sm text-body">
+                {new Date(device.last_seen).toLocaleString()}
+              </dd>
+            </div>
+          )}
+        </dl>
+      </div>
+    </section>
+  )
+}
+
 // ── History chart panel ────────────────────────────────────────────────────────
 
 function HistoryChart({
@@ -351,10 +494,227 @@ function AllAttributesSection({ attributeEntries }: { attributeEntries: [string,
   )
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ── Kasa device detail view ───────────────────────────────────────────────────
 
-export default function DeviceDetailPage() {
-  const { id } = useParams<{ id: string }>()
+function KasaDeviceDetail({ id }: { id: string }) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const [period, setPeriod] = useState<Period>('24h')
+
+  const {
+    data: device,
+    isLoading,
+    isError,
+  } = useQuery({
+    queryKey: ['kasa', 'device', id],
+    queryFn: () => api.kasa.getDevice(id),
+    staleTime: 30_000,
+  })
+
+  const toggleMutation = useMutation({
+    mutationFn: () => {
+      const isOn = device?.attributes.switch === 'on'
+      return api.kasa.sendCommand(id, isOn ? 'off' : 'on')
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kasa', 'device', id] })
+      queryClient.invalidateQueries({ queryKey: ['kasa', 'devices'] })
+      toast({ message: `${device?.label ?? 'Device'} toggled` })
+    },
+    onError: () => toast({ message: `Failed to control ${device?.label ?? 'device'}`, type: 'error' }),
+  })
+
+  if (isLoading) {
+    return <PageSkeleton />
+  }
+
+  if (isError) {
+    return (
+      <div>
+        <BackLink to="/devices" label="All Devices" />
+        <div className="card rounded-xl border p-5" role="alert" aria-live="assertive">
+          <p className="text-sm text-red-400">
+            Could not load device details. The device may be offline or unreachable.
+          </p>
+          <Link
+            to="/devices"
+            className="mt-4 inline-block rounded-lg bg-fairy-500/15 px-4 py-2 text-sm font-medium text-fairy-400 transition-colors hover:bg-fairy-500/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          >
+            All Devices
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  if (!device) {
+    return (
+      <div>
+        <BackLink to="/devices" label="All Devices" />
+        <div className="card rounded-xl border p-5" role="alert" aria-live="assertive">
+          <p className="text-sm text-body">Device not found.</p>
+          <Link
+            to="/devices"
+            className="mt-4 inline-block rounded-lg bg-fairy-500/15 px-4 py-2 text-sm font-medium text-fairy-400 transition-colors hover:bg-fairy-500/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          >
+            All Devices
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
+  const isOn = device.attributes.switch === 'on'
+  const badgeLabel =
+    device.device_type === 'plug' ? 'Kasa plug'
+    : device.device_type === 'strip' ? 'Kasa strip'
+    : device.device_type === 'outlet' ? 'Kasa outlet'
+    : device.device_type === 'switch' ? 'Kasa switch'
+    : 'Kasa dimmer'
+
+  // History sources: power and energy for emeter devices
+  const historySources: string[] = []
+  if (device.has_emeter) {
+    historySources.push('power', 'energy')
+  }
+
+  const attributeEntries = Object.entries(device.attributes) as [string, unknown][]
+
+  return (
+    <div className="space-y-6">
+      {/* ── 1. Header ────────────────────────────────────────────────────── */}
+      <header>
+        <BackLink to="/devices" label="All Devices" />
+
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-heading text-xl font-semibold">{device.label}</h1>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <TypeBadge type={device.device_type} label={badgeLabel} />
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                  device.is_online
+                    ? 'bg-emerald-500/15 text-emerald-400'
+                    : 'bg-slate-500/15 text-slate-400',
+                )}
+              >
+                <span
+                  className={cn(
+                    'h-1.5 w-1.5 rounded-full',
+                    device.is_online ? 'bg-emerald-400' : 'bg-slate-500',
+                  )}
+                  aria-hidden="true"
+                />
+                {device.is_online ? 'Online' : 'Offline'}
+              </span>
+            </div>
+          </div>
+
+          {/* Toggle button */}
+          <button
+            onClick={() => toggleMutation.mutate()}
+            disabled={toggleMutation.isPending || !device.is_online}
+            className={cn(
+              'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              !device.is_online && 'cursor-not-allowed opacity-40',
+              isOn && device.is_online
+                ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
+                : 'surface text-body hover:text-heading',
+            )}
+            aria-label={
+              !device.is_online
+                ? `${device.label} is offline`
+                : `Turn ${device.label} ${isOn ? 'off' : 'on'}`
+            }
+          >
+            <Power className="h-5 w-5" />
+          </button>
+        </div>
+      </header>
+
+      {/* ── 2. Kasa at-a-glance ────────────────────────────────────────── */}
+      <KasaAtAGlance device={device} />
+
+      {/* ── 3. History charts ─────────────────────────────────────────────── */}
+      {historySources.length > 0 && (
+        <section aria-labelledby="history-heading">
+          <div className="card rounded-xl border p-5">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h2 id="history-heading" className="text-sm font-semibold text-heading">
+                History
+              </h2>
+              <PeriodTabs value={period} onChange={setPeriod} />
+            </div>
+            <div className="space-y-8">
+              {historySources.map(s => (
+                <HistoryChart
+                  key={s}
+                  source={s}
+                  deviceLabel={device.label}
+                  period={period}
+                />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ── 4. Child outlets (strip) ────────────────────────────────────── */}
+      {device.children && device.children.length > 0 && (
+        <section aria-labelledby="outlets-heading">
+          <div className="card rounded-xl border p-5">
+            <h2 id="outlets-heading" className="mb-4 text-sm font-semibold text-heading">
+              Outlets
+            </h2>
+            <ul className="divide-y divide-[var(--border-secondary)]" role="list">
+              {device.children.map(child => {
+                const childOn = child.attributes.switch === 'on'
+                const childPower = child.attributes.power
+                return (
+                  <li key={child.id}>
+                    <Link
+                      to={`/devices/kasa/${encodeURIComponent(child.id)}`}
+                      className={cn(
+                        'flex min-h-[44px] items-center gap-3 rounded-lg px-2 -mx-2 py-2',
+                        'text-sm transition-colors hover:bg-fairy-500/10',
+                        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          'h-2 w-2 shrink-0 rounded-full',
+                          childOn ? 'bg-emerald-400' : 'bg-slate-500',
+                        )}
+                        aria-hidden="true"
+                      />
+                      <span className="flex-1 text-body">{child.label}</span>
+                      {childOn && typeof childPower === 'number' && (
+                        <span className="text-xs tabular-nums text-caption">{childPower.toFixed(1)} W</span>
+                      )}
+                      <TypeBadge type="outlet" label="Kasa outlet" />
+                      <ChevronRight className="h-4 w-4 shrink-0 opacity-50" aria-hidden="true" />
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </div>
+        </section>
+      )}
+
+      {/* ── 5. Device info ──────────────────────────────────────────────── */}
+      <KasaDeviceInfo device={device} />
+
+      {/* ── 6. All attributes (collapsed by default) ────────────────────── */}
+      <AllAttributesSection attributeEntries={attributeEntries} />
+    </div>
+  )
+}
+
+// ── Hub device detail view ────────────────────────────────────────────────────
+
+function HubDeviceDetail({ id }: { id: string }) {
   const [period, setPeriod] = useState<Period>('24h')
 
   // Fetch all hub devices and find the one matching :id
@@ -376,8 +736,8 @@ export default function DeviceDetailPage() {
     isError: contextError,
   } = useQuery({
     queryKey: ['dashboard', 'device-context', id],
-    queryFn: () => api.dashboard.getDeviceContext(id!),
-    enabled: !!id && !!device,
+    queryFn: () => api.dashboard.getDeviceContext(id),
+    enabled: !!device,
     staleTime: 60_000,
   })
 
@@ -386,8 +746,8 @@ export default function DeviceDetailPage() {
     isLoading: insightsLoading,
   } = useQuery({
     queryKey: ['dashboard', 'device', id, 'insights'],
-    queryFn: () => api.dashboard.getDeviceInsights(id!),
-    enabled: !!id && !!device,
+    queryFn: () => api.dashboard.getDeviceInsights(id),
+    enabled: !!device,
     staleTime: 60_000,
   })
 
@@ -397,11 +757,7 @@ export default function DeviceDetailPage() {
   // ── Loading state ───────────────────────────────────────────────────────
 
   if (isLoading) {
-    return (
-      <div>
-        <PageSkeleton />
-      </div>
-    )
+    return <PageSkeleton />
   }
 
   // ── Error state ─────────────────────────────────────────────────────────
@@ -657,6 +1013,29 @@ export default function DeviceDetailPage() {
 
       {/* ── 5. All attributes (collapsed by default) ─────────────────────── */}
       <AllAttributesSection attributeEntries={attributeEntries} />
+    </div>
+  )
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
+export default function DeviceDetailPage() {
+  const { id } = useParams<{ id: string }>()
+  const isKasaRoute = useMatch('/devices/kasa/:id')
+
+  if (!id) return null
+
+  if (isKasaRoute) {
+    return (
+      <div>
+        <KasaDeviceDetail id={decodeURIComponent(id)} />
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <HubDeviceDetail id={id} />
     </div>
   )
 }
