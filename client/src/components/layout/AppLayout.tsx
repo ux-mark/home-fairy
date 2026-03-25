@@ -5,6 +5,8 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useTheme } from '@/hooks/useTheme'
 import type { Theme } from '@/hooks/useTheme'
+import { useDashboardSocket } from '@/hooks/useSocket'
+import { useScrollRestoration } from '@/hooks/useScrollRestoration'
 import ToastContainer from '@/components/ui/Toast'
 import NotificationBell from '@/components/notifications/NotificationBell'
 
@@ -56,6 +58,9 @@ function ThemeToggle() {
 
 export default function AppLayout() {
   const location = useLocation()
+  useDashboardSocket()
+  useScrollRestoration()
+
   const { data: system } = useQuery({
     queryKey: ['system', 'current'],
     queryFn: api.system.getCurrent,
@@ -102,7 +107,7 @@ export default function AppLayout() {
       {/* Main content */}
       <main className="flex-1 pb-20 md:pb-0">
         {/* Header */}
-        <header className="chrome flex items-center justify-between border-b px-4 py-3 md:px-6 md:py-4">
+        <header className="chrome sticky top-0 z-30 flex items-center justify-between border-b px-4 py-3 md:px-6 md:py-4">
           <div className="flex items-center gap-2">
             <HomeFairyIcon className="h-6 w-6 md:hidden" />
             <h1 className="text-heading text-lg font-semibold md:hidden">
@@ -120,7 +125,7 @@ export default function AppLayout() {
             <NotificationBell />
             <ThemeToggle />
             {system?.mode && (
-              <span className="inline-flex items-center rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400">
+              <span className="inline-flex items-center rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400 md:hidden">
                 {system.mode}
               </span>
             )}

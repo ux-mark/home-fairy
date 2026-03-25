@@ -126,7 +126,7 @@ class TimeTriggerScheduler {
     this.timers.push(timer)
   }
 
-  private clearTimers() {
+  clearTimers() {
     for (const t of this.timers) clearTimeout(t)
     this.timers = []
   }

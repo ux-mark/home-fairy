@@ -10,6 +10,7 @@ import {
   CalendarDays,
   Activity,
   Clock,
+  AlertTriangle,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Scene } from '@/lib/api'
@@ -49,7 +50,7 @@ function SkeletonAccordion() {
 function SceneIcon({ icon }: { icon: string }) {
   if (icon && icon.trim()) {
     return (
-      <div className="surface flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-lg">
+      <div className="surface flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-lg" aria-hidden="true">
         {icon}
       </div>
     )
@@ -332,8 +333,9 @@ export default function ScenesPage() {
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState('by-room')
   const [openRooms, setOpenRooms] = useState<Set<string>>(new Set())
+  const [orphanAccordionOpen, setOrphanAccordionOpen] = useState(true)
 
-  const { data: scenes, isLoading } = useQuery({
+  const { data: scenes, isLoading, isError, refetch } = useQuery({
     queryKey: ['scenes'],
     queryFn: api.scenes.getAll,
   })
@@ -505,6 +507,17 @@ export default function ScenesPage() {
             <SkeletonAccordion key={i} />
           ))}
         </div>
+      ) : isError ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+          <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
+          <p className="text-zinc-400">Unable to load scenes. Check your connection and try again.</p>
+          <button
+            onClick={() => refetch()}
+            className="rounded-lg bg-fairy-600 px-4 py-2 text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          >
+            Try again
+          </button>
+        </div>
       ) : !scenes || scenes.length === 0 ? (
         <EmptyState
           icon={Sparkles}
@@ -632,8 +645,8 @@ export default function ScenesPage() {
                   <Accordion
                     id="orphan-scenes"
                     title="Not assigned to a room"
-                    open={true}
-                    onToggle={() => {}}
+                    open={orphanAccordionOpen}
+                    onToggle={() => setOrphanAccordionOpen(prev => !prev)}
                     count={orphanScenes.length}
                   >
                     {orphanScenes.map(scene => (

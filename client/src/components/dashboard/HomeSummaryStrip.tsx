@@ -33,18 +33,14 @@ function Pill({ ariaLabel, scrollTargetId, children }: PillProps) {
   }
 
   return (
-    <section
-      aria-label={ariaLabel}
-      className="card rounded-xl border p-4 cursor-pointer hover:border-fairy-500/30 transition-colors"
+    <button
+      type="button"
+      onClick={handleClick}
+      aria-label={`${ariaLabel} — scroll to details`}
+      className="card rounded-xl border p-4 cursor-pointer hover:border-fairy-500/30 transition-colors w-full text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
     >
-      <button
-        onClick={handleClick}
-        className="w-full text-left"
-        aria-label={`${ariaLabel} — scroll to details`}
-      >
-        {children}
-      </button>
-    </section>
+      {children}
+    </button>
   )
 }
 

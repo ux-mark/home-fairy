@@ -7,7 +7,9 @@
 
 # Production Readiness Audit (2026-03-25)
 
-The following issues were discovered during a comprehensive technical and UX audit of the entire codebase. They are grouped by category and ordered by severity within each category.
+**Status: ALL 47 ISSUES RESOLVED in PR #30 (2026-03-25)**
+
+The following issues were discovered during a comprehensive technical and UX audit of the entire codebase. They are grouped by category and ordered by severity within each category. All issues below have been resolved unless individually marked otherwise.
 
 ---
 
@@ -464,9 +466,8 @@ The following issues were discovered during a comprehensive technical and UX aud
 
 ## 2026-03-23 — Direct URL access to SPA routes returns 404 in production
 - **Severity**: medium
-- **Status**: open
-- **Fix**: Add catch-all route after static middleware to serve `index.html`
-- **Files**: `server/src/index.ts`
+- **Status**: resolved (2026-03-25)
+- **Resolution**: SPA catch-all route already existed in index.ts (confirmed during audit)
 
 ## 2026-03-23 — Room locks lost on server restart (in-memory only)
 - **Severity**: critical
@@ -480,9 +481,8 @@ The following issues were discovered during a comprehensive technical and UX aud
 
 ## 2026-03-23 — LIFX lights ignore room exclusions during All Off / Nighttime
 - **Severity**: medium
-- **Status**: open
-- **Fix**: Replace `setState('all')` with per-light commands respecting exclusions; add config column to `light_rooms`
-- **Files**: `server/src/routes/system.ts`, `server/src/lib/scene-executor.ts`
+- **Status**: resolved (2026-03-25)
+- **Resolution**: Replaced setState('all') with per-room light queries in both scene-executor.ts and system.ts (PR #30)
 
 ## 2026-03-23 — HubDevice type missing `attributes` field
 - **Severity**: low

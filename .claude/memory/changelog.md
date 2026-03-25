@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-03-25 — Production readiness: resolve 47 open issues (PR #30)
+- **Infrastructure**: Graceful shutdown (SIGTERM/SIGINT), PM2 compiled JS, server build in deploy, deploy script DB backup + health check, .env validation, PM2 restart backoff
+- **Security**: Webhook auth + rate limiting, body limit 100KB, Hubitat token as header, preferences allowlist, generic production error messages across all routes
+- **Data integrity**: 30-day log auto-pruning, scene cycle detection, atomic room delete + light assignment, weather indicator uses lock state, DELETE /history confirmation + audit, schema table order fix
+- **UX error states**: Error + retry on 5 pages, WatchPage loading skeleton, dashboard targeted refetch, 15s client fetch timeout
+- **Accessibility**: Notification panel focus return, aria-hidden on emojis, 44px walk-time targets, logs expand label, native button in SceneEditor, HomeSummaryStrip fix
+- **UX consistency**: Remove all truncate, standardize empty states, fix ScenesPage accordion, hide duplicate mode badge, LIFX room exclusions during All Off/Nighttime
+- **Code quality**: Energy rate debounce, dimmer init from device, Zod validation, /lights route, dead code cleanup, chart.js dedup, N+1 query fix, debug-gated logging, sync POST, 503 on LIFX test
+- Files: 40 files (745 insertions, 405 deletions)
+
 ## 2026-03-25 — Simplify scene model: remove auto_activate, add default scene UX
 - Removed `auto_activate` column from scenes table entirely — every scene is equal
 - Renamed `room_auto_scenes` → `room_default_scenes` (table + API + UI)

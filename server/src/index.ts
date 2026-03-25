@@ -5,7 +5,7 @@ import { createServer } from 'http'
 import { Server as SocketServer } from 'socket.io'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { initDb, run, getOne } from './db/index.js'
+import { initDb, run, getOne, db } from './db/index.js'
 import lifxRoutes from './routes/lifx.js'
 import roomsRoutes from './routes/rooms.js'
 import scenesRoutes from './routes/scenes.js'
@@ -21,15 +21,40 @@ import { timeTriggerScheduler } from './lib/time-trigger-scheduler.js'
 import { timerManager } from './lib/timer-manager.js'
 import { activateScene } from './lib/scene-executor.js'
 import { weatherIndicator } from './lib/weather-indicator.js'
-import { startHistoryCollector } from './lib/history-collector.js'
+import { startHistoryCollector, stopHistoryCollector } from './lib/history-collector.js'
 import { notificationService } from './lib/notification-service.js'
-import { startKasaPoller } from './lib/kasa-poller.js'
+import { startKasaPoller, stopKasaPoller } from './lib/kasa-poller.js'
+import { setSocketServer } from './lib/socket.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const PORT = Number(process.env.PORT) || 3001
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:8000'
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
+
+// Simple rate limiter for webhook endpoint
+const webhookHits = new Map<string, number[]>()
+const WEBHOOK_RATE_LIMIT = 120 // max requests per minute
+const WEBHOOK_RATE_WINDOW = 60_000 // 1 minute window
+
+function isWebhookRateLimited(ip: string): boolean {
+  const now = Date.now()
+  const hits = webhookHits.get(ip) ?? []
+  const recent = hits.filter(t => now - t < WEBHOOK_RATE_WINDOW)
+  recent.push(now)
+  webhookHits.set(ip, recent)
+  return recent.length > WEBHOOK_RATE_LIMIT
+}
+
+// Validate required environment variables
+const REQUIRED_ENV = ['LIFX_TOKEN', 'HUBITAT_TOKEN', 'HUB_BASE_URL', 'LATITUDE', 'LONGITUDE', 'OPENWEATHER_API'] as const
+const missing = REQUIRED_ENV.filter(key => !process.env[key])
+if (missing.length > 0) {
+  console.error(`[startup] Missing required environment variables: ${missing.join(', ')}`)
+  console.error('[startup] See .env.example for all required variables')
+  process.exit(1)
+}
 
 // Initialize database
 initDb()
@@ -37,12 +62,13 @@ initDb()
 const app = express()
 
 app.use(cors({ origin: CORS_ORIGIN }))
-app.use(express.json({ limit: '10mb' }))
+app.use(express.json({ limit: '100kb' }))
 
 const httpServer = createServer(app)
 const io = new SocketServer(httpServer, {
   cors: { origin: CORS_ORIGIN },
 })
+setSocketServer(io)
 
 // Mount API routes
 app.use('/api/lifx', lifxRoutes)
@@ -57,11 +83,27 @@ app.use('/api/kasa', kasaRoutes)
 
 // Hubitat webhook handler
 app.post('/hubitat', async (req, res) => {
+  // Validate webhook secret
+  const HUBITAT_WEBHOOK_SECRET = process.env.HUBITAT_WEBHOOK_SECRET
+  if (HUBITAT_WEBHOOK_SECRET) {
+    const token = req.query.token as string
+    if (token !== HUBITAT_WEBHOOK_SECRET) {
+      res.status(401).json({ error: 'Invalid webhook token' })
+      return
+    }
+  }
+
+  const clientIp = req.ip || 'unknown'
+  if (isWebhookRateLimited(clientIp)) {
+    res.status(429).json({ error: 'Rate limit exceeded' })
+    return
+  }
+
   try {
     const raw = req.body
     // Hubitat sends { content: { name, value, displayName, unit, descriptionText } }
     const event = raw.content ?? raw
-    console.log('Hubitat event:', JSON.stringify(event))
+    if (process.env.DEBUG) console.log('Hubitat event:', JSON.stringify(event))
 
     const displayName: string = event.displayName ?? event.displayname ?? 'unknown'
     const eventName: string = event.name ?? ''
@@ -195,7 +237,7 @@ app.post('/hubitat', async (req, res) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('Hubitat webhook error:', msg)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -244,5 +286,38 @@ httpServer.listen(PORT, () => {
   startHistoryCollector()
   startKasaPoller(io)
 })
+
+// Graceful shutdown
+function shutdown(signal: string): void {
+  console.log(`[shutdown] Received ${signal}. Shutting down gracefully...`)
+
+  // Safety timeout: force exit if shutdown takes too long
+  const forceExit = setTimeout(() => {
+    console.error('[shutdown] Shutdown timed out after 5 seconds. Forcing exit.')
+    process.exit(1)
+  }, 5_000)
+  forceExit.unref()
+
+  stopHistoryCollector()
+  stopKasaPoller()
+  weatherIndicator.stop()
+  sunModeScheduler.clearTimers()
+  timeTriggerScheduler.clearTimers()
+
+  io.close(() => {
+    httpServer.close(() => {
+      try {
+        db.close()
+      } catch {
+        // ignore close errors
+      }
+      console.log('[shutdown] Shutdown complete.')
+      process.exit(0)
+    })
+  })
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'))
+process.on('SIGINT', () => shutdown('SIGINT'))
 
 export { io }

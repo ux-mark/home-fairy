@@ -138,10 +138,10 @@ function LightCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[] })
           to={`/lights/${light.id}`}
           className={cn('block min-w-0 flex-1 text-left', 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500')}
         >
-          <p className={cn('truncate text-sm font-medium hover:text-fairy-400 transition-colors', isOn ? 'text-heading' : 'text-body')}>
+          <p className={cn('break-words text-sm font-medium hover:text-fairy-400 transition-colors', isOn ? 'text-heading' : 'text-body')}>
             {light.label}
           </p>
-          <p className="text-caption mt-0.5 truncate text-xs">
+          <p className="text-caption mt-0.5 break-words text-xs">
             {device.roomName ?? light.group.name}
             {isOn && ` · ${Math.round(light.brightness * 100)}%`}
           </p>
@@ -190,18 +190,37 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [expanded, setExpanded] = useState(false)
-  const [level, setLevel] = useState(50)
+  const [level, setLevel] = useState(() => (device.hubDevice?.attributes as Record<string, unknown> | undefined)?.level as number ?? 50)
+
+  const hubNewState = device.isOn ? 'off' : 'on'
 
   const toggleMutation = useMutation({
-    mutationFn: () => {
-      const cmd = device.isOn ? 'off' : 'on'
-      return api.hubitat.sendCommand(device.hubDevice!.id.toString(), cmd)
+    mutationFn: () => api.hubitat.sendCommand(device.hubDevice!.id.toString(), hubNewState),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['hubitat', 'devices'] })
+      const previous = queryClient.getQueryData<HubDevice[]>(['hubitat', 'devices'])
+      queryClient.setQueryData<HubDevice[]>(['hubitat', 'devices'], old => {
+        if (!old) return old
+        return old.map(d =>
+          d.id === device.hubDevice!.id
+            ? { ...d, attributes: { ...(d.attributes as Record<string, unknown>), switch: hubNewState } }
+            : d
+        )
+      })
+      return { previous }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['hubitat'] })
-      toast({ message: `${device.label} turned ${device.isOn ? 'off' : 'on'}` })
+      toast({ message: `${device.label} turned ${hubNewState}` })
     },
-    onError: () => toast({ message: `Failed to control ${device.label}`, type: 'error' }),
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['hubitat', 'devices'], context.previous)
+      }
+      toast({ message: `Failed to control ${device.label}`, type: 'error' })
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['hubitat'] })
+    },
   })
 
   const setLevelMutation = useMutation({
@@ -335,13 +354,35 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
   const { toast } = useToast()
   const kasa = device.kasaDevice!
 
+  const newState = device.isOn ? 'off' : 'on'
+
   const toggleMutation = useMutation({
-    mutationFn: () => api.kasa.sendCommand(kasa.id, device.isOn ? 'off' : 'on'),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kasa', 'devices'] })
-      toast({ message: `${device.label} turned ${device.isOn ? 'off' : 'on'}` })
+    mutationFn: () => api.kasa.sendCommand(kasa.id, newState),
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['kasa', 'devices'] })
+      const previous = queryClient.getQueryData<KasaDevice[]>(['kasa', 'devices'])
+      queryClient.setQueryData<KasaDevice[]>(['kasa', 'devices'], old => {
+        if (!old) return old
+        return old.map(d =>
+          d.id === kasa.id
+            ? { ...d, attributes: { ...d.attributes, switch: newState } }
+            : d
+        )
+      })
+      return { previous }
     },
-    onError: () => toast({ message: `Failed to control ${device.label}`, type: 'error' }),
+    onSuccess: () => {
+      toast({ message: `${device.label} turned ${newState}` })
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['kasa', 'devices'], context.previous)
+      }
+      toast({ message: `Failed to control ${device.label}`, type: 'error' })
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['kasa'] })
+    },
   })
 
   const isKeepOn = !!device.deviceRoom?.config?.exclude_from_all_off

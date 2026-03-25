@@ -7,6 +7,7 @@ import type { AppNotification } from '@/lib/api'
 interface NotificationPanelProps {
   open: boolean
   onClose: () => void
+  returnFocusRef?: React.RefObject<HTMLButtonElement | null>
 }
 
 function timeAgo(dateStr: string): string {
@@ -120,7 +121,7 @@ function NotificationItem({
   )
 }
 
-export default function NotificationPanel({ open, onClose }: NotificationPanelProps) {
+export default function NotificationPanel({ open, onClose, returnFocusRef }: NotificationPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const { data: notifications, isLoading } = useNotifications()
   const markRead = useMarkRead()
@@ -162,6 +163,13 @@ export default function NotificationPanel({ open, onClose }: NotificationPanelPr
       panelRef.current.focus()
     }
   }, [open])
+
+  // Return focus to the trigger button when the panel closes
+  useEffect(() => {
+    if (!open) {
+      returnFocusRef?.current?.focus()
+    }
+  }, [open, returnFocusRef])
 
   if (!open) return null
 

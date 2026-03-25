@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Power, Moon } from 'lucide-react'
+import { ArrowLeft, Power, Moon, AlertTriangle } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { Room, Scene } from '@/lib/api'
@@ -86,7 +86,7 @@ function WatchRoomView({
                 : 'surface text-heading active:brightness-90 dark:active:brightness-110',
             )}
           >
-            {scene.icon && <span className="mr-2 text-lg">{scene.icon}</span>}
+            {scene.icon && <span className="mr-2 text-lg" aria-hidden="true">{scene.icon}</span>}
             {scene.name}
           </button>
         ))}
@@ -101,7 +101,7 @@ export default function WatchPage() {
   const queryClient = useQueryClient()
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null)
 
-  const { data: rooms } = useQuery({
+  const { data: rooms, isLoading, isError, refetch } = useQuery({
     queryKey: ['rooms'],
     queryFn: api.rooms.getAll,
     refetchInterval: 10_000,
@@ -137,6 +137,33 @@ export default function WatchPage() {
 
   const currentMode = system?.mode ?? 'Evening'
   const currentRoom = rooms?.find(r => r.name === selectedRoom)
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16">
+        <div className="h-4 w-32 animate-pulse rounded bg-zinc-700" />
+        <div className="h-4 w-24 animate-pulse rounded bg-zinc-700" />
+        <div className="h-4 w-28 animate-pulse rounded bg-zinc-700" />
+      </div>
+    )
+  }
+
+  // Error state
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+        <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
+        <p className="text-zinc-400">Unable to load data. Check your connection and try again.</p>
+        <button
+          onClick={() => refetch()}
+          className="rounded-lg bg-fairy-600 px-4 py-2 text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        >
+          Try again
+        </button>
+      </div>
+    )
+  }
 
   // Show room detail view
   if (selectedRoom && currentRoom) {

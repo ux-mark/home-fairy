@@ -242,3 +242,12 @@
 - **Branch cleanup**: done
 - **Summary**: Removed auto_activate flag and priority — every scene is equal. room_default_scenes table for one default per room+mode. Default scene manageable from Scene Editor (with replacement warnings) and Room Detail. All "auto" terminology replaced with "default".
 - **Files**: 16 files (6 server, 6 client, 4 memory/spec)
+
+## PR #30 — Production readiness: resolve 47 open issues
+- **Branch**: feature/production-readiness → dev
+- **Created**: 2026-03-25
+- **Status**: open
+- **Merge date**: —
+- **Branch cleanup**: pending
+- **Summary**: Comprehensive production readiness pass across 7 phases: infrastructure (graceful shutdown, PM2 compiled JS, deploy hardening), security (webhook auth, rate limiting, body limits, generic errors), data integrity (log pruning, cycle detection, transactions, lock-based weather indicator), UX error states (5 pages), accessibility (6 fixes), UX consistency (truncate removal, empty states, LIFX exclusions), code quality (11 fixes including N+1 elimination, Zod validation, debounce)
+- **Files**: 40 files (745 insertions, 405 deletions)

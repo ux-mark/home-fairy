@@ -1,6 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { useDashboardSocket } from '@/hooks/useSocket'
 import AttentionBar from '@/components/dashboard/AttentionBar'
 import HomeSummaryStrip from '@/components/dashboard/HomeSummaryStrip'
 import EnergyCard from '@/components/dashboard/EnergyCard'
@@ -37,13 +36,14 @@ function DashboardSkeleton() {
 }
 
 function DashboardError({ message }: { message: string }) {
+  const queryClient = useQueryClient()
   return (
     <div className="card rounded-xl border p-5" role="alert">
       <p className="text-sm text-red-400">
         Could not load dashboard data. {message}
       </p>
       <button
-        onClick={() => window.location.reload()}
+        onClick={() => queryClient.invalidateQueries({ queryKey: ['dashboard'] })}
         className="mt-3 rounded-lg bg-fairy-500/15 px-4 py-2 text-sm font-medium text-fairy-400 transition-colors hover:bg-fairy-500/25 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
       >
         Retry
@@ -53,8 +53,6 @@ function DashboardError({ message }: { message: string }) {
 }
 
 export default function DashboardPage() {
-  useDashboardSocket()
-
   const { data, isLoading, error } = useQuery({
     queryKey: ['dashboard', 'summary'],
     queryFn: api.dashboard.getSummary,

@@ -96,11 +96,11 @@ function AvailableLightRow({
         style={{ backgroundColor: isOn ? colorHex : '#475569' }}
         aria-hidden="true"
       />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-heading">
+      <span className="min-w-0 flex-1 break-words text-sm font-medium text-heading">
         {light.label}
       </span>
       {isAssignedElsewhere ? (
-        <span className="shrink-0 truncate text-[10px] text-caption">
+        <span className="shrink-0 break-words text-[10px] text-caption">
           In {assignedToRoom}
         </span>
       ) : (
@@ -160,7 +160,7 @@ function AssignedLightRow({
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">
+        <p className="break-words text-sm font-medium text-heading">
           {assignment.label}
         </p>
         <p className="text-xs text-caption">
@@ -208,7 +208,7 @@ function AssignedDeviceRow({
   return (
     <div className="flex items-center gap-3 rounded-lg border border-fairy-500/20 bg-fairy-500/5 px-3 py-2.5 transition-colors">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">
+        <p className="break-words text-sm font-medium text-heading">
           {assignment.device_label}
         </p>
       </div>
@@ -274,7 +274,7 @@ function AvailableDeviceRow({
           )}
         </button>
       )}
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-heading">
+      <span className="min-w-0 flex-1 break-words text-sm font-medium text-heading">
         {device.label}
       </span>
       <TypeBadge type={device.device_type} />

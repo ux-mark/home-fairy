@@ -1,8 +1,8 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
+import { BackLink } from '@/components/ui/BackLink'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft,
   Save,
   Eye,
   EyeOff,
@@ -125,35 +125,37 @@ function LightEditorCard({
 
   return (
     <div className="card rounded-xl border transition-colors">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setExpanded(!expanded)}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(!expanded) } }}
-        className="flex w-full cursor-pointer items-center gap-3 p-4 text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-fairy-500"
-      >
-        <div
-          className={cn(
-            'h-10 w-10 shrink-0 rounded-full border-2 border-[var(--border-secondary)]',
-            !isOn && 'opacity-30',
-          )}
-          style={{
-            backgroundColor: isOn ? previewHex : '#475569',
-            opacity: isOn ? Math.max(state.brightness / 100, 0.05) : 0.3,
-          }}
-          aria-hidden="true"
-        />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-heading">
-            {state.label}
-          </p>
-          <p className="text-xs text-caption">
-            {isOn ? `${state.brightness}% brightness` : 'Off'}
-          </p>
-        </div>
+      <div className="flex items-center gap-3 p-4">
         <button
-          onClick={e => {
-            e.stopPropagation()
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          aria-label={`${state.label} — ${isOn ? `${state.brightness}% brightness` : 'Off'}`}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded-lg"
+        >
+          <div
+            className={cn(
+              'h-10 w-10 shrink-0 rounded-full border-2 border-[var(--border-secondary)]',
+              !isOn && 'opacity-30',
+            )}
+            style={{
+              backgroundColor: isOn ? previewHex : '#475569',
+              opacity: isOn ? Math.max(state.brightness / 100, 0.05) : 0.3,
+            }}
+            aria-hidden="true"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="break-words text-sm font-medium text-heading">
+              {state.label}
+            </p>
+            <p className="text-xs text-caption">
+              {isOn ? `${state.brightness}% brightness` : 'Off'}
+            </p>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
             onChange({ ...state, power: isOn ? 'off' : 'on' })
             if (livePreview) {
               api.lifx.setState(state.selector, {
@@ -265,7 +267,7 @@ function DeviceToggleCard({
     <div className="card rounded-xl border p-4">
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-heading">{label}</p>
+          <p className="break-words text-sm font-medium text-heading">{label}</p>
           <p className="text-xs text-caption">
             {isOn ? (isDimmer && level !== undefined ? `On at ${level}%` : 'On') : 'Off'}
           </p>
@@ -331,7 +333,7 @@ function FairyDeviceCard({
     <div className="card rounded-xl border p-4">
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-heading">{label}</p>
+          <p className="break-words text-sm font-medium text-heading">{label}</p>
           <p className="text-xs text-caption">
             {isOn ? `${pattern} at ${brightness}%` : 'Off'}
           </p>
@@ -1088,13 +1090,7 @@ export default function SceneEditorPage() {
   return (
     <div className="pb-24">
       {/* Back link */}
-      <Link
-        to="/scenes"
-        className="mb-4 inline-flex items-center gap-1.5 text-sm text-body transition-colors hover:text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        All Scenes
-      </Link>
+      <BackLink to="/scenes" label="All Scenes" className="mb-3" />
 
       {/* ── Top section: name + icon ──────────────────────────────────────── */}
       <section className="mb-6 space-y-3">
@@ -1355,7 +1351,7 @@ export default function SceneEditorPage() {
                         <div key={`kasa-${device.id}`} className="card rounded-xl border p-4">
                           <div className="flex items-center gap-3">
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium text-heading">{device.label}</p>
+                              <p className="break-words text-sm font-medium text-heading">{device.label}</p>
                               <p className="text-xs text-caption">
                                 {device.model ? (
                                   <span className="mr-1.5 inline-block rounded bg-[var(--surface-2)] px-1.5 py-0.5 font-mono text-[10px] text-body">

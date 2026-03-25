@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import { ModesList } from '@/components/modes/ModesList'
 import ModeDetail from '@/components/modes/ModeDetail'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -118,7 +118,17 @@ function GeneralSection() {
   })
 
   const tempUnit = prefs?.temp_unit ?? 'C'
-  const energyRate = prefs?.energy_rate ?? ''
+  const [energyRateInput, setEnergyRateInput] = useState(prefs?.energy_rate ?? '')
+  const [currencyInput, setCurrencyInput] = useState(prefs?.currency_symbol ?? '')
+
+  // Sync local state when prefs load/change from server
+  useEffect(() => {
+    setEnergyRateInput(prefs?.energy_rate ?? '')
+  }, [prefs?.energy_rate])
+
+  useEffect(() => {
+    setCurrencyInput(prefs?.currency_symbol ?? '')
+  }, [prefs?.currency_symbol])
 
   return (
     <Section title="General">
@@ -152,8 +162,13 @@ function GeneralSection() {
           step="0.01"
           min="0"
           placeholder="0.30"
-          value={energyRate}
-          onChange={(e) => mutation.mutate({ key: 'energy_rate', value: e.target.value })}
+          value={energyRateInput}
+          onChange={(e) => setEnergyRateInput(e.target.value)}
+          onBlur={(e) => {
+            if (e.target.value !== (prefs?.energy_rate ?? '')) {
+              mutation.mutate({ key: 'energy_rate', value: e.target.value })
+            }
+          }}
           className="w-24 rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-right text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           aria-label="Energy rate per kWh"
         />
@@ -168,8 +183,13 @@ function GeneralSection() {
           type="text"
           maxLength={3}
           placeholder="$"
-          value={prefs?.currency_symbol ?? ''}
-          onChange={(e) => mutation.mutate({ key: 'currency_symbol', value: e.target.value })}
+          value={currencyInput}
+          onChange={(e) => setCurrencyInput(e.target.value)}
+          onBlur={(e) => {
+            if (e.target.value !== (prefs?.currency_symbol ?? '')) {
+              mutation.mutate({ key: 'currency_symbol', value: e.target.value })
+            }
+          }}
           className="w-16 rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-center text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           aria-label="Currency symbol"
         />
@@ -685,7 +705,7 @@ function SubwaySection() {
                 {/* Station info */}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1.5">
-                    <span className="text-heading text-sm font-semibold truncate">
+                    <span className="text-heading text-sm font-semibold break-words">
                       {stop.name}
                     </span>
                     <span className="flex items-center gap-0.5 text-caption text-xs flex-shrink-0">
@@ -709,7 +729,7 @@ function SubwaySection() {
                   <button
                     onClick={() => handleWalkTimeChange(index, -1)}
                     disabled={stop.walkTime <= 1}
-                    className="surface flex h-8 w-8 items-center justify-center rounded-lg border text-heading transition-colors hover:brightness-95 dark:hover:brightness-110 disabled:opacity-30"
+                    className="surface flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border text-heading transition-colors hover:brightness-95 dark:hover:brightness-110 disabled:opacity-30"
                     style={{ borderColor: 'var(--border-secondary)' }}
                     aria-label="Decrease walk time"
                   >
@@ -721,7 +741,7 @@ function SubwaySection() {
                   <button
                     onClick={() => handleWalkTimeChange(index, 1)}
                     disabled={stop.walkTime >= 30}
-                    className="surface flex h-8 w-8 items-center justify-center rounded-lg border text-heading transition-colors hover:brightness-95 dark:hover:brightness-110 disabled:opacity-30"
+                    className="surface flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border text-heading transition-colors hover:brightness-95 dark:hover:brightness-110 disabled:opacity-30"
                     style={{ borderColor: 'var(--border-secondary)' }}
                     aria-label="Increase walk time"
                   >
@@ -1567,7 +1587,7 @@ function WeatherIndicatorSection() {
 
                       {/* Label + description */}
                       <div className="flex-1 min-w-0">
-                        <p className="text-heading text-sm leading-tight truncate">
+                        <p className="text-heading text-sm leading-tight break-words">
                           {entry.name}
                           {isPreviewing && (
                             <span className="ml-1.5 text-fairy-500 text-xs font-normal">Previewing</span>

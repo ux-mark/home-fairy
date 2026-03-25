@@ -1,6 +1,9 @@
 import { Router, type Request, type Response } from 'express'
 import { getAll, getOne, run } from '../db/index.js'
 import { kasaClient } from '../lib/kasa-client.js'
+import { emit } from '../lib/socket.js'
+
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
 const router = Router()
 
@@ -40,7 +43,7 @@ router.get('/devices', (_req: Request, res: Response) => {
     res.json(rows.map(parseDeviceRow))
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -64,7 +67,7 @@ router.get('/devices/:id', (req: Request, res: Response) => {
     res.json(device)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -79,10 +82,11 @@ router.post('/devices/:id/command', async (req: Request, res: Response) => {
 
     const deviceId = String(req.params.id)
     await kasaClient.sendCommand(deviceId, command, value)
+    emit('device:command', { deviceId, command })
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -107,7 +111,7 @@ router.get('/devices/:id/energy/daily', async (req: Request, res: Response) => {
     res.json(data)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -120,7 +124,7 @@ router.get('/devices/:id/energy/monthly', async (req: Request, res: Response) =>
     res.json(data)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -169,7 +173,7 @@ router.post('/devices/:id/label', async (req: Request, res: Response) => {
     res.json(parseDeviceRow(updated!))
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -189,9 +193,6 @@ router.patch('/devices/:id/config', (req: Request, res: Response) => {
       return
     }
 
-    // Merge with existing config
-    let currentConfig: Record<string, unknown> = {}
-    try { currentConfig = JSON.parse(existing.attributes) } catch { /* */ }
     // Config is stored in its own column, not attributes
     let existingConfig: Record<string, unknown> = {}
     try {
@@ -214,7 +215,7 @@ router.patch('/devices/:id/config', (req: Request, res: Response) => {
     res.json({ ...parseDeviceRow(existing), config: merged })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 

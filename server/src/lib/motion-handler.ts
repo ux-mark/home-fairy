@@ -309,9 +309,15 @@ export class MotionHandler {
       }
 
       // Check for manual scene override — user explicitly activated a scene, skip auto
+      // If scene_manual is set but current_scene is empty, the flag is stale (e.g. server restart) — clear it
       if (room.scene_manual) {
-        log(`Room ${roomName} has manual scene override (${room.current_scene}), skipping auto activation`)
-        return
+        if (!room.current_scene) {
+          run('UPDATE rooms SET scene_manual = 0 WHERE name = ?', [roomName])
+          log(`Cleared stale scene_manual flag for ${roomName} (no active scene)`)
+        } else {
+          log(`Room ${roomName} has manual scene override (${room.current_scene}), skipping auto activation`)
+          return
+        }
       }
 
       // Find auto scene for room + current mode

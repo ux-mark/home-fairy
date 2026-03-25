@@ -50,11 +50,33 @@ export function useDashboardSocket(): void {
     function handleModeChange() {
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] })
       queryClient.invalidateQueries({ queryKey: ['system', 'current'] })
+      queryClient.invalidateQueries({ queryKey: ['rooms'] })
+      queryClient.invalidateQueries({ queryKey: ['scenes'] })
     }
 
     function handleSceneChange() {
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] })
       queryClient.invalidateQueries({ queryKey: ['rooms'] })
+      queryClient.invalidateQueries({ queryKey: ['scenes'] })
+      queryClient.invalidateQueries({ queryKey: ['system', 'current'] })
+    }
+
+    // Kasa state changes (from 10s poller)
+    function handleKasaState() {
+      queryClient.invalidateQueries({ queryKey: ['kasa'] })
+      queryClient.invalidateQueries({ queryKey: ['hubitat'] })
+    }
+
+    // Kasa power readings update
+    function handleKasaPower() {
+      queryClient.invalidateQueries({ queryKey: ['kasa'] })
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] })
+    }
+
+    // Device commands from another tab or automation
+    function handleDeviceCommand() {
+      queryClient.invalidateQueries({ queryKey: ['hubitat'] })
+      queryClient.invalidateQueries({ queryKey: ['kasa'] })
     }
 
     function handleNotificationNew() {
@@ -69,6 +91,9 @@ export function useDashboardSocket(): void {
     s.on('mode:change', handleModeChange)
     s.on('mode_changed', handleModeChange)  // emitted by sun-mode-scheduler
     s.on('scene:change', handleSceneChange)
+    s.on('kasa:state', handleKasaState)
+    s.on('kasa:power', handleKasaPower)
+    s.on('device:command', handleDeviceCommand)
     s.on('notification:new', handleNotificationNew)
     s.on('notification:update', handleNotificationUpdate)
 
@@ -77,6 +102,9 @@ export function useDashboardSocket(): void {
       s.off('mode:change', handleModeChange)
       s.off('mode_changed', handleModeChange)
       s.off('scene:change', handleSceneChange)
+      s.off('kasa:state', handleKasaState)
+      s.off('kasa:power', handleKasaPower)
+      s.off('device:command', handleDeviceCommand)
       s.off('notification:new', handleNotificationNew)
       s.off('notification:update', handleNotificationUpdate)
     }

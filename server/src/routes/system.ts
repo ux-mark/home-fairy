@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { getAll, getOne, run, db } from '../db/index.js'
+
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 import { notificationService } from '../lib/notification-service.js'
 import { getCurrentWeather } from '../lib/weather-client.js'
 import { getSunTimes, getCurrentSunPhase } from '../lib/sun-tracker.js'
@@ -16,6 +18,7 @@ import { MTA_STOPS, searchStops } from '../lib/mta-stops.js'
 import { mtaIndicator } from '../lib/mta-indicator.js'
 import { weatherIndicator, WEATHER_COLORS } from '../lib/weather-indicator.js'
 import { motionHandler } from '../lib/motion-handler.js'
+import { emit } from '../lib/socket.js'
 
 const router = Router()
 
@@ -56,7 +59,7 @@ router.get('/current', (_req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -73,28 +76,44 @@ router.get('/preferences', (_req: Request, res: Response) => {
     res.json(prefs)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
 // PUT /preferences — set a user preference
 router.put('/preferences', (req: Request, res: Response) => {
   try {
+    const ALLOWED_PREF_KEYS = [
+      'energy_rate', 'currency_symbol', 'night_wake_mode',
+      'night_exclude_rooms', 'guest_night_exclude_rooms',
+      'mta_stops', 'mta_max_wait', 'mta_indicator',
+      'weather_indicator', 'weather_custom_colors',
+    ] as const
+
     const { key, value } = req.body
     if (!key || value === undefined) {
       res.status(400).json({ error: 'key and value required' })
+      return
+    }
+    if (!ALLOWED_PREF_KEYS.includes(key)) {
+      res.status(400).json({ error: `Invalid preference key: ${key}. Allowed: ${ALLOWED_PREF_KEYS.join(', ')}` })
+      return
+    }
+    const strValue = String(value)
+    if (strValue.length > 10000) {
+      res.status(400).json({ error: 'Value too large (max 10000 characters)' })
       return
     }
     run(
       `INSERT INTO current_state (key, value, updated_at)
        VALUES (?, ?, datetime('now'))
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      [`pref_${key}`, String(value)],
+      [`pref_${key}`, strValue],
     )
     res.json({ key, value })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -122,6 +141,7 @@ router.put('/mode', (req: Request, res: Response) => {
       )
     }
 
+    emit('mode:change', { mode: body.mode })
     res.json({ mode: body.mode })
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -129,7 +149,7 @@ router.put('/mode', (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -154,7 +174,7 @@ router.get('/health', (_req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -180,7 +200,7 @@ router.get('/logs', (req: Request, res: Response) => {
     res.json(rows)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -191,7 +211,7 @@ router.get('/weather', async (_req: Request, res: Response) => {
     res.json(weather)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -203,7 +223,7 @@ router.get('/sun', (_req: Request, res: Response) => {
     res.json({ ...times, phase })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -214,7 +234,7 @@ router.get('/sun-schedule', (_req: Request, res: Response) => {
     res.json(schedule)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -224,7 +244,7 @@ router.get('/timers', (_req: Request, res: Response) => {
     res.json(timerManager.getStatus())
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -239,7 +259,7 @@ router.post('/timers/cancel/:id', (req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -250,7 +270,7 @@ router.post('/timers/cancel-all', (_req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -330,7 +350,7 @@ router.get('/modes', (_req: Request, res: Response) => {
     res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -354,7 +374,7 @@ router.post('/modes', (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -426,7 +446,7 @@ router.put('/modes/:mode', (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -483,7 +503,7 @@ router.delete('/modes/:mode', (req: Request, res: Response) => {
     res.json({ modes: getAllModeNames(), affectedScenes })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -529,7 +549,7 @@ router.get('/modes/:mode/dependencies', (req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -595,7 +615,7 @@ router.post('/modes/:mode/triggers', (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -658,7 +678,7 @@ router.put('/modes/:mode/triggers/:id', (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -686,7 +706,7 @@ router.delete('/modes/:mode/triggers/:id', (req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -722,7 +742,7 @@ router.get('/battery', (_req: Request, res: Response) => {
     res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -738,7 +758,7 @@ router.get('/mta/arrivals', async (req: Request, res: Response) => {
     res.json(arrivals.slice(0, Number(req.query.limit) || 10))
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -756,7 +776,7 @@ router.get('/mta/status', async (req: Request, res: Response) => {
     res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -768,7 +788,7 @@ router.get('/mta/stops', (req: Request, res: Response) => {
     res.json(results)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -785,7 +805,7 @@ router.get('/mta/configured', (_req: Request, res: Response) => {
     res.json(stops)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -886,7 +906,7 @@ router.get('/mta/combined-status', async (_req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -899,7 +919,7 @@ router.get('/mta/indicator', (_req: Request, res: Response) => {
     res.json(config)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -915,7 +935,7 @@ router.put('/mta/indicator', (req: Request, res: Response) => {
     res.json(config)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -936,7 +956,7 @@ router.get('/weather/indicator', (_req: Request, res: Response) => {
     res.json(weatherIndicator.getConfig())
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -954,7 +974,7 @@ router.put('/weather/indicator', (req: Request, res: Response) => {
     res.json(config)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -969,7 +989,7 @@ router.post('/weather/indicator/test', async (_req: Request, res: Response) => {
     res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -979,7 +999,7 @@ router.get('/weather/colors', (_req: Request, res: Response) => {
     res.json(WEATHER_COLORS)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1016,7 +1036,7 @@ router.post('/weather/preview', async (req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1029,7 +1049,7 @@ router.get('/weather/custom-colors', (_req: Request, res: Response) => {
     res.json(customs)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1053,7 +1073,7 @@ router.put('/weather/custom-colors', (req: Request, res: Response) => {
     res.json(customs)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1064,7 +1084,7 @@ router.delete('/weather/custom-colors', (_req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1097,7 +1117,7 @@ router.get('/backup', (_req: Request, res: Response) => {
     res.json(backup)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1158,7 +1178,7 @@ router.post('/restore', (req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1176,10 +1196,36 @@ interface DeviceRoomRow {
 async function runAllOff(excludeRooms: string[] = []): Promise<string[]> {
   const actions: string[] = []
 
-  // 1. Turn off all LIFX lights
+  // 1. Turn off LIFX lights — only in rooms not excluded
   try {
-    await lifxClient.setState('all', { power: 'off', duration: 1 })
-    actions.push('LIFX: all lights off')
+    const allRooms = getAll<{ name: string }>('SELECT name FROM rooms').map(r => r.name)
+    const roomsToOff = allRooms.filter(r => !excludeRooms.includes(r))
+    if (roomsToOff.length > 0) {
+      const lightSelectors: string[] = []
+      for (const roomName of roomsToOff) {
+        const roomLights = getAll<{ light_selector: string }>(
+          'SELECT light_selector FROM light_rooms WHERE room_name = ?',
+          [roomName],
+        )
+        for (const l of roomLights) lightSelectors.push(l.light_selector)
+      }
+      if (lightSelectors.length > 0) {
+        // Batch in groups of 50 (LIFX API limit)
+        for (let i = 0; i < lightSelectors.length; i += 50) {
+          const batch = lightSelectors.slice(i, i + 50).map(selector => ({
+            selector,
+            power: 'off' as const,
+            duration: 1,
+          }))
+          await lifxClient.setStates(batch)
+        }
+        actions.push(`LIFX: turned off lights in ${roomsToOff.length} room(s)`)
+      } else {
+        actions.push('LIFX: no lights assigned to rooms')
+      }
+    } else {
+      actions.push('LIFX: all rooms excluded, no lights turned off')
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     actions.push(`LIFX error: ${msg}`)
@@ -1269,10 +1315,11 @@ router.post('/all-off', async (_req: Request, res: Response) => {
       [`All Off executed: ${actions.length} actions`],
     )
 
+    emit('scene:change', { action: 'all_off' })
     res.json({ success: true, actions })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1313,10 +1360,12 @@ router.post('/nighttime', async (_req: Request, res: Response) => {
       [`Nighttime executed: excluded rooms [${excludeRooms.join(', ')}], locked ${roomsToLock.length} rooms, wake mode: ${wakeMode}, ${actions.length} actions`],
     )
 
+    emit('mode:change', { mode: 'Sleep Time' })
+    emit('scene:change', { action: 'nighttime' })
     res.json({ success: true, mode: 'Sleep Time', excludeRooms, lockedRooms: roomsToLock, wakeMode, actions })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1365,10 +1414,12 @@ router.post('/guest-night', async (_req: Request, res: Response) => {
       [`Guest Night executed: excluded rooms [${excludeRooms.join(', ')}], locked ${roomsToLock.length} rooms, wake mode: ${wakeMode}, ${actions.length} actions`],
     )
 
+    emit('mode:change', { mode: 'Sleep Time' })
+    emit('scene:change', { action: 'guest_night' })
     res.json({ success: true, mode: 'Sleep Time', excludeRooms, lockedRooms: roomsToLock, wakeMode, actions })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1386,7 +1437,7 @@ router.get('/night/status', (_req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1401,7 +1452,7 @@ router.post('/night/unlock', (_req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1418,7 +1469,7 @@ router.get('/notifications', (req: Request, res: Response) => {
     res.json(notifications)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1429,7 +1480,7 @@ router.get('/notifications/count', (_req: Request, res: Response) => {
     res.json({ count })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1440,7 +1491,7 @@ router.patch('/notifications/:id/read', (req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1451,7 +1502,7 @@ router.post('/notifications/read-all', (_req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1462,7 +1513,7 @@ router.post('/notifications/:id/dismiss', (req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1473,7 +1524,7 @@ router.post('/notifications/dismiss-all', (_req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 

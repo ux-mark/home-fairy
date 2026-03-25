@@ -5,11 +5,13 @@ import {
   Plus,
   Sparkles,
   DoorOpen,
+  AlertTriangle,
 } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 function RoomCardSkeleton() {
   return (
@@ -28,7 +30,7 @@ export default function RoomsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [newRoomName, setNewRoomName] = useState('')
 
-  const { data: rooms, isLoading } = useQuery({
+  const { data: rooms, isLoading, isError, refetch } = useQuery({
     queryKey: ['rooms'],
     queryFn: api.rooms.getAll,
   })
@@ -128,6 +130,17 @@ export default function RoomsPage() {
             <RoomCardSkeleton key={i} />
           ))}
         </div>
+      ) : isError ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+          <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
+          <p className="text-zinc-400">Unable to load rooms. Check your connection and try again.</p>
+          <button
+            onClick={() => refetch()}
+            className="rounded-lg bg-fairy-600 px-4 py-2 text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          >
+            Try again
+          </button>
+        </div>
       ) : rooms && rooms.length > 0 ? (
         <div className="space-y-3">
           {rooms
@@ -168,13 +181,11 @@ export default function RoomsPage() {
             ))}
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed py-12 text-center" style={{ borderColor: 'var(--border-secondary)' }}>
-          <DoorOpen className="text-caption mx-auto mb-3 h-8 w-8" />
-          <p className="text-body text-sm">No rooms yet.</p>
-          <p className="text-caption mt-1 text-xs">
-            Tap "Add Room" above to create your first room.
-          </p>
-        </div>
+        <EmptyState
+          icon={DoorOpen}
+          message="No rooms yet."
+          sub='Tap "Add Room" above to create your first room.'
+        />
       )}
     </div>
   )

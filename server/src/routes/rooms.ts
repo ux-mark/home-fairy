@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
-import { getAll, getOne, run } from '../db/index.js'
+import { getAll, getOne, run, db } from '../db/index.js'
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
 const router = Router()
 
@@ -96,7 +97,7 @@ router.get('/default-scenes', (_req: Request, res: Response) => {
     res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -107,7 +108,7 @@ router.get('/', (_req: Request, res: Response) => {
     res.json(rows.map(parseRoom))
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -126,7 +127,7 @@ router.get('/:name', (req: Request, res: Response) => {
     res.json({ ...parseRoom(row), lights })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -157,7 +158,7 @@ router.post('/', (req: Request, res: Response) => {
     }
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[rooms POST] error:', msg)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -196,7 +197,7 @@ router.put('/:name', (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -219,7 +220,7 @@ router.get('/:name/default-scenes', (req: Request, res: Response) => {
     res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -281,7 +282,7 @@ router.put('/:name/default-scene', (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -293,12 +294,19 @@ router.delete('/:name', (req: Request, res: Response) => {
       res.status(404).json({ error: 'Room not found' })
       return
     }
-    run('DELETE FROM light_rooms WHERE room_name = ?', [req.params.name])
-    run('DELETE FROM rooms WHERE name = ?', [req.params.name])
+    const deleteRoom = db.transaction(() => {
+      run('DELETE FROM light_rooms WHERE room_name = ?', [req.params.name])
+      run('DELETE FROM device_rooms WHERE room_name = ?', [req.params.name])
+      run('DELETE FROM room_default_scenes WHERE room_name = ?', [req.params.name])
+      run('DELETE FROM scene_rooms WHERE room_name = ?', [req.params.name])
+      run('DELETE FROM room_activity WHERE room_name = ?', [req.params.name])
+      run('DELETE FROM rooms WHERE name = ?', [req.params.name])
+    })
+    deleteRoom()
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 

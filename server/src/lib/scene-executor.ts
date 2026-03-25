@@ -6,6 +6,7 @@ import { twinklyClient } from './twinkly-client.js'
 import { fairyDeviceClient } from './fairy-device-client.js'
 import { timerManager } from './timer-manager.js'
 import { getAll, getOne, run } from '../db/index.js'
+import { emit } from './socket.js'
 
 interface LightCommand {
   type: 'lifx_light'
@@ -205,7 +206,13 @@ async function retryFailedLights(
   }
 }
 
-export async function activateScene(sceneName: string): Promise<void> {
+export async function activateScene(sceneName: string, visitedScenes: Set<string> = new Set()): Promise<void> {
+  if (visitedScenes.has(sceneName)) {
+    log(`Scene cycle detected: ${sceneName} already in chain [${[...visitedScenes].join(' -> ')}]. Skipping.`)
+    return
+  }
+  visitedScenes.add(sceneName)
+
   const scene = getOne<SceneRow>(
     'SELECT * FROM scenes WHERE name = ?',
     [sceneName],
@@ -259,10 +266,32 @@ export async function activateScene(sceneName: string): Promise<void> {
     try {
       switch (cmd.type) {
         case 'all_off': {
-          await lifxClient.setState('all', {
-            power: 'off',
-            duration: cmd.duration ?? 1,
-          })
+          // Turn off LIFX lights in scene rooms only (not ALL lights)
+          const lightStates: BatchState[] = []
+          for (const room of rooms) {
+            const roomLights = getAll<{ light_selector: string }>(
+              'SELECT light_selector FROM light_rooms WHERE room_name = ?',
+              [room.name],
+            )
+            for (const light of roomLights) {
+              lightStates.push({
+                selector: light.light_selector,
+                power: 'off',
+                duration: cmd.duration ?? 1,
+              })
+            }
+          }
+          if (lightStates.length > 0) {
+            for (let i = 0; i < lightStates.length; i += 50) {
+              const batch = lightStates.slice(i, i + 50)
+              try {
+                await lifxClient.setStates(batch)
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err)
+                log(`Error turning off LIFX lights in scene rooms: ${msg}`)
+              }
+            }
+          }
           // Also turn off Hubitat switches and Kasa devices assigned to rooms in this scene
           for (const room of rooms) {
             const hubDevices = getAll<{ device_id: string; device_type: string }>(
@@ -281,7 +310,7 @@ export async function activateScene(sceneName: string): Promise<void> {
               }
             }
           }
-          log('Turned off all lights, Hubitat switches, and Kasa devices')
+          log('Turned off lights in scene rooms, Hubitat switches, and Kasa devices')
           break
         }
 
@@ -357,7 +386,7 @@ export async function activateScene(sceneName: string): Promise<void> {
         case 'fairy_scene': {
           // Chain: activate another scene
           try {
-            await activateScene(cmd.name)
+            await activateScene(cmd.name, visitedScenes)
             log(`Chained scene activation: ${cmd.name}`)
           } catch (chainErr) {
             const chainMsg = chainErr instanceof Error ? chainErr.message : String(chainErr)
@@ -419,6 +448,8 @@ export async function activateScene(sceneName: string): Promise<void> {
     `UPDATE scenes SET last_activated_at = datetime('now') WHERE name = ?`,
     [sceneName],
   )
+
+  emit('scene:change', { scene: sceneName, action: 'activated', rooms: rooms.map(r => r.name) })
 }
 
 export async function deactivateScene(sceneName: string): Promise<void> {
@@ -578,4 +609,6 @@ export async function deactivateScene(sceneName: string): Promise<void> {
       [room.name],
     )
   }
+
+  emit('scene:change', { scene: sceneName, action: 'deactivated', rooms: rooms.map(r => r.name) })
 }

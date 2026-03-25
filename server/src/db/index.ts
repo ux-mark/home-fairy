@@ -159,6 +159,12 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_notifications_dedup
       ON notifications (dedup_key, dismissed);
 
+    CREATE TABLE IF NOT EXISTS modes (
+      name TEXT PRIMARY KEY,
+      display_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS mode_triggers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       mode_name TEXT NOT NULL REFERENCES modes(name) ON UPDATE CASCADE ON DELETE CASCADE,
@@ -173,12 +179,6 @@ export function initDb(): void {
 
     CREATE INDEX IF NOT EXISTS idx_mode_triggers_mode
       ON mode_triggers (mode_name);
-
-    CREATE TABLE IF NOT EXISTS modes (
-      name TEXT PRIMARY KEY,
-      display_order INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now'))
-    );
 
     CREATE TABLE IF NOT EXISTS scene_rooms (
       scene_name TEXT NOT NULL REFERENCES scenes(name) ON UPDATE CASCADE ON DELETE CASCADE,
