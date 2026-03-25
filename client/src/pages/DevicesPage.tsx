@@ -24,18 +24,15 @@ import { EmptyState } from '@/components/ui/EmptyState'
 
 function RoomPill({
   roomName,
-  deviceId,
   deviceLabel,
-  deviceType,
   rooms,
+  onAssign,
 }: {
   roomName: string | null
-  deviceId: string
   deviceLabel: string
-  deviceType: string
   rooms: Room[] | undefined
+  onAssign: (roomName: string) => Promise<unknown>
 }) {
-  const queryClient = useQueryClient()
   const { toast } = useToast()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -50,10 +47,8 @@ function RoomPill({
   }, [open])
 
   const assignMutation = useMutation({
-    mutationFn: (room: string) =>
-      api.hubitat.assignDevice({ device_id: deviceId, device_label: deviceLabel, device_type: deviceType, room_name: room }),
+    mutationFn: onAssign,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['hubitat', 'device-rooms'] })
       setOpen(false)
       toast({ message: `${deviceLabel} assigned to room` })
     },
@@ -118,7 +113,7 @@ interface UnifiedDevice {
 
 // ── LIFX Light card ───────────────────────────────────────────────────────────
 
-function LightCard({ device }: { device: UnifiedDevice; rooms?: Room[] }) {
+function LightCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[] }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const light = device.light!
@@ -153,14 +148,22 @@ function LightCard({ device }: { device: UnifiedDevice; rooms?: Room[] }) {
           </p>
         </Link>
 
-        {device.roomName && (
-          <Link
-            to={`/rooms/${encodeURIComponent(device.roomName)}`}
-            className="hidden shrink-0 rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400 hover:bg-fairy-500/20 transition-colors sm:inline-flex"
-          >
-            {device.roomName}
-          </Link>
-        )}
+        <RoomPill
+          roomName={device.roomName}
+          deviceLabel={device.label}
+          rooms={rooms}
+          onAssign={async (room) => {
+            const l = light
+            await api.lights.saveForRoom(room, [{
+              id: l.id,
+              label: l.label,
+              has_color: l.product.capabilities.has_color,
+              min_kelvin: l.product.capabilities.min_kelvin,
+              max_kelvin: l.product.capabilities.max_kelvin,
+            }])
+            queryClient.invalidateQueries({ queryKey: ['lights', 'rooms'] })
+          }}
+        />
 
         <TypeBadge type="lifx" />
 
@@ -247,10 +250,12 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
 
         <RoomPill
           roomName={device.roomName}
-          deviceId={device.hubDevice!.id.toString()}
           deviceLabel={device.label}
-          deviceType={device.hubDevice!.device_type}
           rooms={rooms}
+          onAssign={async (room) => {
+            await api.hubitat.assignDevice({ device_id: device.hubDevice!.id.toString(), device_label: device.label, device_type: device.hubDevice!.device_type, room_name: room })
+            queryClient.invalidateQueries({ queryKey: ['hubitat', 'device-rooms'] })
+          }}
         />
 
         <TypeBadge type={device.kind} />
@@ -405,10 +410,12 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
 
         <RoomPill
           roomName={device.roomName}
-          deviceId={kasa.id}
           deviceLabel={device.label}
-          deviceType={'kasa_' + kasa.device_type}
           rooms={rooms}
+          onAssign={async (room) => {
+            await api.hubitat.assignDevice({ device_id: kasa.id, device_label: device.label, device_type: 'kasa_' + kasa.device_type, room_name: room })
+            queryClient.invalidateQueries({ queryKey: ['hubitat', 'device-rooms'] })
+          }}
         />
 
         <TypeBadge type={kasa.device_type} />
