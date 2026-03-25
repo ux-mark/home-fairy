@@ -448,6 +448,14 @@ function DevicesSection() {
             )}
           </div>
         </div>
+
+        <Link
+          to="/settings/kasa"
+          className="surface flex items-center gap-2 rounded-lg px-3 py-2.5 text-heading text-sm transition-colors hover:brightness-95 dark:hover:brightness-110"
+        >
+          <Plug className="h-4 w-4" />
+          Manage Kasa devices
+        </Link>
       </div>
     </Section>
   )
@@ -1992,14 +2000,7 @@ function SystemSection() {
             </div>
           </>
         )}
-        <div className="flex flex-col gap-2 pt-2">
-          <Link
-            to="/settings/kasa"
-            className="surface flex items-center gap-2 rounded-lg px-3 py-2.5 text-heading text-sm transition-colors hover:brightness-95 dark:hover:brightness-110"
-          >
-            <Plug className="h-4 w-4" />
-            Manage Kasa devices
-          </Link>
+        <div className="pt-2">
           <Link
             to="/settings/logs"
             className="surface flex items-center gap-2 rounded-lg px-3 py-2.5 text-heading text-sm transition-colors hover:brightness-95 dark:hover:brightness-110"
