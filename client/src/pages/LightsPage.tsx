@@ -17,6 +17,7 @@ import type { Light } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { BackLink } from '@/components/ui/BackLink'
 
 // ── Expandable light card ────────────────────────────────────────────────────
 
@@ -215,6 +216,7 @@ export default function LightsPage() {
 
   return (
     <div>
+      <BackLink to="/devices" label="Devices" className="mb-3" />
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-body text-sm font-medium">LIFX Lights</h2>
         <div className="flex items-center gap-2">
