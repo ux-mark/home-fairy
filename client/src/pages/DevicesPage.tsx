@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
@@ -12,13 +12,91 @@ import {
   Shield,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { Light, DeviceRoomAssignment, HubDevice, KasaDevice } from '@/lib/api'
+import type { Light, Room, DeviceRoomAssignment, HubDevice, KasaDevice } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { TypeBadge } from '@/components/ui/Badge'
 import { FilterChip } from '@/components/ui/FilterChip'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { EmptyState } from '@/components/ui/EmptyState'
+
+// ── Room assignment pill ──────────────────────────────────────────────────────
+
+function RoomPill({
+  roomName,
+  deviceId,
+  deviceLabel,
+  deviceType,
+  rooms,
+}: {
+  roomName: string | null
+  deviceId: string
+  deviceLabel: string
+  deviceType: string
+  rooms: Room[] | undefined
+}) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [open])
+
+  const assignMutation = useMutation({
+    mutationFn: (room: string) =>
+      api.hubitat.assignDevice({ device_id: deviceId, device_label: deviceLabel, device_type: deviceType, room_name: room }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hubitat', 'device-rooms'] })
+      setOpen(false)
+      toast({ message: `${deviceLabel} assigned to room` })
+    },
+    onError: () => toast({ message: 'Failed to assign device', type: 'error' }),
+  })
+
+  if (roomName) {
+    return (
+      <Link
+        to={`/rooms/${encodeURIComponent(roomName)}`}
+        className="hidden shrink-0 rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400 hover:bg-fairy-500/20 transition-colors sm:inline-flex"
+      >
+        {roomName}
+      </Link>
+    )
+  }
+
+  return (
+    <div ref={ref} className="relative hidden sm:block">
+      <button
+        onClick={(e) => { e.stopPropagation(); setOpen(!open) }}
+        className="shrink-0 rounded-full border border-dashed border-[var(--border-secondary)] px-2 py-0.5 text-[10px] font-medium text-caption transition-colors hover:border-fairy-500/40 hover:text-fairy-400"
+        aria-label={`Assign ${deviceLabel} to a room`}
+      >
+        Assign room
+      </button>
+      {open && rooms && rooms.length > 0 && (
+        <div className="absolute right-0 top-full z-20 mt-1 max-h-48 w-40 overflow-y-auto rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-primary)] shadow-lg">
+          {rooms.map(room => (
+            <button
+              key={room.name}
+              onClick={(e) => { e.stopPropagation(); assignMutation.mutate(room.name) }}
+              disabled={assignMutation.isPending}
+              className="flex w-full min-h-[36px] items-center px-3 py-1.5 text-left text-xs text-body transition-colors hover:bg-fairy-500/10 hover:text-heading"
+            >
+              {room.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -40,7 +118,7 @@ interface UnifiedDevice {
 
 // ── LIFX Light card ───────────────────────────────────────────────────────────
 
-function LightCard({ device }: { device: UnifiedDevice }) {
+function LightCard({ device }: { device: UnifiedDevice; rooms?: Room[] }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const light = device.light!
@@ -106,7 +184,7 @@ function LightCard({ device }: { device: UnifiedDevice }) {
 
 // ── Hub device card (switch/dimmer/twinkly/fairy) ─────────────────────────────
 
-function HubDeviceCard({ device }: { device: UnifiedDevice }) {
+function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[] }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [expanded, setExpanded] = useState(false)
@@ -167,14 +245,13 @@ function HubDeviceCard({ device }: { device: UnifiedDevice }) {
           )}
         </div>
 
-        {device.roomName && (
-          <Link
-            to={`/rooms/${encodeURIComponent(device.roomName)}`}
-            className="hidden shrink-0 rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400 hover:bg-fairy-500/20 transition-colors sm:inline-flex"
-          >
-            {device.roomName}
-          </Link>
-        )}
+        <RoomPill
+          roomName={device.roomName}
+          deviceId={device.hubDevice!.id.toString()}
+          deviceLabel={device.label}
+          deviceType={device.hubDevice!.device_type}
+          rooms={rooms}
+        />
 
         <TypeBadge type={device.kind} />
 
@@ -249,7 +326,7 @@ function HubDeviceCard({ device }: { device: UnifiedDevice }) {
 
 // ── Kasa device card ──────────────────────────────────────────────────────────
 
-function KasaDeviceCard({ device }: { device: UnifiedDevice }) {
+function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[] }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const kasa = device.kasaDevice!
@@ -326,14 +403,13 @@ function KasaDeviceCard({ device }: { device: UnifiedDevice }) {
           </p>
         </div>
 
-        {device.roomName && (
-          <Link
-            to={`/rooms/${encodeURIComponent(device.roomName)}`}
-            className="hidden shrink-0 rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400 hover:bg-fairy-500/20 transition-colors sm:inline-flex"
-          >
-            {device.roomName}
-          </Link>
-        )}
+        <RoomPill
+          roomName={device.roomName}
+          deviceId={kasa.id}
+          deviceLabel={device.label}
+          deviceType={'kasa_' + kasa.device_type}
+          rooms={rooms}
+        />
 
         <TypeBadge type={kasa.device_type} />
 
@@ -414,10 +490,10 @@ function KasaDeviceCard({ device }: { device: UnifiedDevice }) {
 
 // ── Unified device card dispatcher ────────────────────────────────────────────
 
-function DeviceCard({ device }: { device: UnifiedDevice }) {
-  if (device.kind === 'lifx') return <LightCard device={device} />
-  if (device.kind === 'kasa') return <KasaDeviceCard device={device} />
-  return <HubDeviceCard device={device} />
+function DeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[] }) {
+  if (device.kind === 'lifx') return <LightCard device={device} rooms={rooms} />
+  if (device.kind === 'kasa') return <KasaDeviceCard device={device} rooms={rooms} />
+  return <HubDeviceCard device={device} rooms={rooms} />
 }
 
 // ── Devices page ──────────────────────────────────────────────────────────────
@@ -461,6 +537,11 @@ export default function DevicesPage() {
   const { data: deviceAssignments } = useQuery({
     queryKey: ['hubitat', 'device-rooms'],
     queryFn: api.hubitat.getDeviceRooms,
+  })
+
+  const { data: rooms } = useQuery({
+    queryKey: ['rooms'],
+    queryFn: api.rooms.getAll,
   })
 
   const isLoading = lightsLoading || hubLoading || kasaLoading
@@ -690,7 +771,7 @@ export default function DevicesPage() {
               <div key={group}>
                 <h3 className="text-body mb-2 text-sm font-medium">{groupLabel(group)}</h3>
                 <div className="space-y-2">
-                  {devices.map(d => <DeviceCard key={d.key} device={d} />)}
+                  {devices.map(d => <DeviceCard key={d.key} device={d} rooms={rooms} />)}
                 </div>
               </div>
             ))}
@@ -699,7 +780,7 @@ export default function DevicesPage() {
             <div>
               <h3 className="text-caption mb-2 text-sm font-medium">Unassigned</h3>
               <div className="space-y-2">
-                {grouped.unassigned.map(d => <DeviceCard key={d.key} device={d} />)}
+                {grouped.unassigned.map(d => <DeviceCard key={d.key} device={d} rooms={rooms} />)}
               </div>
             </div>
           )}
