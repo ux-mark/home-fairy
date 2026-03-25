@@ -1,8 +1,8 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
+import { BackLink } from '@/components/ui/BackLink'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft,
   Save,
   Eye,
   EyeOff,
@@ -1090,13 +1090,7 @@ export default function SceneEditorPage() {
   return (
     <div className="pb-24">
       {/* Back link */}
-      <Link
-        to="/scenes"
-        className="mb-4 inline-flex items-center gap-1.5 text-sm text-body transition-colors hover:text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        All Scenes
-      </Link>
+      <BackLink to="/scenes" label="All Scenes" className="mb-3" />
 
       {/* ── Top section: name + icon ──────────────────────────────────────── */}
       <section className="mb-6 space-y-3">
