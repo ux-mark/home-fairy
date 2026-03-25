@@ -36,13 +36,17 @@ class SunModeScheduler {
     }
 
     // If the current mode doesn't match, set it now — but never overwrite the configured sleep mode
-    // (sleep mode is set manually by nighttime/guest-night and should persist until wake mode)
+    // UNLESS the target mode is the configured wake mode (which unlocks from sleep)
     if (currentShouldBe) {
       const currentModeRow = getOne<{ value: string }>(
         "SELECT value FROM current_state WHERE key = 'mode'",
       )
       const currentMode = currentModeRow?.value
-      if (sleepMode && currentMode === sleepMode) {
+      const wakeModeRow = getOne<{ value: string }>(
+        "SELECT value FROM current_state WHERE key = 'pref_night_wake_mode'",
+      )
+      const wakeMode = wakeModeRow?.value || 'Morning'
+      if (sleepMode && currentMode === sleepMode && currentShouldBe.mode !== wakeMode) {
         // Don't overwrite — sleep mode persists until the configured wake mode is reached
       } else if (currentMode !== currentShouldBe.mode) {
         this.transitionMode(currentShouldBe.mode, currentShouldBe.sunPhase + ' (catch-up)')
@@ -55,11 +59,18 @@ class SunModeScheduler {
       if (delay > 0) {
         const timer = setTimeout(() => {
           // Check mode at transition time — don't overwrite the configured sleep mode
+          // UNLESS this transition IS the wake mode (which should unlock from sleep)
           const modeRow = getOne<{ value: string }>(
             "SELECT value FROM current_state WHERE key = 'mode'",
           )
           const sleepModeName = this.getSleepModeName()
-          if (sleepModeName && modeRow?.value === sleepModeName) return
+          if (sleepModeName && modeRow?.value === sleepModeName) {
+            const wakeModeRow = getOne<{ value: string }>(
+              "SELECT value FROM current_state WHERE key = 'pref_night_wake_mode'",
+            )
+            const wakeModeName = wakeModeRow?.value || 'Morning'
+            if (mapping.mode !== wakeModeName) return
+          }
           this.transitionMode(mapping.mode, mapping.sunPhase)
         }, delay)
         this.timers.push(timer)
