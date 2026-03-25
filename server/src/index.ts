@@ -5,7 +5,7 @@ import { createServer } from 'http'
 import { Server as SocketServer } from 'socket.io'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { initDb, run } from './db/index.js'
+import { initDb, run, getOne } from './db/index.js'
 import lifxRoutes from './routes/lifx.js'
 import roomsRoutes from './routes/rooms.js'
 import scenesRoutes from './routes/scenes.js'
@@ -14,6 +14,7 @@ import systemRoutes from './routes/system.js'
 import hubitatRoutes from './routes/hubitat.js'
 import motionRoutes from './routes/motion.js'
 import dashboardRoutes from './routes/dashboard.js'
+import kasaRoutes from './routes/kasa.js'
 import { motionHandler } from './lib/motion-handler.js'
 import { sunModeScheduler } from './lib/sun-mode-scheduler.js'
 import { timeTriggerScheduler } from './lib/time-trigger-scheduler.js'
@@ -22,6 +23,7 @@ import { activateScene } from './lib/scene-executor.js'
 import { weatherIndicator } from './lib/weather-indicator.js'
 import { startHistoryCollector } from './lib/history-collector.js'
 import { notificationService } from './lib/notification-service.js'
+import { startKasaPoller } from './lib/kasa-poller.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -51,6 +53,7 @@ app.use('/api/system', systemRoutes)
 app.use('/api/hubitat', hubitatRoutes)
 app.use('/api/motion', motionRoutes)
 app.use('/api/dashboard', dashboardRoutes)
+app.use('/api/kasa', kasaRoutes)
 
 // Hubitat webhook handler
 app.post('/hubitat', async (req, res) => {
@@ -63,6 +66,16 @@ app.post('/hubitat', async (req, res) => {
     const displayName: string = event.displayName ?? event.displayname ?? 'unknown'
     const eventName: string = event.name ?? ''
     const eventValue: string = String(event.value ?? '')
+
+    // Skip events for devices that have been migrated to Kasa direct control
+    const kasaMigrated = getOne<{ id: string }>(
+      'SELECT id FROM kasa_devices WHERE label = ?',
+      [displayName],
+    )
+    if (kasaMigrated) {
+      res.json({ success: true, skipped: true, reason: 'device managed by Kasa sidecar' })
+      return
+    }
 
     // Log the event
     run(
@@ -223,6 +236,7 @@ httpServer.listen(PORT, () => {
   timeTriggerScheduler.init(io)
   weatherIndicator.start()
   startHistoryCollector()
+  startKasaPoller(io)
 })
 
 export { io }

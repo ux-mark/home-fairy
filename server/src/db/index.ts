@@ -87,11 +87,29 @@ export function initDb(): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       device_id TEXT NOT NULL,
       device_label TEXT NOT NULL,
-      device_type TEXT NOT NULL CHECK(device_type IN ('light','switch','sensor','dimmer','contact','motion','twinkly','fairy')),
+      device_type TEXT NOT NULL CHECK(device_type IN ('light','switch','sensor','dimmer','contact','motion','twinkly','fairy','kasa_plug','kasa_strip','kasa_outlet','kasa_switch','kasa_dimmer')),
       room_name TEXT NOT NULL REFERENCES rooms(name),
       config TEXT DEFAULT '{}',
       created_at TEXT DEFAULT (datetime('now')),
       UNIQUE(device_id, room_name)
+    );
+
+    CREATE TABLE IF NOT EXISTS kasa_devices (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      device_type TEXT NOT NULL,
+      model TEXT,
+      parent_id TEXT,
+      ip_address TEXT,
+      has_emeter INTEGER DEFAULT 0,
+      firmware TEXT,
+      hardware TEXT,
+      rssi INTEGER,
+      is_online INTEGER DEFAULT 1,
+      attributes TEXT DEFAULT '{}',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now')),
+      last_seen TEXT
     );
 
     CREATE TABLE IF NOT EXISTS device_history (

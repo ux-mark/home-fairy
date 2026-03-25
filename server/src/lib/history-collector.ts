@@ -48,6 +48,22 @@ async function collectSnapshot(): Promise<void> {
           insert.run('battery', device.label, Number(device.battery), timestamp)
         }
       }
+
+      // Kasa energy snapshots
+      const kasaDevices = getAll<{ label: string; attributes: string }>(
+        "SELECT label, attributes FROM kasa_devices WHERE has_emeter = 1",
+      )
+      for (const device of kasaDevices) {
+        try {
+          const attrs = JSON.parse(device.attributes)
+          if (attrs.power != null) insert.run('power', device.label, attrs.power, timestamp)
+          if (attrs.energy != null) insert.run('energy', device.label, attrs.energy, timestamp)
+          if (attrs.voltage != null) insert.run('voltage', device.label, attrs.voltage, timestamp)
+          if (attrs.current != null) insert.run('current', device.label, attrs.current, timestamp)
+        } catch {
+          // Skip devices with invalid attributes
+        }
+      }
     })
 
     transaction()
