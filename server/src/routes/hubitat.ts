@@ -11,6 +11,7 @@ interface HubDeviceRow {
   device_type: string
   capabilities: string
   attributes: string
+  config: string
   created_at: string
   updated_at: string
 }
@@ -141,11 +142,28 @@ router.get('/devices/sync', async (_req: Request, res: Response) => {
       )
     }
 
+    // Remove hub_devices that no longer exist on the hub
+    // Compare as strings to avoid number/string type mismatch
+    // Skip locally-created devices (negative IDs: fairy, twinkly) — they're not from Hubitat
+    const hubIdStrings = new Set(devices.map((d) => String(d.id)))
+    const existingRows = getAll<{ id: number; label: string }>('SELECT id, label FROM hub_devices')
+    let removedCount = 0
+    for (const row of existingRows) {
+      if (row.id < 0) continue // locally-created device, not from Hubitat
+      if (!hubIdStrings.has(String(row.id))) {
+        run('DELETE FROM device_rooms WHERE device_id = ?', [String(row.id)])
+        run('DELETE FROM hub_devices WHERE id = ?', [row.id])
+        removedCount++
+        console.log(`[hubitat-sync] Removed device no longer on hub: ${row.label} (${row.id})`)
+      }
+    }
+
     const rows = getAll<HubDeviceRow>('SELECT * FROM hub_devices ORDER BY label')
     res.json({
       synced: devices.length,
       new: newCount,
       updated: updatedCount,
+      removed: removedCount,
       devices: rows.map((r) => ({
         ...r,
         capabilities: JSON.parse(r.capabilities),
@@ -291,6 +309,44 @@ router.post('/device-rooms', (req: Request, res: Response) => {
       ...created!,
       config: JSON.parse(created!.config),
     })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// PATCH /devices/:id/config — update device-level config (e.g. exclude_from_all_off)
+router.patch('/devices/:id/config', (req: Request, res: Response) => {
+  try {
+    const deviceId = String(req.params.id)
+    const { config } = req.body as { config?: Record<string, unknown> }
+    if (!config || typeof config !== 'object') {
+      res.status(400).json({ error: 'config object is required' })
+      return
+    }
+
+    const existing = getOne<HubDeviceRow>('SELECT * FROM hub_devices WHERE id = ?', [Number(deviceId)])
+    if (!existing) {
+      res.status(404).json({ error: 'Device not found' })
+      return
+    }
+
+    let existingConfig: Record<string, unknown> = {}
+    try { existingConfig = JSON.parse(existing.config ?? '{}') } catch { existingConfig = {} }
+    const merged = { ...existingConfig, ...config }
+
+    run(
+      "UPDATE hub_devices SET config = ?, updated_at = datetime('now') WHERE id = ?",
+      [JSON.stringify(merged), Number(deviceId)],
+    )
+
+    // Also sync to device_rooms if assigned
+    run(
+      'UPDATE device_rooms SET config = ? WHERE device_id = ?',
+      [JSON.stringify(merged), deviceId],
+    )
+
+    res.json({ id: Number(deviceId), config: merged })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: msg })

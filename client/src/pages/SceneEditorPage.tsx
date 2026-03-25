@@ -28,6 +28,7 @@ import type {
   SceneRoom,
   LightRoom,
   DeviceRoomAssignment,
+  KasaDevice,
 } from '@/lib/api'
 import { cn, hsbToHex, kelvinToHex, debounce, DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
@@ -485,6 +486,11 @@ export default function SceneEditorPage() {
     queryFn: api.scenes.getAll,
   })
 
+  const { data: kasaDevices } = useQuery({
+    queryKey: ['kasa'],
+    queryFn: api.kasa.getDevices,
+  })
+
   const availableModes = systemCurrent?.all_modes ?? [...DEFAULT_MODES]
 
   // ── Form state ───────────────────────────────────────────────────────────
@@ -577,7 +583,7 @@ export default function SceneEditorPage() {
       // Route device commands
       setDeviceCommands(
         cmds.filter(c =>
-          c.type === 'hubitat_device' || c.type === 'twinkly' || c.type === 'fairy_device',
+          c.type === 'hubitat_device' || c.type === 'twinkly' || c.type === 'fairy_device' || c.type === 'kasa_device',
         ),
       )
 
@@ -991,6 +997,29 @@ export default function SceneEditorPage() {
     [],
   )
 
+  const handleKasaToggle = useCallback(
+    (device: KasaDevice, on: boolean) => {
+      setDeviceCommands(prev => {
+        const filtered = prev.filter(
+          c => !(c.type === 'kasa_device' && c.device_id === device.id),
+        )
+        if (on) {
+          return [
+            ...filtered,
+            {
+              type: 'kasa_device' as const,
+              name: device.label,
+              device_id: device.id,
+              command: 'on',
+            },
+          ]
+        }
+        return filtered
+      })
+    },
+    [],
+  )
+
   const filterRoomLights = useCallback(
     (roomLights: LightRoom[]) => {
       if (!lightSearch.trim()) return roomLights
@@ -1039,10 +1068,16 @@ export default function SceneEditorPage() {
 
   // ── Helpers for device tab ──────────────────────────────────────────────
 
+  const KASA_CONTROLLABLE_TYPES: KasaDevice['device_type'][] = ['plug', 'strip', 'outlet', 'switch', 'dimmer']
+  const filteredKasaDevices = (kasaDevices ?? []).filter(
+    d => KASA_CONTROLLABLE_TYPES.includes(d.device_type),
+  )
+
   const totalDevices =
     categorizedDevices.switches.length +
     categorizedDevices.twinkly.length +
-    categorizedDevices.fairy.length
+    categorizedDevices.fairy.length +
+    filteredKasaDevices.length
 
   const otherScenes = allScenes?.filter(s => s.name !== name) ?? []
 
@@ -1193,7 +1228,7 @@ export default function SceneEditorPage() {
 
         {/* ── Tab 2: Devices ─────────────────────────────────────────────── */}
         <Tabs.Content value="devices" className="space-y-6">
-          {sceneRooms.length === 0 ? (
+          {sceneRooms.length === 0 && filteredKasaDevices.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[var(--border-secondary)] py-8 text-center">
               <ToggleLeft className="mx-auto mb-2 h-8 w-8 text-caption" />
               <p className="text-sm text-body">
@@ -1295,6 +1330,58 @@ export default function SceneEditorPage() {
                           onPatternChange={p => handleFairyPatternChange(device, p)}
                           onBrightnessChange={b => handleFairyBrightnessChange(device, b)}
                         />
+                      )
+                    })}
+                  </div>
+                </section>
+              )}
+
+              {/* Kasa Devices section */}
+              {filteredKasaDevices.length > 0 && (
+                <section>
+                  <h3 className="mb-3 text-sm font-medium text-body">
+                    Kasa Devices
+                  </h3>
+                  <div className="space-y-3">
+                    {filteredKasaDevices.map(device => {
+                      const cmd = deviceCommands.find(
+                        c => c.type === 'kasa_device' && c.device_id === device.id,
+                      )
+                      const isOn = !!cmd
+
+                      return (
+                        <div key={`kasa-${device.id}`} className="card rounded-xl border p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-medium text-heading">{device.label}</p>
+                              <p className="text-xs text-caption">
+                                {device.model ? (
+                                  <span className="mr-1.5 inline-block rounded bg-[var(--surface-2)] px-1.5 py-0.5 font-mono text-[10px] text-body">
+                                    {device.model}
+                                  </span>
+                                ) : null}
+                                {isOn ? 'On' : 'Off'}
+                              </p>
+                            </div>
+                            <Switch.Root
+                              checked={isOn}
+                              onCheckedChange={on => handleKasaToggle(device, on)}
+                              aria-label={`${isOn ? 'Remove' : 'Add'} ${device.label}`}
+                              className={cn(
+                                'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
+                                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                                isOn ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
+                              )}
+                            >
+                              <Switch.Thumb
+                                className={cn(
+                                  'block h-5 w-5 rounded-full bg-white shadow transition-transform',
+                                  isOn ? 'translate-x-6' : 'translate-x-1',
+                                )}
+                              />
+                            </Switch.Root>
+                          </div>
+                        </div>
                       )
                     })}
                   </div>

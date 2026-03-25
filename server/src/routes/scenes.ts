@@ -64,6 +64,7 @@ const commandSchema = z.object({
     'all_off',
     'lifx_off',
     'hubitat_device',
+    'kasa_device',
     'scene_timer',
     'mode_update',
     'lifx_effect',

@@ -372,6 +372,12 @@ export default function RoomDetailPage() {
     queryFn: api.hubitat.getDevices,
   })
 
+  // Fetch all Kasa devices
+  const { data: allKasaDevices } = useQuery({
+    queryKey: ['kasa', 'devices'],
+    queryFn: api.kasa.getDevices,
+  })
+
   // Fetch all Hubitat device-room assignments
   const { data: allDeviceRoomAssignments } = useQuery({
     queryKey: ['hubitat', 'device-rooms'],
@@ -526,9 +532,10 @@ export default function RoomDetailPage() {
     return new Map(allLights.map(l => [l.id, l]))
   }, [allLights])
 
-  // ── Device (switches/dimmers/twinkly/fairy) assignment state ──────────
+  // ── Device (switches/dimmers/twinkly/fairy/kasa) assignment state ─────
   const SWITCH_TYPES = ['switch', 'dimmer']
   const OTHER_TYPES = ['twinkly', 'fairy']
+  const KASA_TYPES = ['kasa_plug', 'kasa_strip', 'kasa_outlet', 'kasa_switch', 'kasa_dimmer']
 
   // Devices assigned to THIS room (from API or local pending state)
   const [pendingDeviceAssigns, setPendingDeviceAssigns] = useState<
@@ -565,7 +572,7 @@ export default function RoomDetailPage() {
   }, [apiDevicesForRoom, pendingDeviceAssigns, pendingDeviceUnassigns, pendingDeviceConfigs, name])
 
   // Filter to only device types that belong in the Switches tab (not sensors)
-  const DEVICE_TYPES = [...SWITCH_TYPES, ...OTHER_TYPES]
+  const DEVICE_TYPES = [...SWITCH_TYPES, ...OTHER_TYPES, ...KASA_TYPES]
   const filteredDeviceAssignments = useMemo(
     () => effectiveDeviceAssignments.filter(d => DEVICE_TYPES.includes(d.device_type)),
     [effectiveDeviceAssignments],
@@ -577,22 +584,45 @@ export default function RoomDetailPage() {
     return new Set(allDeviceRoomAssignments.map(a => a.device_id))
   }, [allDeviceRoomAssignments])
 
-  // Available devices by type for switches tab
+  // Available devices by type for switches tab (Hub + Kasa)
   const availableDevicesByType = useMemo(() => {
-    if (!allHubDevices) return new Map<string, HubDevice[]>()
     const assignedIds = new Set(effectiveDeviceAssignments.map(d => d.device_id))
-    const allTypes = [...SWITCH_TYPES, ...OTHER_TYPES]
+    const allTypes = [...SWITCH_TYPES, ...OTHER_TYPES, ...KASA_TYPES]
     const groups = new Map<string, HubDevice[]>()
-    for (const device of allHubDevices) {
-      if (!allTypes.includes(device.device_type)) continue
-      if (assignedIds.has(String(device.id))) continue
-      if (deviceIdsAssignedToAnyRoom.has(String(device.id))) continue
-      const type = device.device_type
-      if (!groups.has(type)) groups.set(type, [])
-      groups.get(type)!.push(device)
+
+    // Hub devices
+    if (allHubDevices) {
+      for (const device of allHubDevices) {
+        if (!allTypes.includes(device.device_type)) continue
+        if (assignedIds.has(String(device.id))) continue
+        if (deviceIdsAssignedToAnyRoom.has(String(device.id))) continue
+        const type = device.device_type
+        if (!groups.has(type)) groups.set(type, [])
+        groups.get(type)!.push(device)
+      }
     }
+
+    // Kasa devices — all grouped under a single "Kasa plugs" category
+    if (allKasaDevices) {
+      const kasaGroup = 'kasa_plug'
+      for (const kd of allKasaDevices) {
+        const kasaType = kd.parent_id ? 'kasa_outlet' : ('kasa_' + kd.device_type)
+        if (assignedIds.has(kd.id)) continue
+        if (deviceIdsAssignedToAnyRoom.has(kd.id)) continue
+        if (!groups.has(kasaGroup)) groups.set(kasaGroup, [])
+        groups.get(kasaGroup)!.push({
+          id: kd.id as unknown as number,
+          label: kd.label,
+          device_name: kd.model ?? '',
+          device_type: kasaType,
+          capabilities: [],
+          attributes: kd.attributes as Record<string, unknown>,
+        })
+      }
+    }
+
     return groups
-  }, [allHubDevices, effectiveDeviceAssignments, deviceIdsAssignedToAnyRoom])
+  }, [allHubDevices, allKasaDevices, effectiveDeviceAssignments, deviceIdsAssignedToAnyRoom])
 
   // Filter assigned devices by search
   const filteredAssignedDevices = useMemo(() => {
@@ -843,13 +873,28 @@ export default function RoomDetailPage() {
     if (selectedDeviceIds.size === 0) return
     const newAssigns = [...pendingDeviceAssigns]
     for (const id of selectedDeviceIds) {
-      const device = allHubDevices?.find(d => String(d.id) === id)
-      if (device && !newAssigns.find(p => p.device_id === id)) {
+      if (newAssigns.find(p => p.device_id === id)) continue
+      // Check hub devices first, then look in available groups (includes Kasa)
+      const hubDevice = allHubDevices?.find(d => String(d.id) === id)
+      if (hubDevice) {
         newAssigns.push({
           device_id: id,
-          device_label: device.label,
-          device_type: device.device_type,
+          device_label: hubDevice.label,
+          device_type: hubDevice.device_type,
         })
+      } else {
+        // Check available groups (includes Kasa devices mapped to HubDevice shape)
+        for (const devices of availableDevicesByType.values()) {
+          const found = devices.find(d => String(d.id) === id)
+          if (found) {
+            newAssigns.push({
+              device_id: id,
+              device_label: found.label,
+              device_type: found.device_type,
+            })
+            break
+          }
+        }
       }
     }
     setPendingDeviceAssigns(newAssigns)
@@ -928,6 +973,7 @@ export default function RoomDetailPage() {
     dimmer: 'Dimmers',
     twinkly: 'Twinkly',
     fairy: 'Fairy',
+    kasa_plug: 'Kasa plugs',
   }
 
   return (
@@ -1587,9 +1633,9 @@ export default function RoomDetailPage() {
                 <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   All devices have been assigned to rooms.
                 </p>
-              ) : !allHubDevices ? (
+              ) : !allHubDevices && !allKasaDevices ? (
                 <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
-                  No Hubitat devices found. Check your hub connection.
+                  No devices found. Check your hub and Kasa sidecar connections.
                 </p>
               ) : null}
             </div>

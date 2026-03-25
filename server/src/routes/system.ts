@@ -8,6 +8,7 @@ import { timerManager } from '../lib/timer-manager.js'
 import { sunModeScheduler } from '../lib/sun-mode-scheduler.js'
 import { lifxClient } from '../lib/lifx-client.js'
 import { hubitatClient } from '../lib/hubitat-client.js'
+import { kasaClient } from '../lib/kasa-client.js'
 import { twinklyClient } from '../lib/twinkly-client.js'
 import { fairyDeviceClient } from '../lib/fairy-device-client.js'
 import { mtaClient } from '../lib/mta-client.js'
@@ -1235,6 +1236,14 @@ async function runAllOff(excludeRooms: string[] = []): Promise<string[]> {
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         actions.push(`Fairy error (${row.device_label}): ${msg}`)
+      }
+    } else if (type.startsWith('kasa_')) {
+      try {
+        await kasaClient.sendCommand(row.device_id, 'off')
+        actions.push(`Kasa off: ${row.device_label}`)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        actions.push(`Kasa error (${row.device_label}): ${msg}`)
       }
     }
   }

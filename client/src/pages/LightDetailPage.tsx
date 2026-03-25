@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Power, ChevronRight, Wifi, WifiOff } from 'lucide-react'
@@ -38,6 +39,39 @@ export default function LightDetailPage() {
       api.lifx.setState(`id:${id}`, { brightness: brightness / 100, duration: 0.3 }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }),
   })
+
+  // Room assignment
+  const [lightRoomDropdownOpen, setLightRoomDropdownOpen] = useState(false)
+  const lightRoomDropdownRef = useRef<HTMLDivElement>(null)
+  const { data: rooms } = useQuery({ queryKey: ['rooms'], queryFn: api.rooms.getAll })
+  const { data: lightAssignments } = useQuery({ queryKey: ['lights', 'rooms'], queryFn: api.lights.getRoomAssignments })
+  const lightRoom = lightAssignments?.find(a => a.light_id === id)
+
+  const assignLightRoomMutation = useMutation({
+    mutationFn: (roomName: string) =>
+      api.lights.saveForRoom(roomName, [{
+        id: light?.id ?? '',
+        label: light?.label ?? '',
+        has_color: light?.product.capabilities.has_color ?? false,
+        min_kelvin: light?.product.capabilities.min_kelvin ?? 2500,
+        max_kelvin: light?.product.capabilities.max_kelvin ?? 9000,
+      }]),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['lights', 'rooms'] })
+      setLightRoomDropdownOpen(false)
+      toast({ message: 'Assigned to room' })
+    },
+    onError: () => toast({ message: 'Failed to assign', type: 'error' }),
+  })
+
+  useEffect(() => {
+    if (!lightRoomDropdownOpen) return
+    function handleClick(e: MouseEvent) {
+      if (lightRoomDropdownRef.current && !lightRoomDropdownRef.current.contains(e.target as Node)) setLightRoomDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [lightRoomDropdownOpen])
 
   // Loading state
   if (lightsLoading) {
@@ -92,6 +126,39 @@ export default function LightDetailPage() {
             {light.connected ? <Wifi className="h-3 w-3" aria-hidden="true" /> : <WifiOff className="h-3 w-3" aria-hidden="true" />}
             {light.connected ? 'Connected' : 'Disconnected'}
           </span>
+          <div ref={lightRoomDropdownRef} className="relative inline-flex">
+            <button
+              onClick={() => setLightRoomDropdownOpen(!lightRoomDropdownOpen)}
+              className={cn(
+                'rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors',
+                lightRoom
+                  ? 'bg-fairy-500/10 text-fairy-400 hover:bg-fairy-500/20'
+                  : 'border border-dashed border-[var(--border-secondary)] text-caption hover:border-fairy-500/40 hover:text-fairy-400',
+              )}
+              aria-label={lightRoom ? `Change room for ${light.label} (currently ${lightRoom.room_name})` : `Assign ${light.label} to a room`}
+            >
+              {lightRoom?.room_name ?? 'Assign room'}
+            </button>
+            {lightRoomDropdownOpen && rooms && rooms.length > 0 && (
+              <div className="absolute left-0 top-full z-20 mt-1 max-h-48 w-40 overflow-y-auto rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-primary)] shadow-lg">
+                {rooms.map(room => (
+                  <button
+                    key={room.name}
+                    onClick={() => assignLightRoomMutation.mutate(room.name)}
+                    disabled={assignLightRoomMutation.isPending || room.name === lightRoom?.room_name}
+                    className={cn(
+                      'flex w-full min-h-[36px] items-center px-3 py-1.5 text-left text-xs transition-colors',
+                      room.name === lightRoom?.room_name
+                        ? 'text-fairy-400 font-medium bg-fairy-500/5'
+                        : 'text-body hover:bg-fairy-500/10 hover:text-heading',
+                    )}
+                  >
+                    {room.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </header>
 

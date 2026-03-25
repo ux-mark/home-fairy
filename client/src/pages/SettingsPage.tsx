@@ -29,6 +29,7 @@ import {
   RotateCcw,
   Lock,
   Unlock,
+  Plug,
 } from 'lucide-react'
 import { HsvColorPicker } from 'react-colorful'
 import { api } from '@/lib/api'
@@ -447,6 +448,14 @@ function DevicesSection() {
             )}
           </div>
         </div>
+
+        <Link
+          to="/settings/kasa"
+          className="surface flex items-center gap-2 rounded-lg px-3 py-2.5 text-heading text-sm transition-colors hover:brightness-95 dark:hover:brightness-110"
+        >
+          <Plug className="h-4 w-4" />
+          Manage Kasa devices
+        </Link>
       </div>
     </Section>
   )

@@ -100,6 +100,7 @@ export interface SceneCommand {
     | 'lifx_light'
     | 'lifx_off'
     | 'hubitat_device'
+    | 'kasa_device'
     | 'all_off'
     | 'scene_timer'
     | 'mode_update'
@@ -147,6 +148,57 @@ export interface HubDevice {
   device_type: string
   capabilities: string[]
   attributes: Record<string, unknown>
+}
+
+export interface KasaEmeterData {
+  power: number
+  voltage: number
+  current: number
+  total: number
+  today?: number
+}
+
+export interface KasaDevice {
+  id: string
+  label: string
+  device_type: 'plug' | 'strip' | 'outlet' | 'switch' | 'dimmer'
+  model: string | null
+  parent_id: string | null
+  ip_address: string | null
+  has_emeter: boolean
+  firmware: string | null
+  hardware: string | null
+  rssi: number | null
+  is_online: boolean
+  attributes: {
+    switch?: string
+    brightness?: number
+    power?: number
+    voltage?: number
+    current?: number
+    energy?: number
+    runtime_today?: number
+    runtime_month?: number
+  }
+  children?: KasaDevice[]
+  last_seen: string | null
+}
+
+export interface KasaDailyStats {
+  year: number
+  month: number
+  data: Record<number, number>
+}
+
+export interface KasaMonthlyStats {
+  year: number
+  data: Record<number, number>
+}
+
+export interface KasaHealth {
+  status: string
+  device_count: number
+  online_count: number
 }
 
 export interface DeviceRoomAssignment {
@@ -827,5 +879,44 @@ export const api = {
           '/config',
         { method: 'PATCH', body: JSON.stringify({ config }) },
       ),
+    updateDeviceLevelConfig: (deviceId: string, config: Record<string, unknown>) =>
+      fetchApi<{ id: number; config: Record<string, unknown> }>(
+        '/hubitat/devices/' + encodeURIComponent(deviceId) + '/config',
+        { method: 'PATCH', body: JSON.stringify({ config }) },
+      ),
+  },
+  kasa: {
+    getDevices: () => fetchApi<KasaDevice[]>('/kasa/devices'),
+    getDevice: (id: string) => fetchApi<KasaDevice>('/kasa/devices/' + encodeURIComponent(id)),
+    sendCommand: (id: string, command: string, value?: number) =>
+      fetchApi<{ success: boolean }>('/kasa/devices/' + encodeURIComponent(id) + '/command', {
+        method: 'POST',
+        body: JSON.stringify({ command, value }),
+      }),
+    discover: () => fetchApi<{ discovered: number; total: number }>('/kasa/discover', { method: 'POST' }),
+    getDailyStats: (id: string, year?: number, month?: number) => {
+      const params = new URLSearchParams()
+      if (year) params.set('year', String(year))
+      if (month) params.set('month', String(month))
+      const qs = params.toString()
+      return fetchApi<KasaDailyStats>('/kasa/devices/' + encodeURIComponent(id) + '/energy/daily' + (qs ? '?' + qs : ''))
+    },
+    getMonthlyStats: (id: string, year?: number) => {
+      const params = new URLSearchParams()
+      if (year) params.set('year', String(year))
+      const qs = params.toString()
+      return fetchApi<KasaMonthlyStats>('/kasa/devices/' + encodeURIComponent(id) + '/energy/monthly' + (qs ? '?' + qs : ''))
+    },
+    renameDevice: (id: string, label: string) =>
+      fetchApi<KasaDevice>('/kasa/devices/' + encodeURIComponent(id) + '/label', {
+        method: 'POST',
+        body: JSON.stringify({ label }),
+      }),
+    updateConfig: (id: string, config: Record<string, unknown>) =>
+      fetchApi<KasaDevice>('/kasa/devices/' + encodeURIComponent(id) + '/config', {
+        method: 'PATCH',
+        body: JSON.stringify({ config }),
+      }),
+    health: () => fetchApi<KasaHealth>('/kasa/health'),
   },
 }

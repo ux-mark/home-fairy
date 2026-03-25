@@ -15,6 +15,7 @@ const LightDetailPage = React.lazy(() => import('@/pages/LightDetailPage'))
 const WatchPage = React.lazy(() => import('@/pages/WatchPage'))
 const SettingsPage = React.lazy(() => import('@/pages/SettingsPage'))
 const LogsPage = React.lazy(() => import('@/pages/LogsPage'))
+const KasaSetupPage = React.lazy(() => import('@/pages/KasaSetupPage'))
 
 function PageLoader() {
   return (
@@ -39,10 +40,12 @@ export default function App() {
           <Route path="/scenes/:name" element={<SceneEditorPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/devices" element={<DevicesPage />} />
+          <Route path="/devices/kasa/:id" element={<DeviceDetailPage />} />
           <Route path="/devices/:id" element={<DeviceDetailPage />} />
           <Route path="/lights/:id" element={<LightDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/logs" element={<LogsPage />} />
+          <Route path="/settings/kasa" element={<KasaSetupPage />} />
         </Route>
         <Route element={<WatchLayout />}>
           <Route path="/watch" element={<WatchPage />} />

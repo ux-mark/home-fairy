@@ -1,13 +1,13 @@
 # Project Spec
 
 ## Overview
-The Fairies v3 — a home automation control system with a React frontend and Express backend. Controls LIFX lights, Hubitat switches/sensors, Twinkly decorative lights, and fairy (ESP8266) devices. Includes MTA subway tracking, weather indicators, and motion-based scene automation.
+The Fairies v3 — a home automation control system with a React frontend and Express backend. Controls LIFX lights, Kasa smart plugs/strips (via python-kasa sidecar), Hubitat sensors, Twinkly decorative lights, and fairy (ESP8266) devices. Includes MTA subway tracking, weather indicators, energy monitoring, and motion-based scene automation.
 
 ## Tech Stack
 - **Language**: TypeScript (frontend and backend)
 - **Frontend**: React 19, Vite, Tailwind CSS v4, Radix UI, react-colorful (HSV picker), TanStack Query, Socket.io client, PWA
 - **Backend**: Express 5, better-sqlite3, Socket.io, axios, Zod validation, SunCalc, gtfs-realtime-bindings
-- **Database**: SQLite with WAL mode. Tables: rooms, scenes, light_rooms, device_rooms, hub_devices, current_state, logs, device_history
+- **Database**: SQLite with WAL mode. Tables: rooms, scenes, light_rooms, device_rooms, hub_devices, kasa_devices, current_state, logs, device_history
 - **Package manager**: npm
 - **Process manager (production)**: PM2
 
@@ -23,14 +23,19 @@ thefairies-app/
 │   └── vite.config.ts      Vite config with PWA + proxy to :3001
 ├── server/          Express 5 + TypeScript + SQLite (better-sqlite3)
 │   ├── src/
-│   │   ├── routes/         lifx, rooms, scenes, lights, hubitat, motion, system, dashboard
-│   │   ├── lib/            lifx-client, hubitat-client, twinkly-client, fairy-device-client,
+│   │   ├── routes/         lifx, rooms, scenes, lights, hubitat, kasa, motion, system, dashboard
+│   │   ├── lib/            lifx-client, hubitat-client, kasa-client, kasa-poller,
+│   │   │                   twinkly-client, fairy-device-client,
 │   │   │                   scene-executor, motion-handler, timer-manager, sun-mode-scheduler,
 │   │   │                   weather-client, weather-indicator, mta-client, mta-stops,
 │   │   │                   history-collector
 │   │   ├── db/             SQLite setup + migrations
 │   │   └── index.ts        Express server entry point
-│   ├── scripts/            Migration and seed scripts
+│   ├── kasa/               Python FastAPI sidecar for Kasa device management
+│   │   ├── main.py         FastAPI app entry point
+│   │   ├── device_manager.py  Discovery, connections, polling
+│   │   ├── models.py       Pydantic response models
+│   │   └── requirements.txt Python dependencies
 │   ├── data/               SQLite database (gitignored)
 │   └── .env                Environment variables (gitignored)
 ├── .testing/        Playwright E2E tests (see E2E Tests section below)
@@ -118,6 +123,7 @@ LATITUDE=                 # For weather + sun calculations
 LONGITUDE=
 OPENWEATHER_API=          # OpenWeather API key
 API_TIMEOUT=10000
+KASA_SIDECAR_URL=         # Kasa sidecar URL (default: http://127.0.0.1:3002)
 ```
 
 ## Key Concepts
