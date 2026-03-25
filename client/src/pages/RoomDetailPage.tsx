@@ -602,33 +602,15 @@ export default function RoomDetailPage() {
       }
     }
 
-    // Kasa devices (mapped to HubDevice shape for reuse in AvailableDeviceRow)
+    // Kasa devices — all grouped under a single "Kasa plugs" category
     if (allKasaDevices) {
+      const kasaGroup = 'kasa_plug'
       for (const kd of allKasaDevices) {
-        if (kd.parent_id) continue // skip child outlets listed under strips — show outlets individually below
-        const kasaType = 'kasa_' + kd.device_type // e.g. kasa_plug, kasa_strip
-        if (!allTypes.includes(kasaType)) continue
+        const kasaType = kd.parent_id ? 'kasa_outlet' : ('kasa_' + kd.device_type)
         if (assignedIds.has(kd.id)) continue
         if (deviceIdsAssignedToAnyRoom.has(kd.id)) continue
-        const groupKey = kasaType
-        if (!groups.has(groupKey)) groups.set(groupKey, [])
-        groups.get(groupKey)!.push({
-          id: kd.id as unknown as number,
-          label: kd.label,
-          device_name: kd.model ?? '',
-          device_type: kasaType,
-          capabilities: [],
-          attributes: kd.attributes as Record<string, unknown>,
-        })
-      }
-      // Also add strip outlets as individually assignable
-      for (const kd of allKasaDevices) {
-        if (!kd.parent_id) continue // only child outlets
-        const kasaType = 'kasa_outlet'
-        if (assignedIds.has(kd.id)) continue
-        if (deviceIdsAssignedToAnyRoom.has(kd.id)) continue
-        if (!groups.has(kasaType)) groups.set(kasaType, [])
-        groups.get(kasaType)!.push({
+        if (!groups.has(kasaGroup)) groups.set(kasaGroup, [])
+        groups.get(kasaGroup)!.push({
           id: kd.id as unknown as number,
           label: kd.label,
           device_name: kd.model ?? '',
@@ -991,6 +973,7 @@ export default function RoomDetailPage() {
     dimmer: 'Dimmers',
     twinkly: 'Twinkly',
     fairy: 'Fairy',
+    kasa_plug: 'Kasa plugs',
   }
 
   return (
