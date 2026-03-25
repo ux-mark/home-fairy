@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, useMatch, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, Pencil, Check, X, Power, Shield } from 'lucide-react'
-import { api, type DeviceInsightsData, type KasaDevice } from '@/lib/api'
+import { api, type DeviceInsightsData, type KasaDevice, type Room } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
 import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
@@ -536,12 +536,36 @@ function KasaDeviceDetail({ id }: { id: string }) {
     onError: () => toast({ message: 'Failed to rename device', type: 'error' }),
   })
 
-  // Fetch device-room assignments for Keep On config
+  const [roomDropdownOpen, setRoomDropdownOpen] = useState(false)
+  const roomDropdownRef = useRef<HTMLDivElement>(null)
+
+  // Fetch rooms and device-room assignments
+  const { data: rooms } = useQuery({ queryKey: ['rooms'], queryFn: api.rooms.getAll })
   const { data: allDeviceRooms } = useQuery({
     queryKey: ['hubitat', 'device-rooms'],
     queryFn: api.hubitat.getDeviceRooms,
   })
   const deviceRoom = allDeviceRooms?.find(a => a.device_id === id)
+
+  const assignRoomMutation = useMutation({
+    mutationFn: (roomName: string) =>
+      api.hubitat.assignDevice({ device_id: id, device_label: device?.label ?? '', device_type: 'kasa_' + (device?.device_type ?? 'plug'), room_name: roomName }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hubitat', 'device-rooms'] })
+      setRoomDropdownOpen(false)
+      toast({ message: 'Assigned to room' })
+    },
+    onError: () => toast({ message: 'Failed to assign', type: 'error' }),
+  })
+
+  useEffect(() => {
+    if (!roomDropdownOpen) return
+    function handleClick(e: MouseEvent) {
+      if (roomDropdownRef.current && !roomDropdownRef.current.contains(e.target as Node)) setRoomDropdownOpen(false)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [roomDropdownOpen])
   const isKeepOn = !!deviceRoom?.config?.exclude_from_all_off
 
   const toggleKeepOn = useMutation({
@@ -680,6 +704,38 @@ function KasaDeviceDetail({ id }: { id: string }) {
                 />
                 {device.is_online ? 'Online' : 'Offline'}
               </span>
+              {deviceRoom ? (
+                <Link
+                  to={`/rooms/${encodeURIComponent(deviceRoom.room_name)}`}
+                  className="rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400 hover:bg-fairy-500/20 transition-colors"
+                >
+                  {deviceRoom.room_name}
+                </Link>
+              ) : (
+                <div ref={roomDropdownRef} className="relative">
+                  <button
+                    onClick={() => setRoomDropdownOpen(!roomDropdownOpen)}
+                    className="rounded-full border border-dashed border-[var(--border-secondary)] px-2 py-0.5 text-[10px] font-medium text-caption transition-colors hover:border-fairy-500/40 hover:text-fairy-400"
+                    aria-label={`Assign ${device.label} to a room`}
+                  >
+                    Assign room
+                  </button>
+                  {roomDropdownOpen && rooms && rooms.length > 0 && (
+                    <div className="absolute left-0 top-full z-20 mt-1 max-h-48 w-40 overflow-y-auto rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-primary)] shadow-lg">
+                      {rooms.map(room => (
+                        <button
+                          key={room.name}
+                          onClick={() => assignRoomMutation.mutate(room.name)}
+                          disabled={assignRoomMutation.isPending}
+                          className="flex w-full min-h-[36px] items-center px-3 py-1.5 text-left text-xs text-body transition-colors hover:bg-fairy-500/10 hover:text-heading"
+                        >
+                          {room.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {deviceRoom && (
                 <button
                   onClick={() => toggleKeepOn.mutate()}
