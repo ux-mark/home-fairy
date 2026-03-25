@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useParams, useMatch, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, Pencil, Check, X, Power } from 'lucide-react'
+import { ChevronRight, Pencil, Check, X, Power, Shield } from 'lucide-react'
 import { api, type DeviceInsightsData, type KasaDevice } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
@@ -536,6 +536,24 @@ function KasaDeviceDetail({ id }: { id: string }) {
     onError: () => toast({ message: 'Failed to rename device', type: 'error' }),
   })
 
+  // Fetch device-room assignments for Keep On config
+  const { data: allDeviceRooms } = useQuery({
+    queryKey: ['hubitat', 'device-rooms'],
+    queryFn: api.hubitat.getDeviceRooms,
+  })
+  const deviceRoom = allDeviceRooms?.find(a => a.device_id === id)
+  const isKeepOn = !!deviceRoom?.config?.exclude_from_all_off
+
+  const toggleKeepOn = useMutation({
+    mutationFn: () =>
+      api.hubitat.updateDeviceConfig(id, deviceRoom!.room_name, { exclude_from_all_off: !isKeepOn }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hubitat', 'device-rooms'] })
+      toast({ message: isKeepOn ? `${device?.label} will now turn off with All Off` : `${device?.label} will stay on during All Off` })
+    },
+    onError: () => toast({ message: 'Failed to update setting', type: 'error' }),
+  })
+
   if (isLoading) {
     return <PageSkeleton />
   }
@@ -662,6 +680,23 @@ function KasaDeviceDetail({ id }: { id: string }) {
                 />
                 {device.is_online ? 'Online' : 'Offline'}
               </span>
+              {deviceRoom && (
+                <button
+                  onClick={() => toggleKeepOn.mutate()}
+                  disabled={toggleKeepOn.isPending}
+                  className={cn(
+                    'flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                    isKeepOn
+                      ? 'bg-amber-500/15 text-amber-400'
+                      : 'text-caption hover:bg-amber-500/10 hover:text-amber-300',
+                  )}
+                  aria-label={isKeepOn ? `Remove keep-on protection from ${device.label}` : `Protect ${device.label} from being turned off`}
+                  aria-pressed={isKeepOn}
+                >
+                  <Shield className="h-3 w-3" />
+                  <span>Keep on</span>
+                </button>
+              )}
             </div>
           </div>
 
@@ -769,6 +804,8 @@ function KasaDeviceDetail({ id }: { id: string }) {
 // ── Hub device detail view ────────────────────────────────────────────────────
 
 function HubDeviceDetail({ id }: { id: string }) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
   const [period, setPeriod] = useState<Period>('24h')
 
   // Fetch all hub devices and find the one matching :id
@@ -803,6 +840,25 @@ function HubDeviceDetail({ id }: { id: string }) {
     queryFn: () => api.dashboard.getDeviceInsights(id),
     enabled: !!device,
     staleTime: 60_000,
+  })
+
+  // Keep On config
+  const { data: allDeviceRooms } = useQuery({
+    queryKey: ['hubitat', 'device-rooms'],
+    queryFn: api.hubitat.getDeviceRooms,
+  })
+  const deviceRoom = allDeviceRooms?.find(a => a.device_id === id)
+  const isKeepOn = !!deviceRoom?.config?.exclude_from_all_off
+  const canKeepOn = device && ['switch', 'dimmer'].includes(device.device_type) && !!deviceRoom
+
+  const toggleKeepOn = useMutation({
+    mutationFn: () =>
+      api.hubitat.updateDeviceConfig(id, deviceRoom!.room_name, { exclude_from_all_off: !isKeepOn }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hubitat', 'device-rooms'] })
+      toast({ message: isKeepOn ? `${device?.label} will now turn off with All Off` : `${device?.label} will stay on during All Off` })
+    },
+    onError: () => toast({ message: 'Failed to update setting', type: 'error' }),
   })
 
   const isLoading = devicesLoading || (!!device && (contextLoading || insightsLoading))
@@ -884,6 +940,23 @@ function HubDeviceDetail({ id }: { id: string }) {
           <TypeBadge type={device.device_type} />
           {device.device_name && device.device_name !== device.label && (
             <span className="text-xs text-caption">{device.device_name}</span>
+          )}
+          {canKeepOn && (
+            <button
+              onClick={() => toggleKeepOn.mutate()}
+              disabled={toggleKeepOn.isPending}
+              className={cn(
+                'flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                isKeepOn
+                  ? 'bg-amber-500/15 text-amber-400'
+                  : 'text-caption hover:bg-amber-500/10 hover:text-amber-300',
+              )}
+              aria-label={isKeepOn ? `Remove keep-on protection from ${device.label}` : `Protect ${device.label} from being turned off`}
+              aria-pressed={isKeepOn}
+            >
+              <Shield className="h-3 w-3" />
+              <span>Keep on</span>
+            </button>
           )}
         </div>
       </header>

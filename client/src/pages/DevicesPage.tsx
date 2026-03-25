@@ -261,6 +261,22 @@ function KasaDeviceCard({ device }: { device: UnifiedDevice }) {
     onError: () => toast({ message: `Failed to control ${device.label}`, type: 'error' }),
   })
 
+  const isKeepOn = !!device.deviceRoom?.config?.exclude_from_all_off
+
+  const toggleKeepOn = useMutation({
+    mutationFn: () =>
+      api.hubitat.updateDeviceConfig(
+        kasa.id,
+        device.deviceRoom!.room_name,
+        { exclude_from_all_off: !isKeepOn },
+      ),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hubitat', 'device-rooms'] })
+      toast({ message: isKeepOn ? `${device.label} will now turn off with All Off` : `${device.label} will stay on during All Off` })
+    },
+    onError: () => toast({ message: 'Failed to update device setting', type: 'error' }),
+  })
+
   const attrs = kasa.attributes
   const powerWatts = attrs.power
   const energyKwh = attrs.energy
@@ -310,6 +326,27 @@ function KasaDeviceCard({ device }: { device: UnifiedDevice }) {
         )}
 
         <TypeBadge type={kasa.device_type} />
+
+        {device.deviceRoom && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleKeepOn.mutate()
+            }}
+            disabled={toggleKeepOn.isPending}
+            className={cn(
+              'flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              isKeepOn
+                ? 'bg-amber-500/15 text-amber-400'
+                : 'text-caption hover:bg-amber-500/10 hover:text-amber-300',
+            )}
+            aria-label={isKeepOn ? `Remove keep-on protection from ${device.label}` : `Protect ${device.label} from being turned off`}
+            aria-pressed={isKeepOn}
+          >
+            <Shield className="h-3 w-3" />
+            <span>Keep on</span>
+          </button>
+        )}
 
         <button
           onClick={() => toggleMutation.mutate()}
@@ -491,6 +528,7 @@ export default function DevicesPage() {
           roomName: assignment?.room_name ?? null,
           isOn: d.attributes.switch === 'on',
           kasaDevice: d,
+          deviceRoom: assignment,
         })
       }
     }
