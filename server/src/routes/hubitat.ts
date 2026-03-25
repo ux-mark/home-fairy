@@ -142,11 +142,14 @@ router.get('/devices/sync', async (_req: Request, res: Response) => {
     }
 
     // Remove hub_devices that no longer exist on the hub
-    const hubIds = new Set(devices.map((d) => d.id))
+    // Compare as strings to avoid number/string type mismatch
+    // Skip locally-created devices (negative IDs: fairy, twinkly) — they're not from Hubitat
+    const hubIdStrings = new Set(devices.map((d) => String(d.id)))
     const existingRows = getAll<{ id: number; label: string }>('SELECT id, label FROM hub_devices')
     let removedCount = 0
     for (const row of existingRows) {
-      if (!hubIds.has(row.id)) {
+      if (row.id < 0) continue // locally-created device, not from Hubitat
+      if (!hubIdStrings.has(String(row.id))) {
         run('DELETE FROM device_rooms WHERE device_id = ?', [String(row.id)])
         run('DELETE FROM hub_devices WHERE id = ?', [row.id])
         removedCount++
