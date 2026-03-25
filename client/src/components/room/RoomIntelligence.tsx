@@ -130,7 +130,7 @@ function EnergyRow({ data }: { data: RoomIntelligenceData }) {
             <li key={device.id} className="flex items-center justify-between gap-2 text-sm">
               <Link
                 to={`/devices/${device.id}`}
-                className="text-fairy-400 hover:text-fairy-300 hover:underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 truncate"
+                className="text-fairy-400 hover:text-fairy-300 hover:underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 break-words"
               >
                 {device.label}
               </Link>
@@ -178,7 +178,7 @@ function BatteryRow({ data }: { data: RoomIntelligenceData }) {
             <div className="flex items-center justify-between gap-2 mb-1">
               <Link
                 to={`/devices/${device.id}`}
-                className="text-sm text-fairy-400 hover:text-fairy-300 hover:underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 truncate"
+                className="text-sm text-fairy-400 hover:text-fairy-300 hover:underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 break-words"
               >
                 {device.label}
               </Link>

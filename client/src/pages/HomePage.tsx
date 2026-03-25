@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/useToast'
 import type { Room, Scene } from '@/lib/api'
 import { getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 // ── Skeleton loader ──────────────────────────────────────────────────────────
 
@@ -178,7 +179,7 @@ function RoomCard({
                 {isDefault && (
                   <Activity className="h-3 w-3 text-fairy-400" aria-label="Default scene for this mode" />
                 )}
-                {scene.icon && <span className="text-sm">{scene.icon}</span>}
+                {scene.icon && <span className="text-sm" aria-hidden="true">{scene.icon}</span>}
                 {scene.name}
               </button>
             )
@@ -496,7 +497,7 @@ export default function HomePage() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
-  const { data: rooms, isLoading: roomsLoading } = useQuery({
+  const { data: rooms, isLoading: roomsLoading, isError: roomsError, refetch: refetchRooms } = useQuery({
     queryKey: ['rooms'],
     queryFn: api.rooms.getAll,
   })
@@ -693,6 +694,17 @@ export default function HomePage() {
               <RoomCardSkeleton key={i} />
             ))}
           </div>
+        ) : roomsError ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
+            <p className="text-zinc-400">Unable to load home data. Check your connection and try again.</p>
+            <button
+              onClick={() => refetchRooms()}
+              className="rounded-lg bg-fairy-600 px-4 py-2 text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            >
+              Try again
+            </button>
+          </div>
         ) : rooms && rooms.length > 0 ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {rooms
@@ -717,13 +729,11 @@ export default function HomePage() {
               ))}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed py-12 text-center" style={{ borderColor: 'var(--border-secondary)' }}>
-            <Zap className="text-caption mx-auto mb-3 h-8 w-8" />
-            <p className="text-body text-sm">No rooms set up yet.</p>
-            <p className="text-caption mt-1 text-xs">
-              Head to the Rooms tab to get started.
-            </p>
-          </div>
+          <EmptyState
+            icon={Zap}
+            message="No rooms set up yet."
+            sub="Head to the Rooms tab to get started."
+          />
         )}
       </section>
     </div>

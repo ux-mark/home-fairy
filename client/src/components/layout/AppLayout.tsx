@@ -120,7 +120,7 @@ export default function AppLayout() {
             <NotificationBell />
             <ThemeToggle />
             {system?.mode && (
-              <span className="inline-flex items-center rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400">
+              <span className="inline-flex items-center rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400 md:hidden">
                 {system.mode}
               </span>
             )}

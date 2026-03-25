@@ -546,15 +546,23 @@ export interface CombinedMtaStatus {
 const API_BASE = '/api'
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    ...options,
-  })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(text || `API error: ${res.status}`)
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 15000)
+
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...options?.headers },
+      ...options,
+      signal: options?.signal ?? controller.signal,
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(text || `API error: ${res.status}`)
+    }
+    return res.json()
+  } finally {
+    clearTimeout(timeoutId)
   }
-  return res.json()
 }
 
 // ── API client ───────────────────────────────────────────────────────────────
@@ -848,7 +856,7 @@ export const api = {
   },
   hubitat: {
     getDevices: () => fetchApi<HubDevice[]>('/hubitat/devices'),
-    syncDevices: () => fetchApi<unknown>('/hubitat/devices/sync'),
+    syncDevices: () => fetchApi<unknown>('/hubitat/devices/sync', { method: 'POST' }),
     getDeviceRooms: () => fetchApi<DeviceRoomAssignment[]>('/hubitat/device-rooms'),
     getDevicesForRoom: (room: string) =>
       fetchApi<DeviceRoomAssignment[]>(

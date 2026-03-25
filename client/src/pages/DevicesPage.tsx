@@ -138,10 +138,10 @@ function LightCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[] })
           to={`/lights/${light.id}`}
           className={cn('block min-w-0 flex-1 text-left', 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500')}
         >
-          <p className={cn('truncate text-sm font-medium hover:text-fairy-400 transition-colors', isOn ? 'text-heading' : 'text-body')}>
+          <p className={cn('break-words text-sm font-medium hover:text-fairy-400 transition-colors', isOn ? 'text-heading' : 'text-body')}>
             {light.label}
           </p>
-          <p className="text-caption mt-0.5 truncate text-xs">
+          <p className="text-caption mt-0.5 break-words text-xs">
             {device.roomName ?? light.group.name}
             {isOn && ` · ${Math.round(light.brightness * 100)}%`}
           </p>
@@ -190,7 +190,7 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [expanded, setExpanded] = useState(false)
-  const [level, setLevel] = useState(50)
+  const [level, setLevel] = useState(() => (device.hubDevice?.attributes as Record<string, unknown> | undefined)?.level as number ?? 50)
 
   const toggleMutation = useMutation({
     mutationFn: () => {

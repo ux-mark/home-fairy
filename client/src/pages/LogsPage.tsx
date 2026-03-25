@@ -29,20 +29,23 @@ function LogEntry({
   return (
     <div className="border-b border-[var(--border-primary)] py-3 last:border-0">
       <div className="flex items-start gap-3">
-        <button
-          onClick={() => log.debug && setExpanded(!expanded)}
-          className={cn(
-            'mt-0.5 shrink-0',
-            log.debug ? 'text-caption hover:text-[var(--text-primary)]' : 'text-transparent',
-          )}
-          disabled={!log.debug}
-        >
-          {expanded ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
+        {log.debug ? (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            aria-label={expanded ? 'Hide details' : 'Show details'}
+            className="mt-0.5 shrink-0 text-caption hover:text-[var(--text-primary)]"
+          >
+            {expanded ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </button>
+        ) : (
+          <span aria-hidden="true" className="mt-0.5 shrink-0 text-transparent">
             <ChevronRight className="h-4 w-4" />
-          )}
-        </button>
+          </span>
+        )}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">

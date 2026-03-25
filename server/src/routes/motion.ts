@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express'
 import { motionHandler } from '../lib/motion-handler.js'
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
+
 const router = Router()
 
 // GET /status — active room timers and sensor states
@@ -14,7 +16,7 @@ router.get('/status', (_req: Request, res: Response) => {
     res.json({ timers, sensorStates })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -28,7 +30,7 @@ router.get('/sensors', (_req: Request, res: Response) => {
     res.json(sensorStates)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -40,7 +42,7 @@ router.post('/timers/:roomName/cancel', (req: Request, res: Response) => {
     res.json({ success: true, roomName })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 

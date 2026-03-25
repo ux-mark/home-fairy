@@ -3,6 +3,8 @@ import { z } from 'zod'
 import { getAll, getOne, run, db } from '../db/index.js'
 import { activateScene, deactivateScene } from '../lib/scene-executor.js'
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
+
 const router = Router()
 
 interface SceneRow {
@@ -110,11 +112,51 @@ const updateSceneSchema = z.object({
 // GET / — list all scenes
 router.get('/', (_req: Request, res: Response) => {
   try {
-    const rows = getAll<SceneRow>('SELECT * FROM scenes')
-    res.json(rows.map(parseScene))
+    const rows = getAll<SceneRow>('SELECT * FROM scenes ORDER BY name')
+
+    // Bulk load all scene-room and scene-mode associations
+    const allSceneRooms = getAll<{ scene_name: string; room_name: string }>(
+      'SELECT scene_name, room_name FROM scene_rooms',
+    )
+    const allSceneModes = getAll<{ scene_name: string; mode_name: string }>(
+      'SELECT scene_name, mode_name FROM scene_modes',
+    )
+
+    // Group by scene name
+    const roomsByScene = new Map<string, string[]>()
+    for (const sr of allSceneRooms) {
+      const list = roomsByScene.get(sr.scene_name) ?? []
+      list.push(sr.room_name)
+      roomsByScene.set(sr.scene_name, list)
+    }
+    const modesByScene = new Map<string, string[]>()
+    for (const sm of allSceneModes) {
+      const list = modesByScene.get(sm.scene_name) ?? []
+      list.push(sm.mode_name)
+      modesByScene.set(sm.scene_name, list)
+    }
+
+    const scenes = rows.map(row => {
+      let commands: unknown = []
+      let tags: unknown = []
+      try { commands = JSON.parse(row.commands) } catch { commands = [] }
+      try { tags = JSON.parse(row.tags) } catch { tags = [] }
+      return {
+        ...row,
+        commands: Array.isArray(commands) ? commands : [],
+        tags: Array.isArray(tags) ? tags : [],
+        rooms: (roomsByScene.get(row.name) ?? []).map(r => ({ name: r })),
+        modes: modesByScene.get(row.name) ?? [],
+        active_from: row.active_from ?? null,
+        active_to: row.active_to ?? null,
+        last_activated_at: row.last_activated_at ?? null,
+      }
+    })
+
+    res.json(scenes)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -140,7 +182,7 @@ router.get('/:name', (req: Request, res: Response) => {
     res.json({ ...parsed, room_lights: roomLights })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -190,7 +232,7 @@ router.post('/', (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -278,7 +320,7 @@ router.put('/:name', (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -294,7 +336,7 @@ router.delete('/:name', (req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -314,7 +356,7 @@ router.post('/:name/activate', async (req: Request, res: Response) => {
     res.json({ success: true, scene: name, action: 'activated' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -326,7 +368,7 @@ router.post('/:name/deactivate', async (req: Request, res: Response) => {
     res.json({ success: true, scene: name, action: 'deactivated' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 

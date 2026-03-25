@@ -9,6 +9,8 @@ interface BatteryReading {
 }
 
 let intervalId: ReturnType<typeof setInterval> | null = null
+let initTimeout: ReturnType<typeof setTimeout> | null = null
+let pruneIntervalId: ReturnType<typeof setInterval> | null = null
 
 async function collectSnapshot(): Promise<void> {
   const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19)
@@ -87,21 +89,47 @@ async function collectSnapshot(): Promise<void> {
   }
 }
 
+function pruneOldLogs(): void {
+  try {
+    const result = run(
+      "DELETE FROM logs WHERE created_at < datetime('now', '-30 days')"
+    )
+    if (result.changes > 0) {
+      console.log(`[history] Pruned ${result.changes} log entries older than 30 days`)
+    }
+  } catch (err) {
+    console.error('[history] Log pruning failed:', err instanceof Error ? err.message : err)
+  }
+}
+
 export function startHistoryCollector(): void {
   if (intervalId) return
   console.log('[history] Starting collector (10-minute interval)')
   // Take initial snapshot after a short delay (let server finish starting)
-  setTimeout(() => {
+  initTimeout = setTimeout(() => {
+    initTimeout = null
     collectSnapshot()
     intervalId = setInterval(collectSnapshot, SNAPSHOT_INTERVAL_MS)
   }, 30_000)
+
+  // Run log pruning once daily (check every hour, prune if needed)
+  pruneIntervalId = setInterval(pruneOldLogs, 60 * 60 * 1000) // hourly check
+  pruneOldLogs() // initial prune on startup
 }
 
 export function stopHistoryCollector(): void {
+  if (initTimeout) {
+    clearTimeout(initTimeout)
+    initTimeout = null
+  }
   if (intervalId) {
     clearInterval(intervalId)
     intervalId = null
     console.log('[history] Collector stopped')
+  }
+  if (pruneIntervalId) {
+    clearInterval(pruneIntervalId)
+    pruneIntervalId = null
   }
 }
 

@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express'
+import { z } from 'zod'
 import { getAll, getOne, run } from '../db/index.js'
 import { hubitatClient, type HubitatDevice } from '../lib/hubitat-client.js'
+
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
 const router = Router()
 
@@ -45,12 +48,12 @@ router.get('/devices', (_req: Request, res: Response) => {
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
-// GET /devices/sync — pull from Hubitat API and upsert into hub_devices
-router.get('/devices/sync', async (_req: Request, res: Response) => {
+// POST /devices/sync — pull from Hubitat API and upsert into hub_devices
+router.post('/devices/sync', async (_req: Request, res: Response) => {
   try {
     let devices: HubitatDevice[]
     try {
@@ -172,7 +175,7 @@ router.get('/devices/sync', async (_req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -193,7 +196,7 @@ router.get('/devices/:id', (req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -223,7 +226,7 @@ router.post('/devices/:id/command', async (req: Request, res: Response) => {
     res.json({ success: true, result })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -241,7 +244,7 @@ router.get('/device-rooms', (_req: Request, res: Response) => {
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -260,30 +263,22 @@ router.get('/device-rooms/:roomName', (req: Request, res: Response) => {
     )
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
+})
+
+const deviceRoomSchema = z.object({
+  device_id: z.string().min(1),
+  device_label: z.string().min(1),
+  device_type: z.enum(['motion', 'sensor', 'contact', 'temperature', 'switch', 'dimmer', 'light', 'lock', 'thermostat', 'unknown', 'kasa_plug', 'kasa_strip', 'kasa_outlet', 'kasa_switch', 'kasa_dimmer']),
+  room_name: z.string().min(1),
+  config: z.record(z.unknown()).optional(),
 })
 
 // POST /device-rooms — assign device to room
 router.post('/device-rooms', (req: Request, res: Response) => {
   try {
-    const { device_id, device_label, device_type, room_name, config } =
-      req.body as {
-        device_id: string
-        device_label: string
-        device_type: string
-        room_name: string
-        config?: Record<string, unknown>
-      }
-
-    if (!device_id || !device_label || !device_type || !room_name) {
-      res
-        .status(400)
-        .json({
-          error: 'device_id, device_label, device_type, and room_name are required',
-        })
-      return
-    }
+    const body = deviceRoomSchema.parse(req.body)
 
     run(
       `INSERT INTO device_rooms (device_id, device_label, device_type, room_name, config)
@@ -293,25 +288,29 @@ router.post('/device-rooms', (req: Request, res: Response) => {
          device_type = excluded.device_type,
          config = excluded.config`,
       [
-        device_id,
-        device_label,
-        device_type,
-        room_name,
-        JSON.stringify(config ?? {}),
+        body.device_id,
+        body.device_label,
+        body.device_type,
+        body.room_name,
+        JSON.stringify(body.config ?? {}),
       ],
     )
 
     const created = getOne<DeviceRoomRow>(
       'SELECT * FROM device_rooms WHERE device_id = ? AND room_name = ?',
-      [device_id, room_name],
+      [body.device_id, body.room_name],
     )
     res.status(201).json({
       ...created!,
       config: JSON.parse(created!.config),
     })
   } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors })
+      return
+    }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -349,7 +348,7 @@ router.patch('/devices/:id/config', (req: Request, res: Response) => {
     res.json({ id: Number(deviceId), config: merged })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -390,7 +389,7 @@ router.patch(
       res.json({ ...updated!, config: JSON.parse(updated!.config) })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      res.status(500).json({ error: msg })
+      res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
     }
   },
 )
@@ -415,7 +414,7 @@ router.delete(
       res.json({ success: true })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      res.status(500).json({ error: msg })
+      res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
     }
   },
 )

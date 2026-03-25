@@ -16,6 +16,7 @@ import { api } from '@/lib/api'
 import type { Light } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
+import { EmptyState } from '@/components/ui/EmptyState'
 
 // ── Expandable light card ────────────────────────────────────────────────────
 
@@ -66,13 +67,13 @@ function LightRow({ light }: { light: Light }) {
         >
           <p
             className={cn(
-              'truncate text-sm font-medium',
+              'break-words text-sm font-medium',
               isOn ? 'text-heading' : 'text-body',
             )}
           >
             {light.label}
           </p>
-          <p className="text-caption mt-0.5 truncate text-xs">
+          <p className="text-caption mt-0.5 break-words text-xs">
             {light.group.name}
             {isOn && ` \u00B7 ${Math.round(light.brightness * 100)}%`}
           </p>
@@ -304,32 +305,31 @@ export default function LightsPage() {
           </div>
         </>
       ) : (
-        <div className="rounded-xl border border-dashed py-12 text-center" style={{ borderColor: 'var(--border-secondary)' }}>
-          {search.trim() || groupFilter !== 'all' ? (
-            <>
-              <Search className="text-caption mx-auto mb-3 h-8 w-8" />
-              <p className="text-body text-sm">
-                No lights match the current filter.
-              </p>
-              <button
-                onClick={() => {
-                  setSearch('')
-                  setGroupFilter('all')
-                }}
-                className="mt-2 text-xs text-fairy-400 hover:underline"
-              >
-                Clear filters
-              </button>
-            </>
-          ) : (
-            <>
-              <p className="text-body text-sm">No LIFX lights found.</p>
-              <p className="text-caption mt-1 text-xs">
-                Make sure your lights are powered on and connected to the network.
-              </p>
-            </>
+        <EmptyState
+          icon={Search}
+          message={
+            search.trim() || groupFilter !== 'all'
+              ? 'No lights match the current filter.'
+              : 'No LIFX lights found.'
+          }
+          sub={
+            search.trim() || groupFilter !== 'all'
+              ? undefined
+              : 'Make sure your lights are powered on and connected to the network.'
+          }
+        >
+          {(search.trim() || groupFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setSearch('')
+                setGroupFilter('all')
+              }}
+              className="mt-2 text-xs text-fairy-400 hover:underline"
+            >
+              Clear filters
+            </button>
           )}
-        </div>
+        </EmptyState>
       )}
     </div>
   )

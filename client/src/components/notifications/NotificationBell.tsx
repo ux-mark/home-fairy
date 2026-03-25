@@ -40,7 +40,7 @@ export default function NotificationBell() {
         )}
       </button>
 
-      <NotificationPanel open={open} onClose={() => setOpen(false)} />
+      <NotificationPanel open={open} onClose={() => setOpen(false)} returnFocusRef={buttonRef} />
     </div>
   )
 }

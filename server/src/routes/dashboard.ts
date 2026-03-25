@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { getAll, getOne, run, db } from '../db/index.js'
+
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 import { getCurrentWeather } from '../lib/weather-client.js'
 import { getSunTimes, getCurrentSunPhase } from '../lib/sun-tracker.js'
 import { sunModeScheduler } from '../lib/sun-mode-scheduler.js'
@@ -202,7 +204,7 @@ router.get('/summary', async (_req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -269,7 +271,7 @@ router.get('/history/:source/:sourceId', (req: Request, res: Response) => {
     res.json({ data, count: countResult.count, period })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -292,55 +294,72 @@ router.get('/stats', (_req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
 // DELETE /history — delete historical data with flexible criteria
 router.delete('/history', (req: Request, res: Response) => {
   try {
-    const { olderThan, source, all } = req.body as {
+    const { olderThan, source, all, confirm } = req.body as {
       olderThan?: string
       source?: string
       all?: boolean
+      confirm?: string
+    }
+
+    // Require explicit confirmation for full deletion
+    if (all && confirm !== 'DELETE_ALL_HISTORY') {
+      res.status(400).json({ error: 'Full deletion requires confirm: "DELETE_ALL_HISTORY"' })
+      return
     }
 
     let deleted = 0
+    let description = ''
 
     if (all) {
       const result = run('DELETE FROM device_history')
       deleted = result.changes
+      description = 'all device history'
     } else if (olderThan && source) {
       const result = run(
         'DELETE FROM device_history WHERE source = ? AND recorded_at < datetime(?)',
         [source, olderThan],
       )
       deleted = result.changes
+      description = `${source} history older than ${olderThan}`
     } else if (olderThan) {
       const result = run(
         'DELETE FROM device_history WHERE recorded_at < datetime(?)',
         [olderThan],
       )
       deleted = result.changes
+      description = `all history older than ${olderThan}`
     } else if (source) {
       const result = run(
         'DELETE FROM device_history WHERE source = ?',
         [source],
       )
       deleted = result.changes
+      description = `all ${source} history`
     } else {
       res.status(400).json({ error: 'Provide at least one of: all, olderThan, source' })
       return
     }
 
-    // Reclaim disk space
+    // Audit log
+    run(
+      'INSERT INTO logs (message, category) VALUES (?, ?)',
+      [`Data deletion: deleted ${deleted} rows (${description})`, 'system'],
+    )
+
+    // Reclaim disk space (WAL checkpoint only — VACUUM is too slow for Pi)
     db.pragma('wal_checkpoint(TRUNCATE)')
-    db.exec('VACUUM')
 
     res.json({ deleted })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -407,7 +426,7 @@ router.get('/device/:id/context', (req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -520,7 +539,7 @@ router.get('/room/:name', (req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -605,7 +624,7 @@ router.get('/device/:id/insights', (req: Request, res: Response) => {
     res.json({ insights: { power: powerIns, battery: batteryIns, temperature: tempIns }, roomDevices, currencySymbol })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 

@@ -5,6 +5,7 @@ import type { Server as SocketServer } from 'socket.io'
 const POLL_INTERVAL_MS = 10_000
 
 let intervalId: ReturnType<typeof setInterval> | null = null
+let initTimeout: ReturnType<typeof setTimeout> | null = null
 let io: SocketServer | null = null
 let previousStates: Record<string, { switch_state: string; power: number }> = {}
 
@@ -116,13 +117,18 @@ export function startKasaPoller(socketIo: SocketServer): void {
   console.log('[kasa-poller] Starting Kasa device poller (10s interval)')
 
   // Initial poll after short delay
-  setTimeout(() => {
+  initTimeout = setTimeout(() => {
+    initTimeout = null
     pollKasaDevices()
     intervalId = setInterval(pollKasaDevices, POLL_INTERVAL_MS)
   }, 5_000)
 }
 
 export function stopKasaPoller(): void {
+  if (initTimeout) {
+    clearTimeout(initTimeout)
+    initTimeout = null
+  }
   if (intervalId) {
     clearInterval(intervalId)
     intervalId = null

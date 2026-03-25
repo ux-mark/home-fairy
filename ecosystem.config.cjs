@@ -3,14 +3,18 @@ module.exports = {
     {
       name: 'thefairies',
       cwd: './server',
-      script: 'node_modules/.bin/tsx',
-      args: 'src/index.ts',
+      script: 'dist/index.js',
       env: {
         NODE_ENV: 'production',
         PORT: 3001,
       },
       watch: false,
       max_memory_restart: '256M',
+      exp_backoff_restart_delay: 1000,
+      max_restarts: 10,
+      error_file: './logs/error.log',
+      out_file: './logs/out.log',
+      merge_logs: true,
     },
     {
       name: 'kasa-sidecar',
@@ -19,9 +23,14 @@ module.exports = {
       args: 'main:app --host 127.0.0.1 --port 3002',
       interpreter: 'none',
       max_memory_restart: '100M',
+      exp_backoff_restart_delay: 1000,
+      max_restarts: 10,
       env: {
         PYTHONUNBUFFERED: '1',
       },
+      error_file: './logs/kasa-error.log',
+      out_file: './logs/kasa-out.log',
+      merge_logs: true,
     },
   ],
 }

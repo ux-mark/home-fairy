@@ -183,12 +183,13 @@ class WeatherIndicator {
       return true
     }
 
-    // Check if current mode is Night or Guest Night (rooms would be locked)
-    const modeRow = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'mode'")
-    const mode = modeRow?.value ?? ''
-    if (mode === 'Night' || mode === 'Guest Night') {
+    // Check if the light's room is locked (e.g., night mode activated)
+    const lockedRow = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'locked_rooms'")
+    let lockedRooms: string[] = []
+    try { lockedRooms = lockedRow?.value ? JSON.parse(lockedRow.value) : [] } catch { /* ignore */ }
+    if (lockedRooms.includes(lightRoom.room_name)) {
       run('INSERT INTO logs (message, category) VALUES (?, ?)',
-        [`Weather indicator skipped: system is in ${mode} mode`, 'weather'])
+        [`Weather indicator skipped: room "${lightRoom.room_name}" is locked`, 'weather'])
       return true
     }
 
