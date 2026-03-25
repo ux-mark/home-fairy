@@ -1508,8 +1508,8 @@ export default function SceneEditorPage() {
                               })
                             }}
                             aria-label={isThisDefault
-                              ? `Clear as default scene for ${sceneRoom.name} / ${mode}`
-                              : `Set as default scene for ${sceneRoom.name} / ${mode}`}
+                              ? `Clear as default scene for ${sceneRoom.name} during ${mode}`
+                              : `Set as default scene for ${sceneRoom.name} during ${mode}`}
                             className={cn(
                               'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
                               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
@@ -1524,7 +1524,7 @@ export default function SceneEditorPage() {
                           </button>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-heading">
-                              {sceneRoom.name} / {mode}
+                              {sceneRoom.name} during {mode}
                             </p>
                             {replacingScene && (
                               <p className="mt-0.5 text-xs text-caption">
