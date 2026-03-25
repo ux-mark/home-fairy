@@ -879,6 +879,11 @@ export const api = {
           '/config',
         { method: 'PATCH', body: JSON.stringify({ config }) },
       ),
+    updateDeviceLevelConfig: (deviceId: string, config: Record<string, unknown>) =>
+      fetchApi<{ id: number; config: Record<string, unknown> }>(
+        '/hubitat/devices/' + encodeURIComponent(deviceId) + '/config',
+        { method: 'PATCH', body: JSON.stringify({ config }) },
+      ),
   },
   kasa: {
     getDevices: () => fetchApi<KasaDevice[]>('/kasa/devices'),
@@ -906,6 +911,11 @@ export const api = {
       fetchApi<KasaDevice>('/kasa/devices/' + encodeURIComponent(id) + '/label', {
         method: 'POST',
         body: JSON.stringify({ label }),
+      }),
+    updateConfig: (id: string, config: Record<string, unknown>) =>
+      fetchApi<KasaDevice>('/kasa/devices/' + encodeURIComponent(id) + '/config', {
+        method: 'PATCH',
+        body: JSON.stringify({ config }),
       }),
     health: () => fetchApi<KasaHealth>('/kasa/health'),
   },

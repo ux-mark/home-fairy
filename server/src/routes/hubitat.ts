@@ -11,6 +11,7 @@ interface HubDeviceRow {
   device_type: string
   capabilities: string
   attributes: string
+  config: string
   created_at: string
   updated_at: string
 }
@@ -308,6 +309,44 @@ router.post('/device-rooms', (req: Request, res: Response) => {
       ...created!,
       config: JSON.parse(created!.config),
     })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
+// PATCH /devices/:id/config — update device-level config (e.g. exclude_from_all_off)
+router.patch('/devices/:id/config', (req: Request, res: Response) => {
+  try {
+    const deviceId = String(req.params.id)
+    const { config } = req.body as { config?: Record<string, unknown> }
+    if (!config || typeof config !== 'object') {
+      res.status(400).json({ error: 'config object is required' })
+      return
+    }
+
+    const existing = getOne<HubDeviceRow>('SELECT * FROM hub_devices WHERE id = ?', [Number(deviceId)])
+    if (!existing) {
+      res.status(404).json({ error: 'Device not found' })
+      return
+    }
+
+    let existingConfig: Record<string, unknown> = {}
+    try { existingConfig = JSON.parse(existing.config ?? '{}') } catch { existingConfig = {} }
+    const merged = { ...existingConfig, ...config }
+
+    run(
+      "UPDATE hub_devices SET config = ?, updated_at = datetime('now') WHERE id = ?",
+      [JSON.stringify(merged), Number(deviceId)],
+    )
+
+    // Also sync to device_rooms if assigned
+    run(
+      'UPDATE device_rooms SET config = ? WHERE device_id = ?',
+      [JSON.stringify(merged), deviceId],
+    )
+
+    res.json({ id: Number(deviceId), config: merged })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: msg })

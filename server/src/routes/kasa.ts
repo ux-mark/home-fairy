@@ -173,6 +173,51 @@ router.post('/devices/:id/label', async (req: Request, res: Response) => {
   }
 })
 
+// PATCH /devices/:id/config — update device-level config (e.g. exclude_from_all_off)
+router.patch('/devices/:id/config', (req: Request, res: Response) => {
+  try {
+    const deviceId = String(req.params.id)
+    const { config } = req.body as { config: Record<string, unknown> }
+    if (!config || typeof config !== 'object') {
+      res.status(400).json({ error: 'config object is required' })
+      return
+    }
+
+    const existing = getOne<KasaDeviceRow>('SELECT * FROM kasa_devices WHERE id = ?', [deviceId])
+    if (!existing) {
+      res.status(404).json({ error: 'Device not found' })
+      return
+    }
+
+    // Merge with existing config
+    let currentConfig: Record<string, unknown> = {}
+    try { currentConfig = JSON.parse(existing.attributes) } catch { /* */ }
+    // Config is stored in its own column, not attributes
+    let existingConfig: Record<string, unknown> = {}
+    try {
+      const raw = (existing as unknown as { config: string }).config
+      if (raw) existingConfig = JSON.parse(raw)
+    } catch { /* */ }
+
+    const merged = { ...existingConfig, ...config }
+    run(
+      "UPDATE kasa_devices SET config = ?, updated_at = datetime('now') WHERE id = ?",
+      [JSON.stringify(merged), deviceId],
+    )
+
+    // Also update device_rooms config if the device is assigned to a room
+    run(
+      'UPDATE device_rooms SET config = ? WHERE device_id = ?',
+      [JSON.stringify(merged), deviceId],
+    )
+
+    res.json({ ...parseDeviceRow(existing), config: merged })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: msg })
+  }
+})
+
 // GET /health — sidecar health status
 router.get('/health', async (_req: Request, res: Response) => {
   try {

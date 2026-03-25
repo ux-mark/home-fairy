@@ -133,14 +133,18 @@ function HubDeviceCard({ device }: { device: UnifiedDevice }) {
   const isKeepOn = !!device.deviceRoom?.config?.exclude_from_all_off
 
   const toggleKeepOn = useMutation({
-    mutationFn: () =>
-      api.hubitat.updateDeviceConfig(
-        device.hubDevice!.id.toString(),
-        device.deviceRoom!.room_name,
-        { exclude_from_all_off: !isKeepOn },
-      ),
+    mutationFn: () => {
+      const newValue = !isKeepOn
+      const id = device.hubDevice!.id.toString()
+      if (device.deviceRoom) {
+        // Update room-level config
+        return api.hubitat.updateDeviceConfig(id, device.deviceRoom.room_name, { exclude_from_all_off: newValue })
+      }
+      // Update device-level config (no room assignment)
+      return api.hubitat.updateDeviceLevelConfig(id, { exclude_from_all_off: newValue })
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['hubitat', 'device-rooms'] })
+      queryClient.invalidateQueries({ queryKey: ['hubitat'] })
       toast({ message: isKeepOn ? `${device.label} will now turn off with All Off` : `${device.label} will stay on during All Off` })
     },
     onError: () => toast({ message: 'Failed to update device setting', type: 'error' }),
@@ -174,26 +178,24 @@ function HubDeviceCard({ device }: { device: UnifiedDevice }) {
 
         <TypeBadge type={device.kind} />
 
-        {device.deviceRoom && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              toggleKeepOn.mutate()
-            }}
-            disabled={toggleKeepOn.isPending}
-            className={cn(
-              'flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              isKeepOn
-                ? 'bg-amber-500/15 text-amber-400'
-                : 'text-caption hover:bg-amber-500/10 hover:text-amber-300',
-            )}
-            aria-label={isKeepOn ? `Remove keep-on protection from ${device.label}` : `Protect ${device.label} from being turned off`}
-            aria-pressed={isKeepOn}
-          >
-            <Shield className="h-3 w-3" />
-            <span>Keep on</span>
-          </button>
-        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            toggleKeepOn.mutate()
+          }}
+          disabled={toggleKeepOn.isPending}
+          className={cn(
+            'flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            isKeepOn
+              ? 'bg-amber-500/15 text-amber-400'
+              : 'text-caption hover:bg-amber-500/10 hover:text-amber-300',
+          )}
+          aria-label={isKeepOn ? `Remove keep-on protection from ${device.label}` : `Protect ${device.label} from being turned off`}
+          aria-pressed={isKeepOn}
+        >
+          <Shield className="h-3 w-3" />
+          <span>Keep on</span>
+        </button>
 
         <button
           onClick={() => toggleMutation.mutate()}
@@ -264,14 +266,22 @@ function KasaDeviceCard({ device }: { device: UnifiedDevice }) {
   const isKeepOn = !!device.deviceRoom?.config?.exclude_from_all_off
 
   const toggleKeepOn = useMutation({
-    mutationFn: () =>
-      api.hubitat.updateDeviceConfig(
-        kasa.id,
-        device.deviceRoom!.room_name,
-        { exclude_from_all_off: !isKeepOn },
-      ),
+    mutationFn: () => {
+      const newValue = !isKeepOn
+      if (device.deviceRoom) {
+        // Device is assigned to a room — update room-level config
+        return api.hubitat.updateDeviceConfig(
+          kasa.id,
+          device.deviceRoom.room_name,
+          { exclude_from_all_off: newValue },
+        )
+      }
+      // Device not assigned — update device-level config
+      return api.kasa.updateConfig(kasa.id, { exclude_from_all_off: newValue })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['hubitat', 'device-rooms'] })
+      queryClient.invalidateQueries({ queryKey: ['kasa'] })
       toast({ message: isKeepOn ? `${device.label} will now turn off with All Off` : `${device.label} will stay on during All Off` })
     },
     onError: () => toast({ message: 'Failed to update device setting', type: 'error' }),
@@ -327,26 +337,24 @@ function KasaDeviceCard({ device }: { device: UnifiedDevice }) {
 
         <TypeBadge type={kasa.device_type} />
 
-        {device.deviceRoom && (
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              toggleKeepOn.mutate()
-            }}
-            disabled={toggleKeepOn.isPending}
-            className={cn(
-              'flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              isKeepOn
-                ? 'bg-amber-500/15 text-amber-400'
-                : 'text-caption hover:bg-amber-500/10 hover:text-amber-300',
-            )}
-            aria-label={isKeepOn ? `Remove keep-on protection from ${device.label}` : `Protect ${device.label} from being turned off`}
-            aria-pressed={isKeepOn}
-          >
-            <Shield className="h-3 w-3" />
-            <span>Keep on</span>
-          </button>
-        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            toggleKeepOn.mutate()
+          }}
+          disabled={toggleKeepOn.isPending}
+          className={cn(
+            'flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            isKeepOn
+              ? 'bg-amber-500/15 text-amber-400'
+              : 'text-caption hover:bg-amber-500/10 hover:text-amber-300',
+          )}
+          aria-label={isKeepOn ? `Remove keep-on protection from ${device.label}` : `Protect ${device.label} from being turned off`}
+          aria-pressed={isKeepOn}
+        >
+          <Shield className="h-3 w-3" />
+          <span>Keep on</span>
+        </button>
 
         <button
           onClick={() => toggleMutation.mutate()}

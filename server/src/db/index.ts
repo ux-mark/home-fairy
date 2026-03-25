@@ -79,6 +79,7 @@ export function initDb(): void {
       device_type TEXT DEFAULT 'switch',
       capabilities TEXT DEFAULT '[]',
       attributes TEXT DEFAULT '{}',
+      config TEXT DEFAULT '{}',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -107,6 +108,7 @@ export function initDb(): void {
       rssi INTEGER,
       is_online INTEGER DEFAULT 1,
       attributes TEXT DEFAULT '{}',
+      config TEXT DEFAULT '{}',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
       last_seen TEXT
