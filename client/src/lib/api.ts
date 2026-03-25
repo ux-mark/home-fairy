@@ -100,6 +100,7 @@ export interface SceneCommand {
     | 'lifx_light'
     | 'lifx_off'
     | 'hubitat_device'
+    | 'kasa_device'
     | 'all_off'
     | 'scene_timer'
     | 'mode_update'

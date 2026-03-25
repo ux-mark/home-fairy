@@ -21,8 +21,19 @@ ssh -t "$PI_HOST" bash -s << 'REMOTE'
 set -e
 cd ~/thefairies-app
 
-echo "📦 Installing dependencies..."
+echo "📦 Installing Node dependencies..."
 npm run install:all
+
+echo ""
+echo "🐍 Setting up Kasa sidecar Python environment..."
+cd server/kasa
+if [ ! -d "venv" ]; then
+  python3 -m venv venv
+  echo "   Created Python venv"
+fi
+venv/bin/pip install -q -r requirements.txt
+echo "   Python dependencies installed"
+cd ~/thefairies-app
 
 echo ""
 echo "🔨 Building client..."
@@ -39,27 +50,43 @@ which pm2 > /dev/null 2>&1 || sudo npm install -g pm2
 # Create PM2 config
 cat > ecosystem.config.cjs << 'EOF'
 module.exports = {
-  apps: [{
-    name: 'thefairies',
-    cwd: './server',
-    script: 'node_modules/.bin/tsx',
-    args: 'src/index.ts',
-    env: {
-      NODE_ENV: 'production',
-      PORT: 3001,
+  apps: [
+    {
+      name: 'thefairies',
+      cwd: './server',
+      script: 'node_modules/.bin/tsx',
+      args: 'src/index.ts',
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3001,
+      },
+      watch: false,
+      max_memory_restart: '256M',
+      error_file: '../server/logs/error.log',
+      out_file: '../server/logs/out.log',
+      merge_logs: true,
     },
-    watch: false,
-    max_memory_restart: '256M',
-    error_file: '../server/logs/error.log',
-    out_file: '../server/logs/out.log',
-    merge_logs: true,
-  }]
+    {
+      name: 'kasa-sidecar',
+      cwd: './server/kasa',
+      script: 'venv/bin/uvicorn',
+      args: 'main:app --host 127.0.0.1 --port 3002',
+      interpreter: 'none',
+      max_memory_restart: '100M',
+      env: {
+        PYTHONUNBUFFERED: '1',
+      },
+      error_file: '../logs/kasa-error.log',
+      out_file: '../logs/kasa-out.log',
+      merge_logs: true,
+    },
+  ],
 }
 EOF
 
 echo ""
-echo "🚀 Starting server..."
-pm2 stop thefairies 2>/dev/null || true
+echo "🚀 Starting services..."
+pm2 stop all 2>/dev/null || true
 pm2 start ecosystem.config.cjs
 pm2 save
 

@@ -147,13 +147,71 @@
 ## PR #19 — Add LIFX light retry mechanism and notification system
 - **Branch**: feature/notifications-and-retry → dev
 - **Created**: 2026-03-24
-- **Status**: open
+- **Status**: merged
+- **Merge date**: 2026-03-24
+- **Branch cleanup**: done
 - **Summary**: LIFX batch setStates now inspects per-light results and retries failed lights individually (2s delay, 2 retries, rate limit guard). New notification system with dedup, severity levels, bell icon + panel in header, Socket.io real-time push. Battery and device error notifications wired in. Insights AttentionBar shows device errors.
 - **Files**: 14 files (7 server, 7 client) — lifx-client.ts, scene-executor.ts, notification-service.ts (new), insights-engine.ts, db/index.ts, index.ts, routes/system.ts, api.ts, useSocket.ts, useNotifications.ts (new), NotificationBell.tsx (new), NotificationPanel.tsx (new), AppLayout.tsx, LogsPage.tsx
+
+## PR #20 — Fix timezone handling in charts and insights queries
+- **Branch**: fix/timezone-charts → dev
+- **Created**: 2026-03-23
+- **Status**: merged
+- **Merge date**: 2026-03-24
+- **Branch cleanup**: done
+- **Summary**: Chart components used new Date() on bare UTC SQLite timestamps, displaying wrong times. Now uses parseServerDate(). Server-side strftime calls now use 'localtime' modifier for peak hours, hourly patterns, and daily kWh grouping.
+- **Files**: `client/src/components/dashboard/TimeSeriesChart.tsx`, `client/src/components/dashboard/EnvironmentCard.tsx`, `server/src/routes/dashboard.ts`, `server/src/lib/insights-engine.ts`
 
 ## PR #18 — Fix colour picker: use rectangle for brightness, remove redundant slider
 - **Branch**: fix/color-picker-brightness-ux → dev
 - **Created**: 2026-03-23
-- **Status**: open
-- **Summary**: HSV rectangle's V-axis now drives brightness directly; separate brightness slider removed for colour lights (kept for kelvin). Two controls instead of three.
+- **Status**: merged
+- **Merge date**: 2026-03-23
+- **Branch cleanup**: done
+- **Summary**: HSV rectangle's V-axis now drives brightness directly; separate brightness slider removed for colour lights (kept for kelvin). Two controls instead of three. Live preview sends power:on so lights that start off turn on when previewed.
 - **Files**: `client/src/components/ui/ColorBrightnessPicker.tsx`, `client/src/pages/SceneEditorPage.tsx`
+
+## PR #21 — Make modes fully configurable with triggers and scheduling
+- **Branch**: feature/configurable-modes → dev
+- **Created**: 2026-03-24
+- **Status**: merged
+- **Merge date**: 2026-03-24
+- **Branch cleanup**: done
+- **Summary**: Modes are now fully configurable with add/rename/delete and cascade safety. New mode_triggers table supports sun and time triggers. Sun scheduler rewritten to be data-driven. New time-trigger-scheduler for clock-based transitions. Settings UI restructured with drill-down mode detail, inline trigger management, and dependency-aware delete confirmation.
+- **Files**: server/src/db/index.ts, server/src/routes/system.ts, server/src/lib/sun-mode-scheduler.ts, server/src/lib/time-trigger-scheduler.ts (new), server/src/index.ts, client/src/lib/api.ts, client/src/components/modes/ModesList.tsx (new), client/src/components/modes/ModeDetail.tsx (new), client/src/components/modes/modeUtils.ts (new), client/src/pages/SettingsPage.tsx
+
+## PR #22 — Redesign scenes UX with room+mode organization
+- **Branch**: feature/scenes-ux-redesign → dev
+- **Created**: 2026-03-24
+- **Status**: merged
+- **Merge date**: 2026-03-24
+- **Branch cleanup**: done
+- **Summary**: Scenes page rewritten with room-first accordion view, mode pills, and 4-tab view switcher (By room/Active/Recent/Stale). Room Detail gains collapsible Scenes section. Homepage scene buttons sorted alphabetically with default star and 44px targets. Backend tracks last_activated_at. Shared scene-utils.ts.
+- **Files**: server/src/db/index.ts, server/src/lib/scene-executor.ts, server/src/routes/scenes.ts, client/src/lib/api.ts, client/src/lib/scene-utils.ts (new), client/src/pages/ScenesPage.tsx, client/src/pages/RoomDetailPage.tsx, client/src/pages/HomePage.tsx
+
+## PR #23 — Normalise schema: replace JSON columns with relational tables
+- **Branch**: refactor/legacy-data-cleanup → main
+- **Created**: 2026-03-24
+- **Status**: merged
+- **Merge date**: 2026-03-24
+- **Branch cleanup**: done
+- **Summary**: Drop dead columns (hub_devices.room_name/last_event, rooms.mode_changed). Remove Sensor.priority_threshold. Migrate rooms.sensors JSON → device_rooms. Create modes table (replaces all_modes JSON). Create scene_rooms + scene_modes junction tables (replaces scenes.rooms/modes JSON). Refactor rooms.temperature/lux cache → read from hub_devices.attributes. Scene CRUD wrapped in transactions. FK cascades for mode rename/delete.
+- **Files**: 15 files — server/src/db/index.ts, server/src/routes/dashboard.ts, server/src/routes/hubitat.ts, server/src/routes/rooms.ts, server/src/routes/scenes.ts, server/src/routes/system.ts, server/src/lib/motion-handler.ts, server/src/lib/scene-executor.ts, server/src/lib/history-collector.ts, server/src/index.ts, client/src/lib/api.ts, client/src/pages/DeviceDetailPage.tsx, client/src/pages/RoomDetailPage.tsx, client/src/pages/RoomsPage.tsx, client/src/pages/SettingsPage.tsx
+
+## PR #24 — Standardize UI: shared accordion, badges, navigation, and LIFX detail pages
+- **Branch**: refactor/ui-consistency → dev
+- **Created**: 2026-03-24
+- **Status**: merged
+- **Merge date**: 2026-03-24
+- **Branch cleanup**: done
+- **Summary**: 6 shared UI primitives (Accordion, BackLink, Badge, SearchInput, EmptyState, FilterChip) replacing 5+ inline implementations. All RoomDetailPage sections collapsible. New LightDetailPage for LIFX lights. Standardized headers, back nav, filter chips, search inputs, badges, empty states across all pages. Deleted CollapsibleDeviceGroup.
+- **Files**: 18 files — Accordion.tsx (new), BackLink.tsx (new), Badge.tsx (new), EmptyState.tsx (new), FilterChip.tsx (new), SearchInput.tsx (new), LightDetailPage.tsx (new), CollapsibleDeviceGroup.tsx (deleted), App.tsx, RoomIntelligence.tsx, DashboardPage.tsx, DeviceDetailPage.tsx, DevicesPage.tsx, HomePage.tsx, LogsPage.tsx, RoomDetailPage.tsx, RoomsPage.tsx, ScenesPage.tsx
+
+## PR #25 — Fix accordion spacing and remove LIFX expand chevrons
+- **Branch**: fix/accordion-spacing → dev
+- **Created**: 2026-03-24
+- **Status**: merged
+- **Merge date**: 2026-03-24
+- **Branch cleanup**: done
+- **Summary**: Even spacing between RoomDetailPage accordion sections (space-y-4 container replacing mixed mb-8/mb-4). Removed expand chevron, inline brightness slider, and LightUsagePanel from LIFX light cards on DevicesPage — lights now link to /lights/:id for details. Added TypeBadge to light cards for visual consistency with hub device cards.
+- **Files**: RoomDetailPage.tsx, RoomIntelligence.tsx, DevicesPage.tsx

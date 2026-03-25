@@ -3,12 +3,24 @@ import { db } from '../db/index.js'
 import type { Server as SocketServer } from 'socket.io'
 
 const POLL_INTERVAL_MS = 10_000
-const OFFLINE_THRESHOLD = 3  // Mark offline after 3 consecutive failures
 
 let intervalId: ReturnType<typeof setInterval> | null = null
 let io: SocketServer | null = null
-let failureCounts: Record<string, number> = {}
 let previousStates: Record<string, { switch_state: string; power: number }> = {}
+
+// Prepare statement once at module scope for performance
+const upsert = db.prepare(`
+  INSERT INTO kasa_devices (id, label, device_type, model, parent_id, ip_address, has_emeter, firmware, hardware, rssi, is_online, attributes, last_seen, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now'), datetime('now'))
+  ON CONFLICT(id) DO UPDATE SET
+    label = excluded.label,
+    ip_address = excluded.ip_address,
+    rssi = excluded.rssi,
+    is_online = 1,
+    attributes = excluded.attributes,
+    last_seen = datetime('now'),
+    updated_at = datetime('now')
+`)
 
 function flattenDevices(devices: KasaSidecarDevice[]): KasaSidecarDevice[] {
   const flat: KasaSidecarDevice[] = []
@@ -27,20 +39,6 @@ async function pollKasaDevices(): Promise<void> {
   try {
     const devices = await kasaClient.listDevices()
     const allDevices = flattenDevices(devices)
-    failureCounts = {}  // Reset on success
-
-    const upsert = db.prepare(`
-      INSERT INTO kasa_devices (id, label, device_type, model, parent_id, ip_address, has_emeter, firmware, hardware, rssi, is_online, attributes, last_seen, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now'), datetime('now'))
-      ON CONFLICT(id) DO UPDATE SET
-        label = excluded.label,
-        ip_address = excluded.ip_address,
-        rssi = excluded.rssi,
-        is_online = 1,
-        attributes = excluded.attributes,
-        last_seen = datetime('now'),
-        updated_at = datetime('now')
-    `)
 
     const transaction = db.transaction(() => {
       for (const device of allDevices) {
@@ -105,9 +103,10 @@ async function pollKasaDevices(): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[kasa-poller] Poll failed:', msg)
-
-    // Check if sidecar is unreachable — don't mark individual devices offline
-    // The sidecar handles individual device connectivity
+    // Online/offline state is authoritative from the sidecar — devices that
+    // drop off the network will stop appearing in the sidecar response.
+    // The upsert only touches devices present in the response, so stale
+    // devices retain their last-known state until the next discovery cycle.
   }
 }
 
@@ -130,6 +129,3 @@ export function stopKasaPoller(): void {
     console.log('[kasa-poller] Poller stopped')
   }
 }
-
-// Export for use in future offline-threshold logic
-export { OFFLINE_THRESHOLD }

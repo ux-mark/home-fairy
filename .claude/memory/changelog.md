@@ -5,6 +5,88 @@
 
 ---
 
+## 2026-03-24 — Direct Kasa integration via python-kasa sidecar
+- Python FastAPI sidecar with python-kasa for direct local-network Kasa device control
+- Device discovery (UDP broadcast), 10-second polling, 5-minute DHCP rediscovery
+- New kasa_devices SQLite table (MAC-based IDs, emeter data, RSSI, firmware)
+- Express HTTP client + poller syncs sidecar state to DB with Socket.io real-time events
+- Kasa API routes: device listing, control, discovery, energy stats (daily/monthly from device memory)
+- History collector extended for Kasa energy snapshots (power, energy, voltage, current)
+- Scene executor supports new `kasa_device` command type with on/off/brightness
+- All Off / Nighttime includes Kasa devices via device_rooms kasa_* types
+- Hubitat webhook handler skips events for Kasa-managed devices (prevents duplicate data)
+- Kasa Setup page at /settings/kasa: device discovery, rename, signal strength, strip outlet view
+- DevicesPage shows Kasa devices alongside LIFX lights and hub devices with power/energy data
+- DeviceDetailPage supports Kasa devices: voltage, current, runtime, device info, signal strength
+- HS300 power strip per-outlet display and control
+- PM2 ecosystem config updated for kasa-sidecar process
+- Deploy script updated with Python venv setup
+- Files: 8 new (4 Python, 4 TypeScript), 14 modified — server/kasa/*, server/src/lib/kasa-client.ts, kasa-poller.ts, server/src/routes/kasa.ts, db/index.ts, index.ts, scene-executor.ts, scenes.ts, system.ts, history-collector.ts, client/src/lib/api.ts, DevicesPage.tsx, DeviceDetailPage.tsx, KasaSetupPage.tsx, SettingsPage.tsx, App.tsx, Badge.tsx, ecosystem.config.cjs, deploy-to-pi.sh, .gitignore
+
+## 2026-03-24 — Standardize UI components for consistency across all pages
+- Created 6 shared UI primitives: Accordion, BackLink, Badge (TypeBadge/CountBadge), SearchInput, EmptyState, FilterChip
+- Replaced 5 inconsistent accordion/collapsible implementations with one shared Accordion component (consistent ChevronDown, CSS grid animation, card wrapper)
+- Made all RoomDetailPage sections collapsible (Settings, Scenes, Room Overview, Devices)
+- Created LightDetailPage at /lights/:id for LIFX lights (previously had no detail page)
+- Made LIFX light names on DevicesPage link to /lights/:id (was expand-inline; now consistent with hub devices)
+- Standardized page headers to text-heading text-sm font-semibold across all listing pages
+- Standardized all back navigation to shared BackLink (surface pill style)
+- Standardized filter chips to rounded-full pills everywhere
+- Standardized search inputs to shared SearchInput with X icon clear button
+- Removed uppercase from all badge classes (DevicesPage, RoomDetailPage, LogsPage)
+- Fixed LogsPage empty state (added icon and dashed border to match other pages)
+- Fixed FilterChip touch target to 44px minimum (WCAG AA)
+- Fixed LogsPage back link destination (/settings instead of /)
+- Deleted orphaned CollapsibleDeviceGroup component
+- Files: 18 files (7 new, 1 deleted, 10 modified) — Accordion.tsx, BackLink.tsx, Badge.tsx, EmptyState.tsx, FilterChip.tsx, SearchInput.tsx, LightDetailPage.tsx, CollapsibleDeviceGroup.tsx (deleted), App.tsx, RoomIntelligence.tsx, DashboardPage.tsx, DeviceDetailPage.tsx, DevicesPage.tsx, HomePage.tsx, LogsPage.tsx, RoomDetailPage.tsx, RoomsPage.tsx, ScenesPage.tsx
+
+## 2026-03-24 — Remove all legacy migration code and dead code
+- Removed ~320 lines of try-catch migration blocks from db/index.ts, replaced with clean seedDefaults()
+- Fixed scenes CREATE TABLE: added auto_activate, active_from, active_to, last_activated_at (were missing from schema, only added by migrations)
+- Deleted server/scripts/ directory (5 legacy migration scripts: seed-from-legacy, migrate-lifx-scenes, assign-lights-to-rooms, fix-light-names, fix-priorities)
+- Replaced overloaded SceneCommand.id field with proper typed fields: device_id for hubitat, brightness (number) for fairy devices
+- Removed HubDevice.room_name from client type (column was already dropped from DB)
+- Removed stale comments referencing old schema in scene-executor, motion-handler, insights-engine, utils
+- Updated PROJECT_SPEC.md: document schema-first approach instead of try-catch ALTER TABLE pattern
+- Files: 14 files (9 modified, 5 deleted) — db/index.ts, scene-executor.ts, scenes.ts, motion-handler.ts, insights-engine.ts, api.ts, utils.ts, SceneEditorPage.tsx, PROJECT_SPEC.md, plus 5 deleted scripts
+
+## 2026-03-24 — Scenes UX redesign with room+mode organization
+- Scenes page rewritten: room-first accordion view with mode pills, Radix Tabs view switcher (By room/Active/Recent/Stale), persistent search across all views
+- Default scene detection: highest-priority auto_activate scene for room+mode, marked with filled star
+- Room Detail page: new collapsible Scenes section between Settings and Intelligence, collapsed by default
+- Homepage: scene buttons sort alphabetically, default star indicator, 44px WCAG touch targets
+- New `last_activated_at` column on scenes table, backfilled from logs, updated on every activation
+- Shared `scene-utils.ts`: isSceneInSeason, getDefaultScene, isStaleScene, sortScenesByPriority, getScenesForRoom, getModesForRoom
+- Stale detection: scenes not activated in 90 days, excluding seasonal scenes
+- Files: 8 files (3 server, 5 client) — db/index.ts, scene-executor.ts, scenes.ts, api.ts, scene-utils.ts (new), ScenesPage.tsx, RoomDetailPage.tsx, HomePage.tsx
+
+## 2026-03-24 — Configurable modes with triggers and scheduling
+- Modes are now fully configurable: add, rename (cascades to scenes/preferences), delete (cascade with dependency warnings)
+- New `mode_triggers` table supports sun-based and time-based triggers per mode
+- Sun mode scheduler rewritten from hardcoded map to data-driven (reads triggers from DB)
+- New `time-trigger-scheduler` for clock-based mode transitions with day-of-week filtering
+- Configurable sleep mode name (replaces hardcoded "Sleep Time" check)
+- Settings restructured: new "Modes and schedule" accordion with two-level drill-down
+- ModesList shows trigger summaries and next scheduled time at a glance
+- ModeDetail: inline rename, trigger toggle/add/delete, dependency-aware delete confirmation
+- AddTriggerForm: solar event picker (with "used by" labels) and time picker with day-of-week buttons
+- SunScheduleSection removed (trigger info now lives in per-mode ModeDetail)
+- Files: 10 files (5 server, 5 client) — db/index.ts, system.ts, sun-mode-scheduler.ts, time-trigger-scheduler.ts (new), index.ts, api.ts, ModesList.tsx (new), ModeDetail.tsx (new), modeUtils.ts (new), SettingsPage.tsx
+
+## 2026-03-24 — LIFX light retry mechanism and notification system
+- LIFX `setStates` response now inspected for per-light results (ok/timed_out/offline)
+- Failed lights retried individually via `setState` — up to 2 retries, 2s delay, rate limit guard
+- New `notifications` table with deduplication via `dedup_key` — repeated failures show as single notification with occurrence count
+- Notification service: create with dedup, list, unread count, mark read, dismiss
+- 6 API routes for notification CRUD under `/api/system/notifications`
+- Socket.io `notification:new` and `notification:update` events for real-time client push
+- NotificationBell component in header with unread badge count
+- NotificationPanel: slide-out dialog with severity indicators, occurrence counts, mark read/dismiss
+- Battery critical (<5%) and low (<15%) events create persistent notifications
+- Device errors from notifications surface in Insights AttentionBar
+- `device_error` category added to LogsPage filter
+- Files: 14 files (7 server, 7 client)
+
 ## 2026-03-23 — UX overhaul: layered drill-down, activity tracking, room intelligence
 - Energy/battery data surfaced on device cards (power watts, energy kWh, battery %) with sort-by-power/battery options
 - Room activity tracking: new room_activity table, motion events recorded, activity insights (room ranking, hourly patterns, daily trends)

@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-03-24 — Butler's Kitchen Globe light often fails to turn on
+- **Severity**: medium
+- **Status**: resolved (2026-03-24)
+- Globe (LIFX A19, id: d073d571ba06) occasionally didn't respond during scene activation
+- Root cause: `setStates` batch API returned per-light `timed_out`/`offline` status but scene executor discarded the response — no retry attempted
+- **Resolution**: Added `retryFailedLights` helper that inspects per-light results and retries failed lights individually via `setState` (2s delay, up to 2 retries, rate limit guard). Also creates persistent notifications on final failure. (PR #19)
+
+## 2026-03-24 — Kitchen strip lights had wrong colors after LIFX scene migration
+- **Severity**: medium
+- **Status**: resolved (2026-03-24)
+- Cooker and Sink (LIFX Z strips) had default kelvin:3500 in scenes because the LIFX scene API returns empty color/brightness for multi-zone strips
+- **Resolution**: Activated each old LIFX scene physically, waited for strips to update, read actual colors via API, updated DB directly. Morning strips changed to kelvin:6200, Afternoon to kelvin:3500 at 80% brightness, Cooking to kelvin:2850/2900.
+
 ## 2026-03-23 — Direct URL access to SPA routes returns 404 in production
 - **Severity**: medium
 - **Status**: open

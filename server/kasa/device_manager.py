@@ -25,6 +25,7 @@ class DeviceManager:
 
     def __init__(self):
         self.devices: dict[str, SmartDevice] = {}  # MAC / child-ID -> device
+        self._device_locks: dict[str, asyncio.Lock] = {}  # Per-device locks for safe concurrent access
         self._discovery_lock = asyncio.Lock()
         self._poll_task: Optional[asyncio.Task] = None
         self._rediscover_task: Optional[asyncio.Task] = None
@@ -124,26 +125,27 @@ class DeviceManager:
         if not device:
             raise ValueError(f"Device not found: {device_id}")
 
-        if command == "on":
-            await device.turn_on()
-        elif command == "off":
-            await device.turn_off()
-        elif command == "set_brightness":
-            if value is None:
-                raise ValueError("set_brightness requires a value (0-100)")
-            if not (hasattr(device, "set_brightness") and callable(device.set_brightness)):
-                raise ValueError(f"Device {device_id} does not support brightness control")
-            await device.set_brightness(int(value))
-        else:
-            raise ValueError(
-                f"Unknown command: {command!r}. Valid commands: on, off, set_brightness"
-            )
+        async with self._get_lock(device_id):
+            if command == "on":
+                await device.turn_on()
+            elif command == "off":
+                await device.turn_off()
+            elif command == "set_brightness":
+                if value is None:
+                    raise ValueError("set_brightness requires a value (0-100)")
+                if not (hasattr(device, "set_brightness") and callable(device.set_brightness)):
+                    raise ValueError(f"Device {device_id} does not support brightness control")
+                await device.set_brightness(int(value))
+            else:
+                raise ValueError(
+                    f"Unknown command: {command!r}. Valid commands: on, off, set_brightness"
+                )
 
-        # Refresh cached state so the next read reflects the change
-        try:
-            await device.update()
-        except Exception as exc:
-            logger.warning(f"Post-command update failed for {device_id}: {exc}")
+            # Refresh cached state so the next read reflects the change
+            try:
+                await device.update()
+            except Exception as exc:
+                logger.warning(f"Post-command update failed for {device_id}: {exc}")
 
     # ------------------------------------------------------------------
     # Energy meter
@@ -158,11 +160,12 @@ class DeviceManager:
         if not getattr(device, "has_emeter", False):
             return None
 
-        # Refresh before reading
-        try:
-            await device.update()
-        except Exception as exc:
-            logger.warning(f"Update before emeter read failed for {device_id}: {exc}")
+        # Refresh before reading (locked to prevent concurrent access)
+        async with self._get_lock(device_id):
+            try:
+                await device.update()
+            except Exception as exc:
+                logger.warning(f"Update before emeter read failed for {device_id}: {exc}")
 
         emeter = getattr(device, "emeter_realtime", None)
         result: dict = {
@@ -335,7 +338,8 @@ class DeviceManager:
                         # Child devices are refreshed as part of the parent update
                         continue
                     try:
-                        await device.update()
+                        async with self._get_lock(mac):
+                            await device.update()
                     except Exception as exc:
                         logger.warning(
                             f"Poll failed for {getattr(device, 'alias', mac)!r} ({mac}): {exc}"
@@ -361,6 +365,13 @@ class DeviceManager:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _get_lock(self, device_id: str) -> asyncio.Lock:
+        """Return the per-device lock, creating one if needed."""
+        key = device_id.upper()
+        if key not in self._device_locks:
+            self._device_locks[key] = asyncio.Lock()
+        return self._device_locks[key]
 
     def _get_mac(self, device: SmartDevice) -> Optional[str]:
         """Return a normalised, uppercase MAC address for the device."""

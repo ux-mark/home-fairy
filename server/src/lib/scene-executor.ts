@@ -1,6 +1,7 @@
 import { lifxClient, BatchState, SetStatesResponse, getRateLimitStatus } from './lifx-client.js'
 import { notificationService } from './notification-service.js'
 import { hubitatClient } from './hubitat-client.js'
+import { kasaClient } from './kasa-client.js'
 import { twinklyClient } from './twinkly-client.js'
 import { fairyDeviceClient } from './fairy-device-client.js'
 import { timerManager } from './timer-manager.js'
@@ -32,6 +33,14 @@ interface HubitatDeviceCommand {
   device_id: number | string
   command: string
   value?: string | number
+}
+
+interface KasaDeviceCommand {
+  type: 'kasa_device'
+  device_id: string
+  name: string
+  command: 'on' | 'off'
+  brightness?: number
 }
 
 interface TwinklyCommand {
@@ -79,6 +88,7 @@ type Command =
   | AllOffCommand
   | LightOffCommand
   | HubitatDeviceCommand
+  | KasaDeviceCommand
   | TwinklyCommand
   | FairyDeviceCommand
   | FairySceneCommand
@@ -254,21 +264,25 @@ export async function activateScene(sceneName: string): Promise<void> {
             power: 'off',
             duration: cmd.duration ?? 1,
           })
-          // Also turn off Hubitat switches assigned to rooms in this scene
+          // Also turn off Hubitat switches and Kasa devices assigned to rooms in this scene
           for (const room of rooms) {
-            const hubDevices = getAll<{ device_id: string }>(
-              "SELECT device_id FROM device_rooms WHERE room_name = ? AND device_type IN ('switch', 'dimmer', 'light')",
+            const hubDevices = getAll<{ device_id: string; device_type: string }>(
+              "SELECT device_id, device_type FROM device_rooms WHERE room_name = ? AND device_type IN ('switch', 'dimmer', 'light', 'kasa_plug', 'kasa_strip', 'kasa_outlet', 'kasa_switch', 'kasa_dimmer')",
               [room.name],
             )
             for (const dev of hubDevices) {
               try {
-                await hubitatClient.sendCommand(dev.device_id, 'off')
+                if (dev.device_type.startsWith('kasa_')) {
+                  await kasaClient.sendCommand(dev.device_id, 'off')
+                } else {
+                  await hubitatClient.sendCommand(dev.device_id, 'off')
+                }
               } catch {
                 // best effort
               }
             }
           }
-          log('Turned off all lights and Hubitat switches')
+          log('Turned off all lights, Hubitat switches, and Kasa devices')
           break
         }
 
@@ -288,6 +302,18 @@ export async function activateScene(sceneName: string): Promise<void> {
             await hubitatClient.sendCommand(cmd.device_id, cmd.command)
           }
           log(`Hubitat device ${cmd.device_id}: ${cmd.command}${cmd.value !== undefined ? ` ${cmd.value}` : ''}`)
+          break
+        }
+
+        case 'kasa_device': {
+          if (cmd.command === 'on' && cmd.brightness !== undefined) {
+            // set_brightness implicitly turns the device on, avoiding a momentary
+            // full-brightness flash from sending on + set_brightness separately
+            await kasaClient.sendCommand(cmd.device_id, 'set_brightness', cmd.brightness)
+          } else {
+            await kasaClient.sendCommand(cmd.device_id, cmd.command)
+          }
+          log(`Kasa device ${cmd.name}: ${cmd.command}${cmd.brightness !== undefined ? ` (brightness: ${cmd.brightness})` : ''}`)
           break
         }
 
@@ -445,6 +471,20 @@ export async function deactivateScene(sceneName: string): Promise<void> {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       log(`Error turning off Hubitat device: ${msg}`)
+    }
+  }
+
+  // Turn off Kasa devices referenced in scene commands
+  const kasaCommands = commands.filter(
+    (cmd): cmd is KasaDeviceCommand => cmd.type === 'kasa_device',
+  )
+  for (const cmd of kasaCommands) {
+    try {
+      await kasaClient.sendCommand(cmd.device_id, 'off')
+      log(`Turned off Kasa device: ${cmd.name}`)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      log(`Error turning off Kasa device: ${msg}`)
     }
   }
 

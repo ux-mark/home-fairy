@@ -44,7 +44,7 @@ router.get('/devices', (_req: Request, res: Response) => {
   }
 })
 
-// GET /devices/:id — single device with full attributes
+// GET /devices/:id — single device with full attributes (strips include children)
 router.get('/devices/:id', (req: Request, res: Response) => {
   try {
     const row = getOne<KasaDeviceRow>('SELECT * FROM kasa_devices WHERE id = ?', [req.params.id])
@@ -52,7 +52,16 @@ router.get('/devices/:id', (req: Request, res: Response) => {
       res.status(404).json({ error: 'Device not found' })
       return
     }
-    res.json(parseDeviceRow(row))
+    const device = parseDeviceRow(row)
+    // For strip devices, attach child outlets
+    if (row.device_type === 'strip') {
+      const children = getAll<KasaDeviceRow>(
+        'SELECT * FROM kasa_devices WHERE parent_id = ? ORDER BY id',
+        [row.id],
+      )
+      ;(device as Record<string, unknown>).children = children.map(parseDeviceRow)
+    }
+    res.json(device)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: msg })
