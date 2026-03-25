@@ -577,13 +577,6 @@ function KasaDeviceDetail({ id }: { id: string }) {
   }
 
   const isOn = device.attributes.switch === 'on'
-  const badgeLabel =
-    device.device_type === 'plug' ? 'Kasa plug'
-    : device.device_type === 'strip' ? 'Kasa strip'
-    : device.device_type === 'outlet' ? 'Kasa outlet'
-    : device.device_type === 'switch' ? 'Kasa switch'
-    : 'Kasa dimmer'
-
   // History sources: power and energy for emeter devices
   const historySources: string[] = []
   if (device.has_emeter) {
@@ -651,7 +644,7 @@ function KasaDeviceDetail({ id }: { id: string }) {
               </div>
             )}
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <TypeBadge type={device.device_type} label={badgeLabel} />
+              <TypeBadge type={device.device_type} />
               <span
                 className={cn(
                   'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold',
@@ -753,7 +746,7 @@ function KasaDeviceDetail({ id }: { id: string }) {
                       {childOn && typeof childPower === 'number' && (
                         <span className="text-xs tabular-nums text-caption">{childPower.toFixed(1)} W</span>
                       )}
-                      <TypeBadge type="outlet" label="Kasa outlet" />
+                      <TypeBadge type="outlet" />
                       <ChevronRight className="h-4 w-4 shrink-0 opacity-50" aria-hidden="true" />
                     </Link>
                   </li>

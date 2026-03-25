@@ -11,22 +11,50 @@ const typeColors: Record<string, string> = {
   twinkly: 'bg-pink-500/15 text-pink-400',
   fairy: 'bg-cyan-500/15 text-cyan-400',
   motion: 'bg-green-500/15 text-green-400',
-  // Kasa device types
+  // Kasa device types — all share teal
+  kasa_plug: 'bg-teal-500/15 text-teal-400',
+  kasa_strip: 'bg-teal-500/15 text-teal-400',
+  kasa_outlet: 'bg-teal-500/15 text-teal-400',
+  kasa_switch: 'bg-teal-500/15 text-teal-400',
+  kasa_dimmer: 'bg-teal-500/15 text-teal-400',
   plug: 'bg-teal-500/15 text-teal-400',
   strip: 'bg-teal-500/15 text-teal-400',
   outlet: 'bg-teal-500/15 text-teal-400',
 }
 
+/** Human-readable labels for device types. Used when no explicit label is passed. */
+const typeLabels: Record<string, string> = {
+  lifx: 'Light',
+  switch: 'Switch',
+  dimmer: 'Dimmer',
+  sensor: 'Sensor',
+  contact: 'Contact',
+  twinkly: 'Twinkly',
+  fairy: 'Fairy',
+  motion: 'Motion',
+  unknown: 'Device',
+  // Kasa types
+  kasa_plug: 'Kasa plug',
+  kasa_strip: 'Kasa strip',
+  kasa_outlet: 'Kasa outlet',
+  kasa_switch: 'Kasa switch',
+  kasa_dimmer: 'Kasa dimmer',
+  plug: 'Kasa plug',
+  strip: 'Kasa strip',
+  outlet: 'Kasa outlet',
+}
+
 interface TypeBadgeProps {
-  /** The device type key (lifx, switch, dimmer, etc.) */
+  /** The device type key (lifx, switch, dimmer, kasa_plug, etc.) */
   type: string
-  /** Override the display label (defaults to the type string, with "lifx" → "Light") */
+  /** Override the display label (defaults to a human-readable name derived from the type) */
   label?: string
 }
 
 export function TypeBadge({ type, label }: TypeBadgeProps) {
-  const cls = typeColors[type.toLowerCase()] ?? 'bg-slate-500/15 text-slate-400'
-  const display = label ?? (type.toLowerCase() === 'lifx' ? 'Light' : type)
+  const key = type.toLowerCase()
+  const cls = typeColors[key] ?? 'bg-slate-500/15 text-slate-400'
+  const display = label ?? typeLabels[key] ?? type.replace(/_/g, ' ')
   return (
     <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold', cls)}>
       {display}

@@ -265,14 +265,6 @@ function KasaDeviceCard({ device }: { device: UnifiedDevice }) {
   const powerWatts = attrs.power
   const energyKwh = attrs.energy
 
-  // Kasa plug/strip/outlet badge label
-  const badgeLabel =
-    kasa.device_type === 'plug' ? 'Kasa plug'
-    : kasa.device_type === 'strip' ? 'Kasa strip'
-    : kasa.device_type === 'outlet' ? 'Kasa outlet'
-    : kasa.device_type === 'switch' ? 'Kasa switch'
-    : 'Kasa dimmer'
-
   return (
     <div className="card rounded-xl border transition-colors">
       <div className="flex items-center gap-3 p-4">
@@ -317,7 +309,7 @@ function KasaDeviceCard({ device }: { device: UnifiedDevice }) {
           </Link>
         )}
 
-        <TypeBadge type={kasa.device_type} label={badgeLabel} />
+        <TypeBadge type={kasa.device_type} />
 
         <button
           onClick={() => toggleMutation.mutate()}
@@ -365,7 +357,7 @@ function KasaDeviceCard({ device }: { device: UnifiedDevice }) {
                     <p className="text-caption text-[10px]">{childPower.toFixed(1)} W</p>
                   )}
                 </div>
-                <TypeBadge type="outlet" label="Kasa outlet" />
+                <TypeBadge type="outlet" />
               </div>
             )
           })}

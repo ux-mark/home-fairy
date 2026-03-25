@@ -164,18 +164,6 @@ function KasaDeviceCard({
     },
   })
 
-  const typeLabel = device.device_type === 'strip'
-    ? 'Strip'
-    : device.device_type === 'outlet'
-    ? 'Outlet'
-    : device.device_type === 'plug'
-    ? 'Plug'
-    : device.device_type === 'switch'
-    ? 'Switch'
-    : device.device_type === 'dimmer'
-    ? 'Dimmer'
-    : device.device_type
-
   return (
     <div className="card rounded-xl border">
       {/* Main row */}
@@ -217,7 +205,7 @@ function KasaDeviceCard({
         </div>
 
         {/* Type badge */}
-        <TypeBadge type={device.device_type} label={typeLabel} />
+        <TypeBadge type={device.device_type} />
 
         {/* Status badge */}
         <span
