@@ -150,6 +150,7 @@ interface RoomAccordionProps {
   filteredScenes: Scene[]
   activeSceneNames: Set<string>
   defaultScenes: Record<string, Record<string, string>> | undefined
+  systemModes: string[] | undefined
   isOpen: boolean
   onToggle: () => void
 }
@@ -160,15 +161,17 @@ function RoomAccordion({
   filteredScenes,
   activeSceneNames,
   defaultScenes,
+  systemModes,
   isOpen,
   onToggle,
 }: RoomAccordionProps) {
   const [activeMode, setActiveMode] = useState<string>('All')
 
   // All modes that have scenes in this room (from full data, not filtered)
+  // Ordered by display_order from the backend when systemModes is available
   const allModes = useMemo(
-    () => getModesForRoom(allScenes, roomName),
-    [allScenes, roomName],
+    () => getModesForRoom(allScenes, roomName, systemModes),
+    [allScenes, roomName, systemModes],
   )
 
   // Scenes to display: filtered by search, then by mode pill
@@ -348,6 +351,11 @@ export default function ScenesPage() {
   const { data: defaultScenes } = useQuery({
     queryKey: ['room-default-scenes'],
     queryFn: api.roomDefaultScenes.getAll,
+  })
+
+  const { data: systemCurrent } = useQuery({
+    queryKey: ['system', 'current'],
+    queryFn: api.system.getCurrent,
   })
 
   // Active scene names from room data
@@ -634,6 +642,7 @@ export default function ScenesPage() {
                       filteredScenes={filteredScenes}
                       activeSceneNames={activeSceneNames}
                       defaultScenes={defaultScenes}
+                      systemModes={systemCurrent?.all_modes}
                       isOpen={computedOpenRooms.has(roomName)}
                       onToggle={() => toggleRoom(roomName)}
                     />

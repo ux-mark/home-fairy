@@ -387,7 +387,7 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
 
   const isKeepOn = !!device.deviceRoom?.config?.exclude_from_all_off
 
-  const toggleKeepOn = useMutation({
+  const toggleKeepOn = useMutation<unknown, Error, void>({
     mutationFn: () => {
       const newValue = !isKeepOn
       if (device.deviceRoom) {

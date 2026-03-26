@@ -39,7 +39,8 @@ export function initDb(): void {
       active_to TEXT,
       last_activated_at TEXT DEFAULT NULL,
       created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
+      updated_at TEXT DEFAULT (datetime('now')),
+      sort_order INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS light_rooms (
@@ -209,6 +210,9 @@ export function initDb(): void {
   // Migrate: priority column → room_default_scenes table
   migrateScenePriority()
 
+  // Migrate: add sort_order column to scenes
+  migrateAddSceneSortOrder()
+
   // Seed defaults for a fresh database
   seedDefaults()
 }
@@ -245,7 +249,8 @@ function migrateDropAutoActivate(): void {
       active_to TEXT,
       last_activated_at TEXT DEFAULT NULL,
       created_at TEXT DEFAULT (datetime('now')),
-      updated_at TEXT DEFAULT (datetime('now'))
+      updated_at TEXT DEFAULT (datetime('now')),
+      sort_order INTEGER DEFAULT 0
     );
     INSERT INTO scenes_new (name, icon, commands, tags, active_from, active_to, last_activated_at, created_at, updated_at)
       SELECT name, icon, commands, tags, active_from, active_to, last_activated_at, created_at, updated_at FROM scenes;
@@ -300,6 +305,26 @@ function migrateScenePriority(): void {
 
     console.log(`[db] Migrated ${seen.size} default scene assignments, removed priority column`)
   })()
+}
+
+function migrateAddSceneSortOrder(): void {
+  // Add sort_order column to scenes table if it doesn't exist
+  const cols = db.prepare("PRAGMA table_info(scenes)").all() as { name: string }[]
+  const hasSortOrder = cols.some(c => c.name === 'sort_order')
+  if (!hasSortOrder) {
+    console.log('[db] Migrating scenes: adding sort_order column')
+    db.exec('ALTER TABLE scenes ADD COLUMN sort_order INTEGER DEFAULT 0')
+
+    // Assign initial sort_order values alphabetically
+    const scenes = db.prepare('SELECT name FROM scenes ORDER BY name').all() as { name: string }[]
+    const updateOrder = db.prepare('UPDATE scenes SET sort_order = ? WHERE name = ?')
+    db.transaction(() => {
+      for (let i = 0; i < scenes.length; i++) {
+        updateOrder.run(i, scenes[i].name)
+      }
+    })()
+    console.log(`[db] Assigned sort_order to ${scenes.length} scenes`)
+  }
 }
 
 function seedDefaults(): void {

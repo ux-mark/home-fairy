@@ -76,8 +76,10 @@ export function getScenesForRoom(scenes: Scene[], roomName: string, mode?: strin
 
 /**
  * Get all unique modes that have scenes in a specific room.
+ * If allModes is provided, results are returned in that order (respecting display_order
+ * from the backend). Otherwise falls back to alphabetical sort.
  */
-export function getModesForRoom(scenes: Scene[], roomName: string): string[] {
+export function getModesForRoom(scenes: Scene[], roomName: string, allModes?: string[]): string[] {
   const modeSet = new Set<string>()
   for (const scene of scenes) {
     const rooms = Array.isArray(scene.rooms) ? scene.rooms : []
@@ -86,6 +88,9 @@ export function getModesForRoom(scenes: Scene[], roomName: string): string[] {
     for (const m of modes) {
       if (m) modeSet.add(m)
     }
+  }
+  if (allModes) {
+    return allModes.filter(m => modeSet.has(m))
   }
   return Array.from(modeSet).sort()
 }

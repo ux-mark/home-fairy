@@ -60,6 +60,7 @@ export interface Scene {
   active_from?: string | null // "MM-DD" format
   active_to?: string | null   // "MM-DD" format
   last_activated_at?: string | null
+  sort_order?: number
 }
 
 export interface SceneRoom {
@@ -659,6 +660,11 @@ export const api = {
         '/scenes/' + encodeURIComponent(name) + '/deactivate',
         { method: 'POST' },
       ),
+    reorder: (scenes: string[]) =>
+      fetchApi<Scene[]>('/scenes/reorder', {
+        method: 'PUT',
+        body: JSON.stringify({ scenes }),
+      }),
   },
   lights: {
     getRoomAssignments: () => fetchApi<LightRoom[]>('/lights/rooms'),
@@ -706,6 +712,11 @@ export const api = {
       fetchApi<string[]>('/system/modes', {
         method: 'POST',
         body: JSON.stringify({ mode }),
+      }),
+    reorderModes: (modes: string[]) =>
+      fetchApi<{ modes: string[] }>('/system/modes/reorder', {
+        method: 'PUT',
+        body: JSON.stringify({ modes }),
       }),
     renameMode: (oldName: string, newName: string) =>
       fetchApi<{ name: string; updatedScenes: number }>(

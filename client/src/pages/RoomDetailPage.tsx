@@ -388,6 +388,11 @@ export default function RoomDetailPage() {
     queryFn: api.scenes.getAll,
   })
 
+  const { data: systemCurrent } = useQuery({
+    queryKey: ['system', 'current'],
+    queryFn: api.system.getCurrent,
+  })
+
   // Fetch default scene assignments for this room
   const { data: roomDefaultScenes } = useQuery({
     queryKey: ['room-default-scenes', name],
@@ -1102,7 +1107,7 @@ export default function RoomDetailPage() {
       {/* ── Scenes (mode-grouped) ────────────────────────────────────────────── */}
       {(() => {
         const roomScenes = allScenes && name ? getScenesForRoom(allScenes, name) : []
-        const modesForRoom = allScenes && name ? getModesForRoom(allScenes, name) : []
+        const modesForRoom = allScenes && name ? getModesForRoom(allScenes, name, systemCurrent?.all_modes) : []
 
         return (
           <section>
