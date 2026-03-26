@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Power, Moon, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Power, Moon, AlertTriangle, Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { Room, Scene } from '@/lib/api'
@@ -222,16 +222,20 @@ export default function WatchPage() {
           disabled={nighttimeMutation.isPending || allOffMutation.isPending}
           className="flex flex-1 min-h-[52px] items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-base font-bold text-white transition-colors active:bg-indigo-700 disabled:opacity-50"
         >
-          <Moon className="h-5 w-5" />
-          Nighttime
+          {nighttimeMutation.isPending
+            ? <Loader2 className="h-5 w-5 animate-spin" />
+            : <Moon className="h-5 w-5" />}
+          {nighttimeMutation.isPending ? 'Activating...' : 'Nighttime'}
         </button>
         <button
           onClick={() => allOffMutation.mutate()}
           disabled={allOffMutation.isPending || nighttimeMutation.isPending}
           className="flex flex-1 min-h-[52px] items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-base font-bold text-white transition-colors active:bg-red-700 disabled:opacity-50"
         >
-          <Power className="h-5 w-5" />
-          All Off
+          {allOffMutation.isPending
+            ? <Loader2 className="h-5 w-5 animate-spin" />
+            : <Power className="h-5 w-5" />}
+          {allOffMutation.isPending ? 'Turning off...' : 'All Off'}
         </button>
       </div>
     </div>

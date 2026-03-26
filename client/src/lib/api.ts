@@ -550,7 +550,7 @@ const API_BASE = '/api'
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const controller = new AbortController()
-  const timeoutId = setTimeout(() => controller.abort(), 15000)
+  const timeoutId = setTimeout(() => controller.abort(), 30000)
 
   try {
     const res = await fetch(`${API_BASE}${path}`, {

@@ -1268,61 +1268,55 @@ async function runAllOff(excludeRooms: string[] = []): Promise<string[]> {
     'SELECT * FROM device_rooms ORDER BY room_name',
   )
 
-  // 3. For each switch/dimmer NOT excluded, send 'off' command
-  for (const row of deviceRows) {
-    // Skip if room is excluded
-    if (excludeRooms.includes(row.room_name)) continue
-
-    // Skip if device is individually excluded from all-off
+  // 3. For each switch/dimmer NOT excluded, send 'off' command — run concurrently
+  const eligibleDevices = deviceRows.filter((row) => {
+    if (excludeRooms.includes(row.room_name)) return false
     let config: Record<string, unknown> = {}
     try { config = JSON.parse(row.config) } catch { config = {} }
-    if (config.exclude_from_all_off) continue
+    if (config.exclude_from_all_off) return false
+    return true
+  })
 
-    const type = row.device_type
-    if (type === 'switch' || type === 'dimmer') {
-      try {
+  const deviceResults = await Promise.allSettled(
+    eligibleDevices.map(async (row): Promise<string> => {
+      const type = row.device_type
+      if (type === 'switch' || type === 'dimmer') {
         await hubitatClient.sendCommand(row.device_id, 'off')
-        actions.push(`Hub device off: ${row.device_label}`)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        actions.push(`Hub error (${row.device_label}): ${msg}`)
-      }
-    } else if (type === 'twinkly') {
-      try {
+        return `Hub device off: ${row.device_label}`
+      } else if (type === 'twinkly') {
         const dev = getOne<{ ip: string | null }>(
           "SELECT json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE id = ?",
           [row.device_id],
         )
         if (dev?.ip) {
           await twinklyClient.turnOff(dev.ip)
-          actions.push(`Twinkly off: ${row.device_label}`)
+          return `Twinkly off: ${row.device_label}`
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        actions.push(`Twinkly error (${row.device_label}): ${msg}`)
-      }
-    } else if (type === 'fairy') {
-      try {
+        return `Twinkly skip (no IP): ${row.device_label}`
+      } else if (type === 'fairy') {
         const dev = getOne<{ ip: string | null }>(
           "SELECT json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE id = ?",
           [row.device_id],
         )
         if (dev?.ip) {
           await fairyDeviceClient.turnOff(dev.ip)
-          actions.push(`Fairy off: ${row.device_label}`)
+          return `Fairy off: ${row.device_label}`
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        actions.push(`Fairy error (${row.device_label}): ${msg}`)
-      }
-    } else if (type.startsWith('kasa_')) {
-      try {
+        return `Fairy skip (no IP): ${row.device_label}`
+      } else if (type.startsWith('kasa_')) {
         await kasaClient.sendCommand(row.device_id, 'off')
-        actions.push(`Kasa off: ${row.device_label}`)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        actions.push(`Kasa error (${row.device_label}): ${msg}`)
+        return `Kasa off: ${row.device_label}`
       }
+      return `Skip (unhandled type ${type}): ${row.device_label}`
+    }),
+  )
+
+  for (const result of deviceResults) {
+    if (result.status === 'fulfilled') {
+      actions.push(result.value)
+    } else {
+      const msg = result.reason instanceof Error ? result.reason.message : String(result.reason)
+      actions.push(`Device error: ${msg}`)
     }
   }
 
@@ -1374,7 +1368,7 @@ router.post('/nighttime', async (_req: Request, res: Response) => {
       if (prefRow?.value) excludeRooms = JSON.parse(prefRow.value)
     } catch { /* keep default */ }
 
-    const actions = await runAllOff(excludeRooms)
+    const actions = await runAllOff()
 
     // Lock rooms that were turned off (all rooms except excluded ones)
     const allRoomNames = getAll<{ name: string }>('SELECT name FROM rooms').map(r => r.name)
@@ -1389,7 +1383,7 @@ router.post('/nighttime', async (_req: Request, res: Response) => {
 
     run(
       "INSERT INTO logs (message, category, created_at) VALUES (?, 'system', datetime('now'))",
-      [`Nighttime executed: excluded rooms [${excludeRooms.join(', ')}], locked ${roomsToLock.length} rooms, wake mode: ${wakeMode}, ${actions.length} actions`],
+      [`Nighttime executed: all lights off, motion-responsive rooms [${excludeRooms.join(', ')}], locked ${roomsToLock.length} rooms, wake mode: ${wakeMode}, ${actions.length} actions`],
     )
 
     emit('mode:change', { mode: 'Sleep Time' })

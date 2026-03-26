@@ -291,7 +291,7 @@ function NightModeSection() {
     <Section title="Night Mode">
       <div className="space-y-5">
         <p className="text-caption text-xs">
-          When you activate Nighttime or Guest Night, rooms will turn off and stay off until the wake mode is reached.
+          Choose how the house behaves at bedtime. Nighttime turns off all lights and locks rooms until the wake mode is reached. Guest Night lets you go to bed while keeping rooms on for others.
         </p>
 
         {/* Wake mode selector */}
@@ -320,9 +320,9 @@ function NightModeSection() {
 
         {/* Nighttime exclusions */}
         <div className="border-t border-[var(--border-secondary)] pt-5">
-          <p className="text-heading text-sm mb-1">Nighttime -- rooms that stay on</p>
+          <p className="text-heading text-sm mb-1">Nighttime -- rooms that respond to motion</p>
           <p className="text-caption text-xs mb-3">
-            These rooms keep their lights on when you tap Nighttime. All other rooms will lock.
+            All lights turn off when you tap Nighttime, but these rooms stay unlocked and will respond to motion during the night with their Sleep Time scene.
           </p>
           <div className="flex flex-wrap gap-2">
             {roomNames.map(name => {
@@ -348,9 +348,9 @@ function NightModeSection() {
 
         {/* Guest Night exclusions */}
         <div className="border-t border-[var(--border-secondary)] pt-5">
-          <p className="text-heading text-sm mb-1">Guest Night -- rooms that stay on for guests</p>
+          <p className="text-heading text-sm mb-1">Guest Night -- rooms that stay on</p>
           <p className="text-caption text-xs mb-3">
-            These rooms keep their lights on when you tap Guest Night. All other rooms will lock.
+            These rooms keep their lights on when you tap Guest Night -- for when the guest goes to bed but others are still up. All other rooms turn off and lock.
           </p>
           <div className="flex flex-wrap gap-2">
             {roomNames.map(name => {

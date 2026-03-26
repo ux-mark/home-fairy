@@ -349,7 +349,7 @@ export class MotionHandler {
 
       const allInactive = roomSensors.every((sensor) => {
         const state = this.sensorStates.get(sensor.device_label)
-        return state === 'inactive'
+        return state !== 'active'
       })
 
       if (!allInactive) {

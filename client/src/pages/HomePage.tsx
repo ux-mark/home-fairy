@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Thermometer, Sun, Clock, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock, AlertTriangle, ChevronRight, Activity } from 'lucide-react'
+import { Thermometer, Sun, Clock, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock, AlertTriangle, ChevronRight, Activity, Loader2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
@@ -335,8 +335,10 @@ function QuickActions() {
             'disabled:opacity-50',
           )}
         >
-          <Power className="h-4.5 w-4.5" />
-          All Off
+          {allOffMutation.isPending
+            ? <Loader2 className="h-4.5 w-4.5 animate-spin" />
+            : <Power className="h-4.5 w-4.5" />}
+          {allOffMutation.isPending ? 'Turning off...' : 'All Off'}
         </button>
         <button
           onClick={() => nighttimeMutation.mutate()}
@@ -348,8 +350,10 @@ function QuickActions() {
             'disabled:opacity-50',
           )}
         >
-          <Moon className="h-4.5 w-4.5" />
-          Nighttime
+          {nighttimeMutation.isPending
+            ? <Loader2 className="h-4.5 w-4.5 animate-spin" />
+            : <Moon className="h-4.5 w-4.5" />}
+          {nighttimeMutation.isPending ? 'Activating...' : 'Nighttime'}
         </button>
         <button
           onClick={() => guestNightMutation.mutate()}
@@ -361,9 +365,10 @@ function QuickActions() {
             'disabled:opacity-50',
           )}
         >
-          <Moon className="h-4 w-4" />
-          <Users className="h-4 w-4" />
-          Guest
+          {guestNightMutation.isPending
+            ? <Loader2 className="h-4.5 w-4.5 animate-spin" />
+            : <><Moon className="h-4 w-4" /><Users className="h-4 w-4" /></>}
+          {guestNightMutation.isPending ? 'Activating...' : 'Guest'}
         </button>
       </div>
     </section>
