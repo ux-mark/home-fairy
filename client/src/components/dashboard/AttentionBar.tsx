@@ -90,7 +90,9 @@ function ItemCard({ item }: ItemCardProps) {
       {/* Device link — only when a deviceId is present */}
       {item.deviceId !== null && (
         <Link
-          to={`/devices/${item.deviceId}`}
+          to={item.deviceSource === 'kasa'
+            ? `/devices/kasa/${item.deviceId}`
+            : `/devices/${item.deviceId}`}
           aria-label={`View device: ${item.deviceLabel ?? 'device'}`}
           className={cn(
             'shrink-0 text-sm text-fairy-400',

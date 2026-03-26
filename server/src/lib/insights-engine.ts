@@ -4,12 +4,13 @@ import { notificationService } from './notification-service.js'
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface PowerDevice {
-  id: number
+  id: number | string
   label: string
   room_name: string | null
   power: number
   energy: number | null
   switch: 'on' | 'off'
+  source?: 'hub' | 'kasa'
 }
 
 interface BatteryDevice {
@@ -48,11 +49,12 @@ export interface EnergyInsights {
   dailyKwhHistory: Array<{ day: string; totalKwh: number }>
   peakHours: Array<{ hour: number; avgWatts: number }>
   deviceAnomalies: Array<{
-    deviceId: number
+    deviceId: number | string
     label: string
     currentWatts: number
     averageWatts: number
     percentAbove: number
+    source: 'hub' | 'kasa'
   }>
 }
 
@@ -91,8 +93,9 @@ export interface AttentionItem {
   category: 'battery' | 'energy' | 'temperature' | 'device_error' | 'scene'
   title: string
   description: string
-  deviceId: number | null
+  deviceId: number | string | null
   deviceLabel: string | null
+  deviceSource: 'hub' | 'kasa' | null
 }
 
 export interface InsightsData {
@@ -177,6 +180,7 @@ function computeEnergyInsights(power: PowerDevice[], energyRate: number): Energy
           currentWatts: device.power,
           averageWatts: Math.round(avg * 10) / 10,
           percentAbove: Math.round(((device.power - avg) / avg) * 100),
+          source: device.source ?? 'hub',
         })
       }
     }
@@ -472,6 +476,7 @@ function computeAttentionItems(
           : ''),
       deviceId: device.id,
       deviceLabel: device.label,
+      deviceSource: 'hub',
     })
   }
 
@@ -485,6 +490,7 @@ function computeAttentionItems(
       description: `${device.battery}% remaining`,
       deviceId: device.id,
       deviceLabel: device.label,
+      deviceSource: 'hub',
     })
   }
 
@@ -499,6 +505,7 @@ function computeAttentionItems(
         description: `Currently ${anomaly.currentWatts}W — 7-day average for this hour is ${anomaly.averageWatts}W`,
         deviceId: anomaly.deviceId,
         deviceLabel: anomaly.label,
+        deviceSource: anomaly.source,
       })
     }
   }
@@ -517,6 +524,7 @@ function computeAttentionItems(
         description: `Currently ${outlier.temp}° — house average is ${tempInsights.houseAvgTemp}°`,
         deviceId: null,
         deviceLabel: null,
+        deviceSource: null,
       })
     }
   }
@@ -541,6 +549,7 @@ function computeAttentionItems(
             : ''),
         deviceId: device.deviceId,
         deviceLabel: device.label,
+        deviceSource: 'hub',
       })
     }
   }
@@ -559,6 +568,7 @@ function computeAttentionItems(
       description: `Currently ${energyInsights.totalWatts}W — typical for this hour is ${energyInsights.averageWattsThisHour}W`,
       deviceId: null,
       deviceLabel: null,
+      deviceSource: null,
     })
   }
 
@@ -576,6 +586,7 @@ function computeAttentionItems(
           : err.message,
         deviceId: null,
         deviceLabel: err.source_label,
+        deviceSource: null,
       })
     }
   } catch {

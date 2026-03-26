@@ -213,6 +213,9 @@ export function initDb(): void {
   // Migrate: add sort_order column to scenes
   migrateAddSceneSortOrder()
 
+  // Migrate: fix sensor device_ids stored as labels instead of numeric IDs
+  migrateSensorDeviceIds()
+
   // Seed defaults for a fresh database
   seedDefaults()
 }
@@ -324,6 +327,26 @@ function migrateAddSceneSortOrder(): void {
       }
     })()
     console.log(`[db] Assigned sort_order to ${scenes.length} scenes`)
+  }
+}
+
+function migrateSensorDeviceIds(): void {
+  // Fix sensor entries where device_id was stored as a label instead of the numeric hub device ID
+  const sensorEntries = db.prepare(
+    "SELECT id, device_id, device_label FROM device_rooms WHERE device_type IN ('motion', 'sensor')"
+  ).all() as { id: number; device_id: string; device_label: string }[]
+
+  for (const entry of sensorEntries) {
+    // If device_id looks like a label (not purely numeric), try to fix it
+    if (!/^\d+$/.test(entry.device_id)) {
+      const hubDevice = db.prepare('SELECT id FROM hub_devices WHERE label = ?')
+        .get(entry.device_id) as { id: number } | undefined
+      if (hubDevice) {
+        db.prepare('UPDATE device_rooms SET device_id = ? WHERE id = ?')
+          .run(String(hubDevice.id), entry.id)
+        console.log(`[db] Fixed sensor device_id: "${entry.device_id}" → "${hubDevice.id}" for entry ${entry.id}`)
+      }
+    }
   }
 }
 

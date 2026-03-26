@@ -126,14 +126,16 @@ router.get('/summary', async (_req: Request, res: Response) => {
         power: d.power !== null ? Number(d.power) : 0,
         energy: d.energy !== null ? Number(d.energy) : null,
         switch: (d.switch_state as 'on' | 'off') || 'off',
+        source: 'hub' as const,
       })),
       ...kasaPowerDevices.map((d) => ({
-        id: d.id as unknown as number,
+        id: d.id,
         label: d.label,
         room_name: d.room_name,
         power: d.power !== null ? Number(d.power) : 0,
         energy: d.energy !== null ? Number(d.energy) : null,
         switch: (d.switch_state as 'on' | 'off') || 'off',
+        source: 'kasa' as const,
       })),
     ]
 

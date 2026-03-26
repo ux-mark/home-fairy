@@ -36,8 +36,8 @@ function parseRoom(row: RoomRow) {
   try { tags = JSON.parse(row.tags) } catch { tags = [] }
 
   // Get sensors from device_rooms table
-  const sensorRows = getAll<{ device_label: string }>(
-    "SELECT device_label FROM device_rooms WHERE room_name = ? AND device_type IN ('motion', 'sensor')",
+  const sensorRows = getAll<{ device_id: string; device_label: string }>(
+    "SELECT device_id, device_label FROM device_rooms WHERE room_name = ? AND device_type IN ('motion', 'sensor')",
     [row.name],
   )
 
@@ -56,7 +56,7 @@ function parseRoom(row: RoomRow) {
 
   return {
     ...row,
-    sensors: sensorRows.map(s => ({ name: s.device_label })),
+    sensors: sensorRows.map(s => ({ name: s.device_label, id: s.device_id })),
     tags: Array.isArray(tags) ? tags : [],
     auto: Boolean(row.auto),
     temperature: sensorReading?.temperature ?? null,
