@@ -1,6 +1,6 @@
 import axios, { type AxiosInstance, AxiosError } from 'axios'
 
-const SONOS_API_URL = process.env.SONOS_API_URL || 'http://localhost:5005'
+const SONOS_API_URL = process.env.SONOS_API_URL || 'http://localhost:3003'
 const TIMEOUT = 5000
 
 export class SonosApiError extends Error {

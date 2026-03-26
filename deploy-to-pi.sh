@@ -52,6 +52,8 @@ else
   cd "$SONOS_DIR" && git pull && npm install && cd ~/thefairies-app
 fi
 mkdir -p "$SONOS_DIR/logs"
+# Configure Sonos API to use port 3003 (consistent with 3001/3002)
+echo '{"port": 3003}' > "$SONOS_DIR/settings.json"
 
 echo ""
 echo "Building client..."

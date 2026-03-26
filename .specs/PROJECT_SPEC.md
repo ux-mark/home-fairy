@@ -125,7 +125,7 @@ LONGITUDE=
 OPENWEATHER_API=          # OpenWeather API key
 API_TIMEOUT=10000
 KASA_SIDECAR_URL=         # Kasa sidecar URL (default: http://127.0.0.1:3002)
-SONOS_API_URL=            # node-sonos-http-api URL (default: http://localhost:5005)
+SONOS_API_URL=            # node-sonos-http-api URL (default: http://localhost:3003)
 ```
 
 ## Key Concepts
