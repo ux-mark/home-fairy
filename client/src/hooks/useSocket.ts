@@ -18,6 +18,15 @@ function getSocket(): Socket {
   return socket
 }
 
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    if (socket) {
+      socket.disconnect()
+      socket = null
+    }
+  })
+}
+
 /**
  * Subscribe to Hubitat and system events and invalidate relevant
  * TanStack Query caches for real-time dashboard updates.

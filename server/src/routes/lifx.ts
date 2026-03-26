@@ -265,7 +265,7 @@ router.post('/test', async (_req: Request, res: Response) => {
     res.json({ success: true, message: `Identified ${light.label}`, light: light.label })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(503).json({ success: false, message: msg })
+    res.status(503).json({ success: false, message: IS_PRODUCTION ? 'Service unavailable' : msg })
   }
 })
 

@@ -101,7 +101,7 @@ router.post('/discover', async (_req: Request, res: Response) => {
     res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(503).json({ error: 'Unable to reach Kasa sidecar', details: msg })
+    res.status(503).json({ error: IS_PRODUCTION ? 'Service unavailable' : 'Unable to reach Kasa sidecar: ' + msg })
   }
 })
 
@@ -230,7 +230,7 @@ router.get('/health', async (_req: Request, res: Response) => {
     res.json(health)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(503).json({ error: 'Kasa sidecar unreachable', details: msg })
+    res.status(503).json({ error: IS_PRODUCTION ? 'Service unavailable' : 'Kasa sidecar unreachable: ' + msg })
   }
 })
 

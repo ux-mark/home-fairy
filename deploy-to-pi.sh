@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 # Deploy The Fairies v3 to Raspberry Pi
 # Run this from your Mac: bash deploy-to-pi.sh
 

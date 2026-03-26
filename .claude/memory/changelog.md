@@ -5,6 +5,13 @@
 
 ---
 
+## 2026-03-26 — Fix remaining audit issues (PR #38)
+- **Security**: Webhook token read from X-Hubitat-Token header instead of query param; 3 error message leaks fixed in kasa.ts and lifx.ts
+- **Cleanup**: Removed 5 dead migration functions from db/index.ts (already applied to production DB)
+- **Deploy**: Added set -e to local shell in deploy-to-pi.sh
+- **Dev**: Added HMR dispose hook to socket singleton (prevents duplicate connections during hot reload)
+- **Refactor**: Decomposed SettingsPage.tsx from 2173 → 536 lines; extracted 7 components to client/src/components/settings/
+
 ## 2026-03-25 — Production readiness: resolve 47 open issues (PR #30)
 - **Infrastructure**: Graceful shutdown (SIGTERM/SIGINT), PM2 compiled JS, server build in deploy, deploy script DB backup + health check, .env validation, PM2 restart backoff
 - **Security**: Webhook auth + rate limiting, body limit 100KB, Hubitat token as header, preferences allowlist, generic production error messages across all routes

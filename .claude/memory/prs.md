@@ -221,7 +221,7 @@
 - **Created**: 2026-03-24
 - **Status**: merged
 - **Merge date**: 2026-03-25
-- **Branch cleanup**: pending
+- **Branch cleanup**: done
 - **Summary**: Python FastAPI sidecar using python-kasa for direct local Kasa device control. New kasa_devices table, Express HTTP client + poller, Kasa API routes, scene/system integration, Kasa Setup page, DevicesPage/DeviceDetailPage Kasa support, HS300 per-outlet monitoring, PM2 config, deploy script updates.
 - **Files**: 8 new + 14 modified — server/kasa/* (4 Python), kasa-client.ts, kasa-poller.ts, routes/kasa.ts, KasaSetupPage.tsx, db/index.ts, index.ts, scene-executor.ts, scenes.ts, system.ts, history-collector.ts, api.ts, DevicesPage.tsx, DeviceDetailPage.tsx, SettingsPage.tsx, App.tsx, Badge.tsx, ecosystem.config.cjs, deploy-to-pi.sh, .gitignore, PROJECT_SPEC.md
 
@@ -251,3 +251,66 @@
 - **Branch cleanup**: done
 - **Summary**: Comprehensive production readiness pass across 7 phases: infrastructure (graceful shutdown, PM2 compiled JS, deploy hardening), security (webhook auth, rate limiting, body limits, generic errors), data integrity (log pruning, cycle detection, transactions, lock-based weather indicator), UX error states (5 pages), accessibility (6 fixes), UX consistency (truncate removal, empty states, LIFX exclusions), code quality (11 fixes including N+1 elimination, Zod validation, debounce)
 - **Files**: 40 files (745 insertions, 405 deletions)
+
+## PR #31 — Fix missing Link import in SceneEditorPage
+- **Branch**: fix/scene-editor-link-import → dev
+- **Created**: 2026-03-25
+- **Status**: merged
+- **Merge date**: 2026-03-25
+- **Branch cleanup**: done
+- **Summary**: Restored `Link` import from react-router-dom that was accidentally removed in commit 1817068 when BackLink was added. Link is still used for device/room links in the scene editor — its removal broke scene view/edit/create.
+- **Files**: `client/src/pages/SceneEditorPage.tsx`
+
+## PR #32 — Fix scene and mode ordering to respect user preferences
+- **Branch**: fix/scene-and-mode-ordering → dev
+- **Created**: 2026-03-25
+- **Status**: merged
+- **Merge date**: 2026-03-25
+- **Branch cleanup**: done
+- **Summary**: Added sort_order to scenes table, reorder endpoints for both scenes and modes, fixed frontend mode ordering to respect display_order instead of alphabetical sort, fixed pre-existing TS build errors
+- **Files**: `server/src/db/index.ts`, `server/src/routes/scenes.ts`, `server/src/routes/system.ts`, `client/src/lib/api.ts`, `client/src/lib/scene-utils.ts`, `client/src/pages/ScenesPage.tsx`, `client/src/pages/RoomDetailPage.tsx`, `client/src/pages/DeviceDetailPage.tsx`, `client/src/pages/DevicesPage.tsx`
+
+## PR #33 — Fix device-room ID mismatch and Kasa insight links
+- **Branch**: fix/device-room-id-mismatch → dev
+- **Created**: 2026-03-25
+- **Status**: merged
+- **Merge date**: 2026-03-25
+- **Branch cleanup**: done
+- **Summary**: Fixed sensor device_id stored as label instead of numeric hub ID (with migration for existing data), and fixed Insights "View device" links routing Kasa devices to the wrong detail page
+- **Files**: `server/src/db/index.ts`, `server/src/routes/rooms.ts`, `server/src/routes/dashboard.ts`, `server/src/lib/insights-engine.ts`, `client/src/lib/api.ts`, `client/src/pages/RoomDetailPage.tsx`, `client/src/components/dashboard/AttentionBar.tsx`
+
+## PR #34 — Improve device management UX
+- **Branch**: feature/device-management-ux → dev
+- **Created**: 2026-03-25
+- **Status**: merged
+- **Merge date**: 2026-03-26
+- **Branch cleanup**: done
+- **Summary**: Remove Kasa model names from device listing cards, promote power strip sockets to top-level devices with full controls, fix sensor double-counting on Rooms page, add sensors to Devices page with dedicated SensorCard and filter tab, rename "outlet" to "socket" in all UI text, add parent strip link on socket cards and detail page, fix badge colour mapping for server "outlet" device_type
+- **Files**: `client/src/pages/DevicesPage.tsx`, `client/src/pages/DeviceDetailPage.tsx`, `client/src/pages/KasaSetupPage.tsx`, `client/src/pages/RoomsPage.tsx`, `client/src/components/ui/Badge.tsx`, `server/src/lib/kasa-poller.ts`
+
+## PR #35 — Fix sensor ghost-active bug, nighttime all-off, and button UX
+- **Branch**: fix/night-bugs-and-sensor-init → dev
+- **Created**: 2026-03-26
+- **Status**: merged
+- **Merge date**: 2026-03-26
+- **Branch cleanup**: done
+- **Summary**: Fix unreported sensors treated as active (Living room stuck on 2.5h), Nighttime now turns off ALL lights including excluded rooms (excluded rooms stay unlocked for motion), parallelize runAllOff device commands, add loading spinners to quick action buttons, increase client timeout to 30s, update settings copy explaining Nighttime vs Guest Night distinction
+- **Files**: `server/src/lib/motion-handler.ts`, `server/src/routes/system.ts`, `client/src/lib/api.ts`, `client/src/pages/HomePage.tsx`, `client/src/pages/WatchPage.tsx`, `client/src/pages/SettingsPage.tsx`
+
+## PR #36 — Add device deactivation system with health tracking
+- **Branch**: feature/device-deactivation → dev
+- **Created**: 2026-03-26
+- **Status**: merged
+- **Merge date**: 2026-03-26
+- **Branch cleanup**: done
+- **Summary**: Device health tracking with consecutive failure detection (3 strikes → unreachable notification). Manual and notification-driven deactivation skips devices in scene execution, All Off, Nighttime. Fix Kasa offline detection (is_online never cleared). LIFX health checks via connected field. Auto-suggestion notification when deactivated devices come back online. Full UI treatment across DevicesPage (filter tab, dimmed cards), DeviceDetailPage/LightDetailPage (deactivation banner, disabled controls, reactivate button), RoomDetailPage (dimmed listings), SceneEditorPage (warning banner), AttentionBar (deactivate/reactivate action buttons). StatusBadge component. WCAG AA compliant dimmed colors.
+- **Files**: 19 files changed (+1,285/-125) — device-health-service.ts (new), db/index.ts, scene-executor.ts, kasa-poller.ts, history-collector.ts, notification-service.ts, insights-engine.ts, system.ts, hubitat.ts, kasa.ts, lifx.ts, api.ts, Badge.tsx, AttentionBar.tsx, DevicesPage.tsx, DeviceDetailPage.tsx, LightDetailPage.tsx, RoomDetailPage.tsx, SceneEditorPage.tsx
+
+## PR #37 — Fix deactivate button WCAG AA contrast
+- **Branch**: fix/deactivate-button-contrast → dev
+- **Created**: 2026-03-26
+- **Status**: merged
+- **Merge date**: 2026-03-26
+- **Branch cleanup**: done
+- **Summary**: Fixed deactivate button contrast to use theme-aware CSS variables for WCAG AA compliance
+- **Files**: `client/src/pages/DeviceDetailPage.tsx`, `client/src/pages/LightDetailPage.tsx`
