@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -18,11 +18,13 @@ import {
   ChevronRight,
   Sparkles,
   Check,
+  ExternalLink,
 } from 'lucide-react'
 import * as Switch from '@radix-ui/react-switch'
 import * as Tabs from '@radix-ui/react-tabs'
+import { io as socketIo } from 'socket.io-client'
 import { api } from '@/lib/api'
-import type { Light, LightAssignment, Sensor, HubDevice, DeviceRoomAssignment, DeactivatedDevice } from '@/lib/api'
+import type { Light, LightAssignment, Sensor, HubDevice, DeviceRoomAssignment, DeactivatedDevice, SonosZone } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { Accordion } from '@/components/ui/Accordion'
@@ -405,6 +407,73 @@ export default function RoomDetailPage() {
     queryFn: api.devices.getDeactivated,
   })
 
+  // Sonos queries
+  const { data: sonosSpeakers } = useQuery({
+    queryKey: ['sonos', 'speakers'],
+    queryFn: api.sonos.getSpeakers,
+    enabled: !!name,
+  })
+
+  const { data: sonosFavourites } = useQuery({
+    queryKey: ['sonos', 'favourites'],
+    queryFn: api.sonos.getFavourites,
+    enabled: !!name,
+  })
+
+  const { data: sonosFollowMeStatus } = useQuery({
+    queryKey: ['sonos', 'follow-me-status'],
+    queryFn: api.sonos.getFollowMeStatus,
+    enabled: !!name,
+  })
+
+  // Find the speaker mapped to this room
+  const roomSpeaker = useMemo(
+    () => sonosSpeakers?.find(s => s.room_name === name) ?? null,
+    [sonosSpeakers, name],
+  )
+
+  // Live Sonos zone data for the now-playing indicator
+  const [liveZones, setLiveZones] = useState<SonosZone[] | null>(null)
+
+  useEffect(() => {
+    if (!roomSpeaker) return
+    const url = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin
+    const s = socketIo(url, { transports: ['websocket', 'polling'] })
+
+    function handleZonesUpdate(zones: SonosZone[]) {
+      setLiveZones(zones)
+    }
+    function handleFollowMeUpdate() {
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'follow-me-status'] })
+    }
+
+    s.on('sonos:zones-update', handleZonesUpdate)
+    s.on('sonos:playback-update', handleZonesUpdate)
+    s.on('sonos:follow-me-update', handleFollowMeUpdate)
+
+    return () => {
+      s.off('sonos:zones-update', handleZonesUpdate)
+      s.off('sonos:playback-update', handleZonesUpdate)
+      s.off('sonos:follow-me-update', handleFollowMeUpdate)
+      s.disconnect()
+    }
+  }, [roomSpeaker, queryClient])
+
+  // Find the live zone for this room's speaker
+  const roomZone = useMemo(() => {
+    if (!roomSpeaker || !liveZones) return null
+    return liveZones.find(z =>
+      z.coordinator.roomName === roomSpeaker.speaker_name ||
+      z.members.some(m => m.roomName === roomSpeaker.speaker_name),
+    ) ?? null
+  }, [roomSpeaker, liveZones])
+
+  // Determine if this speaker is in the follow-me group
+  const isInFollowMeGroup = useMemo(() => {
+    if (!roomSpeaker || !sonosFollowMeStatus) return false
+    return sonosFollowMeStatus.activeRooms.includes(roomSpeaker.room_name)
+  }, [roomSpeaker, sonosFollowMeStatus])
+
   // Fetch default scene assignments for this room
   const { data: roomDefaultScenes } = useQuery({
     queryKey: ['room-default-scenes', name],
@@ -700,6 +769,34 @@ export default function RoomDetailPage() {
   const parentRoomOptions = useMemo(() => {
     return (allRooms ?? []).filter(r => r.name !== name)
   }, [allRooms, name])
+
+  // Sonos setting mutations — these save immediately (not batched with room save)
+  const updateFollowMeMutation = useMutation({
+    mutationFn: (value: boolean) => api.rooms.update(name!, { sonos_follow_me: value }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms', name] })
+      toast({ message: 'Follow-me music setting saved' })
+    },
+    onError: () => toast({ message: 'Failed to save follow-me setting', type: 'error' }),
+  })
+
+  const updateAutoStartMutation = useMutation({
+    mutationFn: (value: boolean) => api.rooms.update(name!, { sonos_auto_start: value }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms', name] })
+      toast({ message: 'Auto-start music setting saved' })
+    },
+    onError: () => toast({ message: 'Failed to save auto-start setting', type: 'error' }),
+  })
+
+  const updateRoomFavouriteMutation = useMutation({
+    mutationFn: (favourite: string | null) => api.sonos.updateSpeaker(name!, { favourite }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'speakers'] })
+      toast({ message: 'Room favourite saved' })
+    },
+    onError: () => toast({ message: 'Failed to save room favourite', type: 'error' }),
+  })
 
   // Mutations
   const identifyMutation = useMutation({
@@ -1128,6 +1225,158 @@ export default function RoomDetailPage() {
                 />
               </div>
             </div>
+
+            {/* ── Sonos controls (only shown when a speaker is mapped to this room) ── */}
+            {roomSpeaker && (
+              <div className="space-y-4 border-t border-[var(--border-secondary)] pt-4">
+                <p className="text-xs font-semibold text-caption">Music</p>
+
+                {/* Follow-me music toggle */}
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label
+                      htmlFor="sonos-follow-me-toggle"
+                      className="text-sm font-medium text-heading"
+                    >
+                      Follow-me music
+                    </label>
+                    <Switch.Root
+                      id="sonos-follow-me-toggle"
+                      checked={room.sonos_follow_me}
+                      disabled={updateFollowMeMutation.isPending || sonosFollowMeStatus?.enabled === false}
+                      onCheckedChange={(c) => updateFollowMeMutation.mutate(c)}
+                      className={cn(
+                        'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
+                        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                        'disabled:cursor-not-allowed disabled:opacity-50',
+                        room.sonos_follow_me && sonosFollowMeStatus?.enabled !== false
+                          ? 'bg-fairy-500'
+                          : 'bg-[var(--border-secondary)]',
+                      )}
+                      aria-describedby="sonos-follow-me-desc"
+                    >
+                      <Switch.Thumb
+                        className={cn(
+                          'block h-5 w-5 rounded-full bg-white shadow transition-transform',
+                          room.sonos_follow_me ? 'translate-x-6' : 'translate-x-1',
+                        )}
+                      />
+                    </Switch.Root>
+                  </div>
+                  <p
+                    id="sonos-follow-me-desc"
+                    className={cn(
+                      'mt-1 text-xs',
+                      sonosFollowMeStatus?.enabled === false ? 'text-amber-400' : 'text-caption',
+                    )}
+                  >
+                    {sonosFollowMeStatus?.enabled === false
+                      ? 'Enable follow-me music in Settings to use this.'
+                      : 'Music follows you when you enter this room.'}
+                  </p>
+                </div>
+
+                {/* Auto-start music toggle */}
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label
+                      htmlFor="sonos-auto-start-toggle"
+                      className="text-sm font-medium text-heading"
+                    >
+                      Auto-start music
+                    </label>
+                    <Switch.Root
+                      id="sonos-auto-start-toggle"
+                      checked={room.sonos_auto_start}
+                      disabled={updateAutoStartMutation.isPending}
+                      onCheckedChange={(c) => updateAutoStartMutation.mutate(c)}
+                      className={cn(
+                        'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
+                        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                        'disabled:cursor-not-allowed disabled:opacity-50',
+                        room.sonos_auto_start ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
+                      )}
+                      aria-describedby="sonos-auto-start-desc"
+                    >
+                      <Switch.Thumb
+                        className={cn(
+                          'block h-5 w-5 rounded-full bg-white shadow transition-transform',
+                          room.sonos_auto_start ? 'translate-x-6' : 'translate-x-1',
+                        )}
+                      />
+                    </Switch.Root>
+                  </div>
+                  <p id="sonos-auto-start-desc" className="mt-1 text-xs text-caption">
+                    Start playing a favourite when you enter this room and nothing else is playing.
+                  </p>
+                </div>
+
+                {/* Room favourite dropdown */}
+                <div>
+                  <label
+                    htmlFor="sonos-room-favourite"
+                    className="mb-1 block text-xs font-medium text-body"
+                  >
+                    Room favourite
+                  </label>
+                  <select
+                    id="sonos-room-favourite"
+                    value={roomSpeaker.favourite ?? ''}
+                    disabled={updateRoomFavouriteMutation.isPending}
+                    onChange={e => {
+                      const val = e.target.value === '' ? null : e.target.value
+                      updateRoomFavouriteMutation.mutate(val)
+                    }}
+                    className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-describedby="sonos-room-favourite-desc"
+                  >
+                    <option value="">(using default)</option>
+                    {sonosFavourites?.map(fav => (
+                      <option key={fav.title} value={fav.title}>
+                        {fav.title}
+                      </option>
+                    ))}
+                  </select>
+                  <p id="sonos-room-favourite-desc" className="mt-1 text-xs text-caption">
+                    Overrides the default favourite for this room.
+                  </p>
+                </div>
+
+                {/* Now playing indicator — shown when speaker is in follow-me group */}
+                {isInFollowMeGroup && roomZone && (
+                  <div className={cn(
+                    'rounded-lg border border-fairy-500/20 bg-fairy-500/5 px-3 py-2.5',
+                  )}>
+                    <p className="mb-1 text-xs font-medium text-caption">Now playing</p>
+                    {roomZone.coordinator.state.currentTrack.type === 'line_in' ? (
+                      <p className="text-sm text-fairy-400">External audio source active</p>
+                    ) : roomZone.coordinator.state.playbackState === 'PLAYING' ? (
+                      <div>
+                        <p className="break-words text-sm font-medium text-fairy-400">
+                          {roomZone.coordinator.state.currentTrack.title || roomZone.coordinator.state.currentTrack.stationName || 'Unknown track'}
+                        </p>
+                        {roomZone.coordinator.state.currentTrack.artist && (
+                          <p className="mt-0.5 break-words text-xs text-caption">
+                            {roomZone.coordinator.state.currentTrack.artist}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-caption">Paused</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Speaker detail link */}
+                <Link
+                  to={`/sonos/${encodeURIComponent(roomSpeaker.speaker_name)}`}
+                  className="inline-flex items-center gap-1.5 text-xs text-fairy-400 hover:text-fairy-300 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                  View speaker details
+                </Link>
+              </div>
+            )}
           </div>
         </Accordion>
       </section>

@@ -5,6 +5,19 @@
 
 ---
 
+## 2026-03-26 — Sonos integration via node-sonos-http-api
+- Phase 1: Follow-Me Music + Auto-Play Rules
+- node-sonos-http-api (localhost:5005) as REST gateway to Sonos, managed via PM2
+- Follow-me music: motion sensors trigger speaker grouping/ungrouping. Single group model (all active rooms hear same music). Per-room opt-in/out via rooms.sonos_follow_me column.
+- Auto-play: configurable rules in sonos_auto_play table, triggered on mode changes with conditions (always, if-not-playing, if-source-not)
+- Line-in detection: any speaker with active line-in (TV, turntable, amp) auto-excluded from follow-me — source-based, not device-type-based
+- Locked state (Nighttime/Guest Night) pauses follow-me and clears active rooms
+- sonos_speakers table maps Home Fairy rooms to Sonos speaker names, with per-room favourite override
+- Integration hooks: fire-and-forget calls from motion-handler, system.ts (mode change + locked state), sun/time schedulers
+- Frontend: dedicated /sonos-setup page (auto-discovery), /sonos/:speaker detail page, Sonos tab on Devices page, Music section in Settings, per-room controls on Room Detail
+- Rationale: leverages existing motion infrastructure; node-sonos-http-api is the most stable Sonos REST API; single-group model is simplest correct UX for Phase 1
+- Phase 2 (future): independent zones per room, Spotify integration
+
 ## 2026-03-25 — Simplify scene model: every scene is equal, one default per room+mode
 - Scene priority (0-100) AND `auto_activate` flag both removed — no auto/manual distinction
 - Every scene is just a scene. Any scene can be the default for a room+mode.

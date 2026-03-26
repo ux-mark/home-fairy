@@ -41,6 +41,19 @@ echo "   Python dependencies installed"
 cd ~/thefairies-app
 
 echo ""
+echo "Setting up Sonos HTTP API..."
+SONOS_DIR="$HOME/node-sonos-http-api"
+if [ ! -d "$SONOS_DIR" ]; then
+  echo "   Cloning node-sonos-http-api..."
+  git clone https://github.com/jishi/node-sonos-http-api.git "$SONOS_DIR"
+  cd "$SONOS_DIR" && npm install && cd ~/thefairies-app
+else
+  echo "   Updating node-sonos-http-api..."
+  cd "$SONOS_DIR" && git pull && npm install && cd ~/thefairies-app
+fi
+mkdir -p "$SONOS_DIR/logs"
+
+echo ""
 echo "Building client..."
 cd client && npx vite build && cd ..
 

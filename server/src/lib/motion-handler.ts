@@ -2,6 +2,7 @@ import { getAll, getOne, run } from '../db/index.js'
 import { activateScene, deactivateScene } from './scene-executor.js'
 import { mtaIndicator } from './mta-indicator.js'
 import { weatherIndicator } from './weather-indicator.js'
+import { sonosManager } from './sonos-manager.js'
 
 interface RoomTimer {
   timeout: NodeJS.Timeout
@@ -337,6 +338,9 @@ export class MotionHandler {
           log(`Error activating scene: ${msg}`)
         }
       }
+
+      // Notify Sonos manager of room activity (non-blocking)
+      sonosManager.onRoomMotionActive(roomName).catch(() => {})
     } else {
       // inactive
       log(`Motion inactive: ${sensorName} in ${roomName}`)
@@ -358,6 +362,9 @@ export class MotionHandler {
         )
         return
       }
+
+      // Notify Sonos manager of full room inactivity (non-blocking)
+      sonosManager.onRoomMotionAllInactive(roomName).catch(() => {})
 
       // Only start timer if there isn't one already running
       if (this.roomTimers.has(roomName)) {

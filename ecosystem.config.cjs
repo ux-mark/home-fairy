@@ -32,5 +32,17 @@ module.exports = {
       out_file: './logs/kasa-out.log',
       merge_logs: true,
     },
+    {
+      name: 'sonos-api',
+      cwd: '/home/queen/node-sonos-http-api',
+      script: 'server.js',
+      watch: false,
+      max_memory_restart: '128M',
+      exp_backoff_restart_delay: 1000,
+      max_restarts: 10,
+      error_file: './logs/sonos-error.log',
+      out_file: './logs/sonos-out.log',
+      merge_logs: true,
+    },
   ],
 }

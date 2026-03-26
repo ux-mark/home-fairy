@@ -17,6 +17,7 @@ import { mtaClient } from '../lib/mta-client.js'
 import { MTA_STOPS, searchStops } from '../lib/mta-stops.js'
 import { mtaIndicator } from '../lib/mta-indicator.js'
 import { weatherIndicator, WEATHER_COLORS } from '../lib/weather-indicator.js'
+import { sonosManager } from '../lib/sonos-manager.js'
 import { motionHandler } from '../lib/motion-handler.js'
 import { emit } from '../lib/socket.js'
 import { deviceHealthService } from '../lib/device-health-service.js'
@@ -89,6 +90,7 @@ router.put('/preferences', (req: Request, res: Response) => {
       'night_exclude_rooms', 'guest_night_exclude_rooms',
       'mta_stops', 'mta_max_wait', 'mta_indicator',
       'weather_indicator', 'weather_custom_colors',
+      'sonos_follow_me', 'sonos_default_favourite', 'temp_unit',
     ] as const
 
     const { key, value } = req.body
@@ -143,6 +145,7 @@ router.put('/mode', (req: Request, res: Response) => {
     }
 
     emit('mode:change', { mode: body.mode })
+    sonosManager.onModeChange(body.mode).catch(() => {})
     res.json({ mode: body.mode })
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -1392,6 +1395,7 @@ router.post('/nighttime', async (_req: Request, res: Response) => {
 
     emit('mode:change', { mode: 'Sleep Time' })
     emit('scene:change', { action: 'nighttime' })
+    sonosManager.onLockedStateActivated().catch(() => {})
     res.json({ success: true, mode: 'Sleep Time', excludeRooms, lockedRooms: roomsToLock, wakeMode, actions })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -1446,6 +1450,7 @@ router.post('/guest-night', async (_req: Request, res: Response) => {
 
     emit('mode:change', { mode: 'Sleep Time' })
     emit('scene:change', { action: 'guest_night' })
+    sonosManager.onLockedStateActivated().catch(() => {})
     res.json({ success: true, mode: 'Sleep Time', excludeRooms, lockedRooms: roomsToLock, wakeMode, actions })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

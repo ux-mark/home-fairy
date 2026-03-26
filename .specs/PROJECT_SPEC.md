@@ -1,13 +1,13 @@
 # Project Spec
 
 ## Overview
-The Fairies v3 — a home automation control system with a React frontend and Express backend. Controls LIFX lights, Kasa smart plugs/strips (via python-kasa sidecar), Hubitat sensors, Twinkly decorative lights, and fairy (ESP8266) devices. Includes MTA subway tracking, weather indicators, energy monitoring, and motion-based scene automation.
+The Fairies v3 — a home automation control system with a React frontend and Express backend. Controls LIFX lights, Kasa smart plugs/strips (via python-kasa sidecar), Hubitat sensors, Twinkly decorative lights, fairy (ESP8266) devices, and Sonos speakers (via node-sonos-http-api). Includes MTA subway tracking, weather indicators, energy monitoring, motion-based scene automation, and follow-me music.
 
 ## Tech Stack
 - **Language**: TypeScript (frontend and backend)
 - **Frontend**: React 19, Vite, Tailwind CSS v4, Radix UI, react-colorful (HSV picker), TanStack Query, Socket.io client, PWA
 - **Backend**: Express 5, better-sqlite3, Socket.io, axios, Zod validation, SunCalc, gtfs-realtime-bindings
-- **Database**: SQLite with WAL mode. Tables: rooms, scenes, scene_rooms, scene_modes, room_auto_scenes, modes, mode_triggers, light_rooms, device_rooms, hub_devices, kasa_devices, current_state, logs, device_history, room_activity, notifications
+- **Database**: SQLite with WAL mode. Tables: rooms, scenes, scene_rooms, scene_modes, room_auto_scenes, modes, mode_triggers, light_rooms, device_rooms, hub_devices, kasa_devices, sonos_speakers, sonos_auto_play, current_state, logs, device_history, room_activity, notifications
 - **Package manager**: npm
 - **Process manager (production)**: PM2
 
@@ -16,16 +16,17 @@ The Fairies v3 — a home automation control system with a React frontend and Ex
 thefairies-app/
 ├── client/          React + Vite + TypeScript + Tailwind CSS v4
 │   ├── src/
-│   │   ├── pages/          Home, Dashboard, Rooms, RoomDetail, Scenes, SceneEditor, Devices, DeviceDetail, Settings, Watch, Logs
+│   │   ├── pages/          Home, Dashboard, Rooms, RoomDetail, Scenes, SceneEditor, Devices, DeviceDetail, Settings, Watch, Logs, SonosSetup, SonosDetail
 │   │   ├── components/     Layout (AppLayout, WatchLayout) + UI + dashboard cards
 │   │   ├── hooks/          useToast, useTheme
 │   │   └── lib/            api.ts (API client + types), utils.ts
 │   └── vite.config.ts      Vite config with PWA + proxy to :3001
 ├── server/          Express 5 + TypeScript + SQLite (better-sqlite3)
 │   ├── src/
-│   │   ├── routes/         lifx, rooms, scenes, lights, hubitat, kasa, motion, system, dashboard
+│   │   ├── routes/         lifx, rooms, scenes, lights, hubitat, kasa, sonos, motion, system, dashboard
 │   │   ├── lib/            lifx-client, hubitat-client, kasa-client, kasa-poller,
 │   │   │                   twinkly-client, fairy-device-client,
+│   │   │                   sonos-client, sonos-manager,
 │   │   │                   scene-executor, motion-handler, timer-manager, sun-mode-scheduler,
 │   │   │                   weather-client, weather-indicator, mta-client, mta-stops,
 │   │   │                   history-collector
@@ -124,6 +125,7 @@ LONGITUDE=
 OPENWEATHER_API=          # OpenWeather API key
 API_TIMEOUT=10000
 KASA_SIDECAR_URL=         # Kasa sidecar URL (default: http://127.0.0.1:3002)
+SONOS_API_URL=            # node-sonos-http-api URL (default: http://localhost:5005)
 ```
 
 ## Key Concepts

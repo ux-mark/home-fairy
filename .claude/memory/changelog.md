@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-03-26 — Sonos integration: Follow-Me Music and Auto-Play
+- **Backend**: sonos-client.ts (axios wrapper for node-sonos-http-api), sonos-manager.ts (follow-me + auto-play business logic), sonos.ts routes (13 endpoints)
+- **Database**: sonos_speakers and sonos_auto_play tables, sonos_follow_me + sonos_auto_start columns on rooms
+- **Integration**: Fire-and-forget hooks in motion-handler.ts, system.ts (mode change + locked state), sun-mode-scheduler.ts, time-trigger-scheduler.ts
+- **Frontend**: SonosSetupPage (speaker discovery + room assignment), SonosDetailPage (speaker config + now playing), MusicSection settings component (follow-me toggle + auto-play rules), Sonos tab on DevicesPage, per-room Sonos controls on RoomDetailPage
+- **Deployment**: PM2 config for sonos-api process, deploy script with node-sonos-http-api clone/update
+- **Files**: 6 new + 12 modified
+
 ## 2026-03-26 — Fix remaining audit issues (PR #38)
 - **Security**: Webhook token read from X-Hubitat-Token header instead of query param; 3 error message leaks fixed in kasa.ts and lifx.ts
 - **Cleanup**: Removed 5 dead migration functions from db/index.ts (already applied to production DB)

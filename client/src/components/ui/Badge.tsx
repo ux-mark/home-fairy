@@ -23,6 +23,7 @@ const typeColors: Record<string, string> = {
   strip: 'bg-teal-500/15 text-teal-400',
   socket: 'bg-teal-500/15 text-teal-400',
   outlet: 'bg-teal-500/15 text-teal-400',
+  sonos: 'bg-violet-500/15 text-violet-400',
 }
 
 /** Human-readable labels for device types. Used when no explicit label is passed. */
@@ -48,6 +49,7 @@ const typeLabels: Record<string, string> = {
   strip: 'Kasa strip',
   socket: 'Kasa socket',
   outlet: 'Kasa socket',
+  sonos: 'Sonos',
 }
 
 interface TypeBadgeProps {

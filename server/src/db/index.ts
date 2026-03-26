@@ -212,7 +212,40 @@ export function initDb(): void {
       scene_name TEXT NOT NULL REFERENCES scenes(name) ON UPDATE CASCADE ON DELETE CASCADE,
       PRIMARY KEY (room_name, mode_name)
     );
+
+    CREATE TABLE IF NOT EXISTS sonos_speakers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_name TEXT NOT NULL REFERENCES rooms(name) ON UPDATE CASCADE ON DELETE CASCADE,
+      speaker_name TEXT NOT NULL,
+      favourite TEXT,
+      default_volume INTEGER DEFAULT 25,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(room_name),
+      UNIQUE(speaker_name)
+    );
+
+    CREATE TABLE IF NOT EXISTS sonos_auto_play (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      room_name TEXT,
+      mode_name TEXT NOT NULL REFERENCES modes(name) ON UPDATE CASCADE ON DELETE CASCADE,
+      favourite_name TEXT NOT NULL,
+      trigger_type TEXT NOT NULL CHECK(trigger_type IN ('mode_change', 'if_not_playing', 'if_source_not')),
+      trigger_value TEXT,
+      enabled INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
   `)
+
+  // Add sonos columns to rooms table if they don't exist
+  const roomCols = db.prepare("PRAGMA table_info('rooms')").all() as { name: string }[]
+  const colNames = roomCols.map(c => c.name)
+  if (!colNames.includes('sonos_follow_me')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN sonos_follow_me INTEGER DEFAULT 1')
+  }
+  if (!colNames.includes('sonos_auto_start')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN sonos_auto_start INTEGER DEFAULT 1')
+  }
 
   // Seed defaults for a fresh database
   seedDefaults()

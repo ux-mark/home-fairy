@@ -17,6 +17,8 @@ const SettingsPage = React.lazy(() => import('@/pages/SettingsPage'))
 const LogsPage = React.lazy(() => import('@/pages/LogsPage'))
 const KasaSetupPage = React.lazy(() => import('@/pages/KasaSetupPage'))
 const LightsPage = React.lazy(() => import('@/pages/LightsPage'))
+const SonosSetupPage = React.lazy(() => import('@/pages/SonosSetupPage'))
+const SonosDetailPage = React.lazy(() => import('@/pages/SonosDetailPage'))
 
 function PageLoader() {
   return (
@@ -48,6 +50,8 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/logs" element={<LogsPage />} />
           <Route path="/settings/kasa" element={<KasaSetupPage />} />
+          <Route path="/sonos-setup" element={<SonosSetupPage />} />
+          <Route path="/sonos/:speaker" element={<SonosDetailPage />} />
         </Route>
         <Route element={<WatchLayout />}>
           <Route path="/watch" element={<WatchPage />} />
