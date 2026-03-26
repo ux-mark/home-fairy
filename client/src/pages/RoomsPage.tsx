@@ -60,8 +60,10 @@ export default function RoomsPage() {
   const lightsPerRoom = (name: string) =>
     assignments?.filter(a => a.room_name === name).length ?? 0
 
+  const sensorDeviceTypes = ['motion', 'sensor', 'contact', 'temperature']
+
   const devicesPerRoom = (name: string) =>
-    deviceAssignments?.filter(a => a.room_name === name).length ?? 0
+    deviceAssignments?.filter(a => a.room_name === name && !sensorDeviceTypes.includes(a.device_type)).length ?? 0
 
   const sensorsPerRoom = (name: string) =>
     rooms?.find(r => r.name === name)?.sensors?.length ?? 0

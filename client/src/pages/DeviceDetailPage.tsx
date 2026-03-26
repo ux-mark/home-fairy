@@ -547,6 +547,14 @@ function KasaDeviceDetail({ id }: { id: string }) {
   })
   const deviceRoom = allDeviceRooms?.find(a => a.device_id === id)
 
+  // Fetch parent strip label for child sockets
+  const { data: parentDevice } = useQuery({
+    queryKey: ['kasa', 'device', device?.parent_id],
+    queryFn: () => api.kasa.getDevice(device!.parent_id!),
+    enabled: !!device?.parent_id,
+    staleTime: 60_000,
+  })
+
   const assignRoomMutation = useMutation({
     mutationFn: (roomName: string) =>
       api.hubitat.assignDevice({ device_id: id, device_label: device?.label ?? '', device_type: 'kasa_' + (device?.device_type ?? 'plug'), room_name: roomName }),
@@ -685,6 +693,17 @@ function KasaDeviceDetail({ id }: { id: string }) {
                 </button>
               </div>
             )}
+            {parentDevice && (
+              <p className="mt-1 text-xs text-caption">
+                on{' '}
+                <Link
+                  to={`/devices/kasa/${encodeURIComponent(device.parent_id!)}`}
+                  className="text-fairy-400 hover:text-fairy-300 transition-colors"
+                >
+                  {parentDevice.label}
+                </Link>
+              </p>
+            )}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <TypeBadge type={device.device_type} />
               <span
@@ -806,12 +825,12 @@ function KasaDeviceDetail({ id }: { id: string }) {
         </section>
       )}
 
-      {/* ── 4. Child outlets (strip) ────────────────────────────────────── */}
+      {/* ── 4. Child sockets (strip) ────────────────────────────────────── */}
       {device.children && device.children.length > 0 && (
-        <section aria-labelledby="outlets-heading">
+        <section aria-labelledby="sockets-heading">
           <div className="card rounded-xl border p-5">
-            <h2 id="outlets-heading" className="mb-4 text-sm font-semibold text-heading">
-              Outlets
+            <h2 id="sockets-heading" className="mb-4 text-sm font-semibold text-heading">
+              Sockets
             </h2>
             <ul className="divide-y divide-[var(--border-secondary)]" role="list">
               {device.children.map(child => {
@@ -838,7 +857,7 @@ function KasaDeviceDetail({ id }: { id: string }) {
                       {childOn && typeof childPower === 'number' && (
                         <span className="text-xs tabular-nums text-caption">{childPower.toFixed(1)} W</span>
                       )}
-                      <TypeBadge type="outlet" />
+                      <TypeBadge type="socket" />
                       <ChevronRight className="h-4 w-4 shrink-0 opacity-50" aria-hidden="true" />
                     </Link>
                   </li>

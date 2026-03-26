@@ -247,7 +247,7 @@ function KasaDeviceCard({
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
             )}
             aria-expanded={expanded}
-            aria-label={expanded ? `Collapse outlets for ${device.label}` : `Expand outlets for ${device.label}`}
+            aria-label={expanded ? `Collapse sockets for ${device.label}` : `Expand sockets for ${device.label}`}
           >
             {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
@@ -259,10 +259,10 @@ function KasaDeviceCard({
         <RenameField device={device} onRenamed={onRefetch} />
       </div>
 
-      {/* Child outlets for strips */}
+      {/* Child sockets for strips */}
       {isStrip && expanded && device.children && device.children.length > 0 && (
         <div className="border-t px-4 py-3">
-          <p className="text-caption mb-2 text-xs font-medium">Outlets</p>
+          <p className="text-caption mb-2 text-xs font-medium">Sockets</p>
           <div className="space-y-2">
             {device.children.map(child => (
               <KasaDeviceCard key={child.id} device={child} onRefetch={onRefetch} />

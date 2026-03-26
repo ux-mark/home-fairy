@@ -9,12 +9,14 @@ let initTimeout: ReturnType<typeof setTimeout> | null = null
 let io: SocketServer | null = null
 let previousStates: Record<string, { switch_state: string; power: number }> = {}
 
-// Prepare statement once at module scope for performance
+// Prepare statements once at module scope for performance.
+// The upsert does NOT update the label on conflict — labels are only changed
+// via the rename endpoint. This prevents the poller from reverting a rename
+// while the sidecar's cache is stale.
 const upsert = db.prepare(`
   INSERT INTO kasa_devices (id, label, device_type, model, parent_id, ip_address, has_emeter, firmware, hardware, rssi, is_online, attributes, last_seen, updated_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now'), datetime('now'))
   ON CONFLICT(id) DO UPDATE SET
-    label = excluded.label,
     ip_address = excluded.ip_address,
     rssi = excluded.rssi,
     is_online = 1,

@@ -10,6 +10,10 @@ import {
   LayoutGrid,
   List,
   Shield,
+  Thermometer,
+  Battery,
+  Sun,
+  Activity,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Light, Room, DeviceRoomAssignment, HubDevice, KasaDevice } from '@/lib/api'
@@ -94,12 +98,12 @@ function RoomPill({
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type DeviceFilter = 'all' | 'lights' | 'switches' | 'twinkly' | 'fairy' | 'kasa'
+type DeviceFilter = 'all' | 'lights' | 'switches' | 'twinkly' | 'fairy' | 'kasa' | 'sensors'
 type GroupMode = 'room' | 'type'
 
 interface UnifiedDevice {
   key: string
-  kind: 'lifx' | 'switch' | 'dimmer' | 'twinkly' | 'fairy' | 'kasa'
+  kind: 'lifx' | 'switch' | 'dimmer' | 'twinkly' | 'fairy' | 'kasa' | 'sensor'
   label: string
   roomName: string | null
   isOn: boolean
@@ -107,6 +111,7 @@ interface UnifiedDevice {
   hubDevice?: HubDevice
   deviceRoom?: DeviceRoomAssignment
   kasaDevice?: KasaDevice
+  kasaParentLabel?: string | null
 }
 
 
@@ -437,10 +442,21 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
             {device.label}
           </Link>
           <p className="text-caption mt-0.5 text-xs">
-            {device.roomName && <span>{device.roomName} · </span>}
-            {kasa.model && <span>{kasa.model}</span>}
+            {device.roomName && <span>{device.roomName}</span>}
+            {device.kasaParentLabel && device.kasaDevice?.parent_id && (
+              <span>
+                {device.roomName ? ' · ' : ''}on{' '}
+                <Link
+                  to={`/devices/kasa/${encodeURIComponent(device.kasaDevice.parent_id)}`}
+                  className="hover:text-fairy-400 transition-colors"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {device.kasaParentLabel}
+                </Link>
+              </span>
+            )}
             {device.isOn && kasa.has_emeter && typeof powerWatts === 'number' && (
-              <span> · {powerWatts.toFixed(1)} W</span>
+              <span>{(device.roomName || device.kasaParentLabel) ? ' · ' : ''}{powerWatts.toFixed(1)} W</span>
             )}
             {typeof energyKwh === 'number' && energyKwh > 0 && (
               <span> · {energyKwh.toFixed(2)} kWh</span>
@@ -498,39 +514,81 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
           <Power className="h-4 w-4" />
         </button>
       </div>
+    </div>
+  )
+}
 
-      {/* Child outlets for strip devices */}
-      {kasa.children && kasa.children.length > 0 && (
-        <div className="divide-y divide-[var(--border-secondary)] border-t">
-          {kasa.children.map(child => {
-            const childOn = child.attributes.switch === 'on'
-            const childPower = child.attributes.power
-            return (
-              <div key={child.id} className="flex items-center gap-3 px-4 py-3 pl-8">
-                <div
-                  className={cn(
-                    'h-1.5 w-1.5 shrink-0 rounded-full',
-                    childOn ? 'bg-emerald-400' : 'bg-slate-500',
-                  )}
-                  aria-hidden="true"
-                />
-                <div className="min-w-0 flex-1">
-                  <Link
-                    to={`/devices/kasa/${encodeURIComponent(child.id)}`}
-                    className="block text-xs font-medium text-body hover:text-fairy-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                  >
-                    {child.label}
-                  </Link>
-                  {childOn && kasa.has_emeter && typeof childPower === 'number' && (
-                    <p className="text-caption text-[10px]">{childPower.toFixed(1)} W</p>
-                  )}
-                </div>
-                <TypeBadge type="outlet" />
-              </div>
-            )
-          })}
+// ── Sensor card (read-only — no power toggle) ────────────────────────────────
+
+function SensorCard({ device }: { device: UnifiedDevice }) {
+  const hub = device.hubDevice!
+  const attrs = hub.attributes as Record<string, unknown>
+
+  const temperature = typeof attrs.temperature === 'number' ? attrs.temperature : null
+  const illuminance = typeof attrs.illuminance === 'number' ? attrs.illuminance : null
+  const batteryLevel = typeof attrs.battery === 'number' ? attrs.battery : null
+  const motionState = typeof attrs.motion === 'string' ? attrs.motion : null
+  const contactState = typeof attrs.contact === 'string' ? attrs.contact : null
+
+  return (
+    <div className="card rounded-xl border transition-colors">
+      <div className="flex items-center gap-3 p-4">
+        <div className="min-w-0 flex-1">
+          <Link
+            to={`/devices/${hub.id}`}
+            className="block text-sm font-medium text-heading hover:text-fairy-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          >
+            {device.label}
+          </Link>
+          {device.roomName && (
+            <p className="text-caption mt-0.5 text-xs">{device.roomName}</p>
+          )}
         </div>
-      )}
+
+        {/* Sensor readings */}
+        <div className="flex items-center gap-3">
+          {motionState && (
+            <span className={cn(
+              'flex items-center gap-1 text-xs font-medium',
+              motionState === 'active' ? 'text-fairy-400' : 'text-caption',
+            )}>
+              <Activity className="h-3.5 w-3.5" aria-hidden="true" />
+              {motionState === 'active' ? 'Active' : 'Inactive'}
+            </span>
+          )}
+          {contactState && (
+            <span className={cn(
+              'flex items-center gap-1 text-xs font-medium',
+              contactState === 'open' ? 'text-amber-400' : 'text-caption',
+            )}>
+              {contactState === 'open' ? 'Open' : 'Closed'}
+            </span>
+          )}
+          {temperature !== null && (
+            <span className="text-caption flex items-center gap-1 text-xs">
+              <Thermometer className="h-3.5 w-3.5" aria-hidden="true" />
+              {temperature}°
+            </span>
+          )}
+          {illuminance !== null && (
+            <span className="text-caption flex items-center gap-1 text-xs">
+              <Sun className="h-3.5 w-3.5" aria-hidden="true" />
+              {illuminance} lux
+            </span>
+          )}
+          {batteryLevel !== null && (
+            <span className={cn(
+              'flex items-center gap-1 text-xs',
+              batteryLevel <= 15 ? 'text-red-400' : batteryLevel <= 30 ? 'text-amber-400' : 'text-caption',
+            )}>
+              <Battery className="h-3.5 w-3.5" aria-hidden="true" />
+              {batteryLevel}%
+            </span>
+          )}
+        </div>
+
+        <TypeBadge type={hub.device_type} />
+      </div>
     </div>
   )
 }
@@ -540,6 +598,7 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
 function DeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[] }) {
   if (device.kind === 'lifx') return <LightCard device={device} rooms={rooms} />
   if (device.kind === 'kasa') return <KasaDeviceCard device={device} rooms={rooms} />
+  if (device.kind === 'sensor') return <SensorCard device={device} />
   return <HubDeviceCard device={device} rooms={rooms} />
 }
 
@@ -629,32 +688,50 @@ export default function DevicesPage() {
       }
     }
 
-    // Hub devices
+    // Hub devices (controllable)
     const switchTypes = ['switch', 'dimmer', 'twinkly', 'fairy']
+    const sensorTypes = ['motion', 'sensor', 'contact', 'temperature']
     if (hubDevices) {
       for (const d of hubDevices) {
-        if (!switchTypes.includes(d.device_type)) continue
         const assignment = deviceRoomMap.get(String(d.id))
-        const attrs = d.attributes
-        const switchAttr = attrs?.switch
-        devices.push({
-          key: `hub-${d.id}`,
-          kind: d.device_type as UnifiedDevice['kind'],
-          label: d.label,
-          roomName: assignment?.room_name ?? null,
-          isOn: switchAttr === 'on',
-          hubDevice: d,
-          deviceRoom: assignment,
-        })
+        if (switchTypes.includes(d.device_type)) {
+          const attrs = d.attributes
+          const switchAttr = attrs?.switch
+          devices.push({
+            key: `hub-${d.id}`,
+            kind: d.device_type as UnifiedDevice['kind'],
+            label: d.label,
+            roomName: assignment?.room_name ?? null,
+            isOn: switchAttr === 'on',
+            hubDevice: d,
+            deviceRoom: assignment,
+          })
+        } else if (sensorTypes.includes(d.device_type)) {
+          devices.push({
+            key: `hub-${d.id}`,
+            kind: 'sensor',
+            label: d.label,
+            roomName: assignment?.room_name ?? null,
+            isOn: false,
+            hubDevice: d,
+            deviceRoom: assignment,
+          })
+        }
       }
     }
 
-    // Kasa devices — only show top-level devices (plugs/strips/standalone switches).
-    // Strip children (outlets) are rendered inline within the KasaDeviceCard.
+    // Kasa devices — show individual sockets as top-level devices.
+    // Parent strips are hidden; sockets show "on [Strip Name]" as context.
     if (kasaDevices) {
+      // Build parent label lookup for socket context
+      const kasaParentLabels = new Map<string, string>()
       for (const d of kasaDevices) {
-        // Skip outlets that belong to a strip — they render as children
-        if (d.parent_id !== null) continue
+        if (d.device_type === 'strip') kasaParentLabels.set(d.id, d.label)
+      }
+
+      for (const d of kasaDevices) {
+        // Skip parent strips — their sockets are shown individually
+        if (d.device_type === 'strip') continue
 
         const assignment = deviceRoomMap.get(d.id)
         devices.push({
@@ -665,6 +742,7 @@ export default function DevicesPage() {
           isOn: d.attributes.switch === 'on',
           kasaDevice: d,
           deviceRoom: assignment,
+          kasaParentLabel: d.parent_id ? kasaParentLabels.get(d.parent_id) ?? null : null,
         })
       }
     }
@@ -683,6 +761,8 @@ export default function DevicesPage() {
         result = result.filter(d => d.kind === 'switch' || d.kind === 'dimmer')
       } else if (filter === 'kasa') {
         result = result.filter(d => d.kind === 'kasa')
+      } else if (filter === 'sensors') {
+        result = result.filter(d => d.kind === 'sensor')
       } else {
         result = result.filter(d => d.kind === filter)
       }
@@ -722,18 +802,21 @@ export default function DevicesPage() {
 
   const kasaCount = useMemo(() => allDevices.filter(d => d.kind === 'kasa').length, [allDevices])
 
+  const sensorCount = useMemo(() => allDevices.filter(d => d.kind === 'sensor').length, [allDevices])
+
   const filterTabs: { value: DeviceFilter; label: string; count: number }[] = useMemo(() => [
     { value: 'all', label: 'All', count: allDevices.length },
     { value: 'lights', label: 'Lights', count: allDevices.filter(d => d.kind === 'lifx').length },
     { value: 'switches', label: 'Switches', count: allDevices.filter(d => d.kind === 'switch' || d.kind === 'dimmer').length },
+    { value: 'sensors', label: 'Sensors', count: sensorCount },
     { value: 'twinkly', label: 'Twinkly', count: allDevices.filter(d => d.kind === 'twinkly').length },
     { value: 'fairy', label: 'Fairy', count: allDevices.filter(d => d.kind === 'fairy').length },
     { value: 'kasa', label: 'Kasa', count: kasaCount },
-  ], [allDevices, kasaCount])
+  ], [allDevices, kasaCount, sensorCount])
 
   const groupLabel = (key: string) => {
     if (groupMode === 'type') {
-      const labels: Record<string, string> = { lifx: 'LIFX Lights', switch: 'Switches', dimmer: 'Dimmers', twinkly: 'Twinkly', fairy: 'Fairy', kasa: 'Kasa' }
+      const labels: Record<string, string> = { lifx: 'LIFX Lights', switch: 'Switches', dimmer: 'Dimmers', twinkly: 'Twinkly', fairy: 'Fairy', kasa: 'Kasa', sensor: 'Sensors' }
       return labels[key] ?? key
     }
     return key
