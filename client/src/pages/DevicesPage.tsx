@@ -19,7 +19,7 @@ import { api } from '@/lib/api'
 import type { Light, Room, DeviceRoomAssignment, HubDevice, KasaDevice } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
-import { TypeBadge } from '@/components/ui/Badge'
+import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { FilterChip } from '@/components/ui/FilterChip'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -98,7 +98,7 @@ function RoomPill({
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type DeviceFilter = 'all' | 'lights' | 'switches' | 'twinkly' | 'fairy' | 'kasa' | 'sensors'
+type DeviceFilter = 'all' | 'lights' | 'switches' | 'twinkly' | 'fairy' | 'kasa' | 'sensors' | 'deactivated'
 type GroupMode = 'room' | 'type'
 
 interface UnifiedDevice {
@@ -107,6 +107,7 @@ interface UnifiedDevice {
   label: string
   roomName: string | null
   isOn: boolean
+  isDeactivated: boolean
   light?: Light
   hubDevice?: HubDevice
   deviceRoom?: DeviceRoomAssignment
@@ -124,6 +125,7 @@ function LightCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[] })
 
   const isOn = light.power === 'on'
   const colorHex = getLightColorHex(light)
+  const isDeactivated = device.isDeactivated
 
   const toggleMutation = useMutation({
     mutationFn: () => api.lifx.toggle(`id:${light.id}`),
@@ -135,20 +137,20 @@ function LightCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[] })
     <div className="card rounded-xl border transition-colors">
       <div className="flex items-center gap-3 p-4">
         <div
-          className={cn('h-5 w-5 shrink-0 rounded-full', !isOn && 'opacity-30')}
-          style={{ backgroundColor: isOn ? colorHex : '#475569' }}
+          className={cn('h-5 w-5 shrink-0 rounded-full', (!isOn || isDeactivated) && 'opacity-30')}
+          style={{ backgroundColor: isOn && !isDeactivated ? colorHex : '#475569' }}
           aria-hidden="true"
         />
         <Link
           to={`/lights/${light.id}`}
           className={cn('block min-w-0 flex-1 text-left', 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500')}
         >
-          <p className={cn('break-words text-sm font-medium hover:text-fairy-400 transition-colors', isOn ? 'text-heading' : 'text-body')}>
+          <p className={cn('break-words text-sm font-medium hover:text-fairy-400 transition-colors', isDeactivated ? 'text-slate-500' : isOn ? 'text-heading' : 'text-body')}>
             {light.label}
           </p>
-          <p className="text-caption mt-0.5 break-words text-xs">
+          <p className={cn('mt-0.5 break-words text-xs', isDeactivated ? 'text-slate-600' : 'text-caption')}>
             {device.roomName ?? light.group.name}
-            {isOn && ` · ${Math.round(light.brightness * 100)}%`}
+            {isOn && !isDeactivated && ` · ${Math.round(light.brightness * 100)}%`}
           </p>
         </Link>
 
@@ -170,17 +172,19 @@ function LightCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[] })
         />
 
         <TypeBadge type="lifx" />
+        {isDeactivated && <StatusBadge status="deactivated" />}
 
         <button
           onClick={() => toggleMutation.mutate()}
-          disabled={toggleMutation.isPending}
+          disabled={toggleMutation.isPending || isDeactivated}
           className={cn(
             'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            isOn
+            isDeactivated && 'cursor-not-allowed opacity-40',
+            !isDeactivated && isOn
               ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
               : 'text-caption hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-secondary)]',
           )}
-          aria-label={`Turn ${light.label} ${isOn ? 'off' : 'on'}`}
+          aria-label={isDeactivated ? `${light.label} is deactivated` : `Turn ${light.label} ${isOn ? 'off' : 'on'}`}
         >
           <Power className="h-4 w-4" />
         </button>
@@ -197,6 +201,7 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
   const [expanded, setExpanded] = useState(false)
   const [level, setLevel] = useState(() => (device.hubDevice?.attributes as Record<string, unknown> | undefined)?.level as number ?? 50)
 
+  const isDeactivated = device.isDeactivated
   const hubNewState = device.isOn ? 'off' : 'on'
 
   const toggleMutation = useMutation({
@@ -262,12 +267,12 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
         <div className="min-w-0 flex-1">
           <Link
             to={`/devices/${device.hubDevice!.id}`}
-            className={cn('block text-sm font-medium hover:text-fairy-400 transition-colors', device.isOn ? 'text-heading' : 'text-body')}
+            className={cn('block text-sm font-medium hover:text-fairy-400 transition-colors', isDeactivated ? 'text-slate-500' : device.isOn ? 'text-heading' : 'text-body')}
           >
             {device.label}
           </Link>
           {device.roomName && (
-            <p className="text-caption mt-0.5 text-xs">{device.roomName}</p>
+            <p className={cn('mt-0.5 text-xs', isDeactivated ? 'text-slate-600' : 'text-caption')}>{device.roomName}</p>
           )}
         </div>
 
@@ -282,15 +287,17 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
         />
 
         <TypeBadge type={device.kind} />
+        {isDeactivated && <StatusBadge status="deactivated" />}
 
         <button
           onClick={(e) => {
             e.stopPropagation()
             toggleKeepOn.mutate()
           }}
-          disabled={toggleKeepOn.isPending}
+          disabled={toggleKeepOn.isPending || isDeactivated}
           className={cn(
             'flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            isDeactivated && 'cursor-not-allowed opacity-40',
             isKeepOn
               ? 'bg-amber-500/15 text-amber-400'
               : 'text-caption hover:bg-amber-500/10 hover:text-amber-300',
@@ -304,19 +311,20 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
 
         <button
           onClick={() => toggleMutation.mutate()}
-          disabled={toggleMutation.isPending}
+          disabled={toggleMutation.isPending || isDeactivated}
           className={cn(
             'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            device.isOn
+            isDeactivated && 'cursor-not-allowed opacity-40',
+            !isDeactivated && device.isOn
               ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
               : 'text-caption hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-secondary)]',
           )}
-          aria-label={`Turn ${device.label} ${device.isOn ? 'off' : 'on'}`}
+          aria-label={isDeactivated ? `${device.label} is deactivated` : `Turn ${device.label} ${device.isOn ? 'off' : 'on'}`}
         >
           <Power className="h-4 w-4" />
         </button>
 
-        {isDimmer && (
+        {isDimmer && !isDeactivated && (
           <button
             onClick={() => setExpanded(!expanded)}
             className="text-caption flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors hover:text-[var(--text-secondary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
@@ -327,7 +335,7 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
         )}
       </div>
 
-      {expanded && isDimmer && (
+      {expanded && isDimmer && !isDeactivated && (
         <div className="border-t px-4 py-3">
           <label className="text-body mb-2 flex items-center justify-between text-xs font-medium">
             <span>Level</span>
@@ -359,6 +367,7 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
   const { toast } = useToast()
   const kasa = device.kasaDevice!
 
+  const isDeactivated = device.isDeactivated
   const newState = device.isOn ? 'off' : 'on'
 
   const toggleMutation = useMutation({
@@ -436,12 +445,12 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
             to={`/devices/kasa/${encodeURIComponent(kasa.id)}`}
             className={cn(
               'block text-sm font-medium hover:text-fairy-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              device.isOn ? 'text-heading' : 'text-body',
+              isDeactivated ? 'text-slate-500' : device.isOn ? 'text-heading' : 'text-body',
             )}
           >
             {device.label}
           </Link>
-          <p className="text-caption mt-0.5 text-xs">
+          <p className={cn('mt-0.5 text-xs', isDeactivated ? 'text-slate-600' : 'text-caption')}>
             {device.roomName && <span>{device.roomName}</span>}
             {device.kasaParentLabel && device.kasaDevice?.parent_id && (
               <span>
@@ -455,10 +464,10 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
                 </Link>
               </span>
             )}
-            {device.isOn && kasa.has_emeter && typeof powerWatts === 'number' && (
+            {device.isOn && !isDeactivated && kasa.has_emeter && typeof powerWatts === 'number' && (
               <span>{(device.roomName || device.kasaParentLabel) ? ' · ' : ''}{powerWatts.toFixed(1)} W</span>
             )}
-            {typeof energyKwh === 'number' && energyKwh > 0 && (
+            {!isDeactivated && typeof energyKwh === 'number' && energyKwh > 0 && (
               <span> · {energyKwh.toFixed(2)} kWh</span>
             )}
           </p>
@@ -475,15 +484,17 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
         />
 
         <TypeBadge type={kasa.device_type} />
+        {isDeactivated && <StatusBadge status="deactivated" />}
 
         <button
           onClick={(e) => {
             e.stopPropagation()
             toggleKeepOn.mutate()
           }}
-          disabled={toggleKeepOn.isPending}
+          disabled={toggleKeepOn.isPending || isDeactivated}
           className={cn(
             'flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            isDeactivated && 'cursor-not-allowed opacity-40',
             isKeepOn
               ? 'bg-amber-500/15 text-amber-400'
               : 'text-caption hover:bg-amber-500/10 hover:text-amber-300',
@@ -497,18 +508,20 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
 
         <button
           onClick={() => toggleMutation.mutate()}
-          disabled={toggleMutation.isPending || !kasa.is_online}
+          disabled={toggleMutation.isPending || !kasa.is_online || isDeactivated}
           className={cn(
             'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            !kasa.is_online && 'cursor-not-allowed opacity-40',
-            device.isOn && kasa.is_online
+            (!kasa.is_online || isDeactivated) && 'cursor-not-allowed opacity-40',
+            !isDeactivated && device.isOn && kasa.is_online
               ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
               : 'text-caption hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-secondary)]',
           )}
           aria-label={
-            !kasa.is_online
-              ? `${device.label} is offline`
-              : `Turn ${device.label} ${device.isOn ? 'off' : 'on'}`
+            isDeactivated
+              ? `${device.label} is deactivated`
+              : !kasa.is_online
+                ? `${device.label} is offline`
+                : `Turn ${device.label} ${device.isOn ? 'off' : 'on'}`
           }
         >
           <Power className="h-4 w-4" />
@@ -529,6 +542,7 @@ function SensorCard({ device }: { device: UnifiedDevice }) {
   const batteryLevel = typeof attrs.battery === 'number' ? attrs.battery : null
   const motionState = typeof attrs.motion === 'string' ? attrs.motion : null
   const contactState = typeof attrs.contact === 'string' ? attrs.contact : null
+  const isDeactivated = device.isDeactivated
 
   return (
     <div className="card rounded-xl border transition-colors">
@@ -536,12 +550,12 @@ function SensorCard({ device }: { device: UnifiedDevice }) {
         <div className="min-w-0 flex-1">
           <Link
             to={`/devices/${hub.id}`}
-            className="block text-sm font-medium text-heading hover:text-fairy-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            className={cn('block text-sm font-medium hover:text-fairy-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500', isDeactivated ? 'text-slate-500' : 'text-heading')}
           >
             {device.label}
           </Link>
           {device.roomName && (
-            <p className="text-caption mt-0.5 text-xs">{device.roomName}</p>
+            <p className={cn('mt-0.5 text-xs', isDeactivated ? 'text-slate-600' : 'text-caption')}>{device.roomName}</p>
           )}
         </div>
 
@@ -588,6 +602,7 @@ function SensorCard({ device }: { device: UnifiedDevice }) {
         </div>
 
         <TypeBadge type={hub.device_type} />
+        {isDeactivated && <StatusBadge status="deactivated" />}
       </div>
     </div>
   )
@@ -650,7 +665,24 @@ export default function DevicesPage() {
     queryFn: api.rooms.getAll,
   })
 
+  const { data: deactivatedDevices } = useQuery({
+    queryKey: ['devices', 'deactivated'],
+    queryFn: api.devices.getDeactivated,
+    staleTime: 30_000,
+  })
+
   const isLoading = lightsLoading || hubLoading || kasaLoading
+
+  // Build deactivated LIFX ID set (hub/kasa use the active field on the device itself)
+  const deactivatedLifxIds = useMemo(() => {
+    const s = new Set<string>()
+    if (deactivatedDevices) {
+      for (const d of deactivatedDevices) {
+        if (d.deviceType === 'lifx') s.add(d.deviceId)
+      }
+    }
+    return s
+  }, [deactivatedDevices])
 
   // Build light ID -> room name map
   const lightRoomMap = useMemo(() => {
@@ -683,6 +715,7 @@ export default function DevicesPage() {
           label: l.label,
           roomName: lightRoomMap.get(l.id) ?? null,
           isOn: l.power === 'on',
+          isDeactivated: deactivatedLifxIds.has(l.id),
           light: l,
         })
       }
@@ -703,6 +736,7 @@ export default function DevicesPage() {
             label: d.label,
             roomName: assignment?.room_name ?? null,
             isOn: switchAttr === 'on',
+            isDeactivated: d.active === false,
             hubDevice: d,
             deviceRoom: assignment,
           })
@@ -713,6 +747,7 @@ export default function DevicesPage() {
             label: d.label,
             roomName: assignment?.room_name ?? null,
             isOn: false,
+            isDeactivated: d.active === false,
             hubDevice: d,
             deviceRoom: assignment,
           })
@@ -740,6 +775,7 @@ export default function DevicesPage() {
           label: d.label,
           roomName: assignment?.room_name ?? null,
           isOn: d.attributes.switch === 'on',
+          isDeactivated: d.active === false,
           kasaDevice: d,
           deviceRoom: assignment,
           kasaParentLabel: d.parent_id ? kasaParentLabels.get(d.parent_id) ?? null : null,
@@ -748,14 +784,16 @@ export default function DevicesPage() {
     }
 
     return devices
-  }, [lights, hubDevices, kasaDevices, lightRoomMap, deviceRoomMap])
+  }, [lights, hubDevices, kasaDevices, lightRoomMap, deviceRoomMap, deactivatedLifxIds])
 
   // Filter
   const filtered = useMemo(() => {
     let result = allDevices
 
     if (filter !== 'all') {
-      if (filter === 'lights') {
+      if (filter === 'deactivated') {
+        result = result.filter(d => d.isDeactivated)
+      } else if (filter === 'lights') {
         result = result.filter(d => d.kind === 'lifx')
       } else if (filter === 'switches') {
         result = result.filter(d => d.kind === 'switch' || d.kind === 'dimmer')
@@ -804,15 +842,24 @@ export default function DevicesPage() {
 
   const sensorCount = useMemo(() => allDevices.filter(d => d.kind === 'sensor').length, [allDevices])
 
-  const filterTabs: { value: DeviceFilter; label: string; count: number }[] = useMemo(() => [
-    { value: 'all', label: 'All', count: allDevices.length },
-    { value: 'lights', label: 'Lights', count: allDevices.filter(d => d.kind === 'lifx').length },
-    { value: 'switches', label: 'Switches', count: allDevices.filter(d => d.kind === 'switch' || d.kind === 'dimmer').length },
-    { value: 'sensors', label: 'Sensors', count: sensorCount },
-    { value: 'twinkly', label: 'Twinkly', count: allDevices.filter(d => d.kind === 'twinkly').length },
-    { value: 'fairy', label: 'Fairy', count: allDevices.filter(d => d.kind === 'fairy').length },
-    { value: 'kasa', label: 'Kasa', count: kasaCount },
-  ], [allDevices, kasaCount, sensorCount])
+  const deactivatedCount = useMemo(() => allDevices.filter(d => d.isDeactivated).length, [allDevices])
+
+  const filterTabs: { value: DeviceFilter; label: string; count: number }[] = useMemo(() => {
+    const tabs: { value: DeviceFilter; label: string; count: number }[] = [
+      { value: 'all', label: 'All', count: allDevices.length },
+      { value: 'lights', label: 'Lights', count: allDevices.filter(d => d.kind === 'lifx').length },
+      { value: 'switches', label: 'Switches', count: allDevices.filter(d => d.kind === 'switch' || d.kind === 'dimmer').length },
+      { value: 'sensors', label: 'Sensors', count: sensorCount },
+      { value: 'twinkly', label: 'Twinkly', count: allDevices.filter(d => d.kind === 'twinkly').length },
+      { value: 'fairy', label: 'Fairy', count: allDevices.filter(d => d.kind === 'fairy').length },
+      { value: 'kasa', label: 'Kasa', count: kasaCount },
+    ]
+    // Only show the deactivated tab when there are deactivated devices
+    if (deactivatedCount > 0) {
+      tabs.push({ value: 'deactivated', label: 'Deactivated', count: deactivatedCount })
+    }
+    return tabs
+  }, [allDevices, kasaCount, sensorCount, deactivatedCount])
 
   const groupLabel = (key: string) => {
     if (groupMode === 'type') {

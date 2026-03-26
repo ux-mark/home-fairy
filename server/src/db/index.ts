@@ -160,6 +160,19 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_notifications_dedup
       ON notifications (dedup_key, dismissed);
 
+    CREATE TABLE IF NOT EXISTS device_health (
+      device_type TEXT NOT NULL,
+      device_id TEXT NOT NULL,
+      consecutive_failures INTEGER DEFAULT 0,
+      unreachable_since TEXT,
+      last_success TEXT,
+      last_failure TEXT,
+      last_failure_reason TEXT,
+      deactivated_at TEXT,
+      deactivated_reason TEXT,
+      PRIMARY KEY (device_type, device_id)
+    );
+
     CREATE TABLE IF NOT EXISTS modes (
       name TEXT PRIMARY KEY,
       display_order INTEGER DEFAULT 0,
@@ -212,6 +225,9 @@ export function initDb(): void {
 
   // Migrate: add sort_order column to scenes
   migrateAddSceneSortOrder()
+
+  // Migrate: add active column to hub_devices, kasa_devices, light_rooms
+  migrateDeviceActiveColumns()
 
   // Seed defaults for a fresh database
   seedDefaults()
@@ -324,6 +340,26 @@ function migrateAddSceneSortOrder(): void {
       }
     })()
     console.log(`[db] Assigned sort_order to ${scenes.length} scenes`)
+  }
+}
+
+function migrateDeviceActiveColumns(): void {
+  const hubCols = db.prepare('PRAGMA table_info(hub_devices)').all() as { name: string }[]
+  if (!hubCols.some(c => c.name === 'active')) {
+    console.log('[db] Migrating hub_devices: adding active column')
+    db.exec('ALTER TABLE hub_devices ADD COLUMN active INTEGER DEFAULT 1')
+  }
+
+  const kasaCols = db.prepare('PRAGMA table_info(kasa_devices)').all() as { name: string }[]
+  if (!kasaCols.some(c => c.name === 'active')) {
+    console.log('[db] Migrating kasa_devices: adding active column')
+    db.exec('ALTER TABLE kasa_devices ADD COLUMN active INTEGER DEFAULT 1')
+  }
+
+  const lightCols = db.prepare('PRAGMA table_info(light_rooms)').all() as { name: string }[]
+  if (!lightCols.some(c => c.name === 'active')) {
+    console.log('[db] Migrating light_rooms: adding active column')
+    db.exec('ALTER TABLE light_rooms ADD COLUMN active INTEGER DEFAULT 1')
   }
 }
 

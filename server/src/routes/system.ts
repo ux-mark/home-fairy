@@ -19,6 +19,7 @@ import { mtaIndicator } from '../lib/mta-indicator.js'
 import { weatherIndicator, WEATHER_COLORS } from '../lib/weather-indicator.js'
 import { motionHandler } from '../lib/motion-handler.js'
 import { emit } from '../lib/socket.js'
+import { deviceHealthService } from '../lib/device-health-service.js'
 
 const router = Router()
 
@@ -1236,7 +1237,7 @@ async function runAllOff(excludeRooms: string[] = []): Promise<string[]> {
       const lightSelectors: string[] = []
       for (const roomName of roomsToOff) {
         const roomLights = getAll<{ light_selector: string }>(
-          'SELECT light_selector FROM light_rooms WHERE room_name = ?',
+          'SELECT light_selector FROM light_rooms WHERE room_name = ? AND active = 1',
           [roomName],
         )
         for (const l of roomLights) lightSelectors.push(l.light_selector)
@@ -1274,6 +1275,9 @@ async function runAllOff(excludeRooms: string[] = []): Promise<string[]> {
     let config: Record<string, unknown> = {}
     try { config = JSON.parse(row.config) } catch { config = {} }
     if (config.exclude_from_all_off) return false
+    // Skip deactivated devices
+    const healthType = row.device_type.startsWith('kasa_') ? 'kasa' : 'hub'
+    if (!deviceHealthService.isDeviceActive(healthType, row.device_id)) return false
     return true
   })
 
@@ -1548,6 +1552,68 @@ router.post('/notifications/dismiss-all', (_req: Request, res: Response) => {
   try {
     notificationService.dismissAll()
     res.json({ success: true })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// ── Device health / deactivation ──────────────────────────────────────────────
+
+// GET /devices/deactivated — list all deactivated devices
+router.get('/devices/deactivated', (_req: Request, res: Response) => {
+  try {
+    const devices = deviceHealthService.getDeactivatedDevices()
+    res.json(devices)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// GET /devices/:type/:id/health — get health record for a device
+router.get('/devices/:type/:id/health', (req: Request, res: Response) => {
+  const type = String(req.params.type)
+  const id = String(req.params.id)
+  try {
+    const health = deviceHealthService.getHealthStatus(type, id)
+    res.json(health)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// POST /devices/:type/:id/deactivate — manually deactivate a device
+router.post('/devices/:type/:id/deactivate', (req: Request, res: Response) => {
+  const type = String(req.params.type)
+  const id = String(req.params.id)
+  if (!['hub', 'kasa', 'lifx'].includes(type)) {
+    res.status(400).json({ error: 'Invalid device type. Must be hub, kasa, or lifx.' })
+    return
+  }
+  try {
+    deviceHealthService.deactivateDevice(type as 'hub' | 'kasa' | 'lifx', id, 'manual')
+    emit('device:deactivated', { deviceType: type, deviceId: id })
+    res.json({ success: true })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// POST /devices/:type/:id/reactivate — reactivate a deactivated device
+router.post('/devices/:type/:id/reactivate', (req: Request, res: Response) => {
+  const type = String(req.params.type)
+  const id = String(req.params.id)
+  if (!['hub', 'kasa', 'lifx'].includes(type)) {
+    res.status(400).json({ error: 'Invalid device type. Must be hub, kasa, or lifx.' })
+    return
+  }
+  try {
+    const result = deviceHealthService.reactivateDevice(type as 'hub' | 'kasa' | 'lifx', id)
+    emit('device:reactivated', { deviceType: type, deviceId: id })
+    res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })

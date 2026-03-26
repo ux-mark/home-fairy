@@ -1,5 +1,6 @@
 import { kasaClient, type KasaSidecarDevice } from './kasa-client.js'
 import { db } from '../db/index.js'
+import { deviceHealthService } from './device-health-service.js'
 import type { Server as SocketServer } from 'socket.io'
 
 const POLL_INTERVAL_MS = 10_000
@@ -42,6 +43,10 @@ async function pollKasaDevices(): Promise<void> {
   try {
     const devices = await kasaClient.listDevices()
     const allDevices = flattenDevices(devices)
+
+    // Track which devices were offline before this poll so we can call
+    // recordSuccess for devices that have reappeared.
+    const seenIds = new Set(allDevices.map(d => d.id))
 
     const transaction = db.transaction(() => {
       for (const device of allDevices) {
@@ -100,9 +105,37 @@ async function pollKasaDevices(): Promise<void> {
           }
         }
       }
+
+      // Mark devices not found in this poll as offline
+      const onlineDevices = db
+        .prepare('SELECT id FROM kasa_devices WHERE is_online = 1')
+        .all() as { id: string }[]
+      for (const row of onlineDevices) {
+        if (!seenIds.has(row.id)) {
+          db.prepare(
+            "UPDATE kasa_devices SET is_online = 0, updated_at = datetime('now') WHERE id = ?",
+          ).run(row.id)
+        }
+      }
     })
 
     transaction()
+
+    // Record health outcomes outside the transaction (health service uses its
+    // own transactions internally).
+    for (const device of allDevices) {
+      deviceHealthService.recordSuccess('kasa', device.id)
+    }
+
+    // Record failures for devices that are now offline
+    const nowOffline = db
+      .prepare('SELECT id FROM kasa_devices WHERE is_online = 0')
+      .all() as { id: string }[]
+    for (const row of nowOffline) {
+      if (!seenIds.has(row.id)) {
+        deviceHealthService.recordFailure('kasa', row.id, 'Device not found in network scan')
+      }
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[kasa-poller] Poll failed:', msg)

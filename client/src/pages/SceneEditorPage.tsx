@@ -30,8 +30,10 @@ import type {
   LightRoom,
   DeviceRoomAssignment,
   KasaDevice,
+  DeactivatedDevice,
 } from '@/lib/api'
 import { cn, hsbToHex, kelvinToHex, debounce, DEFAULT_MODES } from '@/lib/utils'
+import { StatusBadge } from '@/components/ui/Badge'
 import { useToast } from '@/hooks/useToast'
 import ColorBrightnessPicker from '@/components/ui/ColorBrightnessPicker'
 
@@ -75,11 +77,13 @@ function LightEditorCard({
   livePreview,
   onChange,
   onLivePreviewToggle,
+  deactivated,
 }: {
   state: LightEditorState
   livePreview: boolean
   onChange: (updated: LightEditorState) => void
   onLivePreviewToggle: () => void
+  deactivated?: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
   const isOn = state.power === 'on'
@@ -145,8 +149,9 @@ function LightEditorCard({
             aria-hidden="true"
           />
           <div className="min-w-0 flex-1">
-            <p className="break-words text-sm font-medium text-heading">
+            <p className={cn('break-words text-sm font-medium', deactivated ? 'text-slate-500' : 'text-heading')}>
               {state.label}
+              {deactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
             </p>
             <p className="text-xs text-caption">
               {isOn ? `${state.brightness}% brightness` : 'Off'}
@@ -255,6 +260,7 @@ function DeviceToggleCard({
   isDimmer,
   level,
   onLevelChange,
+  deactivated,
 }: {
   label: string
   isOn: boolean
@@ -262,12 +268,16 @@ function DeviceToggleCard({
   isDimmer?: boolean
   level?: number
   onLevelChange?: (level: number) => void
+  deactivated?: boolean
 }) {
   return (
     <div className="card rounded-xl border p-4">
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
-          <p className="break-words text-sm font-medium text-heading">{label}</p>
+          <p className={cn('break-words text-sm font-medium', deactivated ? 'text-slate-500' : 'text-heading')}>
+            {label}
+            {deactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
+          </p>
           <p className="text-xs text-caption">
             {isOn ? (isDimmer && level !== undefined ? `On at ${level}%` : 'On') : 'Off'}
           </p>
@@ -320,6 +330,7 @@ function FairyDeviceCard({
   onToggle,
   onPatternChange,
   onBrightnessChange,
+  deactivated,
 }: {
   label: string
   isOn: boolean
@@ -328,12 +339,16 @@ function FairyDeviceCard({
   onToggle: (on: boolean) => void
   onPatternChange: (pattern: string) => void
   onBrightnessChange: (brightness: number) => void
+  deactivated?: boolean
 }) {
   return (
     <div className="card rounded-xl border p-4">
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
-          <p className="break-words text-sm font-medium text-heading">{label}</p>
+          <p className={cn('break-words text-sm font-medium', deactivated ? 'text-slate-500' : 'text-heading')}>
+            {label}
+            {deactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
+          </p>
           <p className="text-xs text-caption">
             {isOn ? `${pattern} at ${brightness}%` : 'Off'}
           </p>
@@ -497,6 +512,11 @@ export default function SceneEditorPage() {
   const { data: allDefaultScenes } = useQuery({
     queryKey: ['room-default-scenes'],
     queryFn: api.roomDefaultScenes.getAll,
+  })
+
+  const { data: deactivatedDevices } = useQuery({
+    queryKey: ['devices', 'deactivated'],
+    queryFn: api.devices.getDeactivated,
   })
 
   const availableModes = systemCurrent?.all_modes ?? [...DEFAULT_MODES]
@@ -726,6 +746,38 @@ export default function SceneEditorPage() {
 
     return { switches, twinkly, fairy }
   }, [roomDevices])
+
+  // Build a set of deactivated device IDs keyed as "type:id"
+  const deactivatedSet = useMemo(() => {
+    if (!deactivatedDevices) return new Set<string>()
+    return new Set(
+      (deactivatedDevices as DeactivatedDevice[]).map(d => `${d.deviceType}:${d.deviceId}`),
+    )
+  }, [deactivatedDevices])
+
+  const isLightDeactivated = (lightId: string) => deactivatedSet.has(`lifx:${lightId}`)
+  const isHubDeviceDeactivated = (deviceId: string) => deactivatedSet.has(`hub:${deviceId}`)
+  const isKasaDeviceDeactivated = (deviceId: string) => deactivatedSet.has(`kasa:${deviceId}`)
+
+  // Count how many commands in this scene reference deactivated devices
+  const deactivatedCount = useMemo(() => {
+    if (deactivatedSet.size === 0) return 0
+    let count = 0
+    // LIFX light commands
+    for (const [lightId] of lightStates) {
+      if (isLightDeactivated(lightId)) count++
+    }
+    // Hub/twinkly/fairy device commands
+    for (const cmd of deviceCommands) {
+      if (cmd.type === 'hubitat_device' && cmd.device_id && isHubDeviceDeactivated(String(cmd.device_id))) count++
+      if (cmd.type === 'twinkly' || cmd.type === 'fairy_device') {
+        // these are identified by label, not id — skip for now (no reliable id mapping)
+      }
+      if (cmd.type === 'kasa_device' && cmd.device_id && isKasaDeviceDeactivated(String(cmd.device_id))) count++
+    }
+    return count
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deactivatedSet, lightStates, deviceCommands])
 
   // ── Mutations ──────────────────────────────────────────────────────────
 
@@ -1114,6 +1166,18 @@ export default function SceneEditorPage() {
         </div>
       </section>
 
+      {/* ── Deactivated devices warning ───────────────────────────────────── */}
+      {deactivatedCount > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 mb-4">
+          <p className="text-heading text-sm font-medium">
+            {deactivatedCount} device{deactivatedCount !== 1 ? 's' : ''} in this scene {deactivatedCount === 1 ? 'is' : 'are'} deactivated
+          </p>
+          <p className="text-caption text-xs mt-1">
+            Deactivated devices will be skipped when this scene activates. Reactivate them from the Devices page.
+          </p>
+        </div>
+      )}
+
       {/* ── Tabs ──────────────────────────────────────────────────────────── */}
       <Tabs.Root defaultValue="lights" className="space-y-4">
         <Tabs.List className="flex gap-1 overflow-x-auto rounded-xl card p-1">
@@ -1212,6 +1276,7 @@ export default function SceneEditorPage() {
                               onLivePreviewToggle={() =>
                                 toggleLivePreview(rl.light_id)
                               }
+                              deactivated={isLightDeactivated(rl.light_id)}
                             />
                           )
                         })}
@@ -1271,6 +1336,7 @@ export default function SceneEditorPage() {
                           isDimmer={isDimmer}
                           level={level}
                           onLevelChange={l => handleSwitchLevel(device, l)}
+                          deactivated={isHubDeviceDeactivated(String(device.device_id))}
                         />
                       )
                     })}
@@ -1295,6 +1361,7 @@ export default function SceneEditorPage() {
                           label={device.device_label}
                           isOn={!!cmd}
                           onToggle={on => handleTwinklyToggle(device, on)}
+                          deactivated={isHubDeviceDeactivated(String(device.device_id))}
                         />
                       )
                     })}
@@ -1327,6 +1394,7 @@ export default function SceneEditorPage() {
                           onToggle={on => handleFairyToggle(device, on)}
                           onPatternChange={p => handleFairyPatternChange(device, p)}
                           onBrightnessChange={b => handleFairyBrightnessChange(device, b)}
+                          deactivated={isHubDeviceDeactivated(String(device.device_id))}
                         />
                       )
                     })}
@@ -1346,12 +1414,16 @@ export default function SceneEditorPage() {
                         c => c.type === 'kasa_device' && c.device_id === device.id,
                       )
                       const isOn = !!cmd
+                      const kasaDeactivated = isKasaDeviceDeactivated(device.id)
 
                       return (
                         <div key={`kasa-${device.id}`} className="card rounded-xl border p-4">
                           <div className="flex items-center gap-3">
                             <div className="min-w-0 flex-1">
-                              <p className="break-words text-sm font-medium text-heading">{device.label}</p>
+                              <p className={cn('break-words text-sm font-medium', kasaDeactivated ? 'text-slate-500' : 'text-heading')}>
+                                {device.label}
+                                {kasaDeactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
+                              </p>
                               <p className="text-xs text-caption">
                                 {device.model ? (
                                   <span className="mr-1.5 inline-block rounded bg-[var(--surface-2)] px-1.5 py-0.5 font-mono text-[10px] text-body">

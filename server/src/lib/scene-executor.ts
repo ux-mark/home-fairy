@@ -7,6 +7,7 @@ import { fairyDeviceClient } from './fairy-device-client.js'
 import { timerManager } from './timer-manager.js'
 import { getAll, getOne, run } from '../db/index.js'
 import { emit } from './socket.js'
+import { deviceHealthService } from './device-health-service.js'
 
 interface LightCommand {
   type: 'lifx_light'
@@ -176,6 +177,7 @@ async function retryFailedLights(
         const { selector, ...stateWithoutSelector } = light.state
         await lifxClient.setState(selector, stateWithoutSelector)
         log(`Retry ${attempt} succeeded for ${light.label}`)
+        deviceHealthService.recordSuccess('lifx', light.id)
       } catch {
         stillFailed.push(light)
       }
@@ -193,6 +195,7 @@ async function retryFailedLights(
   for (const light of failed) {
     const msg = `Light "${light.label}" (${light.state.selector}) failed to respond after ${maxRetries + 1} attempts`
     log(msg, 'device_error')
+    deviceHealthService.recordFailure('lifx', light.id, light.status)
     notificationService.create({
       severity: 'warning',
       category: 'device_error',
@@ -244,17 +247,33 @@ export async function activateScene(sceneName: string, visitedScenes: Set<string
   // Batch all lifx_light commands into a single setStates call
   if (lightCommands.length > 0) {
     try {
-      const states: BatchState[] = lightCommands.map((cmd) => {
+      const states: BatchState[] = []
+      for (const cmd of lightCommands) {
+        if (!deviceHealthService.isDeviceActive('lifx', cmd.light_id)) {
+          log(`Skipping deactivated light: ${cmd.selector}`)
+          continue
+        }
         const state: BatchState = { selector: cmd.selector }
         if (cmd.power !== undefined) state.power = cmd.power
         if (cmd.color !== undefined) state.color = cmd.color
         if (cmd.brightness !== undefined) state.brightness = cmd.brightness
         if (cmd.duration !== undefined) state.duration = cmd.duration
-        return state
-      })
-      const response = await lifxClient.setStates(states)
-      log(`Batch set ${states.length} light(s) via setStates`)
-      await retryFailedLights(response, states)
+        states.push(state)
+      }
+      if (states.length > 0) {
+        const response = await lifxClient.setStates(states)
+        log(`Batch set ${states.length} light(s) via setStates`)
+        // Record success for lights that responded ok in the batch
+        for (const opResult of response.results) {
+          if (!opResult.results) continue
+          for (const lightResult of opResult.results) {
+            if (lightResult.status === 'ok') {
+              deviceHealthService.recordSuccess('lifx', lightResult.id)
+            }
+          }
+        }
+        await retryFailedLights(response, states)
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       log(`Error in batch setStates: ${msg}`)
@@ -270,7 +289,7 @@ export async function activateScene(sceneName: string, visitedScenes: Set<string
           const lightStates: BatchState[] = []
           for (const room of rooms) {
             const roomLights = getAll<{ light_selector: string }>(
-              'SELECT light_selector FROM light_rooms WHERE room_name = ?',
+              'SELECT light_selector FROM light_rooms WHERE room_name = ? AND active = 1',
               [room.name],
             )
             for (const light of roomLights) {
@@ -300,6 +319,8 @@ export async function activateScene(sceneName: string, visitedScenes: Set<string
             )
             for (const dev of hubDevices) {
               try {
+                const healthType = dev.device_type.startsWith('kasa_') ? 'kasa' : 'hub'
+                if (!deviceHealthService.isDeviceActive(healthType, dev.device_id)) continue
                 if (dev.device_type.startsWith('kasa_')) {
                   await kasaClient.sendCommand(dev.device_id, 'off')
                 } else {
@@ -324,40 +345,76 @@ export async function activateScene(sceneName: string, visitedScenes: Set<string
         }
 
         case 'hubitat_device': {
-          if (cmd.value !== undefined) {
-            await hubitatClient.sendCommandWithValue(cmd.device_id, cmd.command, cmd.value)
-          } else {
-            await hubitatClient.sendCommand(cmd.device_id, cmd.command)
+          if (!deviceHealthService.isDeviceActive('hub', String(cmd.device_id))) {
+            log(`Skipping deactivated device: ${cmd.device_id}`)
+            break
           }
-          log(`Hubitat device ${cmd.device_id}: ${cmd.command}${cmd.value !== undefined ? ` ${cmd.value}` : ''}`)
+          try {
+            if (cmd.value !== undefined) {
+              await hubitatClient.sendCommandWithValue(cmd.device_id, cmd.command, cmd.value)
+            } else {
+              await hubitatClient.sendCommand(cmd.device_id, cmd.command)
+            }
+            log(`Hubitat device ${cmd.device_id}: ${cmd.command}${cmd.value !== undefined ? ` ${cmd.value}` : ''}`)
+            deviceHealthService.recordSuccess('hub', String(cmd.device_id))
+          } catch (hubErr) {
+            const hubMsg = hubErr instanceof Error ? hubErr.message : String(hubErr)
+            log(`Error executing Hubitat device ${cmd.device_id}: ${hubMsg}`, 'device_error')
+            deviceHealthService.recordFailure('hub', String(cmd.device_id), hubMsg)
+            throw hubErr
+          }
           break
         }
 
         case 'kasa_device': {
-          if (cmd.command === 'on' && cmd.brightness !== undefined) {
-            // set_brightness implicitly turns the device on, avoiding a momentary
-            // full-brightness flash from sending on + set_brightness separately
-            await kasaClient.sendCommand(cmd.device_id, 'set_brightness', cmd.brightness)
-          } else {
-            await kasaClient.sendCommand(cmd.device_id, cmd.command)
+          if (!deviceHealthService.isDeviceActive('kasa', cmd.device_id)) {
+            log(`Skipping deactivated device: ${cmd.name}`)
+            break
           }
-          log(`Kasa device ${cmd.name}: ${cmd.command}${cmd.brightness !== undefined ? ` (brightness: ${cmd.brightness})` : ''}`)
+          try {
+            if (cmd.command === 'on' && cmd.brightness !== undefined) {
+              // set_brightness implicitly turns the device on, avoiding a momentary
+              // full-brightness flash from sending on + set_brightness separately
+              await kasaClient.sendCommand(cmd.device_id, 'set_brightness', cmd.brightness)
+            } else {
+              await kasaClient.sendCommand(cmd.device_id, cmd.command)
+            }
+            log(`Kasa device ${cmd.name}: ${cmd.command}${cmd.brightness !== undefined ? ` (brightness: ${cmd.brightness})` : ''}`)
+            deviceHealthService.recordSuccess('kasa', cmd.device_id)
+          } catch (kasaErr) {
+            const kasaMsg = kasaErr instanceof Error ? kasaErr.message : String(kasaErr)
+            log(`Error executing Kasa device ${cmd.name}: ${kasaMsg}`, 'device_error')
+            deviceHealthService.recordFailure('kasa', cmd.device_id, kasaMsg)
+            throw kasaErr
+          }
           break
         }
 
         case 'twinkly': {
           // Look up Twinkly device IP from device_rooms or fairy_devices
-          const twinklyDev = getOne<{ ip: string | null }>(
-            "SELECT json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'twinkly'",
+          const twinklyDev = getOne<{ id: string; ip: string | null }>(
+            "SELECT id, json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'twinkly'",
             [cmd.name],
           )
           if (twinklyDev?.ip) {
-            if (cmd.command === 'on') {
-              await twinklyClient.turnOn(twinklyDev.ip)
-            } else {
-              await twinklyClient.turnOff(twinklyDev.ip)
+            if (!deviceHealthService.isDeviceActive('hub', String(twinklyDev.id))) {
+              log(`Skipping deactivated device: ${cmd.name}`)
+              break
             }
-            log(`Twinkly ${cmd.name}: ${cmd.command}`)
+            try {
+              if (cmd.command === 'on') {
+                await twinklyClient.turnOn(twinklyDev.ip)
+              } else {
+                await twinklyClient.turnOff(twinklyDev.ip)
+              }
+              log(`Twinkly ${cmd.name}: ${cmd.command}`)
+              deviceHealthService.recordSuccess('hub', String(twinklyDev.id))
+            } catch (twinklyErr) {
+              const twinklyMsg = twinklyErr instanceof Error ? twinklyErr.message : String(twinklyErr)
+              log(`Error executing Twinkly ${cmd.name}: ${twinklyMsg}`, 'device_error')
+              deviceHealthService.recordFailure('hub', String(twinklyDev.id), twinklyMsg)
+              throw twinklyErr
+            }
           } else {
             log(`Twinkly device not found: ${cmd.name}`)
           }
@@ -365,18 +422,30 @@ export async function activateScene(sceneName: string, visitedScenes: Set<string
         }
 
         case 'fairy_device': {
-          const fairyDev = getOne<{ ip: string | null }>(
-            "SELECT json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'fairy'",
+          const fairyDev = getOne<{ id: string; ip: string | null }>(
+            "SELECT id, json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'fairy'",
             [cmd.name],
           )
           if (fairyDev?.ip) {
-            const brightness = cmd.brightness ?? 100
-            if (cmd.command.toLowerCase() === 'off') {
-              await fairyDeviceClient.turnOff(fairyDev.ip)
-            } else {
-              await fairyDeviceClient.setBrightness(fairyDev.ip, Math.round(brightness * 2.55))
+            if (!deviceHealthService.isDeviceActive('hub', String(fairyDev.id))) {
+              log(`Skipping deactivated device: ${cmd.name}`)
+              break
             }
-            log(`Fairy device ${cmd.name}: ${cmd.command} (brightness: ${brightness})`)
+            try {
+              const brightness = cmd.brightness ?? 100
+              if (cmd.command.toLowerCase() === 'off') {
+                await fairyDeviceClient.turnOff(fairyDev.ip)
+              } else {
+                await fairyDeviceClient.setBrightness(fairyDev.ip, Math.round(brightness * 2.55))
+              }
+              log(`Fairy device ${cmd.name}: ${cmd.command} (brightness: ${brightness})`)
+              deviceHealthService.recordSuccess('hub', String(fairyDev.id))
+            } catch (fairyErr) {
+              const fairyMsg = fairyErr instanceof Error ? fairyErr.message : String(fairyErr)
+              log(`Error executing Fairy device ${cmd.name}: ${fairyMsg}`, 'device_error')
+              deviceHealthService.recordFailure('hub', String(fairyDev.id), fairyMsg)
+              throw fairyErr
+            }
           } else {
             log(`Fairy device not found: ${cmd.name}`)
           }
@@ -476,14 +545,28 @@ export async function deactivateScene(sceneName: string): Promise<void> {
 
   if (lightCommands.length > 0) {
     try {
-      const states: BatchState[] = lightCommands.map((cmd) => ({
-        selector: cmd.selector,
-        power: 'off',
-        duration: 1,
-      }))
-      const response = await lifxClient.setStates(states)
-      log(`Batch turned off ${states.length} light(s)`)
-      await retryFailedLights(response, states)
+      const states: BatchState[] = []
+      for (const cmd of lightCommands) {
+        if (!deviceHealthService.isDeviceActive('lifx', cmd.light_id)) {
+          log(`Skipping deactivated light: ${cmd.selector}`)
+          continue
+        }
+        states.push({ selector: cmd.selector, power: 'off', duration: 1 })
+      }
+      if (states.length > 0) {
+        const response = await lifxClient.setStates(states)
+        log(`Batch turned off ${states.length} light(s)`)
+        // Record success for lights that responded ok
+        for (const opResult of response.results) {
+          if (!opResult.results) continue
+          for (const lightResult of opResult.results) {
+            if (lightResult.status === 'ok') {
+              deviceHealthService.recordSuccess('lifx', lightResult.id)
+            }
+          }
+        }
+        await retryFailedLights(response, states)
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       log(`Error in batch deactivate: ${msg}`)
@@ -496,11 +579,17 @@ export async function deactivateScene(sceneName: string): Promise<void> {
   )
   for (const cmd of hubitatCommands) {
     try {
+      if (!deviceHealthService.isDeviceActive('hub', String(cmd.device_id))) {
+        log(`Skipping deactivated device: ${cmd.device_id}`)
+        continue
+      }
       await hubitatClient.sendCommand(cmd.device_id, 'off')
       log(`Turned off Hubitat device ${cmd.device_id}`)
+      deviceHealthService.recordSuccess('hub', String(cmd.device_id))
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       log(`Error turning off Hubitat device: ${msg}`)
+      deviceHealthService.recordFailure('hub', String(cmd.device_id), msg)
     }
   }
 
@@ -510,11 +599,17 @@ export async function deactivateScene(sceneName: string): Promise<void> {
   )
   for (const cmd of kasaCommands) {
     try {
+      if (!deviceHealthService.isDeviceActive('kasa', cmd.device_id)) {
+        log(`Skipping deactivated device: ${cmd.name}`)
+        continue
+      }
       await kasaClient.sendCommand(cmd.device_id, 'off')
       log(`Turned off Kasa device: ${cmd.name}`)
+      deviceHealthService.recordSuccess('kasa', cmd.device_id)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       log(`Error turning off Kasa device: ${msg}`)
+      deviceHealthService.recordFailure('kasa', cmd.device_id, msg)
     }
   }
 
@@ -524,13 +619,18 @@ export async function deactivateScene(sceneName: string): Promise<void> {
   )
   for (const cmd of twinklyCommands) {
     try {
-      const dev = getOne<{ ip: string | null }>(
-        "SELECT json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'twinkly'",
+      const dev = getOne<{ id: string; ip: string | null }>(
+        "SELECT id, json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'twinkly'",
         [cmd.name],
       )
       if (dev?.ip) {
+        if (!deviceHealthService.isDeviceActive('hub', String(dev.id))) {
+          log(`Skipping deactivated device: ${cmd.name}`)
+          continue
+        }
         await twinklyClient.turnOff(dev.ip)
         log(`Turned off Twinkly: ${cmd.name}`)
+        deviceHealthService.recordSuccess('hub', String(dev.id))
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -544,13 +644,18 @@ export async function deactivateScene(sceneName: string): Promise<void> {
   )
   for (const cmd of fairyCommands) {
     try {
-      const dev = getOne<{ ip: string | null }>(
-        "SELECT json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'fairy'",
+      const dev = getOne<{ id: string; ip: string | null }>(
+        "SELECT id, json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'fairy'",
         [cmd.name],
       )
       if (dev?.ip) {
+        if (!deviceHealthService.isDeviceActive('hub', String(dev.id))) {
+          log(`Skipping deactivated device: ${cmd.name}`)
+          continue
+        }
         await fairyDeviceClient.turnOff(dev.ip)
         log(`Turned off Fairy device: ${cmd.name}`)
+        deviceHealthService.recordSuccess('hub', String(dev.id))
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -575,8 +680,8 @@ export async function deactivateScene(sceneName: string): Promise<void> {
   // Also turn off lights assigned to rooms in this scene (batched)
   const roomLightStates: BatchState[] = []
   for (const room of rooms) {
-    const lights = getAll<{ light_selector: string }>(
-      'SELECT light_selector FROM light_rooms WHERE room_name = ?',
+    const lights = getAll<{ light_id: string; light_selector: string }>(
+      'SELECT light_id, light_selector FROM light_rooms WHERE room_name = ? AND active = 1',
       [room.name],
     )
     for (const light of lights) {
@@ -594,6 +699,15 @@ export async function deactivateScene(sceneName: string): Promise<void> {
       for (let i = 0; i < roomLightStates.length; i += 50) {
         const batch = roomLightStates.slice(i, i + 50)
         const batchResponse = await lifxClient.setStates(batch)
+        // Record success for room lights that responded ok
+        for (const opResult of batchResponse.results) {
+          if (!opResult.results) continue
+          for (const lightResult of opResult.results) {
+            if (lightResult.status === 'ok') {
+              deviceHealthService.recordSuccess('lifx', lightResult.id)
+            }
+          }
+        }
         await retryFailedLights(batchResponse, batch)
       }
       log(`Batch turned off ${roomLightStates.length} room light(s)`)

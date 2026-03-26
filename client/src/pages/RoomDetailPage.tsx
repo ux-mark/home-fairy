@@ -22,12 +22,12 @@ import {
 import * as Switch from '@radix-ui/react-switch'
 import * as Tabs from '@radix-ui/react-tabs'
 import { api } from '@/lib/api'
-import type { Light, LightAssignment, Sensor, HubDevice, DeviceRoomAssignment } from '@/lib/api'
+import type { Light, LightAssignment, Sensor, HubDevice, DeviceRoomAssignment, DeactivatedDevice } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { Accordion } from '@/components/ui/Accordion'
 import { BackLink } from '@/components/ui/BackLink'
-import { TypeBadge } from '@/components/ui/Badge'
+import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
 import RoomIntelligence from '@/components/room/RoomIntelligence'
 import { getScenesForRoom, getModesForRoom, getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
@@ -143,11 +143,13 @@ function AssignedLightRow({
   light,
   onRemove,
   onIdentify,
+  deactivated,
 }: {
   assignment: LightAssignment
   light?: Light
   onRemove: () => void
   onIdentify: () => void
+  deactivated?: boolean
 }) {
   const isOn = light?.power === 'on'
   const colorHex = light ? getLightColorHex(light) : '#475569'
@@ -160,8 +162,9 @@ function AssignedLightRow({
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1">
-        <p className="break-words text-sm font-medium text-heading">
+        <p className={cn('break-words text-sm font-medium', deactivated ? 'text-slate-500' : 'text-heading')}>
           {assignment.label}
+          {deactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
         </p>
         <p className="text-xs text-caption">
           {isOn ? (
@@ -198,18 +201,21 @@ function AssignedDeviceRow({
   assignment,
   onRemove,
   onToggleExclude,
+  deactivated,
 }: {
   assignment: DeviceRoomAssignment
   onRemove: () => void
   onToggleExclude: () => void
+  deactivated?: boolean
 }) {
   const isExcluded = !!assignment.config?.exclude_from_all_off
 
   return (
     <div className="flex items-center gap-3 rounded-lg border border-fairy-500/20 bg-fairy-500/5 px-3 py-2.5 transition-colors">
       <div className="min-w-0 flex-1">
-        <p className="break-words text-sm font-medium text-heading">
+        <p className={cn('break-words text-sm font-medium', deactivated ? 'text-slate-500' : 'text-heading')}>
           {assignment.device_label}
+          {deactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
         </p>
       </div>
       <TypeBadge type={assignment.device_type} />
@@ -393,6 +399,12 @@ export default function RoomDetailPage() {
     queryFn: api.system.getCurrent,
   })
 
+  // Fetch deactivated devices for dimmed treatment
+  const { data: deactivatedDevices } = useQuery({
+    queryKey: ['devices', 'deactivated'],
+    queryFn: api.devices.getDeactivated,
+  })
+
   // Fetch default scene assignments for this room
   const { data: roomDefaultScenes } = useQuery({
     queryKey: ['room-default-scenes', name],
@@ -545,6 +557,18 @@ export default function RoomDetailPage() {
     if (!allLights) return new Map<string, Light>()
     return new Map(allLights.map(l => [l.id, l]))
   }, [allLights])
+
+  // Build a lookup of deactivated device IDs keyed as "type:id"
+  const deactivatedSet = useMemo(() => {
+    if (!deactivatedDevices) return new Set<string>()
+    return new Set(
+      (deactivatedDevices as DeactivatedDevice[]).map(d => `${d.deviceType}:${d.deviceId}`),
+    )
+  }, [deactivatedDevices])
+
+  const isLightDeactivated = (lightId: string) => deactivatedSet.has(`lifx:${lightId}`)
+  const isHubDeviceDeactivated = (deviceId: string) => deactivatedSet.has(`hub:${deviceId}`)
+  const isKasaDeviceDeactivated = (deviceId: string) => deactivatedSet.has(`kasa:${deviceId}`)
 
   // ── Device (switches/dimmers/twinkly/fairy/kasa) assignment state ─────
   const SWITCH_TYPES = ['switch', 'dimmer']
@@ -1396,6 +1420,7 @@ export default function RoomDetailPage() {
                       onIdentify={() =>
                         identifyMutation.mutate(`id:${a.id}`)
                       }
+                      deactivated={isLightDeactivated(a.id)}
                     />
                   ))}
                 </div>
@@ -1574,6 +1599,11 @@ export default function RoomDetailPage() {
                       assignment={d}
                       onRemove={() => handleUnassignDevice(d.device_id)}
                       onToggleExclude={() => handleToggleDeviceExclude(d.device_id)}
+                      deactivated={
+                        d.device_type.startsWith('kasa')
+                          ? isKasaDeviceDeactivated(d.device_id)
+                          : isHubDeviceDeactivated(d.device_id)
+                      }
                     />
                   ))}
                 </div>

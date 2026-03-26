@@ -90,12 +90,16 @@ export interface BatteryInsights {
 export interface AttentionItem {
   id: string
   severity: 'critical' | 'warning' | 'info'
-  category: 'battery' | 'energy' | 'temperature' | 'device_error' | 'scene'
+  category: 'battery' | 'energy' | 'temperature' | 'device_error' | 'scene' | 'device_unreachable' | 'device_online'
   title: string
   description: string
   deviceId: number | string | null
   deviceLabel: string | null
   deviceSource: 'hub' | 'kasa' | null
+  /** Optional action hint for the frontend (e.g. deactivate/reactivate buttons) */
+  action?: 'deactivate' | 'reactivate'
+  /** Device type extracted from the notification dedup key */
+  deviceType?: string | null
 }
 
 export interface InsightsData {
@@ -587,6 +591,54 @@ function computeAttentionItems(
         deviceId: null,
         deviceLabel: err.source_label,
         deviceSource: null,
+      })
+    }
+  } catch {
+    // Ignore notification query errors
+  }
+
+  // Device unreachable notifications (last 24 hours)
+  try {
+    const unreachableNotifs = notificationService.getRecentByCategory('device_unreachable', 1440)
+    for (const notif of unreachableNotifs) {
+      const dedupParts = notif.dedup_key?.split(':') ?? []
+      items.push({
+        id: `device-unreachable-${notif.id}`,
+        severity: notif.severity as AttentionItem['severity'],
+        category: 'device_unreachable',
+        title: notif.title,
+        description: notif.occurrence_count > 1
+          ? `${notif.message} (${notif.occurrence_count} occurrences)`
+          : notif.message,
+        deviceId: dedupParts[2] ?? notif.source_id ?? null,
+        deviceLabel: notif.source_label,
+        deviceSource: null,
+        action: 'deactivate',
+        deviceType: dedupParts[1] ?? null,
+      })
+    }
+  } catch {
+    // Ignore notification query errors
+  }
+
+  // Device online notifications — deactivated devices that came back (last 24 hours)
+  try {
+    const onlineNotifs = notificationService.getRecentByCategory('device_online', 1440)
+    for (const notif of onlineNotifs) {
+      const dedupParts = notif.dedup_key?.split(':') ?? []
+      items.push({
+        id: `device-online-${notif.id}`,
+        severity: notif.severity as AttentionItem['severity'],
+        category: 'device_online',
+        title: notif.title,
+        description: notif.occurrence_count > 1
+          ? `${notif.message} (${notif.occurrence_count} occurrences)`
+          : notif.message,
+        deviceId: dedupParts[2] ?? notif.source_id ?? null,
+        deviceLabel: notif.source_label,
+        deviceSource: null,
+        action: 'reactivate',
+        deviceType: dedupParts[1] ?? null,
       })
     }
   } catch {

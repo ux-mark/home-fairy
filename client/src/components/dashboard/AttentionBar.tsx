@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { AlertTriangle, AlertCircle, Info } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
+import { api } from '@/lib/api'
 import type { AttentionItem } from '@/lib/api'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -28,9 +30,11 @@ function sortBySeverity(items: AttentionItem[]): AttentionItem[] {
 
 interface ItemCardProps {
   item: AttentionItem
+  onDeactivate: (type: string, id: string) => void
+  onReactivate: (type: string, id: string) => void
 }
 
-function ItemCard({ item }: ItemCardProps) {
+function ItemCard({ item, onDeactivate, onReactivate }: ItemCardProps) {
   const isCritical = item.severity === 'critical'
 
   // Border colour by severity — always paired with icon so colour is not sole indicator
@@ -104,6 +108,36 @@ function ItemCard({ item }: ItemCardProps) {
           View device
         </Link>
       )}
+
+      {/* Deactivate action for unreachable devices */}
+      {item.action === 'deactivate' && item.deviceType && item.deviceId && (
+        <button
+          onClick={() => onDeactivate(String(item.deviceType), String(item.deviceId))}
+          className={cn(
+            'shrink-0 text-sm text-amber-400',
+            'hover:bg-amber-500/10 rounded-lg px-3 py-2',
+            'min-h-[44px] flex items-center transition-colors',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500',
+          )}
+        >
+          Deactivate
+        </button>
+      )}
+
+      {/* Reactivate action for devices that came back online */}
+      {item.action === 'reactivate' && item.deviceType && item.deviceId && (
+        <button
+          onClick={() => onReactivate(String(item.deviceType), String(item.deviceId))}
+          className={cn(
+            'shrink-0 text-sm text-emerald-400',
+            'hover:bg-emerald-500/10 rounded-lg px-3 py-2',
+            'min-h-[44px] flex items-center transition-colors',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500',
+          )}
+        >
+          Reactivate
+        </button>
+      )}
     </li>
   )
 }
@@ -118,6 +152,26 @@ const INITIAL_VISIBLE = 5
  */
 export default function AttentionBar({ items }: AttentionBarProps) {
   const [expanded, setExpanded] = useState(false)
+  const queryClient = useQueryClient()
+
+  const deactivateMutation = useMutation({
+    mutationFn: ({ type, id }: { type: string; id: string }) => api.devices.deactivate(type, id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['devices'] })
+    },
+  })
+
+  const reactivateMutation = useMutation({
+    mutationFn: ({ type, id }: { type: string; id: string }) => api.devices.reactivate(type, id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['devices'] })
+    },
+  })
+
+  const handleDeactivate = (type: string, id: string) => deactivateMutation.mutate({ type, id })
+  const handleReactivate = (type: string, id: string) => reactivateMutation.mutate({ type, id })
 
   // Nothing to show — silence is the success state here
   if (items.length === 0) return null
@@ -131,7 +185,7 @@ export default function AttentionBar({ items }: AttentionBarProps) {
     <section aria-label="Items requiring attention">
       <ul role="list" className="space-y-2">
         {visible.map(item => (
-          <ItemCard key={item.id} item={item} />
+          <ItemCard key={item.id} item={item} onDeactivate={handleDeactivate} onReactivate={handleReactivate} />
         ))}
       </ul>
 

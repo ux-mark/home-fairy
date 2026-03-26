@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Power, ChevronRight, Wifi, WifiOff } from 'lucide-react'
+import { Power, ChevronRight, Wifi, WifiOff, AlertTriangle } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
 import { BackLink } from '@/components/ui/BackLink'
-import { TypeBadge } from '@/components/ui/Badge'
+import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { useToast } from '@/hooks/useToast'
 
 export default function LightDetailPage() {
@@ -26,6 +26,33 @@ export default function LightDetailPage() {
     queryFn: () => api.lifx.getUsage(id!),
     enabled: !!id && !!light,
     staleTime: 60_000,
+  })
+
+  const { data: deactivatedDevices } = useQuery({
+    queryKey: ['devices', 'deactivated'],
+    queryFn: api.devices.getDeactivated,
+    staleTime: 30_000,
+  })
+
+  const isDeactivated = !!(id && deactivatedDevices?.some(d => d.deviceType === 'lifx' && d.deviceId === id))
+
+  const reactivateMutation = useMutation({
+    mutationFn: () => api.devices.reactivate('lifx', id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['devices', 'deactivated'] })
+      queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] })
+      toast({ message: 'Light reactivated successfully' })
+    },
+    onError: () => toast({ message: 'Light is still unreachable. Check the physical connection.', type: 'error' }),
+  })
+
+  const deactivateMutation = useMutation({
+    mutationFn: () => api.devices.deactivate('lifx', id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['devices', 'deactivated'] })
+      toast({ message: 'Light deactivated. It will be skipped in scenes and automations.' })
+    },
+    onError: () => toast({ message: 'Failed to deactivate light', type: 'error' }),
   })
 
   const toggleMutation = useMutation({
@@ -121,6 +148,7 @@ export default function LightDetailPage() {
         <h1 className="text-heading text-xl font-semibold">{light.label}</h1>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <TypeBadge type="lifx" />
+          {isDeactivated && <StatusBadge status="deactivated" />}
           <span className="text-xs text-caption">{light.product.name}</span>
           <span className={cn('flex items-center gap-1 text-xs', light.connected ? 'text-fairy-500' : 'text-red-400')}>
             {light.connected ? <Wifi className="h-3 w-3" aria-hidden="true" /> : <WifiOff className="h-3 w-3" aria-hidden="true" />}
@@ -162,6 +190,28 @@ export default function LightDetailPage() {
         </div>
       </header>
 
+      {/* Deactivation banner */}
+      {isDeactivated && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+          <div className="flex items-center gap-3 mb-2">
+            <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" aria-hidden="true" />
+            <p className="text-heading text-sm font-medium">
+              This light is deactivated
+            </p>
+          </div>
+          <p className="text-caption text-xs mb-3">
+            It was not responding to commands and will be skipped in scenes and automations.
+          </p>
+          <button
+            onClick={() => reactivateMutation.mutate()}
+            disabled={reactivateMutation.isPending}
+            className="rounded-lg bg-amber-500/15 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/25 transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+          >
+            {reactivateMutation.isPending ? 'Reactivating...' : 'Reactivate this light'}
+          </button>
+        </div>
+      )}
+
       {/* Controls */}
       <section className="card rounded-xl border p-5">
         <h2 className="mb-4 text-sm font-semibold text-heading">Controls</h2>
@@ -170,30 +220,31 @@ export default function LightDetailPage() {
           <div className="flex items-center gap-4">
             <button
               onClick={() => toggleMutation.mutate()}
-              disabled={toggleMutation.isPending}
+              disabled={toggleMutation.isPending || isDeactivated}
               className={cn(
                 'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors',
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                isOn
+                isDeactivated && 'cursor-not-allowed opacity-40',
+                !isDeactivated && isOn
                   ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
                   : 'surface text-caption hover:text-heading',
               )}
-              aria-label={`Turn ${light.label} ${isOn ? 'off' : 'on'}`}
+              aria-label={isDeactivated ? `${light.label} is deactivated` : `Turn ${light.label} ${isOn ? 'off' : 'on'}`}
             >
               <Power className="h-5 w-5" />
             </button>
-            <span className={cn('text-sm font-medium', isOn ? 'text-heading' : 'text-caption')}>
-              {isOn ? 'On' : 'Off'}
+            <span className={cn('text-sm font-medium', isDeactivated ? 'text-slate-500' : isOn ? 'text-heading' : 'text-caption')}>
+              {isDeactivated ? 'Deactivated' : isOn ? 'On' : 'Off'}
             </span>
             <div
-              className={cn('ml-auto h-8 w-8 rounded-full border', !isOn && 'opacity-30')}
-              style={{ backgroundColor: isOn ? colorHex : '#475569', borderColor: 'var(--border-secondary)' }}
+              className={cn('ml-auto h-8 w-8 rounded-full border', (!isOn || isDeactivated) && 'opacity-30')}
+              style={{ backgroundColor: isOn && !isDeactivated ? colorHex : '#475569', borderColor: 'var(--border-secondary)' }}
               aria-hidden="true"
             />
           </div>
 
           {/* Brightness */}
-          {isOn && (
+          {isOn && !isDeactivated && (
             <div>
               <label className="text-body mb-2 flex items-center justify-between text-xs font-medium">
                 <span>Brightness</span>
@@ -306,6 +357,27 @@ export default function LightDetailPage() {
                 </span>
               </p>
             )}
+          </div>
+        </section>
+      )}
+
+      {/* Light management */}
+      {!isDeactivated && (
+        <section aria-labelledby="light-management-heading">
+          <div className="card rounded-xl border p-5">
+            <h2 id="light-management-heading" className="mb-4 text-sm font-semibold text-heading">
+              Light management
+            </h2>
+            <button
+              onClick={() => deactivateMutation.mutate()}
+              disabled={deactivateMutation.isPending}
+              className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-400 hover:bg-slate-800 transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+            >
+              {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate light'}
+            </button>
+            <p className="mt-2 text-xs text-caption">
+              Deactivated lights are skipped in scenes and automations. You can reactivate at any time.
+            </p>
           </div>
         </section>
       )}

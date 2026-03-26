@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams, useMatch, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, Pencil, Check, X, Power, Shield } from 'lucide-react'
+import { ChevronRight, Pencil, Check, X, Power, Shield, AlertTriangle } from 'lucide-react'
 import { api, type DeviceInsightsData, type KasaDevice } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
 import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
 import { BackLink } from '@/components/ui/BackLink'
-import { TypeBadge } from '@/components/ui/Badge'
+import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { Accordion } from '@/components/ui/Accordion'
 import { FilterChip } from '@/components/ui/FilterChip'
 import { useToast } from '@/hooks/useToast'
@@ -513,6 +513,36 @@ function KasaDeviceDetail({ id }: { id: string }) {
     staleTime: 30_000,
   })
 
+  const { data: health } = useQuery({
+    queryKey: ['device', 'health', 'kasa', id],
+    queryFn: () => api.devices.getHealth('kasa', id),
+    staleTime: 30_000,
+  })
+
+  const isDeactivated = device?.active === false || !!health?.deactivatedAt
+
+  const reactivateMutation = useMutation({
+    mutationFn: () => api.devices.reactivate('kasa', id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kasa'] })
+      queryClient.invalidateQueries({ queryKey: ['device', 'health', 'kasa', id] })
+      queryClient.invalidateQueries({ queryKey: ['devices', 'deactivated'] })
+      toast({ message: 'Device reactivated successfully' })
+    },
+    onError: () => toast({ message: 'Device is still unreachable. Check the physical connection.', type: 'error' }),
+  })
+
+  const deactivateMutation = useMutation({
+    mutationFn: () => api.devices.deactivate('kasa', id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kasa'] })
+      queryClient.invalidateQueries({ queryKey: ['device', 'health', 'kasa', id] })
+      queryClient.invalidateQueries({ queryKey: ['devices', 'deactivated'] })
+      toast({ message: 'Device deactivated. It will be skipped in scenes and automations.' })
+    },
+    onError: () => toast({ message: 'Failed to deactivate device', type: 'error' }),
+  })
+
   const toggleMutation = useMutation({
     mutationFn: () => {
       const isOn = device?.attributes.switch === 'on'
@@ -706,6 +736,7 @@ function KasaDeviceDetail({ id }: { id: string }) {
             )}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <TypeBadge type={device.device_type} />
+              {isDeactivated && <StatusBadge status="deactivated" />}
               <span
                 className={cn(
                   'inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold',
@@ -779,18 +810,20 @@ function KasaDeviceDetail({ id }: { id: string }) {
           {/* Toggle button */}
           <button
             onClick={() => toggleMutation.mutate()}
-            disabled={toggleMutation.isPending || !device.is_online}
+            disabled={toggleMutation.isPending || !device.is_online || isDeactivated}
             className={cn(
               'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              !device.is_online && 'cursor-not-allowed opacity-40',
-              isOn && device.is_online
+              (!device.is_online || isDeactivated) && 'cursor-not-allowed opacity-40',
+              !isDeactivated && isOn && device.is_online
                 ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
                 : 'surface text-body hover:text-heading',
             )}
             aria-label={
-              !device.is_online
-                ? `${device.label} is offline`
-                : `Turn ${device.label} ${isOn ? 'off' : 'on'}`
+              isDeactivated
+                ? `${device.label} is deactivated`
+                : !device.is_online
+                  ? `${device.label} is offline`
+                  : `Turn ${device.label} ${isOn ? 'off' : 'on'}`
             }
           >
             <Power className="h-5 w-5" />
@@ -798,7 +831,30 @@ function KasaDeviceDetail({ id }: { id: string }) {
         </div>
       </header>
 
-      {/* ── 2. Kasa at-a-glance ────────────────────────────────────────── */}
+      {/* ── 2. Deactivation banner ──────────────────────────────────────── */}
+      {isDeactivated && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+          <div className="flex items-center gap-3 mb-2">
+            <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" aria-hidden="true" />
+            <p className="text-heading text-sm font-medium">
+              This device is deactivated
+            </p>
+          </div>
+          <p className="text-caption text-xs mb-3">
+            It was not responding to commands and will be skipped in scenes and automations.
+            {health?.lastFailureReason && ` Last error: ${health.lastFailureReason}`}
+          </p>
+          <button
+            onClick={() => reactivateMutation.mutate()}
+            disabled={reactivateMutation.isPending}
+            className="rounded-lg bg-amber-500/15 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/25 transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+          >
+            {reactivateMutation.isPending ? 'Reactivating...' : 'Reactivate this device'}
+          </button>
+        </div>
+      )}
+
+      {/* ── 3. Kasa at-a-glance ────────────────────────────────────────── */}
       <KasaAtAGlance device={device} />
 
       {/* ── 3. History charts ─────────────────────────────────────────────── */}
@@ -873,6 +929,27 @@ function KasaDeviceDetail({ id }: { id: string }) {
 
       {/* ── 6. All attributes (collapsed by default) ────────────────────── */}
       <AllAttributesSection attributeEntries={attributeEntries} />
+
+      {/* ── 7. Device management ──────────────────────────────────────────── */}
+      {!isDeactivated && (
+        <section aria-labelledby="kasa-management-heading">
+          <div className="card rounded-xl border p-5">
+            <h2 id="kasa-management-heading" className="mb-4 text-sm font-semibold text-heading">
+              Device management
+            </h2>
+            <button
+              onClick={() => deactivateMutation.mutate()}
+              disabled={deactivateMutation.isPending}
+              className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-400 hover:bg-slate-800 transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+            >
+              {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate device'}
+            </button>
+            <p className="mt-2 text-xs text-caption">
+              Deactivated devices are skipped in scenes and automations. You can reactivate at any time.
+            </p>
+          </div>
+        </section>
+      )}
     </div>
   )
 }
@@ -951,6 +1028,37 @@ function HubDeviceDetail({ id }: { id: string }) {
       toast({ message: 'Assigned to room' })
     },
     onError: () => toast({ message: 'Failed to assign', type: 'error' }),
+  })
+
+  // Health / deactivation
+  const { data: health } = useQuery({
+    queryKey: ['device', 'health', 'hub', id],
+    queryFn: () => api.devices.getHealth('hub', id),
+    staleTime: 30_000,
+  })
+
+  const isDeactivated = device?.active === false || !!health?.deactivatedAt
+
+  const reactivateMutation = useMutation({
+    mutationFn: () => api.devices.reactivate('hub', id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hubitat'] })
+      queryClient.invalidateQueries({ queryKey: ['device', 'health', 'hub', id] })
+      queryClient.invalidateQueries({ queryKey: ['devices', 'deactivated'] })
+      toast({ message: 'Device reactivated successfully' })
+    },
+    onError: () => toast({ message: 'Device is still unreachable. Check the physical connection.', type: 'error' }),
+  })
+
+  const deactivateMutation = useMutation({
+    mutationFn: () => api.devices.deactivate('hub', id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hubitat'] })
+      queryClient.invalidateQueries({ queryKey: ['device', 'health', 'hub', id] })
+      queryClient.invalidateQueries({ queryKey: ['devices', 'deactivated'] })
+      toast({ message: 'Device deactivated. It will be skipped in scenes and automations.' })
+    },
+    onError: () => toast({ message: 'Failed to deactivate device', type: 'error' }),
   })
 
   useEffect(() => {
@@ -1039,6 +1147,7 @@ function HubDeviceDetail({ id }: { id: string }) {
 
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <TypeBadge type={device.device_type} />
+          {isDeactivated && <StatusBadge status="deactivated" />}
           {device.device_name && device.device_name !== device.label && (
             <span className="text-xs text-caption">{device.device_name}</span>
           )}
@@ -1095,7 +1204,30 @@ function HubDeviceDetail({ id }: { id: string }) {
         </div>
       </header>
 
-      {/* ── 2. Headline insights ──────────────────────────────────────────── */}
+      {/* ── 2. Deactivation banner ──────────────────────────────────────── */}
+      {isDeactivated && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+          <div className="flex items-center gap-3 mb-2">
+            <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" aria-hidden="true" />
+            <p className="text-heading text-sm font-medium">
+              This device is deactivated
+            </p>
+          </div>
+          <p className="text-caption text-xs mb-3">
+            It was not responding to commands and will be skipped in scenes and automations.
+            {health?.lastFailureReason && ` Last error: ${health.lastFailureReason}`}
+          </p>
+          <button
+            onClick={() => reactivateMutation.mutate()}
+            disabled={reactivateMutation.isPending}
+            className="rounded-lg bg-amber-500/15 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/25 transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+          >
+            {reactivateMutation.isPending ? 'Reactivating...' : 'Reactivate this device'}
+          </button>
+        </div>
+      )}
+
+      {/* ── 3. Headline insights ──────────────────────────────────────────── */}
       <HeadlineInsights deviceInsights={deviceInsights} />
 
       {/* ── 3. History charts ─────────────────────────────────────────────── */}
@@ -1274,6 +1406,27 @@ function HubDeviceDetail({ id }: { id: string }) {
 
       {/* ── 5. All attributes (collapsed by default) ─────────────────────── */}
       <AllAttributesSection attributeEntries={attributeEntries} />
+
+      {/* ── 6. Device management ──────────────────────────────────────────── */}
+      {!isDeactivated && (
+        <section aria-labelledby="hub-management-heading">
+          <div className="card rounded-xl border p-5">
+            <h2 id="hub-management-heading" className="mb-4 text-sm font-semibold text-heading">
+              Device management
+            </h2>
+            <button
+              onClick={() => deactivateMutation.mutate()}
+              disabled={deactivateMutation.isPending}
+              className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-400 hover:bg-slate-800 transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+            >
+              {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate device'}
+            </button>
+            <p className="mt-2 text-xs text-caption">
+              Deactivated devices are skipped in scenes and automations. You can reactivate at any time.
+            </p>
+          </div>
+        </section>
+      )}
     </div>
   )
 }

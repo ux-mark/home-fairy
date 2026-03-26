@@ -131,6 +131,7 @@ export interface LightRoom {
   has_color: boolean
   min_kelvin: number
   max_kelvin: number
+  active?: boolean
 }
 
 export interface LightAssignment {
@@ -148,6 +149,7 @@ export interface HubDevice {
   device_type: string
   capabilities: string[]
   attributes: Record<string, unknown>
+  active?: boolean
 }
 
 export interface KasaEmeterData {
@@ -182,6 +184,7 @@ export interface KasaDevice {
   }
   children?: KasaDevice[]
   last_seen: string | null
+  active?: boolean
 }
 
 export interface KasaDailyStats {
@@ -476,12 +479,36 @@ export interface BatteryInsights {
 export interface AttentionItem {
   id: string
   severity: 'critical' | 'warning' | 'info'
-  category: 'battery' | 'energy' | 'temperature' | 'device_error' | 'scene'
+  category: 'battery' | 'energy' | 'temperature' | 'device_error' | 'scene' | 'device_unreachable' | 'device_online'
   title: string
   description: string
   deviceId: number | string | null
   deviceLabel: string | null
   deviceSource?: 'hub' | 'kasa' | null
+  action?: 'deactivate' | 'reactivate'
+  deviceType?: string | null
+}
+
+export interface DeactivatedDevice {
+  deviceType: 'hub' | 'kasa' | 'lifx'
+  deviceId: string
+  deviceLabel: string
+  roomName: string | null
+  deactivatedAt: string
+  deactivatedReason: string
+  lastFailureReason: string | null
+}
+
+export interface DeviceHealth {
+  deviceType: string
+  deviceId: string
+  consecutiveFailures: number
+  unreachableSince: string | null
+  lastSuccess: string | null
+  lastFailure: string | null
+  lastFailureReason: string | null
+  deactivatedAt: string | null
+  deactivatedReason: string | null
 }
 
 export interface AppNotification {
@@ -843,6 +870,15 @@ export const api = {
         }[]
       >('/system/logs' + (qs ? '?' + qs : ''))
     },
+  },
+  devices: {
+    getDeactivated: () => fetchApi<DeactivatedDevice[]>('/system/devices/deactivated'),
+    getHealth: (type: string, id: string) =>
+      fetchApi<DeviceHealth | null>('/system/devices/' + encodeURIComponent(type) + '/' + encodeURIComponent(id) + '/health'),
+    deactivate: (type: string, id: string) =>
+      fetchApi<{ success: boolean }>('/system/devices/' + encodeURIComponent(type) + '/' + encodeURIComponent(id) + '/deactivate', { method: 'POST' }),
+    reactivate: (type: string, id: string) =>
+      fetchApi<{ success: boolean }>('/system/devices/' + encodeURIComponent(type) + '/' + encodeURIComponent(id) + '/reactivate', { method: 'POST' }),
   },
   dashboard: {
     getSummary: () => fetchApi<DashboardSummary>('/dashboard/summary'),

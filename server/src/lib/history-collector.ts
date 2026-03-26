@@ -1,5 +1,7 @@
 import { getAll, run, db } from '../db/index.js'
 import { getCurrentWeather } from './weather-client.js'
+import { deviceHealthService } from './device-health-service.js'
+import { lifxClient } from './lifx-client.js'
 
 const SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000 // 10 minutes
 
@@ -83,6 +85,26 @@ async function collectSnapshot(): Promise<void> {
       )
     } catch {
       // Weather may fail (API down, no key) — don't block other snapshots
+    }
+
+    // LIFX health check
+    try {
+      const lifxApiLights = await lifxClient.listAll() as Array<{ id: string; connected: boolean }>
+      const lifxApiById = new Map(lifxApiLights.map(l => [l.id, l]))
+
+      const knownLights = getAll<{ light_id: string }>('SELECT light_id FROM light_rooms')
+      for (const light of knownLights) {
+        const apiLight = lifxApiById.get(light.light_id)
+        if (!apiLight) {
+          deviceHealthService.recordFailure('lifx', light.light_id, 'Light not found in LIFX API response')
+        } else if (apiLight.connected) {
+          deviceHealthService.recordSuccess('lifx', light.light_id)
+        } else {
+          deviceHealthService.recordFailure('lifx', light.light_id, 'LIFX cloud reports disconnected')
+        }
+      }
+    } catch {
+      // LIFX health check failure must not break the rest of the snapshot
     }
   } catch (err) {
     console.error('[history] Snapshot failed:', err instanceof Error ? err.message : err)

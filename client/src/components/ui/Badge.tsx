@@ -91,3 +91,27 @@ export function CountBadge({ count, variant = 'default' }: CountBadgeProps) {
     </span>
   )
 }
+
+// ── Status badge ────────────────────────────────────────────────────────────
+
+interface StatusBadgeProps {
+  status: 'deactivated' | 'offline' | 'online'
+}
+
+export function StatusBadge({ status }: StatusBadgeProps) {
+  const styles: Record<string, string> = {
+    deactivated: 'bg-slate-500/15 text-slate-400',
+    offline: 'bg-red-500/15 text-red-400',
+    online: 'bg-emerald-500/15 text-emerald-400',
+  }
+  const labels: Record<string, string> = {
+    deactivated: 'Deactivated',
+    offline: 'Offline',
+    online: 'Online',
+  }
+  return (
+    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold', styles[status])}>
+      {labels[status]}
+    </span>
+  )
+}
