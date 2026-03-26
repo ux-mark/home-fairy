@@ -547,6 +547,14 @@ function KasaDeviceDetail({ id }: { id: string }) {
   })
   const deviceRoom = allDeviceRooms?.find(a => a.device_id === id)
 
+  // Fetch parent strip label for child sockets
+  const { data: parentDevice } = useQuery({
+    queryKey: ['kasa', 'device', device?.parent_id],
+    queryFn: () => api.kasa.getDevice(device!.parent_id!),
+    enabled: !!device?.parent_id,
+    staleTime: 60_000,
+  })
+
   const assignRoomMutation = useMutation({
     mutationFn: (roomName: string) =>
       api.hubitat.assignDevice({ device_id: id, device_label: device?.label ?? '', device_type: 'kasa_' + (device?.device_type ?? 'plug'), room_name: roomName }),
@@ -684,6 +692,17 @@ function KasaDeviceDetail({ id }: { id: string }) {
                   <Pencil className="h-4 w-4" />
                 </button>
               </div>
+            )}
+            {parentDevice && (
+              <p className="mt-1 text-xs text-caption">
+                on{' '}
+                <Link
+                  to={`/devices/kasa/${encodeURIComponent(device.parent_id!)}`}
+                  className="text-fairy-400 hover:text-fairy-300 transition-colors"
+                >
+                  {parentDevice.label}
+                </Link>
+              </p>
             )}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <TypeBadge type={device.device_type} />
