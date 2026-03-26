@@ -48,6 +48,7 @@ export interface RoomDetail extends Room {
 
 export interface Sensor {
   name: string
+  id?: string  // device_id from device_rooms (numeric hub device ID as string)
 }
 
 export interface Scene {
@@ -478,8 +479,9 @@ export interface AttentionItem {
   category: 'battery' | 'energy' | 'temperature' | 'device_error' | 'scene'
   title: string
   description: string
-  deviceId: number | null
+  deviceId: number | string | null
   deviceLabel: string | null
+  deviceSource?: 'hub' | 'kasa' | null
 }
 
 export interface AppNotification {
