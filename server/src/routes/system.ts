@@ -378,6 +378,38 @@ router.post('/modes', (req: Request, res: Response) => {
   }
 })
 
+// PUT /modes/reorder — reorder modes by providing an array of mode names in desired order
+router.put('/modes/reorder', (req: Request, res: Response) => {
+  try {
+    const body = z.object({ modes: z.array(z.string().min(1)) }).parse(req.body)
+
+    const reorderTransaction = db.transaction(() => {
+      const updateOrder = db.prepare('UPDATE modes SET display_order = ? WHERE name = ?')
+      for (let i = 0; i < body.modes.length; i++) {
+        const result = updateOrder.run(i, body.modes[i])
+        if (result.changes === 0) {
+          throw new Error(`Mode not found: ${body.modes[i]}`)
+        }
+      }
+    })
+
+    reorderTransaction()
+
+    res.json({ modes: getAllModeNames() })
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors })
+      return
+    }
+    const msg = err instanceof Error ? err.message : String(err)
+    if (msg.startsWith('Mode not found:')) {
+      res.status(404).json({ error: msg })
+      return
+    }
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
 // PUT /modes/:mode — rename a mode
 router.put('/modes/:mode', (req: Request, res: Response) => {
   try {
