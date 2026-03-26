@@ -14,9 +14,12 @@ import {
   Battery,
   Sun,
   Activity,
+  Music2,
+  Volume2,
 } from 'lucide-react'
+import { io as socketIo } from 'socket.io-client'
 import { api } from '@/lib/api'
-import type { Light, Room, DeviceRoomAssignment, HubDevice, KasaDevice } from '@/lib/api'
+import type { Light, Room, DeviceRoomAssignment, HubDevice, KasaDevice, SonosSpeakerMapping, SonosZone } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
@@ -98,7 +101,7 @@ function RoomPill({
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type DeviceFilter = 'all' | 'lights' | 'switches' | 'twinkly' | 'fairy' | 'kasa' | 'sensors' | 'deactivated'
+type DeviceFilter = 'all' | 'lights' | 'switches' | 'twinkly' | 'fairy' | 'kasa' | 'sensors' | 'sonos' | 'deactivated'
 type GroupMode = 'room' | 'type'
 
 interface UnifiedDevice {
@@ -617,6 +620,110 @@ function DeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[] }
   return <HubDeviceCard device={device} rooms={rooms} />
 }
 
+// ── Sonos speaker card ────────────────────────────────────────────────────────
+
+function SonosSpeakerCard({
+  speaker,
+  zones,
+}: {
+  speaker: SonosSpeakerMapping
+  zones: SonosZone[] | undefined
+}) {
+  // Find this speaker's zone to get playback state
+  const zone = zones?.find(z =>
+    z.coordinator.roomName === speaker.speaker_name ||
+    z.members.some(m => m.roomName === speaker.speaker_name),
+  )
+  const state = zone?.coordinator.state
+
+  let playbackText: string
+  if (!state) {
+    playbackText = 'Idle'
+  } else if (state.playbackState === 'PLAYING') {
+    const track = state.currentTrack
+    const label = track.stationName || track.title
+    playbackText = label ? `Playing: ${label}` : 'Playing'
+  } else if (state.playbackState === 'PAUSED_PLAYBACK') {
+    playbackText = 'Paused'
+  } else {
+    playbackText = 'Idle'
+  }
+
+  const volumeText = state ? `Volume ${state.volume}%` : null
+
+  return (
+    <div className="card rounded-xl border transition-colors">
+      <div className="flex items-center gap-3 p-4">
+        <div
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+            state?.playbackState === 'PLAYING'
+              ? 'bg-violet-500/15 text-violet-400'
+              : 'bg-[var(--bg-tertiary)] text-caption',
+          )}
+          aria-hidden="true"
+        >
+          {state?.playbackState === 'PLAYING' ? (
+            <Music2 className="h-4 w-4" />
+          ) : (
+            <Volume2 className="h-4 w-4" />
+          )}
+        </div>
+
+        <Link
+          to={`/sonos/${encodeURIComponent(speaker.speaker_name)}`}
+          className="block min-w-0 flex-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        >
+          <p className="break-words text-sm font-medium text-heading hover:text-fairy-400 transition-colors">
+            {speaker.speaker_name}
+          </p>
+          <p className="mt-0.5 break-words text-xs text-caption">
+            {speaker.room_name}
+            {volumeText ? ` · ${volumeText}` : ''}
+          </p>
+          <p className={cn(
+            'mt-0.5 break-words text-xs',
+            state?.playbackState === 'PLAYING' ? 'text-fairy-400' : 'text-caption',
+          )}>
+            {playbackText}
+          </p>
+        </Link>
+
+        <TypeBadge type="sonos" />
+      </div>
+    </div>
+  )
+}
+
+function SonosUnassignedCard({ speakerName }: { speakerName: string }) {
+  return (
+    <div className="card rounded-xl border border-dashed opacity-60 transition-colors">
+      <div className="flex items-center gap-3 p-4">
+        <div
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-tertiary)] text-caption"
+          aria-hidden="true"
+        >
+          <Volume2 className="h-4 w-4" />
+        </div>
+
+        <Link
+          to="/sonos-setup"
+          className="block min-w-0 flex-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        >
+          <p className="break-words text-sm font-medium text-body hover:text-heading transition-colors">
+            {speakerName}
+          </p>
+          <p className="mt-0.5 break-words text-xs text-caption">
+            Not assigned to a room
+          </p>
+        </Link>
+
+        <TypeBadge type="sonos" />
+      </div>
+    </div>
+  )
+}
+
 // ── Devices page ──────────────────────────────────────────────────────────────
 
 export default function DevicesPage() {
@@ -670,6 +777,38 @@ export default function DevicesPage() {
     queryFn: api.devices.getDeactivated,
     staleTime: 30_000,
   })
+
+  // Sonos queries — only fetched when the sonos tab (or all) is active
+  const {
+    data: sonosSpeakers,
+    isLoading: sonosSpeakersLoading,
+  } = useQuery({
+    queryKey: ['sonos', 'speakers'],
+    queryFn: api.sonos.getSpeakers,
+    enabled: filter === 'sonos' || filter === 'all',
+  })
+
+  const {
+    data: sonosZones,
+    isLoading: sonosZonesLoading,
+  } = useQuery({
+    queryKey: ['sonos', 'zones'],
+    queryFn: api.sonos.getZones,
+    enabled: filter === 'sonos' || filter === 'all',
+  })
+
+  // Invalidate zones cache on real-time Sonos updates
+  useEffect(() => {
+    if (filter !== 'sonos' && filter !== 'all') return
+    const url = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin
+    const s = socketIo(url, { transports: ['websocket', 'polling'] })
+    const handler = () => queryClient.invalidateQueries({ queryKey: ['sonos', 'zones'] })
+    s.on('sonos:zones-update', handler)
+    return () => {
+      s.off('sonos:zones-update', handler)
+      s.disconnect()
+    }
+  }, [queryClient, filter])
 
   const isLoading = lightsLoading || hubLoading || kasaLoading
 
@@ -844,6 +983,22 @@ export default function DevicesPage() {
 
   const deactivatedCount = useMemo(() => allDevices.filter(d => d.isDeactivated).length, [allDevices])
 
+  const sonosCount = useMemo(() => sonosSpeakers?.length ?? 0, [sonosSpeakers])
+
+  // Speakers present in zones but not in the speakers mapping list
+  const sonosUnassignedSpeakers = useMemo(() => {
+    if (!sonosZones) return []
+    const assignedNames = new Set(sonosSpeakers?.map(s => s.speaker_name) ?? [])
+    const allSpeakerNames = new Set<string>()
+    for (const zone of sonosZones) {
+      allSpeakerNames.add(zone.coordinator.roomName)
+      for (const member of zone.members) {
+        allSpeakerNames.add(member.roomName)
+      }
+    }
+    return Array.from(allSpeakerNames).filter(name => !assignedNames.has(name)).sort()
+  }, [sonosZones, sonosSpeakers])
+
   const filterTabs: { value: DeviceFilter; label: string; count: number }[] = useMemo(() => {
     const tabs: { value: DeviceFilter; label: string; count: number }[] = [
       { value: 'all', label: 'All', count: allDevices.length },
@@ -853,13 +1008,14 @@ export default function DevicesPage() {
       { value: 'twinkly', label: 'Twinkly', count: allDevices.filter(d => d.kind === 'twinkly').length },
       { value: 'fairy', label: 'Fairy', count: allDevices.filter(d => d.kind === 'fairy').length },
       { value: 'kasa', label: 'Kasa', count: kasaCount },
+      { value: 'sonos', label: 'Sonos', count: sonosCount },
     ]
     // Only show the deactivated tab when there are deactivated devices
     if (deactivatedCount > 0) {
       tabs.push({ value: 'deactivated', label: 'Deactivated', count: deactivatedCount })
     }
     return tabs
-  }, [allDevices, kasaCount, sensorCount, deactivatedCount])
+  }, [allDevices, kasaCount, sensorCount, deactivatedCount, sonosCount])
 
   const groupLabel = (key: string) => {
     if (groupMode === 'type') {
@@ -879,6 +1035,8 @@ export default function DevicesPage() {
             queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] })
             queryClient.invalidateQueries({ queryKey: ['hubitat'] })
             queryClient.invalidateQueries({ queryKey: ['kasa'] })
+            queryClient.invalidateQueries({ queryKey: ['sonos', 'speakers'] })
+            queryClient.invalidateQueries({ queryKey: ['sonos', 'zones'] })
           }}
           disabled={lightsFetching}
           className={cn(
@@ -926,15 +1084,52 @@ export default function DevicesPage() {
         </button>
       </div>
 
-      {/* Filter summary */}
-      {(search.trim() || filter !== 'all') && (
+      {/* Filter summary — not shown for sonos tab (separate view) */}
+      {filter !== 'sonos' && (search.trim() || filter !== 'all') && (
         <p className="text-caption mb-3 text-xs">
           Showing {filtered.length} of {allDevices.length} device{allDevices.length !== 1 ? 's' : ''}
         </p>
       )}
 
       {/* Content */}
-      {isLoading ? (
+      {filter === 'sonos' ? (
+        sonosSpeakersLoading || sonosZonesLoading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="surface h-20 animate-pulse rounded-xl" />
+            ))}
+          </div>
+        ) : (sonosSpeakers?.length ?? 0) === 0 && sonosUnassignedSpeakers.length === 0 ? (
+          <EmptyState
+            icon={Volume2}
+            message="No Sonos speakers found."
+            sub="Make sure Sonos is running and the speakers are on the same network."
+          />
+        ) : (
+          <div className="space-y-6">
+            {sonosSpeakers && sonosSpeakers.length > 0 && (
+              <div>
+                <h3 className="text-body mb-2 text-sm font-medium">Assigned speakers</h3>
+                <div className="space-y-2">
+                  {sonosSpeakers.map(s => (
+                    <SonosSpeakerCard key={s.id} speaker={s} zones={sonosZones} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {sonosUnassignedSpeakers.length > 0 && (
+              <div>
+                <h3 className="text-caption mb-2 text-sm font-medium">Not assigned to a room</h3>
+                <div className="space-y-2">
+                  {sonosUnassignedSpeakers.map(name => (
+                    <SonosUnassignedCard key={name} speakerName={name} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )
+      ) : isLoading ? (
         <div className="space-y-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="surface h-16 animate-pulse rounded-xl" />
@@ -958,6 +1153,18 @@ export default function DevicesPage() {
               <h3 className="text-caption mb-2 text-sm font-medium">Unassigned</h3>
               <div className="space-y-2">
                 {grouped.unassigned.map(d => <DeviceCard key={d.key} device={d} rooms={rooms} />)}
+              </div>
+            </div>
+          )}
+
+          {/* Sonos speakers shown at bottom of All view */}
+          {filter === 'all' && sonosSpeakers && sonosSpeakers.length > 0 && (
+            <div>
+              <h3 className="text-body mb-2 text-sm font-medium">Sonos speakers</h3>
+              <div className="space-y-2">
+                {sonosSpeakers.map(s => (
+                  <SonosSpeakerCard key={s.id} speaker={s} zones={sonosZones} />
+                ))}
               </div>
             </div>
           )}

@@ -15,6 +15,8 @@ interface RoomRow {
   tags: string
   current_scene: string | null
   last_active: string | null
+  sonos_follow_me: number
+  sonos_auto_start: number
   created_at: string
   updated_at: string
 }
@@ -59,6 +61,8 @@ function parseRoom(row: RoomRow) {
     sensors: sensorRows.map(s => ({ name: s.device_label, id: s.device_id })),
     tags: Array.isArray(tags) ? tags : [],
     auto: Boolean(row.auto),
+    sonos_follow_me: Boolean(row.sonos_follow_me),
+    sonos_auto_start: Boolean(row.sonos_auto_start),
     temperature: sensorReading?.temperature ?? null,
     lux: sensorReading?.lux ?? null,
   }
@@ -81,6 +85,8 @@ const updateRoomSchema = z.object({
   tags: z.array(z.string()).optional(),
   current_scene: z.string().nullable().optional(),
   last_active: z.string().nullable().optional(),
+  sonos_follow_me: z.boolean().optional(),
+  sonos_auto_start: z.boolean().optional(),
 })
 
 // GET /default-scenes — bulk: all default scene assignments for all rooms
@@ -182,6 +188,8 @@ router.put('/:name', (req: Request, res: Response) => {
     if (body.tags !== undefined) { fields.push('tags = ?'); values.push(JSON.stringify(body.tags)) }
     if (body.current_scene !== undefined) { fields.push('current_scene = ?'); values.push(body.current_scene) }
     if (body.last_active !== undefined) { fields.push('last_active = ?'); values.push(body.last_active) }
+    if (body.sonos_follow_me !== undefined) { fields.push('sonos_follow_me = ?'); values.push(Number(body.sonos_follow_me)) }
+    if (body.sonos_auto_start !== undefined) { fields.push('sonos_auto_start = ?'); values.push(Number(body.sonos_auto_start)) }
 
     if (fields.length > 0) {
       fields.push("updated_at = datetime('now')")

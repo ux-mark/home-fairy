@@ -29,6 +29,7 @@ import { SubwaySection } from '@/components/settings/SubwaySection'
 import { IndicatorSection } from '@/components/settings/IndicatorSection'
 import { WeatherIndicatorSection } from '@/components/settings/WeatherIndicatorSection'
 import { DataManagementSection } from '@/components/settings/DataManagementSection'
+import { MusicSection } from '@/components/settings/MusicSection'
 
 // ── Theme section ───────────────────────────────────────────────────────────
 
@@ -399,7 +400,7 @@ function SystemSection() {
 
 // ── Category accordion ───────────────────────────────────────────────────────
 
-type CategoryId = 'preferences' | 'modes-and-schedule' | 'public-transport' | 'weather' | 'system'
+type CategoryId = 'preferences' | 'music' | 'modes-and-schedule' | 'public-transport' | 'weather' | 'system'
 
 function CategoryAccordion({
   categoryId,
@@ -488,6 +489,15 @@ export default function SettingsPage() {
         >
           <ThemeSection />
           <GeneralSection />
+        </CategoryAccordion>
+
+        <CategoryAccordion
+          categoryId="music"
+          label="Music"
+          isOpen={openCategory === 'music'}
+          onToggle={() => handleToggle('music')}
+        >
+          <MusicSection />
         </CategoryAccordion>
 
         <CategoryAccordion

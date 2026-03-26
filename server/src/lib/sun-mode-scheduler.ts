@@ -2,6 +2,7 @@ import { getSunTimes, type SunTimes } from './sun-tracker.js'
 import { getOne, getAll, run } from '../db/index.js'
 import type { Server as SocketServer } from 'socket.io'
 import { motionHandler } from './motion-handler.js'
+import { sonosManager } from './sonos-manager.js'
 
 interface SunModeMapping {
   sunPhase: string
@@ -136,6 +137,9 @@ class SunModeScheduler {
       if (this.io) {
         this.io.emit('mode_changed', { mode, trigger: sunPhase, auto: true })
       }
+
+      // Notify Sonos manager of mode change (non-blocking)
+      sonosManager.onModeChange(mode).catch(() => {})
     } catch (err) {
       console.error('Failed to transition mode:', err)
     }

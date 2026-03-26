@@ -1,6 +1,7 @@
 import { getAll, getOne, run } from '../db/index.js'
 import type { Server as SocketServer } from 'socket.io'
 import { motionHandler } from './motion-handler.js'
+import { sonosManager } from './sonos-manager.js'
 
 interface TimeTrigger {
   id: number
@@ -107,6 +108,9 @@ class TimeTriggerScheduler {
       if (this.io) {
         this.io.emit('mode_changed', { mode, trigger, auto: true })
       }
+
+      // Notify Sonos manager of mode change (non-blocking)
+      sonosManager.onModeChange(mode).catch(() => {})
     } catch (err) {
       console.error('Failed to transition mode (time trigger):', err)
     }

@@ -40,6 +40,8 @@ export interface Room {
   last_active: string | null
   temperature: number | null
   lux: number | null
+  sonos_follow_me: boolean
+  sonos_auto_start: boolean
 }
 
 export interface RoomDetail extends Room {
@@ -595,6 +597,70 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   }
 }
 
+// ── Sonos types ─────────────────────────────────────────────────────────────
+
+export interface SonosTrack {
+  artist: string
+  title: string
+  album: string
+  albumArtUri: string
+  type: string
+  stationName?: string
+}
+
+export interface SonosPlaybackState {
+  playbackState: 'PLAYING' | 'PAUSED_PLAYBACK' | 'STOPPED' | 'TRANSITIONING'
+  currentTrack: SonosTrack
+  volume: number
+  mute: boolean
+  trackNo: number
+  elapsedTime: number
+  elapsedTimeFormatted: string
+}
+
+export interface SonosMember {
+  roomName: string
+  uuid: string
+}
+
+export interface SonosZone {
+  coordinator: {
+    roomName: string
+    state: SonosPlaybackState
+    uuid: string
+  }
+  members: SonosMember[]
+}
+
+export interface SonosFavourite {
+  title: string
+}
+
+export interface SonosSpeakerMapping {
+  id: number
+  room_name: string
+  speaker_name: string
+  favourite: string | null
+  default_volume: number
+  created_at: string
+}
+
+export interface AutoPlayRule {
+  id: number
+  room_name: string | null
+  mode_name: string
+  favourite_name: string
+  trigger_type: 'mode_change' | 'if_not_playing' | 'if_source_not'
+  trigger_value: string | null
+  enabled: number
+}
+
+export interface FollowMeStatus {
+  enabled: boolean
+  activeRooms: string[]
+  anchorRoom: string | null
+}
+
 // ── API client ───────────────────────────────────────────────────────────────
 
 export const api = {
@@ -983,5 +1049,44 @@ export const api = {
         body: JSON.stringify({ config }),
       }),
     health: () => fetchApi<KasaHealth>('/kasa/health'),
+  },
+
+  sonos: {
+    getZones: () => fetchApi<SonosZone[]>('/sonos/zones'),
+    getState: (speaker: string) => fetchApi<SonosPlaybackState>('/sonos/state/' + encodeURIComponent(speaker)),
+    getFavourites: () => fetchApi<SonosFavourite[]>('/sonos/favourites'),
+    getFollowMeStatus: () => fetchApi<FollowMeStatus>('/sonos/follow-me/status'),
+    toggleFollowMe: (enabled: boolean) =>
+      fetchApi<{ enabled: boolean }>('/sonos/follow-me/toggle', {
+        method: 'POST',
+        body: JSON.stringify({ enabled }),
+      }),
+    getSpeakers: () => fetchApi<SonosSpeakerMapping[]>('/sonos/speakers'),
+    setSpeaker: (data: { room_name: string; speaker_name: string; favourite?: string | null; default_volume?: number }) =>
+      fetchApi<SonosSpeakerMapping>('/sonos/speakers', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    updateSpeaker: (room: string, data: { favourite?: string | null; default_volume?: number }) =>
+      fetchApi<SonosSpeakerMapping>('/sonos/speakers/' + encodeURIComponent(room), {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    removeSpeaker: (room: string) =>
+      fetchApi<{ deleted: boolean }>('/sonos/speakers/' + encodeURIComponent(room), { method: 'DELETE' }),
+    getAutoPlayRules: () => fetchApi<AutoPlayRule[]>('/sonos/auto-play'),
+    createAutoPlayRule: (data: Omit<AutoPlayRule, 'id'>) =>
+      fetchApi<AutoPlayRule>('/sonos/auto-play', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    updateAutoPlayRule: (id: number, data: Partial<AutoPlayRule>) =>
+      fetchApi<AutoPlayRule>('/sonos/auto-play/' + id, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    deleteAutoPlayRule: (id: number) =>
+      fetchApi<{ deleted: boolean }>('/sonos/auto-play/' + id, { method: 'DELETE' }),
+    health: () => fetchApi<{ available: boolean }>('/sonos/health'),
   },
 }

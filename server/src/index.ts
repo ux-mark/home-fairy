@@ -15,6 +15,7 @@ import hubitatRoutes from './routes/hubitat.js'
 import motionRoutes from './routes/motion.js'
 import dashboardRoutes from './routes/dashboard.js'
 import kasaRoutes from './routes/kasa.js'
+import sonosRoutes from './routes/sonos.js'
 import { motionHandler } from './lib/motion-handler.js'
 import { sunModeScheduler } from './lib/sun-mode-scheduler.js'
 import { timeTriggerScheduler } from './lib/time-trigger-scheduler.js'
@@ -24,6 +25,7 @@ import { weatherIndicator } from './lib/weather-indicator.js'
 import { startHistoryCollector, stopHistoryCollector } from './lib/history-collector.js'
 import { notificationService } from './lib/notification-service.js'
 import { startKasaPoller, stopKasaPoller } from './lib/kasa-poller.js'
+import { sonosManager } from './lib/sonos-manager.js'
 import { setSocketServer } from './lib/socket.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -80,13 +82,14 @@ app.use('/api/hubitat', hubitatRoutes)
 app.use('/api/motion', motionRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/kasa', kasaRoutes)
+app.use('/api/sonos', sonosRoutes)
 
 // Hubitat webhook handler
 app.post('/hubitat', async (req, res) => {
   // Validate webhook secret
   const HUBITAT_WEBHOOK_SECRET = process.env.HUBITAT_WEBHOOK_SECRET
   if (HUBITAT_WEBHOOK_SECRET) {
-    const token = req.headers['x-hubitat-token'] as string
+    const token = (req.headers['x-hubitat-token'] as string) || (req.query.token as string)
     if (token !== HUBITAT_WEBHOOK_SECRET) {
       res.status(401).json({ error: 'Invalid webhook token' })
       return
@@ -285,6 +288,8 @@ httpServer.listen(PORT, () => {
   weatherIndicator.start()
   startHistoryCollector()
   startKasaPoller(io)
+  sonosManager.setIsRoomLocked((room) => motionHandler.isRoomLocked(room))
+  sonosManager.init()
 })
 
 // Graceful shutdown
@@ -300,6 +305,7 @@ function shutdown(signal: string): void {
 
   stopHistoryCollector()
   stopKasaPoller()
+  sonosManager.shutdown()
   weatherIndicator.stop()
   sunModeScheduler.clearTimers()
   timeTriggerScheduler.clearTimers()
