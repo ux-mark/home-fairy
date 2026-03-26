@@ -940,7 +940,7 @@ function KasaDeviceDetail({ id }: { id: string }) {
             <button
               onClick={() => deactivateMutation.mutate()}
               disabled={deactivateMutation.isPending}
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-400 hover:bg-slate-800 transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+              className="rounded-lg border border-[var(--border-primary)] px-4 py-2 text-sm text-body hover:bg-[var(--bg-tertiary)] transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
             >
               {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate device'}
             </button>
@@ -1417,7 +1417,7 @@ function HubDeviceDetail({ id }: { id: string }) {
             <button
               onClick={() => deactivateMutation.mutate()}
               disabled={deactivateMutation.isPending}
-              className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-400 hover:bg-slate-800 transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+              className="rounded-lg border border-[var(--border-primary)] px-4 py-2 text-sm text-body hover:bg-[var(--bg-tertiary)] transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
             >
               {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate device'}
             </button>
