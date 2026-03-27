@@ -81,7 +81,7 @@ function ItemCard({ item, onDeactivate, onReactivate }: ItemCardProps) {
         aria-hidden="true"
       />
 
-      {/* Message */}
+      {/* Message + actions in the text column */}
       <div className="min-w-0 flex-1">
         <p className="text-heading text-sm font-medium leading-snug">
           {item.title}
@@ -89,55 +89,60 @@ function ItemCard({ item, onDeactivate, onReactivate }: ItemCardProps) {
         <p className="text-caption mt-0.5 text-xs leading-snug">
           {item.description}
         </p>
+
+        {/* Action buttons below description — stay in the text column so the label never gets squeezed */}
+        {item.deviceId !== null && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {/* Device link — only when a deviceId is present */}
+            {item.deviceId !== null && (
+              <Link
+                to={item.deviceSource === 'kasa'
+                  ? `/devices/kasa/${item.deviceId}`
+                  : `/devices/${item.deviceId}`}
+                aria-label={`View device: ${item.deviceLabel ?? 'device'}`}
+                className={cn(
+                  'text-sm text-fairy-400',
+                  'hover:bg-fairy-500/10 rounded-lg px-3 py-2',
+                  'min-h-[44px] flex items-center transition-colors',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                )}
+              >
+                View device
+              </Link>
+            )}
+
+            {/* Deactivate action for unreachable devices */}
+            {item.action === 'deactivate' && item.deviceType && item.deviceId && (
+              <button
+                onClick={() => onDeactivate(String(item.deviceType), String(item.deviceId))}
+                className={cn(
+                  'text-sm text-amber-400',
+                  'hover:bg-amber-500/10 rounded-lg px-3 py-2',
+                  'min-h-[44px] flex items-center transition-colors',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500',
+                )}
+              >
+                Deactivate
+              </button>
+            )}
+
+            {/* Reactivate action for devices that came back online */}
+            {item.action === 'reactivate' && item.deviceType && item.deviceId && (
+              <button
+                onClick={() => onReactivate(String(item.deviceType), String(item.deviceId))}
+                className={cn(
+                  'text-sm text-emerald-400',
+                  'hover:bg-emerald-500/10 rounded-lg px-3 py-2',
+                  'min-h-[44px] flex items-center transition-colors',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500',
+                )}
+              >
+                Reactivate
+              </button>
+            )}
+          </div>
+        )}
       </div>
-
-      {/* Device link — only when a deviceId is present */}
-      {item.deviceId !== null && (
-        <Link
-          to={item.deviceSource === 'kasa'
-            ? `/devices/kasa/${item.deviceId}`
-            : `/devices/${item.deviceId}`}
-          aria-label={`View device: ${item.deviceLabel ?? 'device'}`}
-          className={cn(
-            'shrink-0 text-sm text-fairy-400',
-            'hover:bg-fairy-500/10 rounded-lg px-3 py-2',
-            'min-h-[44px] flex items-center transition-colors',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
-        >
-          View device
-        </Link>
-      )}
-
-      {/* Deactivate action for unreachable devices */}
-      {item.action === 'deactivate' && item.deviceType && item.deviceId && (
-        <button
-          onClick={() => onDeactivate(String(item.deviceType), String(item.deviceId))}
-          className={cn(
-            'shrink-0 text-sm text-amber-400',
-            'hover:bg-amber-500/10 rounded-lg px-3 py-2',
-            'min-h-[44px] flex items-center transition-colors',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500',
-          )}
-        >
-          Deactivate
-        </button>
-      )}
-
-      {/* Reactivate action for devices that came back online */}
-      {item.action === 'reactivate' && item.deviceType && item.deviceId && (
-        <button
-          onClick={() => onReactivate(String(item.deviceType), String(item.deviceId))}
-          className={cn(
-            'shrink-0 text-sm text-emerald-400',
-            'hover:bg-emerald-500/10 rounded-lg px-3 py-2',
-            'min-h-[44px] flex items-center transition-colors',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500',
-          )}
-        >
-          Reactivate
-        </button>
-      )}
     </li>
   )
 }
