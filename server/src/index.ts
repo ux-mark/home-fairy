@@ -16,6 +16,7 @@ import motionRoutes from './routes/motion.js'
 import dashboardRoutes from './routes/dashboard.js'
 import kasaRoutes from './routes/kasa.js'
 import sonosRoutes from './routes/sonos.js'
+import deviceLinksRoutes from './routes/device-links.js'
 import { motionHandler } from './lib/motion-handler.js'
 import { sunModeScheduler } from './lib/sun-mode-scheduler.js'
 import { timeTriggerScheduler } from './lib/time-trigger-scheduler.js'
@@ -83,6 +84,7 @@ app.use('/api/motion', motionRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/kasa', kasaRoutes)
 app.use('/api/sonos', sonosRoutes)
+app.use('/api/device-links', deviceLinksRoutes)
 
 // Hubitat webhook handler
 app.post('/hubitat', async (req, res) => {

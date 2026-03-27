@@ -368,3 +368,10 @@
 - **Branch cleanup**: done
 - **Summary**: SensorCard, KasaDeviceCard, and AttentionBar ItemCard restructured from single-row to two-row layouts so text gets full width and metadata/actions wrap below
 - **Files**: `client/src/pages/DevicesPage.tsx`, `client/src/components/dashboard/AttentionBar.tsx`
+
+## PR #57 — Add Sonos to Kasa device linking
+- **Branch**: feature/sonos-kasa-linking → dev
+- **Created**: 2026-03-27
+- **Status**: open
+- **Summary**: Bidirectional Sonos↔Kasa device links. New device_links table (SQLite), CRUD API with live Kasa energy enrichment (watts, today cost, monthly cost). Power source accordion on Sonos detail page. Inbound link display on Kasa device detail page. Smart plug suggestion after speaker assignment on Sonos setup page.
+- **Files**: `server/src/db/index.ts`, `server/src/routes/device-links.ts` (new), `server/src/routes/sonos.ts`, `server/src/index.ts`, `client/src/lib/api.ts`, `client/src/pages/SonosDetailPage.tsx`, `client/src/pages/DeviceDetailPage.tsx`, `client/src/pages/SonosSetupPage.tsx`

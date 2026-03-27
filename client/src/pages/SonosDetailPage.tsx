@@ -2,9 +2,9 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as Switch from '@radix-ui/react-switch'
-import { Pencil, Volume2, VolumeX, Zap, CirclePause, CircleSlash } from 'lucide-react'
+import { Pencil, Volume2, VolumeX, Zap, CirclePause, CircleSlash, Plug, Link2, Unlink } from 'lucide-react'
 import { io, Socket } from 'socket.io-client'
-import { api, type Room, type AutoPlayRule } from '@/lib/api'
+import { api, type Room, type AutoPlayRule, type KasaDevice, type DeviceLink } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { BackLink } from '@/components/ui/BackLink'
 import { Accordion } from '@/components/ui/Accordion'
@@ -134,6 +134,215 @@ function SwitchRow({ id, label, description, checked, disabled, onCheckedChange 
   )
 }
 
+// ── PowerSourceSection ───────────────────────────────────────────────────────
+
+interface PowerSourceSectionProps {
+  roomName: string
+  links: DeviceLink[]
+  linksLoading: boolean
+  kasaDevices: KasaDevice[] | undefined
+  showPlugPicker: boolean
+  setShowPlugPicker: (v: boolean) => void
+  unlinkConfirmId: number | null
+  setUnlinkConfirmId: (id: number | null) => void
+  onLink: (kasaId: string) => void
+  onUnlink: (id: number) => void
+  linkPending: boolean
+  unlinkPending: boolean
+}
+
+function formatCost(cost: number | null | undefined, symbol: string): string {
+  if (cost == null) return '—'
+  return `${symbol}${cost.toFixed(2)}`
+}
+
+function PowerSourceSection({
+  roomName,
+  links,
+  linksLoading,
+  kasaDevices,
+  showPlugPicker,
+  setShowPlugPicker,
+  unlinkConfirmId,
+  setUnlinkConfirmId,
+  onLink,
+  onUnlink,
+  linkPending,
+  unlinkPending,
+}: PowerSourceSectionProps) {
+  const powerLinks = links.filter(l => l.linkType === 'power')
+  const linkedIds = new Set(powerLinks.map(l => l.targetId))
+
+  // Only show plugs/strips that have emeter
+  const eligiblePlugs = (kasaDevices ?? []).filter(
+    d => d.has_emeter && !d.parent_id && (d.device_type === 'plug' || d.device_type === 'strip' || d.device_type === 'outlet'),
+  )
+
+  return (
+    <section aria-labelledby={`power-source-heading-${roomName}`}>
+      <h3
+        id={`power-source-heading-${roomName}`}
+        className="mb-3 text-sm font-medium text-body"
+      >
+        Power source
+      </h3>
+
+      {linksLoading ? (
+        <div className="space-y-2">
+          <div className="h-14 animate-pulse rounded-lg bg-[var(--bg-tertiary)]" />
+        </div>
+      ) : powerLinks.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-[var(--border-secondary)] p-4">
+          <p className="text-sm text-caption">
+            No power source linked. Link a smart plug to track the energy cost of this speaker.
+          </p>
+          {!showPlugPicker && (
+            <button
+              onClick={() => setShowPlugPicker(true)}
+              className="mt-3 flex min-h-[44px] items-center gap-2 rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-heading transition-colors hover:bg-[var(--bg-tertiary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            >
+              <Plug className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+              Link a smart plug
+            </button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {powerLinks.map(link => {
+            const t = link.target
+            const isConfirming = unlinkConfirmId === link.id
+            return (
+              <div key={link.id} className="card rounded-xl border p-4">
+                <div className="flex flex-wrap items-start gap-3">
+                  <div className="rounded-full bg-fairy-500/10 p-1.5 text-fairy-400 shrink-0" aria-hidden="true">
+                    <Plug className="h-4 w-4" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-heading">
+                      {t?.label ?? link.targetId}
+                    </p>
+                    {t ? (
+                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-caption">
+                        <span>
+                          {t.isOnline ? (
+                            <span className="text-green-400">Online</span>
+                          ) : (
+                            <span className="text-slate-400">Offline</span>
+                          )}
+                        </span>
+                        {t.power != null && (
+                          <span>{t.power.toFixed(1)} W now</span>
+                        )}
+                        {t.todayCost != null && (
+                          <span>Today: {formatCost(t.todayCost, t.currencySymbol)}</span>
+                        )}
+                        {t.monthlyCost != null && (
+                          <span>This month: {formatCost(t.monthlyCost, t.currencySymbol)}</span>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="mt-0.5 text-xs text-caption">Device data unavailable</p>
+                    )}
+                  </div>
+                  {isConfirming ? (
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-body">Remove link?</span>
+                      <button
+                        onClick={() => onUnlink(link.id)}
+                        disabled={unlinkPending}
+                        className="flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {unlinkPending ? 'Removing...' : 'Remove'}
+                      </button>
+                      <button
+                        onClick={() => setUnlinkConfirmId(null)}
+                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-[var(--border-secondary)] px-3 py-2 text-sm text-heading transition-colors hover:bg-[var(--bg-tertiary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setUnlinkConfirmId(link.id)}
+                      className="flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                      aria-label={`Remove power source link for ${t?.label ?? link.targetId}`}
+                    >
+                      <Unlink className="h-4 w-4" aria-hidden="true" />
+                      Remove
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Plug picker */}
+      {showPlugPicker && (
+        <div className="mt-3 rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-secondary)] p-4">
+          <p className="mb-3 text-sm font-medium text-heading">Select a smart plug</p>
+          {eligiblePlugs.length === 0 ? (
+            <p className="text-sm text-caption">
+              No energy-monitoring smart plugs found. Make sure your Kasa devices are discovered and have energy monitoring enabled.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {eligiblePlugs.map(plug => {
+                const alreadyLinked = linkedIds.has(plug.id)
+                return (
+                  <button
+                    key={plug.id}
+                    onClick={() => !alreadyLinked && onLink(plug.id)}
+                    disabled={alreadyLinked || linkPending}
+                    className={cn(
+                      'flex w-full min-h-[44px] items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors',
+                      alreadyLinked
+                        ? 'cursor-default border-fairy-500/30 bg-fairy-500/10 text-fairy-400'
+                        : 'border-[var(--border-secondary)] text-heading hover:border-fairy-500/50 hover:bg-[var(--bg-tertiary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                      (linkPending && !alreadyLinked) && 'cursor-not-allowed opacity-50',
+                    )}
+                    aria-pressed={alreadyLinked}
+                  >
+                    <Plug className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+                    <span className="min-w-0 flex-1">{plug.label}</span>
+                    {alreadyLinked && (
+                      <span className="ml-auto shrink-0 text-xs text-fairy-400">
+                        <Link2 className="inline h-3 w-3 mr-0.5" aria-hidden="true" />
+                        Linked
+                      </span>
+                    )}
+                    {!alreadyLinked && !plug.is_online && (
+                      <span className="ml-auto shrink-0 text-xs text-slate-400">Offline</span>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          <button
+            onClick={() => setShowPlugPicker(false)}
+            className="mt-3 text-xs text-caption hover:text-body focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {/* Add another plug button (when links exist) */}
+      {powerLinks.length > 0 && !showPlugPicker && (
+        <button
+          onClick={() => setShowPlugPicker(true)}
+          className="mt-3 flex min-h-[44px] items-center gap-2 text-xs text-fairy-400 hover:text-fairy-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        >
+          <Plug className="h-3 w-3" aria-hidden="true" />
+          Link another plug
+        </button>
+      )}
+    </section>
+  )
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SonosDetailPage() {
@@ -145,6 +354,10 @@ export default function SonosDetailPage() {
   const [nowPlayingOpen, setNowPlayingOpen] = useState(true)
   const [configOpen, setConfigOpen] = useState(true)
   const [rulesOpen, setRulesOpen] = useState(true)
+
+  const [powerSourceOpen, setPowerSourceOpen] = useState(true)
+  const [showPlugPicker, setShowPlugPicker] = useState(false)
+  const [unlinkConfirmId, setUnlinkConfirmId] = useState<number | null>(null)
 
   // Room dropdown state
   const [roomDropdownOpen, setRoomDropdownOpen] = useState(false)
@@ -245,6 +458,20 @@ export default function SonosDetailPage() {
     staleTime: 60_000,
   })
 
+  const { data: deviceLinks = [], isLoading: linksLoading } = useQuery({
+    queryKey: ['device-links', 'sonos', assignedRoom?.name],
+    queryFn: () => api.deviceLinks.getForDevice('sonos', assignedRoom!.name),
+    enabled: !!assignedRoom?.name,
+    staleTime: 30_000,
+  })
+
+  const { data: kasaDevices } = useQuery({
+    queryKey: ['kasa', 'devices'],
+    queryFn: api.kasa.getDevices,
+    enabled: showPlugPicker,
+    staleTime: 30_000,
+  })
+
   // ── Socket subscription ──────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -342,6 +569,37 @@ export default function SonosDetailPage() {
       resetRuleForm()
     },
     onError: () => toast({ message: 'Failed to update rule', type: 'error' }),
+  })
+
+  const createLinkMutation = useMutation({
+    mutationFn: (kasaId: string) =>
+      api.deviceLinks.create({
+        source_type: 'sonos',
+        source_id: assignedRoom!.name,
+        target_type: 'kasa',
+        target_id: kasaId,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['device-links', 'sonos', assignedRoom?.name] })
+      setShowPlugPicker(false)
+      toast({ message: 'Smart plug linked as power source' })
+    },
+    onError: (err: Error) => {
+      const msg = err.message.includes('already exists')
+        ? 'That plug is already linked to this speaker.'
+        : 'Failed to link plug. Try again.'
+      toast({ message: msg, type: 'error' })
+    },
+  })
+
+  const deleteLinkMutation = useMutation({
+    mutationFn: (id: number) => api.deviceLinks.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['device-links', 'sonos', assignedRoom?.name] })
+      setUnlinkConfirmId(null)
+      toast({ message: 'Power source unlinked' })
+    },
+    onError: () => toast({ message: 'Failed to unlink. Try again.', type: 'error' }),
   })
 
   function resetRuleForm() {
@@ -1064,6 +1322,31 @@ export default function SonosDetailPage() {
               </p>
             )}
           </div>
+        </Accordion>
+      )}
+
+      {/* Power source */}
+      {assignedRoom && (
+        <Accordion
+          id="power-source"
+          title="Power source"
+          open={powerSourceOpen}
+          onToggle={() => setPowerSourceOpen(v => !v)}
+        >
+          <PowerSourceSection
+            roomName={assignedRoom.name}
+            links={deviceLinks}
+            linksLoading={linksLoading}
+            kasaDevices={kasaDevices}
+            showPlugPicker={showPlugPicker}
+            setShowPlugPicker={setShowPlugPicker}
+            unlinkConfirmId={unlinkConfirmId}
+            setUnlinkConfirmId={setUnlinkConfirmId}
+            onLink={kasaId => createLinkMutation.mutate(kasaId)}
+            onUnlink={id => deleteLinkMutation.mutate(id)}
+            linkPending={createLinkMutation.isPending}
+            unlinkPending={deleteLinkMutation.isPending}
+          />
         </Accordion>
       )}
     </div>

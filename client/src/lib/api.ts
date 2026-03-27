@@ -473,6 +473,26 @@ export interface EnergyInsights {
     percentAbove: number
     source?: 'hub' | 'kasa'
   }>
+  actualDailyCost: number | null
+  projectedDailyCost: number | null
+  monthToDateCost: number | null
+  lastMonthCost: number | null
+  monthOverMonthPercent: number | null
+  dailyOverUnderPercent: number | null
+  deviceCostRanking: Array<{
+    deviceId: number
+    label: string
+    roomName: string
+    monthlyKwh: number
+    monthlyCost: number
+    dailyAvgCost: number
+  }>
+  roomCostRanking: Array<{
+    roomName: string
+    dailyCost: number
+    monthToDateCost: number
+    deviceCount: number
+  }>
 }
 
 export interface TemperatureInsights {

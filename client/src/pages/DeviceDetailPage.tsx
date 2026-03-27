@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams, useMatch, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, Pencil, Check, X, Power, Shield, AlertTriangle } from 'lucide-react'
-import { api, type DeviceInsightsData, type KasaDevice } from '@/lib/api'
+import { ChevronRight, Pencil, Check, X, Power, Shield, AlertTriangle, Link2 } from 'lucide-react'
+import { api, type DeviceInsightsData, type KasaDevice, type DeviceLink } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
 import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
@@ -596,6 +596,29 @@ function KasaDeviceDetail({ id }: { id: string }) {
     staleTime: 60_000,
   })
 
+  const { data: deviceLinks = [] } = useQuery({
+    queryKey: ['device-links', 'kasa', id],
+    queryFn: () => api.deviceLinks.getForDevice('kasa', id),
+    staleTime: 30_000,
+  })
+
+  // Links where this Kasa device is the TARGET (i.e., which Sonos rooms use this as a power source)
+  const inboundLinks = deviceLinks.filter(
+    (l: DeviceLink) => l.targetType === 'kasa' && l.targetId === id,
+  )
+
+  const [unlinkKasaConfirmId, setUnlinkKasaConfirmId] = useState<number | null>(null)
+
+  const deleteLinkMutation = useMutation({
+    mutationFn: (linkId: number) => api.deviceLinks.delete(linkId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['device-links', 'kasa', id] })
+      setUnlinkKasaConfirmId(null)
+      toast({ message: 'Power source link removed' })
+    },
+    onError: () => toast({ message: 'Failed to remove link. Try again.', type: 'error' }),
+  })
+
   const assignRoomMutation = useMutation({
     mutationFn: (roomName: string) =>
       api.hubitat.assignDevice({ device_id: id, device_label: device?.label ?? '', device_type: 'kasa_' + (device?.device_type ?? 'plug'), room_name: roomName }),
@@ -876,6 +899,56 @@ function KasaDeviceDetail({ id }: { id: string }) {
 
       {/* ── 3. Kasa at-a-glance ────────────────────────────────────────── */}
       <KasaAtAGlance device={device} />
+
+      {/* ── Connected device (inbound power links) ──────────────────────── */}
+      {inboundLinks.length > 0 && (
+        <section aria-labelledby="connected-device-heading">
+          <div className="card rounded-xl border p-5">
+            <h2 id="connected-device-heading" className="mb-4 text-sm font-semibold text-heading">
+              Connected to speaker
+            </h2>
+            <div className="space-y-2">
+              {inboundLinks.map((link: DeviceLink) => {
+                const isConfirming = unlinkKasaConfirmId === link.id
+                return (
+                  <div key={link.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border-secondary)] p-3">
+                    <Link2 className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+                    <span className="min-w-0 flex-1 text-sm text-heading">
+                      Power source for <strong>{link.sourceId}</strong>
+                    </span>
+                    {isConfirming ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-body">Remove link?</span>
+                        <button
+                          onClick={() => deleteLinkMutation.mutate(link.id)}
+                          disabled={deleteLinkMutation.isPending}
+                          className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-sm font-medium text-red-400 hover:bg-red-500/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 disabled:opacity-50"
+                        >
+                          {deleteLinkMutation.isPending ? 'Removing...' : 'Remove'}
+                        </button>
+                        <button
+                          onClick={() => setUnlinkKasaConfirmId(null)}
+                          className="flex min-h-[44px] items-center rounded-lg border border-[var(--border-secondary)] px-3 py-2 text-sm text-heading hover:bg-[var(--bg-tertiary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setUnlinkKasaConfirmId(link.id)}
+                        className="flex min-h-[44px] items-center gap-1.5 rounded-lg px-3 py-2 text-xs text-caption hover:text-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                        aria-label={`Remove power source link for ${link.sourceId}`}
+                      >
+                        Remove link
+                      </button>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* ── 3. History charts ─────────────────────────────────────────────── */}
       {historySources.length > 0 && (
