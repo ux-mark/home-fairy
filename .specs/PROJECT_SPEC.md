@@ -10,6 +10,9 @@ The Fairies v3 — a home automation control system with a React frontend and Ex
 - **Database**: SQLite with WAL mode. Tables: rooms, scenes, scene_rooms, scene_modes, room_auto_scenes, modes, mode_triggers, light_rooms, device_rooms, hub_devices, kasa_devices, sonos_speakers, sonos_auto_play, current_state, logs, device_history, room_activity, notifications
 - **Package manager**: npm
 - **Process manager (production)**: PM2
+- **External services (managed by PM2)**:
+  - `kasa-sidecar` — Python FastAPI sidecar for Kasa device control (port 3002, source: `server/kasa/`)
+  - `sonos-http-api` — [node-sonos-http-api](https://github.com/jishi/node-sonos-http-api) for Sonos speaker control (port 3003, installed at `~/node-sonos-http-api/`)
 
 ## Project Structure
 ```
