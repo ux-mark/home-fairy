@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Pencil, Zap, CirclePause, CircleSlash } from 'lucide-react'
@@ -11,6 +11,7 @@ import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
 import { PillSelect } from '@/components/ui/PillSelect'
 import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
 import { Section } from './Section'
+import { getAvailableSources } from '@/lib/sonos-sources'
 
 // ── Connection status ────────────────────────────────────────────────────────
 
@@ -120,6 +121,7 @@ function AddRuleForm({
   favourites,
   modes,
   isSaving,
+  availableSources,
 }: {
   onSave: (data: Omit<AutoPlayRule, 'id'>) => void
   onCancel: () => void
@@ -127,11 +129,12 @@ function AddRuleForm({
   favourites: SonosFavourite[]
   modes: string[]
   isSaving: boolean
+  availableSources: string[]
 }) {
   const [targetRoom, setTargetRoom] = useState<string>('')
   const [favourite, setFavourite] = useState<string>('')
   const [mode, setMode] = useState<string>(modes[0] ?? '')
-  const [triggerType, setTriggerType] = useState<TriggerType>('mode_change')
+  const [triggerType, setTriggerType] = useState<TriggerType>('if_not_playing')
   const [sourceValue, setSourceValue] = useState<string>('')
 
   const effectiveTrigger = favourite === '__continue__' ? 'mode_change' : triggerType
@@ -202,8 +205,8 @@ function AddRuleForm({
           <CardRadioGroup
             name="trigger-type"
             options={[
-              { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
               { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
+              { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
               { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
             ]}
             value={triggerType}
@@ -213,15 +216,14 @@ function AddRuleForm({
           {triggerType === 'if_source_not' && (
             <div className="mt-3">
               <label htmlFor="rule-source" className="text-caption text-xs mb-1.5 block">
-                Source name
+                Source
               </label>
-              <input
+              <PillSelect
                 id="rule-source"
-                type="text"
+                options={availableSources.map(s => ({ value: s, label: s }))}
                 value={sourceValue}
-                onChange={(e) => setSourceValue(e.target.value)}
-                placeholder="e.g. Spotify"
-                className="w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                onChange={setSourceValue}
+                aria-label="Select a source"
               />
             </div>
           )}
@@ -258,7 +260,7 @@ export function MusicSection() {
   const [editRoom, setEditRoom] = useState('')
   const [editFavourite, setEditFavourite] = useState('')
   const [editMode, setEditMode] = useState('')
-  const [editTriggerType, setEditTriggerType] = useState<AutoPlayRule['trigger_type']>('mode_change')
+  const [editTriggerType, setEditTriggerType] = useState<AutoPlayRule['trigger_type']>('if_not_playing')
   const [editSourceValue, setEditSourceValue] = useState('')
 
   // Preferences
@@ -350,7 +352,7 @@ export function MusicSection() {
     setEditRoom('')
     setEditFavourite('')
     setEditMode('')
-    setEditTriggerType('mode_change')
+    setEditTriggerType('if_not_playing')
     setEditSourceValue('')
   }
 
@@ -363,6 +365,8 @@ export function MusicSection() {
     setEditTriggerType(rule.trigger_type)
     setEditSourceValue(rule.trigger_value ?? '')
   }
+
+  const availableSources = useMemo(() => getAvailableSources(favourites ?? []), [favourites])
 
   const modeNames = modes?.map((m) => m.name) ?? []
   const assignedRooms = speakers?.map((s) => s.room_name) ?? []
@@ -468,8 +472,8 @@ export function MusicSection() {
                         <CardRadioGroup
                           name="settings-edit-trigger-type"
                           options={[
-                            { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
                             { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
+                            { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
                             { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
                           ]}
                           value={editTriggerType}
@@ -478,8 +482,14 @@ export function MusicSection() {
                         />
                         {editTriggerType === 'if_source_not' && (
                           <div className="mt-3">
-                            <label htmlFor="settings-edit-source" className="text-caption text-xs mb-1.5 block">Source name</label>
-                            <input id="settings-edit-source" type="text" value={editSourceValue} onChange={e => setEditSourceValue(e.target.value)} placeholder="e.g. Spotify" className="w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500" />
+                            <label htmlFor="settings-edit-source" className="text-caption text-xs mb-1.5 block">Source</label>
+                            <PillSelect
+                              id="settings-edit-source"
+                              options={availableSources.map(s => ({ value: s, label: s }))}
+                              value={editSourceValue}
+                              onChange={setEditSourceValue}
+                              aria-label="Select a source"
+                            />
                           </div>
                         )}
                       </div>
@@ -599,6 +609,7 @@ export function MusicSection() {
               favourites={favourites ?? []}
               modes={modeNames}
               isSaving={createRuleMutation.isPending}
+              availableSources={availableSources}
             />
           ) : !editingRuleId && (
             <button

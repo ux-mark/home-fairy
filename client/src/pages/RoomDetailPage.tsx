@@ -39,6 +39,7 @@ import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
 import { PillSelect } from '@/components/ui/PillSelect'
 import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
 import { getScenesForRoom, getModesForRoom, getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
+import { getAvailableSources } from '@/lib/sonos-sources'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -336,7 +337,7 @@ export default function RoomDetailPage() {
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
   const [newRuleFavourite, setNewRuleFavourite] = useState('')
   const [newRuleMode, setNewRuleMode] = useState('')
-  const [newRuleTriggerType, setNewRuleTriggerType] = useState<'mode_change' | 'if_not_playing' | 'if_source_not'>('mode_change')
+  const [newRuleTriggerType, setNewRuleTriggerType] = useState<'mode_change' | 'if_not_playing' | 'if_source_not'>('if_not_playing')
   const [newRuleSourceValue, setNewRuleSourceValue] = useState('')
 
   // Open groups state for available lights and devices
@@ -506,6 +507,8 @@ export default function RoomDetailPage() {
     () => autoPlayRules?.filter(r => r.room_name === name) ?? [],
     [autoPlayRules, name],
   )
+
+  const availableSources = useMemo(() => getAvailableSources(sonosFavourites ?? []), [sonosFavourites])
 
   // Fetch default scene assignments for this room
   const { data: roomDefaultScenes } = useQuery({
@@ -818,7 +821,7 @@ export default function RoomDetailPage() {
     setEditingRuleId(null)
     setNewRuleFavourite('')
     setNewRuleMode('')
-    setNewRuleTriggerType('mode_change')
+    setNewRuleTriggerType('if_not_playing')
     setNewRuleSourceValue('')
   }
 
@@ -1404,8 +1407,8 @@ export default function RoomDetailPage() {
                                   <CardRadioGroup
                                     name="room-edit-trigger-type"
                                     options={[
-                                      { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
                                       { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
+                                      { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
                                       { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
                                     ]}
                                     value={newRuleTriggerType}
@@ -1414,8 +1417,14 @@ export default function RoomDetailPage() {
                                   />
                                   {newRuleTriggerType === 'if_source_not' && (
                                     <div className="mt-3">
-                                      <label htmlFor="room-edit-rule-source" className="text-caption text-xs mb-1.5 block">Source name</label>
-                                      <input id="room-edit-rule-source" type="text" value={newRuleSourceValue} onChange={e => setNewRuleSourceValue(e.target.value)} placeholder="e.g. Spotify" className="w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500" />
+                                      <label htmlFor="room-edit-rule-source" className="text-caption text-xs mb-1.5 block">Source</label>
+                                      <PillSelect
+                                        id="room-edit-rule-source"
+                                        options={availableSources.map(s => ({ value: s, label: s }))}
+                                        value={newRuleSourceValue}
+                                        onChange={setNewRuleSourceValue}
+                                        aria-label="Select a source"
+                                      />
                                     </div>
                                   )}
                                 </div>
@@ -1553,8 +1562,8 @@ export default function RoomDetailPage() {
                           <CardRadioGroup
                             name="room-detail-trigger-type"
                             options={[
-                              { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
                               { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
+                              { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
                               { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
                             ]}
                             value={newRuleTriggerType}
@@ -1563,8 +1572,14 @@ export default function RoomDetailPage() {
                           />
                           {newRuleTriggerType === 'if_source_not' && (
                             <div className="mt-3">
-                              <label htmlFor="room-detail-rule-source" className="text-caption text-xs mb-1.5 block">Source name</label>
-                              <input id="room-detail-rule-source" type="text" value={newRuleSourceValue} onChange={e => setNewRuleSourceValue(e.target.value)} placeholder="e.g. Spotify" className="w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500" />
+                              <label htmlFor="room-detail-rule-source" className="text-caption text-xs mb-1.5 block">Source</label>
+                              <PillSelect
+                                id="room-detail-rule-source"
+                                options={availableSources.map(s => ({ value: s, label: s }))}
+                                value={newRuleSourceValue}
+                                onChange={setNewRuleSourceValue}
+                                aria-label="Select a source"
+                              />
                             </div>
                           )}
                         </div>

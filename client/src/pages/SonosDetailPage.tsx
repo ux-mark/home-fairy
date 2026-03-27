@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as Switch from '@radix-ui/react-switch'
 import { Pencil, Volume2, VolumeX, Zap, CirclePause, CircleSlash } from 'lucide-react'
 import { io, Socket } from 'socket.io-client'
 import { api, type Room, type AutoPlayRule } from '@/lib/api'
+import { getAvailableSources } from '@/lib/sonos-sources'
 import { cn } from '@/lib/utils'
 import { BackLink } from '@/components/ui/BackLink'
 import { Accordion } from '@/components/ui/Accordion'
@@ -148,7 +149,7 @@ export default function SonosDetailPage() {
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
   const [newRuleFavourite, setNewRuleFavourite] = useState('')
   const [newRuleMode, setNewRuleMode] = useState('')
-  const [newRuleTriggerType, setNewRuleTriggerType] = useState<AutoPlayRule['trigger_type']>('mode_change')
+  const [newRuleTriggerType, setNewRuleTriggerType] = useState<AutoPlayRule['trigger_type']>('if_not_playing')
   const [newRuleSourceValue, setNewRuleSourceValue] = useState('')
 
   // Local default volume (slider) -- tracked as delta from server value
@@ -198,6 +199,7 @@ export default function SonosDetailPage() {
   const speakerMapping = speakers?.find(s => s.speaker_name === speaker)
   const assignedRoom: Room | undefined = rooms?.find(r => r.name === speakerMapping?.room_name)
   const assignedRoomRules = autoPlayRules?.filter(r => r.room_name === assignedRoom?.name) ?? []
+  const availableSources = useMemo(() => getAvailableSources(favourites ?? []), [favourites])
 
   // ── Socket subscription ──────────────────────────────────────────────────────
 
@@ -303,7 +305,7 @@ export default function SonosDetailPage() {
     setEditingRuleId(null)
     setNewRuleFavourite('')
     setNewRuleMode('')
-    setNewRuleTriggerType('mode_change')
+    setNewRuleTriggerType('if_not_playing')
     setNewRuleSourceValue('')
   }
 
@@ -691,8 +693,8 @@ export default function SonosDetailPage() {
                             <CardRadioGroup
                               name="edit-trigger-type"
                               options={[
-                                { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
                                 { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
+                                { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
                                 { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
                               ]}
                               value={newRuleTriggerType}
@@ -701,14 +703,13 @@ export default function SonosDetailPage() {
                             />
                             {newRuleTriggerType === 'if_source_not' && (
                               <div className="mt-3">
-                                <label htmlFor="edit-rule-source" className="text-caption text-xs mb-1.5 block">Source name</label>
-                                <input
+                                <label htmlFor="edit-rule-source" className="text-caption text-xs mb-1.5 block">Source</label>
+                                <PillSelect
                                   id="edit-rule-source"
-                                  type="text"
+                                  options={availableSources.map(s => ({ value: s, label: s }))}
                                   value={newRuleSourceValue}
-                                  onChange={e => setNewRuleSourceValue(e.target.value)}
-                                  placeholder="e.g. Spotify"
-                                  className="w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                                  onChange={setNewRuleSourceValue}
+                                  aria-label="Select a source"
                                 />
                               </div>
                             )}
@@ -863,8 +864,8 @@ export default function SonosDetailPage() {
                     <CardRadioGroup
                       name="detail-trigger-type"
                       options={[
-                        { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
                         { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
+                        { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
                         { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
                       ]}
                       value={newRuleTriggerType}
@@ -874,15 +875,14 @@ export default function SonosDetailPage() {
                     {newRuleTriggerType === 'if_source_not' && (
                       <div className="mt-3">
                         <label htmlFor="detail-rule-source" className="text-caption text-xs mb-1.5 block">
-                          Source name
+                          Source
                         </label>
-                        <input
+                        <PillSelect
                           id="detail-rule-source"
-                          type="text"
+                          options={availableSources.map(s => ({ value: s, label: s }))}
                           value={newRuleSourceValue}
-                          onChange={e => setNewRuleSourceValue(e.target.value)}
-                          placeholder="e.g. Spotify"
-                          className="w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                          onChange={setNewRuleSourceValue}
+                          aria-label="Select a source"
                         />
                       </div>
                     )}
