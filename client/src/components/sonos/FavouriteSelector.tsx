@@ -4,22 +4,30 @@ import type { SonosFavourite } from '@/lib/api'
 
 // ── Content type classification by URI prefix ────────────────────────────────
 
-const CONTENT_TYPES = [
-  { prefix: 'x-sonos-spotify:spotify:playlist:', label: 'Spotify playlists' },
-  { prefix: 'x-sonos-spotify:spotify:album:', label: 'Spotify albums' },
-  { prefix: 'x-sonos-spotify:spotify:track:', label: 'Spotify tracks' },
-  { prefix: 'x-rincon-stream:', label: 'Radio streams' },
-  { prefix: 'x-sonosapi-stream:', label: 'Sonos Radio' },
-  { prefix: 'x-sonos-htastream:', label: 'TV and HDMI' },
-  { prefix: 'x-file-cifs:', label: 'Local library' },
-  { prefix: 'x-rincon-cpcontainer:', label: 'Sonos playlists' },
-] as const
-
 function getContentType(uri?: string): string {
   if (!uri) return 'Other'
-  for (const ct of CONTENT_TYPES) {
-    if (uri.startsWith(ct.prefix)) return ct.label
+
+  // Spotify content comes via x-rincon-cpcontainer or x-sonos-spotify
+  if (uri.includes('spotify')) {
+    const decoded = decodeURIComponent(uri).toLowerCase()
+    if (decoded.includes('playlist')) return 'Playlists'
+    if (decoded.includes('album')) return 'Albums'
+    if (decoded.includes('track')) return 'Tracks'
+    return 'Spotify'
   }
+
+  // Radio streams (TuneIn, Sonos Radio, etc.)
+  if (uri.startsWith('x-sonosapi-stream:') || uri.startsWith('x-rincon-stream:')) return 'Radio'
+
+  // TV / HDMI input
+  if (uri.startsWith('x-sonos-htastream:')) return 'TV and HDMI'
+
+  // Local library
+  if (uri.startsWith('x-file-cifs:')) return 'Local library'
+
+  // Sonos containers (non-Spotify)
+  if (uri.startsWith('x-rincon-cpcontainer:')) return 'Playlists'
+
   return 'Other'
 }
 
@@ -52,10 +60,11 @@ export function FavouriteSelector({
       typeMap.set(type, list)
     }
 
-    // Stable ordering: follow CONTENT_TYPES order, then "Other" at end
+    // Stable ordering: preferred order, then "Other" at end
+    const TYPE_ORDER = ['Radio', 'Playlists', 'Albums', 'Tracks', 'Spotify', 'TV and HDMI', 'Local library']
     const orderedTypes: string[] = []
-    for (const ct of CONTENT_TYPES) {
-      if (typeMap.has(ct.label)) orderedTypes.push(ct.label)
+    for (const t of TYPE_ORDER) {
+      if (typeMap.has(t)) orderedTypes.push(t)
     }
     if (typeMap.has('Other')) orderedTypes.push('Other')
 

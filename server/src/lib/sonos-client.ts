@@ -128,7 +128,7 @@ class SonosClient {
       const zones = await this.getZones()
       if (zones.length === 0) return []
       const speaker = zones[0].coordinator.roomName
-      const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/favorites`)
+      const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/favorites/detailed`)
       // API returns an array of objects or strings
       if (Array.isArray(data)) {
         return data.map((item: unknown) => {
@@ -137,7 +137,7 @@ class SonosClient {
           return {
             title: String(obj.title ?? ''),
             uri: obj.uri ? String(obj.uri) : undefined,
-            albumArtURI: obj.albumArtURI ? String(obj.albumArtURI) : undefined,
+            albumArtURI: (obj.albumArtUri ?? obj.albumArtURI) ? String(obj.albumArtUri ?? obj.albumArtURI) : undefined,
           }
         })
       }
