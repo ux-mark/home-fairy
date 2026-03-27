@@ -27,6 +27,7 @@ interface AutoPlayRow {
   trigger_type: 'mode_change' | 'if_not_playing' | 'if_source_not'
   trigger_value: string | null
   enabled: number
+  max_plays: number | null
 }
 
 interface SpeakerTimer {
@@ -45,6 +46,8 @@ class SonosManager {
   private zoneRefreshTimer: NodeJS.Timeout | null = null
   private consecutiveFailures = 0
   private isRoomLockedFn: ((roomName: string) => boolean) | null = null
+  private rulePlayCounts: Map<number, number> = new Map()
+  private currentMode: string | null = null
 
   init(): void {
     this.loadRoomSpeakerMap()
@@ -239,6 +242,11 @@ class SonosManager {
   }
 
   async onModeChange(newMode: string): Promise<void> {
+    if (newMode !== this.currentMode) {
+      this.rulePlayCounts.clear()
+      this.currentMode = newMode
+    }
+
     const rules = getAll<AutoPlayRow>(
       'SELECT * FROM sonos_auto_play WHERE mode_name = ? AND enabled = 1',
       [newMode],
@@ -256,6 +264,15 @@ class SonosManager {
   }
 
   private async evaluateAutoPlayRule(rule: AutoPlayRow): Promise<void> {
+    // Check repeat limit before any other logic
+    if (rule.max_plays !== null) {
+      const count = this.rulePlayCounts.get(rule.id) ?? 0
+      if (count >= rule.max_plays) {
+        log(`Auto-play rule ${rule.id}: repeat limit reached (${count}/${rule.max_plays})`)
+        return
+      }
+    }
+
     // Determine target speaker
     let targetSpeaker: string | null = null
 
@@ -309,11 +326,13 @@ class SonosManager {
     // "Continue what's already playing" — conditions passed, nothing to change
     if (rule.favourite_name === '__continue__') {
       log(`Auto-play rule ${rule.id}: continuing current playback`)
+      this.rulePlayCounts.set(rule.id, (this.rulePlayCounts.get(rule.id) ?? 0) + 1)
       return
     }
 
     log(`Auto-play rule ${rule.id}: playing "${rule.favourite_name}" on ${targetSpeaker}`)
     await sonosClient.playFavourite(targetSpeaker, rule.favourite_name)
+    this.rulePlayCounts.set(rule.id, (this.rulePlayCounts.get(rule.id) ?? 0) + 1)
     emit('sonos:playback-update', { speaker: targetSpeaker })
   }
 

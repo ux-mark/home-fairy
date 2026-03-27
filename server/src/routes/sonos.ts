@@ -209,14 +209,15 @@ const autoPlaySchema = z.object({
   trigger_type: z.enum(['mode_change', 'if_not_playing', 'if_source_not']),
   trigger_value: z.string().nullable().optional(),
   enabled: z.union([z.boolean(), z.number()]).optional().default(true),
+  max_plays: z.number().int().min(1).nullable().optional(),
 })
 
 router.post('/auto-play', (req: Request, res: Response) => {
   try {
     const data = autoPlaySchema.parse(req.body)
     const result = run(
-      `INSERT INTO sonos_auto_play (room_name, mode_name, favourite_name, trigger_type, trigger_value, enabled)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO sonos_auto_play (room_name, mode_name, favourite_name, trigger_type, trigger_value, enabled, max_plays)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         data.room_name ?? null,
         data.mode_name,
@@ -224,6 +225,7 @@ router.post('/auto-play', (req: Request, res: Response) => {
         data.trigger_type,
         data.trigger_value ?? null,
         data.enabled ? 1 : 0,
+        data.max_plays ?? null,
       ],
     )
     const created = getOne('SELECT * FROM sonos_auto_play WHERE id = ?', [result.lastInsertRowid])
@@ -246,6 +248,7 @@ const autoPlayUpdateSchema = z.object({
   trigger_type: z.enum(['mode_change', 'if_not_playing', 'if_source_not']).optional(),
   trigger_value: z.string().nullable().optional(),
   enabled: z.union([z.boolean(), z.number()]).optional(),
+  max_plays: z.number().int().min(1).nullable().optional(),
 })
 
 router.put('/auto-play/:id', (req: Request, res: Response) => {
@@ -267,6 +270,7 @@ router.put('/auto-play/:id', (req: Request, res: Response) => {
     if (data.trigger_type !== undefined) { updates.push('trigger_type = ?'); params.push(data.trigger_type) }
     if (data.trigger_value !== undefined) { updates.push('trigger_value = ?'); params.push(data.trigger_value) }
     if (data.enabled !== undefined) { updates.push('enabled = ?'); params.push(data.enabled ? 1 : 0) }
+    if (data.max_plays !== undefined) { updates.push('max_plays = ?'); params.push(data.max_plays) }
 
     if (updates.length > 0) {
       updates.push("updated_at = datetime('now')")

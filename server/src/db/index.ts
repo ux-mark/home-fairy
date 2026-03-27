@@ -237,6 +237,13 @@ export function initDb(): void {
     );
   `)
 
+  // Add max_plays column to sonos_auto_play table if it doesn't exist
+  const autoPlayCols = db.prepare("PRAGMA table_info('sonos_auto_play')").all() as { name: string }[]
+  const autoPlayColNames = autoPlayCols.map(c => c.name)
+  if (!autoPlayColNames.includes('max_plays')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN max_plays INTEGER DEFAULT NULL')
+  }
+
   // Add sonos columns to rooms table if they don't exist
   const roomCols = db.prepare("PRAGMA table_info('rooms')").all() as { name: string }[]
   const colNames = roomCols.map(c => c.name)

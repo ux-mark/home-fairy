@@ -338,6 +338,7 @@ export default function RoomDetailPage() {
   const [newRuleMode, setNewRuleMode] = useState('')
   const [newRuleTriggerType, setNewRuleTriggerType] = useState<'mode_change' | 'if_not_playing' | 'if_source_not'>('if_not_playing')
   const [newRuleSourceValue, setNewRuleSourceValue] = useState('')
+  const [newRuleMaxPlays, setNewRuleMaxPlays] = useState<string>('')
 
   // Open groups state for available lights and devices
   const [openLightGroups, setOpenLightGroups] = useState<Set<string>>(new Set())
@@ -835,6 +836,7 @@ export default function RoomDetailPage() {
     setNewRuleMode('')
     setNewRuleTriggerType('if_not_playing')
     setNewRuleSourceValue('')
+    setNewRuleMaxPlays('')
   }
 
   function openEditRule(rule: AutoPlayRule) {
@@ -844,6 +846,7 @@ export default function RoomDetailPage() {
     setNewRuleMode(rule.mode_name)
     setNewRuleTriggerType(rule.trigger_type)
     setNewRuleSourceValue(rule.trigger_value ?? '')
+    setNewRuleMaxPlays(rule.max_plays !== null ? String(rule.max_plays) : '')
   }
 
   const createAutoPlayRuleMutation = useMutation({
@@ -1393,6 +1396,10 @@ export default function RoomDetailPage() {
                         let conditionText: string | undefined
                         if (rule.trigger_type === 'if_not_playing') conditionText = 'Only if nothing is playing.'
                         else if (rule.trigger_type === 'if_source_not' && rule.trigger_value) conditionText = `Only if "${rule.trigger_value}" is not active.`
+                        if (rule.max_plays !== null) {
+                          const limitText = rule.max_plays === 1 ? 'Plays once per mode change.' : `Plays ${rule.max_plays} times per mode change.`
+                          conditionText = conditionText ? `${conditionText} ${limitText}` : limitText
+                        }
 
                         if (isEditing) {
                           return (
@@ -1450,6 +1457,26 @@ export default function RoomDetailPage() {
                                 </div>
                               )}
 
+                              {/* Repeat limit */}
+                              <div>
+                                <p className="text-heading text-sm mb-1.5">Repeat limit</p>
+                                <p className="text-caption text-xs mb-2">
+                                  How many times this rule fires per mode change
+                                </p>
+                                <PillSelect
+                                  id="room-edit-rule-max-plays"
+                                  options={[
+                                    { value: '', label: 'Unlimited' },
+                                    { value: '1', label: 'Once' },
+                                    { value: '2', label: '2 times' },
+                                    { value: '3', label: '3 times' },
+                                    { value: '5', label: '5 times' },
+                                  ]}
+                                  value={newRuleMaxPlays}
+                                  onChange={setNewRuleMaxPlays}
+                                />
+                              </div>
+
                               <div className="flex items-center gap-2 pt-1">
                                 <button
                                   onClick={() => {
@@ -1462,6 +1489,7 @@ export default function RoomDetailPage() {
                                         favourite_name: newRuleFavourite,
                                         trigger_type: effectiveTrigger,
                                         trigger_value: effectiveTrigger === 'if_source_not' ? newRuleSourceValue : null,
+                                        max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
                                       },
                                     })
                                   }}
@@ -1605,6 +1633,26 @@ export default function RoomDetailPage() {
                         </div>
                       )}
 
+                      {/* Repeat limit */}
+                      <div>
+                        <p className="text-heading text-sm mb-1.5">Repeat limit</p>
+                        <p className="text-caption text-xs mb-2">
+                          How many times this rule fires per mode change
+                        </p>
+                        <PillSelect
+                          id="room-add-rule-max-plays"
+                          options={[
+                            { value: '', label: 'Unlimited' },
+                            { value: '1', label: 'Once' },
+                            { value: '2', label: '2 times' },
+                            { value: '3', label: '3 times' },
+                            { value: '5', label: '5 times' },
+                          ]}
+                          value={newRuleMaxPlays}
+                          onChange={setNewRuleMaxPlays}
+                        />
+                      </div>
+
                       <div className="flex items-center gap-2 pt-1">
                         <button
                           onClick={() => {
@@ -1617,6 +1665,7 @@ export default function RoomDetailPage() {
                               trigger_type: effectiveTrigger,
                               trigger_value: effectiveTrigger === 'if_source_not' ? newRuleSourceValue : null,
                               enabled: 1,
+                              max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
                             })
                           }}
                           disabled={!newRuleFavourite || !newRuleMode || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || createAutoPlayRuleMutation.isPending}

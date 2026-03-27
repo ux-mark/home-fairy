@@ -106,6 +106,12 @@ function ruleDescription(rule: AutoPlayRule): { main: string; condition?: string
     const source = rule.trigger_value ? ` "${rule.trigger_value}"` : ''
     condition = `Only if source${source} is not active.`
   }
+
+  if (rule.max_plays !== null) {
+    const limitText = rule.max_plays === 1 ? 'Plays once per mode change.' : `Plays ${rule.max_plays} times per mode change.`
+    condition = condition ? `${condition} ${limitText}` : limitText
+  }
+
   return { main, condition }
 }
 
@@ -135,6 +141,7 @@ function AddRuleForm({
   const [mode, setMode] = useState<string>(modes[0] ?? '')
   const [triggerType, setTriggerType] = useState<TriggerType>('if_not_playing')
   const [sourceValue, setSourceValue] = useState<string>('')
+  const [maxPlays, setMaxPlays] = useState<string>('')
 
   const effectiveTrigger = favourite === '__continue__' ? 'mode_change' : triggerType
   const isValid = favourite && mode && !(triggerType === 'if_source_not' && favourite !== '__continue__' && !sourceValue)
@@ -148,7 +155,9 @@ function AddRuleForm({
       trigger_type: effectiveTrigger,
       trigger_value: effectiveTrigger === 'if_source_not' ? sourceValue : null,
       enabled: 1,
+      max_plays: maxPlays ? Number(maxPlays) : null,
     })
+    setMaxPlays('')
   }
 
 
@@ -229,6 +238,26 @@ function AddRuleForm({
         </div>
       )}
 
+      {/* Repeat limit */}
+      <div>
+        <p className="text-heading text-sm mb-1.5">Repeat limit</p>
+        <p className="text-caption text-xs mb-2">
+          How many times this rule fires per mode change
+        </p>
+        <PillSelect
+          id="add-rule-max-plays"
+          options={[
+            { value: '', label: 'Unlimited' },
+            { value: '1', label: 'Once' },
+            { value: '2', label: '2 times' },
+            { value: '3', label: '3 times' },
+            { value: '5', label: '5 times' },
+          ]}
+          value={maxPlays}
+          onChange={setMaxPlays}
+        />
+      </div>
+
       {/* Actions */}
       <div className="flex items-center gap-2 pt-1">
         <button
@@ -261,6 +290,7 @@ export function MusicSection() {
   const [editMode, setEditMode] = useState('')
   const [editTriggerType, setEditTriggerType] = useState<AutoPlayRule['trigger_type']>('if_not_playing')
   const [editSourceValue, setEditSourceValue] = useState('')
+  const [editMaxPlays, setEditMaxPlays] = useState<string>('')
 
   // Preferences
   const { data: prefs } = useQuery({
@@ -353,6 +383,7 @@ export function MusicSection() {
     setEditMode('')
     setEditTriggerType('if_not_playing')
     setEditSourceValue('')
+    setEditMaxPlays('')
   }
 
   function openEditRule(rule: AutoPlayRule) {
@@ -363,6 +394,7 @@ export function MusicSection() {
     setEditMode(rule.mode_name)
     setEditTriggerType(rule.trigger_type)
     setEditSourceValue(rule.trigger_value ?? '')
+    setEditMaxPlays(rule.max_plays !== null ? String(rule.max_plays) : '')
   }
 
   const { data: availableSources } = useQuery({
@@ -498,6 +530,26 @@ export function MusicSection() {
                       </div>
                     )}
 
+                    {/* Repeat limit */}
+                    <div>
+                      <p className="text-heading text-sm mb-1.5">Repeat limit</p>
+                      <p className="text-caption text-xs mb-2">
+                        How many times this rule fires per mode change
+                      </p>
+                      <PillSelect
+                        id="settings-edit-max-plays"
+                        options={[
+                          { value: '', label: 'Unlimited' },
+                          { value: '1', label: 'Once' },
+                          { value: '2', label: '2 times' },
+                          { value: '3', label: '3 times' },
+                          { value: '5', label: '5 times' },
+                        ]}
+                        value={editMaxPlays}
+                        onChange={setEditMaxPlays}
+                      />
+                    </div>
+
                     <div className="flex items-center gap-2 pt-1">
                       <button
                         onClick={() => {
@@ -510,6 +562,7 @@ export function MusicSection() {
                               favourite_name: editFavourite,
                               trigger_type: effectiveTrigger,
                               trigger_value: effectiveTrigger === 'if_source_not' ? editSourceValue : null,
+                              max_plays: editMaxPlays ? Number(editMaxPlays) : null,
                             },
                           })
                         }}

@@ -658,6 +658,7 @@ export interface AutoPlayRule {
   trigger_type: 'mode_change' | 'if_not_playing' | 'if_source_not'
   trigger_value: string | null
   enabled: number
+  max_plays: number | null
 }
 
 export interface FollowMeStatus {
