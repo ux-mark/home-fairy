@@ -543,7 +543,16 @@ export default function RoomDetailPage() {
   const effectiveTimer = timer ?? room?.timer ?? 0
   const effectiveAuto = autoEnabled ?? room?.auto ?? false
   const effectiveParent = parentRoom ?? room?.parent_room ?? ''
-  const effectiveSensors = sensors ?? room?.sensors ?? []
+  const effectiveSensors = (sensors ?? room?.sensors ?? []).map(s => {
+    // Resolve current name from hub devices (handles renamed sensors)
+    if (s.id && allHubDevices) {
+      const hubDevice = allHubDevices.find(d => String(d.id) === s.id)
+      if (hubDevice && hubDevice.label !== s.name) {
+        return { ...s, name: hubDevice.label }
+      }
+    }
+    return s
+  })
 
   // Light assignment state
   const [assigned, setAssigned] = useState<LightAssignment[] | null>(null)
@@ -927,7 +936,13 @@ export default function RoomDetailPage() {
       const currentSensorIds = new Set((room?.sensors ?? []).map(s => s.id))
       const newSensorIds = new Set(effectiveSensors
         .filter(s => s.name)
-        .map(s => String(allHubDevices!.find(d => d.label === s.name)!.id)))
+        .map(s => {
+          // Use existing sensor ID if available, otherwise look up by label
+          if (s.id) return s.id
+          const hubDevice = allHubDevices!.find(d => d.label === s.name)
+          return hubDevice ? String(hubDevice.id) : null
+        })
+        .filter((id): id is string => id != null))
 
       // Unassign removed sensors
       for (const sensor of room?.sensors ?? []) {
@@ -939,7 +954,9 @@ export default function RoomDetailPage() {
       // Assign new sensors
       for (const sensor of effectiveSensors) {
         if (!sensor.name) continue
-        const sensorId = String(allHubDevices!.find(d => d.label === sensor.name)!.id)
+        const hubDevice = allHubDevices!.find(d => d.label === sensor.name)
+        if (!hubDevice) continue
+        const sensorId = String(hubDevice.id)
         if (!currentSensorIds.has(sensorId)) {
           await api.hubitat.assignDevice({
             device_id: sensorId,
@@ -2259,9 +2276,6 @@ export default function RoomDetailPage() {
                             className="h-11 min-w-0 flex-1 rounded-lg border border-[var(--border-secondary)] surface px-2.5 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                           >
                             <option value="" disabled>Select a sensor</option>
-                            {sensor.name && !hubSensors.some(d => d.label === sensor.name) && (
-                              <option value={sensor.name}>{sensor.name}</option>
-                            )}
                             {hubSensors
                               .filter(d => d.label === sensor.name || !assignedNames.has(d.label))
                               .map(d => (

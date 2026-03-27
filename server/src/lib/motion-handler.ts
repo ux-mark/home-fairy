@@ -159,9 +159,17 @@ export class MotionHandler {
     return false
   }
 
-  // Find which room a sensor belongs to by its label
-  // Checks device_rooms table for sensor-to-room mapping
-  private findRoomForSensor(sensorName: string): DeviceRoomRow | undefined {
+  // Find which room a sensor belongs to by device ID or label
+  private findRoomForSensor(deviceId: string | null, sensorName: string): DeviceRoomRow | undefined {
+    // Prefer lookup by device_id (stable across renames)
+    if (deviceId) {
+      const byId = getOne<DeviceRoomRow>(
+        "SELECT * FROM device_rooms WHERE device_id = ? AND device_type IN ('motion', 'sensor')",
+        [deviceId],
+      )
+      if (byId) return byId
+    }
+    // Fallback to label match
     return getOne<DeviceRoomRow>(
       "SELECT * FROM device_rooms WHERE device_label = ? AND device_type IN ('motion', 'sensor')",
       [sensorName],
@@ -206,6 +214,7 @@ export class MotionHandler {
   }
 
   async handleMotionEvent(
+    deviceId: string | null,
     sensorName: string,
     value: 'active' | 'inactive',
   ): Promise<void> {
@@ -240,7 +249,7 @@ export class MotionHandler {
     } catch { /* ignore weather indicator errors */ }
 
     // Find which room this sensor belongs to
-    const deviceRoom = this.findRoomForSensor(sensorName)
+    const deviceRoom = this.findRoomForSensor(deviceId, sensorName)
     if (!deviceRoom) {
       log(`Motion sensor "${sensorName}" not assigned to any room`)
       return

@@ -109,6 +109,7 @@ app.post('/hubitat', async (req, res) => {
     if (process.env.DEBUG) console.log('Hubitat event:', JSON.stringify(event))
 
     const displayName: string = event.displayName ?? event.displayname ?? 'unknown'
+    const deviceId: string | null = event.deviceId != null ? String(event.deviceId) : null
     const eventName: string = event.name ?? ''
     const eventValue: string = String(event.value ?? '')
 
@@ -122,16 +123,36 @@ app.post('/hubitat', async (req, res) => {
       return
     }
 
+    // Sync device_rooms.device_label if Hubitat device name has changed
+    if (deviceId) {
+      const deviceRoom = getOne<{ device_label: string }>(
+        'SELECT device_label FROM device_rooms WHERE device_id = ?',
+        [deviceId],
+      )
+      if (deviceRoom && deviceRoom.device_label !== displayName) {
+        run(
+          'UPDATE device_rooms SET device_label = ? WHERE device_id = ?',
+          [displayName, deviceId],
+        )
+        console.log(`[hubitat] Synced device_rooms label: "${deviceRoom.device_label}" → "${displayName}" (device ${deviceId})`)
+      }
+    }
+
     // Log the event
     run(
       'INSERT INTO logs (message, debug, category) VALUES (?, ?, ?)',
       [`Hubitat: ${displayName} ${eventName} = ${eventValue}`, JSON.stringify(event), 'hubitat'],
     )
 
+    // Use device ID for hub_devices lookups when available (more robust than label which can change)
+    const hubWhereClause = deviceId ? 'id = ?' : 'label = ?'
+    const hubWhereParam = deviceId ?? displayName
+
     // Route events to appropriate handlers
     switch (eventName) {
       case 'motion':
         await motionHandler.handleMotionEvent(
+          deviceId,
           displayName,
           eventValue as 'active' | 'inactive',
         )
@@ -140,8 +161,8 @@ app.post('/hubitat', async (req, res) => {
       case 'temperature':
         // Update temperature in hub_devices attributes (source of truth)
         run(
-          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.temperature', ?), updated_at = datetime('now') WHERE label = ?`,
-          [Number(eventValue), displayName],
+          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.temperature', ?), updated_at = datetime('now') WHERE ${hubWhereClause}`,
+          [Number(eventValue), hubWhereParam],
         )
         break
 
@@ -149,16 +170,16 @@ app.post('/hubitat', async (req, res) => {
       case 'lux':
         // Update illuminance in hub_devices attributes (source of truth)
         run(
-          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.illuminance', ?), updated_at = datetime('now') WHERE label = ?`,
-          [Number(eventValue), displayName],
+          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.illuminance', ?), updated_at = datetime('now') WHERE ${hubWhereClause}`,
+          [Number(eventValue), hubWhereParam],
         )
         break
 
       case 'battery': {
         // Update battery level in hub_devices attributes
         run(
-          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.battery', ?), updated_at = datetime('now') WHERE label = ?`,
-          [eventValue, displayName],
+          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.battery', ?), updated_at = datetime('now') WHERE ${hubWhereClause}`,
+          [eventValue, hubWhereParam],
         )
         const batteryLevel = Number(eventValue)
         if (batteryLevel < 5) {
@@ -200,8 +221,8 @@ app.post('/hubitat', async (req, res) => {
       case 'power': {
         // Smart plug real-time power draw (watts)
         run(
-          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.power', ?), updated_at = datetime('now') WHERE label = ?`,
-          [Number(eventValue), displayName],
+          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.power', ?), updated_at = datetime('now') WHERE ${hubWhereClause}`,
+          [Number(eventValue), hubWhereParam],
         )
         run(
           'INSERT INTO device_history (source, source_id, value) VALUES (?, ?, ?)',
@@ -213,8 +234,8 @@ app.post('/hubitat', async (req, res) => {
       case 'energy': {
         // Smart plug cumulative energy usage (kWh)
         run(
-          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.energy', ?), updated_at = datetime('now') WHERE label = ?`,
-          [Number(eventValue), displayName],
+          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.energy', ?), updated_at = datetime('now') WHERE ${hubWhereClause}`,
+          [Number(eventValue), hubWhereParam],
         )
         run(
           'INSERT INTO device_history (source, source_id, value) VALUES (?, ?, ?)',
@@ -226,8 +247,8 @@ app.post('/hubitat', async (req, res) => {
       case 'switch': {
         // Track on/off state changes in attributes
         run(
-          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.switch', ?), updated_at = datetime('now') WHERE label = ?`,
-          [eventValue, displayName],
+          `UPDATE hub_devices SET attributes = json_set(COALESCE(attributes, '{}'), '$.switch', ?), updated_at = datetime('now') WHERE ${hubWhereClause}`,
+          [eventValue, hubWhereParam],
         )
         break
       }

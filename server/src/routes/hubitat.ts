@@ -126,6 +126,10 @@ router.post('/devices/sync', async (_req: Request, res: Response) => {
         flatAttrs = rawAttrs as Record<string, unknown>
       }
 
+      // Check if label changed so we can sync device_rooms
+      const existingDevice = getOne<{ label: string }>('SELECT label FROM hub_devices WHERE id = ?', [fullDevice.id])
+      const labelChanged = existingDevice && existingDevice.label !== fullDevice.label
+
       run(
         `INSERT INTO hub_devices (id, label, device_name, device_type, capabilities, attributes, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
@@ -145,6 +149,15 @@ router.post('/devices/sync', async (_req: Request, res: Response) => {
           JSON.stringify(flatAttrs),
         ],
       )
+
+      // Sync device_rooms.device_label when hub device label changes
+      if (labelChanged) {
+        run(
+          'UPDATE device_rooms SET device_label = ? WHERE device_id = ?',
+          [fullDevice.label, String(fullDevice.id)],
+        )
+        console.log(`[hubitat-sync] Updated device_rooms label: "${existingDevice.label}" → "${fullDevice.label}" (device ${fullDevice.id})`)
+      }
     }
 
     // Remove hub_devices that no longer exist on the hub
