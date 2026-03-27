@@ -1,17 +1,31 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { ListMusic, Radio, Disc3, Music, Folder, RotateCcw, ImageOff } from 'lucide-react'
+import { ListMusic, Radio, Disc3, Music, Folder, Podcast, BookOpen, RotateCcw, ImageOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SonosFavourite } from '@/lib/api'
 
 // ── Content type classification by URI prefix ────────────────────────────────
 
-type ContentType = 'Radio' | 'Playlists' | 'Albums' | 'Tracks' | 'Other'
+type ContentType = 'Radio' | 'Playlists' | 'Podcasts' | 'Audiobooks' | 'Albums' | 'Tracks' | 'Other'
 
-function getContentType(uri?: string): ContentType {
+function getContentType(fav: SonosFavourite): ContentType {
+  // Prefer UPnP content class from metadata (most reliable)
+  const cls = fav.contentClass?.toLowerCase() ?? ''
+  if (cls.includes('podcast')) return 'Podcasts'
+  if (cls.includes('audiobook')) return 'Audiobooks'
+  if (cls.includes('audiobroadcast')) return 'Radio'
+  if (cls.includes('playlistcontainer')) return 'Playlists'
+  if (cls.includes('musicalbum')) return 'Albums'
+  if (cls.includes('musictrack')) return 'Tracks'
+
+  // Fall back to URI pattern matching
+  const uri = fav.uri
   if (!uri) return 'Other'
 
-  if (uri.includes('spotify')) {
-    const decoded = decodeURIComponent(uri).toLowerCase()
+  const decoded = decodeURIComponent(uri).toLowerCase()
+
+  if (decoded.includes('spotify')) {
+    if (decoded.includes('episode') || decoded.includes('show')) return 'Podcasts'
+    if (decoded.includes('audiobook')) return 'Audiobooks'
     if (decoded.includes('playlist')) return 'Playlists'
     if (decoded.includes('album')) return 'Albums'
     if (decoded.includes('track')) return 'Tracks'
@@ -19,19 +33,30 @@ function getContentType(uri?: string): ContentType {
   }
 
   if (uri.startsWith('x-sonosapi-stream:') || uri.startsWith('x-rincon-stream:')) return 'Radio'
+  if (uri.startsWith('x-sonosapi-hls-static:')) return 'Audiobooks'
   if (uri.startsWith('x-rincon-cpcontainer:')) return 'Playlists'
 
   return 'Other'
 }
 
+/** Items with no URI and a generic container class are service bookmarks, not playable content */
+function isPlayable(fav: SonosFavourite): boolean {
+  if (fav.uri) return true
+  // Items with no URI but a specific content class (podcast, audiobook, etc.) are playable via title match
+  const cls = fav.contentClass ?? ''
+  return cls !== 'object.container' && cls !== ''
+}
+
 // ── Pill filter config ────────────────────────────────────────────────────────
 
-const ALL_TYPES: ContentType[] = ['Radio', 'Playlists', 'Albums', 'Tracks', 'Other']
+const ALL_TYPES: ContentType[] = ['Radio', 'Playlists', 'Podcasts', 'Audiobooks', 'Albums', 'Tracks', 'Other']
 
 const TYPE_ICON: Record<ContentType | 'All', React.ElementType> = {
   All: ListMusic,
   Radio: Radio,
   Playlists: ListMusic,
+  Podcasts: Podcast,
+  Audiobooks: BookOpen,
   Albums: Disc3,
   Tracks: Music,
   Other: Folder,
@@ -63,7 +88,7 @@ export function FavouriteSelector({
     if (!value || value === '__continue__') return 'All'
     const fav = favourites.find(f => f.title === value)
     if (!fav) return 'All'
-    return getContentType(fav.uri)
+    return getContentType(fav)
   })
 
   useEffect(() => {
@@ -79,14 +104,14 @@ export function FavouriteSelector({
     })
   }, [])
 
-  // Exclude items with no URI — they're non-playable service bookmarks
-  const playableFavourites = useMemo(() => favourites.filter(f => f.uri), [favourites])
+  // Exclude generic service bookmarks (no URI + generic object.container class)
+  const playableFavourites = useMemo(() => favourites.filter(isPlayable), [favourites])
 
   // Determine which content types are present in the favourites list
   const presentTypes = useMemo<ContentType[]>(() => {
     const seen = new Set<ContentType>()
     for (const fav of playableFavourites) {
-      seen.add(getContentType(fav.uri))
+      seen.add(getContentType(fav))
     }
     return ALL_TYPES.filter(t => seen.has(t))
   }, [playableFavourites])
@@ -94,7 +119,7 @@ export function FavouriteSelector({
   // Filter the displayed favourites based on the selected pill
   const filteredFavourites = useMemo<SonosFavourite[]>(() => {
     if (selectedType === 'All') return playableFavourites
-    return playableFavourites.filter(f => getContentType(f.uri) === selectedType)
+    return playableFavourites.filter(f => getContentType(f) === selectedType)
   }, [playableFavourites, selectedType])
 
   // When the type pill changes, clear selection if the current value no longer
@@ -102,7 +127,7 @@ export function FavouriteSelector({
   function handleTypeChange(type: ContentType | 'All') {
     setSelectedType(type)
     if (value && value !== '__continue__') {
-      const next = type === 'All' ? favourites : favourites.filter(f => getContentType(f.uri) === type)
+      const next = type === 'All' ? favourites : favourites.filter(f => getContentType(f) === type)
       if (!next.some(f => f.title === value)) {
         onChange('')
       }

@@ -50,6 +50,7 @@ export interface SonosFavourite {
   title: string
   uri?: string
   albumArtURI?: string
+  contentClass?: string
 }
 
 class SonosClient {
@@ -134,10 +135,17 @@ class SonosClient {
         return data.map((item: unknown) => {
           if (typeof item === 'string') return { title: item }
           const obj = item as Record<string, unknown>
+          // Extract upnp:class from metadata XML for content type classification
+          let contentClass: string | undefined
+          if (typeof obj.metadata === 'string') {
+            const classMatch = obj.metadata.match(/<upnp:class>([^<]+)<\/upnp:class>/)
+            if (classMatch) contentClass = classMatch[1]
+          }
           return {
             title: String(obj.title ?? ''),
             uri: obj.uri ? String(obj.uri) : undefined,
             albumArtURI: (obj.albumArtUri ?? obj.albumArtURI) ? String(obj.albumArtUri ?? obj.albumArtURI) : undefined,
+            contentClass,
           }
         })
       }

@@ -638,6 +638,7 @@ export interface SonosFavourite {
   title: string
   uri?: string
   albumArtURI?: string
+  contentClass?: string
 }
 
 export interface SonosSpeakerMapping {
