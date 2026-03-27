@@ -195,7 +195,7 @@ const ICON_MAP: Record<string, FC<LucideProps>> = {
   'tree-pine': TreePine,
 }
 
-export interface LucideIconProps extends LucideProps {
+export interface LucideIconProps extends Omit<LucideProps, 'name'> {
   /** Lucide icon name in kebab-case (e.g. "moon-star", "door-open") */
   name: string | null | undefined
 }

@@ -808,7 +808,7 @@ export default function ModeDetail({ modeName, onBack }: ModeDetailProps) {
                     {modeData.icon ? (
                       <LucideIcon name={modeData.icon} className="h-5 w-5" aria-hidden="true" />
                     ) : (
-                      <span className="text-xs leading-none">+icon</span>
+                      <Plus className="h-4 w-4" aria-hidden="true" />
                     )}
                   </button>
                   {showIconPicker && (

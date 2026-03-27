@@ -206,7 +206,7 @@ export default function WatchPage() {
               )}
             >
               <span className="flex items-center gap-2 text-base font-semibold text-heading">
-                <LucideIcon name={room.icon} className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <LucideIcon name={room.icon} className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
                 {room.name}
               </span>
               {room.current_scene && (

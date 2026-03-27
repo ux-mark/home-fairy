@@ -62,6 +62,7 @@ export function IconPicker({ value, onChange, onClose }: IconPickerProps) {
     <div
       ref={panelRef}
       role="dialog"
+      aria-modal="true"
       aria-label="Choose an icon"
       className="card w-72 rounded-xl border shadow-xl"
     >
@@ -118,7 +119,7 @@ export function IconPicker({ value, onChange, onClose }: IconPickerProps) {
                           : 'text-body',
                       )}
                     >
-                      <LucideIcon name={icon.name} className="h-5 w-5" />
+                      <LucideIcon name={icon.name} className="h-5 w-5" aria-hidden="true" />
                     </button>
                   ))}
                 </div>

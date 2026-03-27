@@ -403,7 +403,6 @@ export function MusicSection() {
     staleTime: 60_000,
   })
 
-  const modeNames = modes?.map((m) => m.name) ?? []
   const assignedRooms = speakers?.map((s) => s.room_name) ?? []
   const speakerCount = speakers?.length ?? 0
 
