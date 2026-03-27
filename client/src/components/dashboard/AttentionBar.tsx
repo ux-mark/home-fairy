@@ -272,7 +272,7 @@ export default function AttentionBar({ items, open, onToggle }: AttentionBarProp
       title={accordionTitle}
       open={open}
       onToggle={onToggle}
-      trailing={severitySummary}
+      trailing={!open ? severitySummary : undefined}
     >
       <ul role="list" className="space-y-2">
         {visible.map(item => (

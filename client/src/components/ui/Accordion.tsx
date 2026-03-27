@@ -41,21 +41,25 @@ export function Accordion({
         aria-controls={panelId}
         onClick={onToggle}
         className={cn(
-          'flex w-full min-h-[44px] items-center justify-between gap-3 px-4 py-3 text-left transition-colors',
+          'flex w-full min-h-[44px] items-center gap-3 px-4 py-3 text-left transition-colors',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
           card && 'rounded-xl hover:bg-white/5',
           !card && !open && 'border-b border-[var(--border-secondary)]',
         )}
       >
-        <span className="flex items-center gap-2">
+        <span className="flex items-center gap-2 shrink-0">
           <span className="text-heading text-sm font-semibold">{title}</span>
           {count !== undefined && count > 0 && (
             <span className="rounded-full bg-fairy-500/15 px-2 py-0.5 text-[10px] font-bold text-fairy-400">
               {count}
             </span>
           )}
-          {trailing}
         </span>
+        {trailing && (
+          <span className="ml-auto flex items-center gap-2 text-xs text-[var(--text-secondary)]">
+            {trailing}
+          </span>
+        )}
         <ChevronDown
           className={cn(
             'h-4 w-4 shrink-0 text-[var(--text-secondary)] transition-transform duration-300',

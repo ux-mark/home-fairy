@@ -3,7 +3,6 @@ import { useState, useMemo } from 'react'
 import { BarChart3 } from 'lucide-react'
 import { api } from '@/lib/api'
 import AttentionBar from '@/components/dashboard/AttentionBar'
-import HomeSummaryStrip from '@/components/dashboard/HomeSummaryStrip'
 import EnergyCard from '@/components/dashboard/EnergyCard'
 import BatteryCard from '@/components/dashboard/BatteryCard'
 import EnvironmentCard from '@/components/dashboard/EnvironmentCard'
@@ -90,9 +89,6 @@ export default function DashboardPage() {
   const toggle = (key: string) =>
     setUserOverrides(prev => ({ ...prev, [key]: !openSections[key] }))
 
-  const openSection = (key: string) =>
-    setUserOverrides(prev => ({ ...prev, [key]: true }))
-
   return (
     <div>
       <div className="mb-6 flex items-center gap-2">
@@ -117,11 +113,6 @@ export default function DashboardPage() {
               open={openSections.attention ?? false}
               onToggle={() => toggle('attention')}
             />
-          )}
-
-          {/* Home summary strip — 3 stat pills */}
-          {data.insights && (
-            <HomeSummaryStrip insights={data.insights} onOpenSection={openSection} />
           )}
 
           {/* Detail cards — main column (2/3) + side column (1/3) on desktop */}

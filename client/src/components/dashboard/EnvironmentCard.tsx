@@ -738,8 +738,7 @@ export default function EnvironmentCard({
       title={<><Thermometer className="h-4 w-4 text-fairy-400" aria-hidden="true" /> Environment</>}
       open={open}
       onToggle={onToggle}
-      trailing={
-        tempInsights ? (
+      trailing={!open && tempInsights ? (
           <span className="flex items-center gap-2 text-xs">
             <span className="text-heading font-semibold tabular-nums">
               {toDisplay(tempInsights.houseAvgTemp, unit)}°
