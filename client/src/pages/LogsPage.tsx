@@ -90,9 +90,12 @@ export default function LogsPage() {
     <div>
       <div className="mb-4 flex items-center gap-3">
         <BackLink to="/settings" label="Settings" className="mb-0" />
-        <h1 className="flex-1 text-lg font-semibold text-heading">
-          System Logs
-        </h1>
+        <div className="flex flex-1 items-center gap-2">
+          <ScrollText className="h-5 w-5 text-fairy-400" aria-hidden="true" />
+          <h1 className="text-lg font-semibold text-heading">
+            System Logs
+          </h1>
+        </div>
         <button
           onClick={() => refetch()}
           disabled={isFetching}

@@ -513,8 +513,12 @@ export default function ScenesPage() {
   return (
     <div>
       {/* Header */}
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-heading text-sm font-semibold">Scenes</h2>
+      <div className="mb-6 flex items-center gap-2">
+        <Sparkles className="h-5 w-5 text-fairy-400" aria-hidden="true" />
+        <h1 className="text-heading text-lg font-semibold">Scenes</h1>
+      </div>
+
+      <div className="mb-4 flex items-center justify-end">
         <button
           onClick={() => createMutation.mutate()}
           disabled={createMutation.isPending}

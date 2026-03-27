@@ -1,3 +1,17 @@
+import {
+  DoorClosed,
+  Lightbulb,
+  Plug,
+  Radar,
+  ScanEye,
+  Speaker,
+  SunDim,
+  Thermometer,
+  ToggleLeft,
+  PartyPopper,
+  WandSparkles,
+  type LucideIcon,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 // ── Device/entity type badge ────────────────────────────────────────────────
@@ -24,6 +38,29 @@ const typeColors: Record<string, string> = {
   socket: 'bg-teal-500/15 text-teal-400',
   outlet: 'bg-teal-500/15 text-teal-400',
   sonos: 'bg-violet-500/15 text-violet-400',
+}
+
+const typeIcons: Record<string, LucideIcon> = {
+  lifx: Lightbulb,
+  switch: ToggleLeft,
+  dimmer: SunDim,
+  sensor: Radar,
+  contact: DoorClosed,
+  twinkly: PartyPopper,
+  fairy: WandSparkles,
+  motion: ScanEye,
+  temperature: Thermometer,
+  kasa_plug: Plug,
+  kasa_strip: Plug,
+  kasa_socket: Plug,
+  kasa_outlet: Plug,
+  kasa_switch: Plug,
+  kasa_dimmer: Plug,
+  plug: Plug,
+  strip: Plug,
+  socket: Plug,
+  outlet: Plug,
+  sonos: Speaker,
 }
 
 /** Human-readable labels for device types. Used when no explicit label is passed. */
@@ -63,8 +100,10 @@ export function TypeBadge({ type, label }: TypeBadgeProps) {
   const key = type.toLowerCase()
   const cls = typeColors[key] ?? 'bg-slate-500/15 text-slate-400'
   const display = label ?? typeLabels[key] ?? type.replace(/_/g, ' ')
+  const Icon = typeIcons[key]
   return (
-    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold', cls)}>
+    <span className={cn('inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold', cls)}>
+      {Icon && <Icon aria-hidden="true" className="h-3 w-3" />}
       {display}
     </span>
   )

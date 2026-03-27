@@ -17,6 +17,12 @@ import {
   ChevronDown,
   Plug,
   Trash2,
+  SlidersHorizontal,
+  Headphones,
+  CalendarClock,
+  TrainFront,
+  CloudSun,
+  HardDrive,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -405,12 +411,14 @@ type CategoryId = 'preferences' | 'music' | 'modes-and-schedule' | 'public-trans
 function CategoryAccordion({
   categoryId,
   label,
+  icon: Icon,
   isOpen,
   onToggle,
   children,
 }: {
   categoryId: CategoryId
   label: string
+  icon?: React.ComponentType<React.SVGProps<SVGSVGElement>>
   isOpen: boolean
   onToggle: () => void
   children: React.ReactNode
@@ -437,7 +445,10 @@ function CategoryAccordion({
           !isOpen && 'border-b border-[var(--border-secondary)]',
         )}
       >
-        <span className="text-heading text-base font-semibold">{label}</span>
+        <span className="flex items-center gap-2">
+          {Icon && <Icon className="h-5 w-5 text-fairy-400" aria-hidden="true" />}
+          <span className="text-heading text-base font-semibold">{label}</span>
+        </span>
         <ChevronDown
           className={cn(
             'h-5 w-5 text-[var(--text-secondary)] transition-transform duration-300',
@@ -484,6 +495,7 @@ export default function SettingsPage() {
         <CategoryAccordion
           categoryId="preferences"
           label="Preferences"
+          icon={SlidersHorizontal}
           isOpen={openCategory === 'preferences'}
           onToggle={() => handleToggle('preferences')}
         >
@@ -494,6 +506,7 @@ export default function SettingsPage() {
         <CategoryAccordion
           categoryId="music"
           label="Music"
+          icon={Headphones}
           isOpen={openCategory === 'music'}
           onToggle={() => handleToggle('music')}
         >
@@ -503,6 +516,7 @@ export default function SettingsPage() {
         <CategoryAccordion
           categoryId="modes-and-schedule"
           label="Modes and schedule"
+          icon={CalendarClock}
           isOpen={openCategory === 'modes-and-schedule'}
           onToggle={() => handleToggle('modes-and-schedule')}
         >
@@ -513,6 +527,7 @@ export default function SettingsPage() {
         <CategoryAccordion
           categoryId="public-transport"
           label="Public transport"
+          icon={TrainFront}
           isOpen={openCategory === 'public-transport'}
           onToggle={() => handleToggle('public-transport')}
         >
@@ -523,6 +538,7 @@ export default function SettingsPage() {
         <CategoryAccordion
           categoryId="weather"
           label="Weather"
+          icon={CloudSun}
           isOpen={openCategory === 'weather'}
           onToggle={() => handleToggle('weather')}
         >
@@ -532,6 +548,7 @@ export default function SettingsPage() {
         <CategoryAccordion
           categoryId="system"
           label="System"
+          icon={HardDrive}
           isOpen={openCategory === 'system'}
           onToggle={() => handleToggle('system')}
         >

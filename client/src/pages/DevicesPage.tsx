@@ -1030,8 +1030,12 @@ export default function DevicesPage() {
   return (
     <div>
       {/* Header */}
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="text-heading text-sm font-semibold">All Devices</h2>
+      <div className="mb-6 flex items-center gap-2">
+        <LayoutGrid className="h-5 w-5 text-fairy-400" aria-hidden="true" />
+        <h1 className="text-heading text-lg font-semibold">All Devices</h1>
+      </div>
+
+      <div className="mb-4 flex items-center justify-end gap-3">
         <button
           onClick={() => {
             queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] })

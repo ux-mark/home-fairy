@@ -71,8 +71,12 @@ export default function RoomsPage() {
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-heading text-sm font-semibold">All Rooms</h2>
+      <div className="mb-6 flex items-center gap-2">
+        <DoorOpen className="h-5 w-5 text-fairy-400" aria-hidden="true" />
+        <h1 className="text-heading text-lg font-semibold">All Rooms</h1>
+      </div>
+
+      <div className="mb-4 flex items-center justify-end">
         <Dialog.Root open={dialogOpen} onOpenChange={setDialogOpen}>
           <Dialog.Trigger asChild>
             <button className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-fairy-500 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-fairy-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
