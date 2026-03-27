@@ -454,44 +454,22 @@ function computeBatteryInsights(battery: BatteryDevice[]): BatteryInsights | nul
 
 // ── Device label resolver (fallback for notifications with null source_label) ─
 
-/**
- * Try all device tables regardless of the declared deviceType.
- * The dedup_key sometimes has the wrong type (e.g. Kasa MACs recorded as
- * "hub" type). We check all three tables and return the first match.
- */
-function resolveDeviceLabel(_deviceType: string, deviceId: string): string {
-  // hub_devices
-  const hubRow = getOne<{ label: string }>('SELECT label FROM hub_devices WHERE id = ?', [deviceId])
-  if (hubRow?.label) return hubRow.label
-
-  // kasa_devices
-  const kasaRow = getOne<{ label: string }>('SELECT label FROM kasa_devices WHERE id = ?', [deviceId])
-  if (kasaRow?.label) return kasaRow.label
-
-  // lifx / light_rooms
-  const lifxRow = getOne<{ light_label: string }>(
-    'SELECT light_label FROM light_rooms WHERE light_id = ? LIMIT 1',
-    [deviceId],
-  )
-  if (lifxRow?.light_label) return lifxRow.light_label
-
-  return deviceId
-}
-
-/**
- * Check which table actually contains this deviceId and return the correct
- * device type string. Used to correct stale dedup_key types (e.g. Kasa MACs
- * recorded with type "hub").
- */
-function detectActualDeviceType(deviceId: string): string | null {
-  const hubRow = getOne<{ id: string }>('SELECT id FROM hub_devices WHERE id = ?', [deviceId])
-  if (hubRow) return 'hub'
-
-  const kasaRow = getOne<{ id: string }>('SELECT id FROM kasa_devices WHERE id = ?', [deviceId])
-  if (kasaRow) return 'kasa'
-
-  const lifxRow = getOne<{ light_id: string }>('SELECT light_id FROM light_rooms WHERE light_id = ? LIMIT 1', [deviceId])
-  if (lifxRow) return 'lifx'
+function resolveDeviceLabel(deviceType: string, deviceId: string): string | null {
+  if (deviceType === 'hub') {
+    const row = getOne<{ label: string }>('SELECT label FROM hub_devices WHERE id = ?', [deviceId])
+    return row?.label ?? null
+  }
+  if (deviceType === 'kasa') {
+    const row = getOne<{ label: string }>('SELECT label FROM kasa_devices WHERE id = ?', [deviceId])
+    return row?.label ?? null
+  }
+  if (deviceType === 'lifx') {
+    const row = getOne<{ light_label: string }>(
+      'SELECT light_label FROM light_rooms WHERE light_id = ? LIMIT 1',
+      [deviceId],
+    )
+    return row?.light_label ?? null
+  }
 
   return null
 }
@@ -652,20 +630,15 @@ function computeAttentionItems(
     const unreachableNotifs = notificationService.getRecentByCategory('device_unreachable', 1440)
     for (const notif of unreachableNotifs) {
       const dedupParts = notif.dedup_key?.split(':') ?? []
+      const deviceType = dedupParts[1] ?? null
       const deviceId = dedupParts[2] ?? notif.source_id ?? null
-
-      // Detect the actual device type by checking all tables — the dedup_key
-      // type can be wrong (e.g. Kasa MACs stored with type "hub").
-      const actualDeviceType = deviceId ? detectActualDeviceType(deviceId) : null
 
       // Fall back to DB lookup when source_label was not set at notification creation time
       const deviceLabel = notif.source_label
-        ?? (deviceId ? resolveDeviceLabel('', deviceId) : null)
+        ?? (deviceType && deviceId ? resolveDeviceLabel(deviceType, deviceId) : null)
 
-      // Skip ghost devices: if we can't resolve to a human-friendly label
-      // (i.e. label still equals the raw device ID), the device no longer
-      // exists in any table and the notification is noise.
-      if (!deviceLabel || deviceLabel === deviceId) continue
+      // Skip notifications for devices that no longer exist
+      if (!deviceLabel) continue
 
       items.push({
         id: `device-unreachable-${notif.id}`,
@@ -677,9 +650,9 @@ function computeAttentionItems(
           : notif.message,
         deviceId,
         deviceLabel,
-        deviceSource: actualDeviceType ? mapDeviceSource(actualDeviceType) : null,
+        deviceSource: deviceType ? mapDeviceSource(deviceType) : null,
         action: 'deactivate',
-        deviceType: actualDeviceType,
+        deviceType,
       })
     }
   } catch {
@@ -691,17 +664,14 @@ function computeAttentionItems(
     const onlineNotifs = notificationService.getRecentByCategory('device_online', 1440)
     for (const notif of onlineNotifs) {
       const dedupParts = notif.dedup_key?.split(':') ?? []
+      const deviceType = dedupParts[1] ?? null
       const deviceId = dedupParts[2] ?? notif.source_id ?? null
 
-      // Detect the actual device type by checking all tables
-      const actualDeviceType = deviceId ? detectActualDeviceType(deviceId) : null
-
-      // Fall back to DB lookup when source_label was not set at notification creation time
       const deviceLabel = notif.source_label
-        ?? (deviceId ? resolveDeviceLabel('', deviceId) : null)
+        ?? (deviceType && deviceId ? resolveDeviceLabel(deviceType, deviceId) : null)
 
-      // Skip ghost devices — same logic as unreachable above
-      if (!deviceLabel || deviceLabel === deviceId) continue
+      // Skip notifications for devices that no longer exist
+      if (!deviceLabel) continue
 
       items.push({
         id: `device-online-${notif.id}`,
@@ -713,9 +683,9 @@ function computeAttentionItems(
           : notif.message,
         deviceId,
         deviceLabel,
-        deviceSource: actualDeviceType ? mapDeviceSource(actualDeviceType) : null,
+        deviceSource: deviceType ? mapDeviceSource(deviceType) : null,
         action: 'reactivate',
-        deviceType: actualDeviceType,
+        deviceType,
       })
     }
   } catch {
