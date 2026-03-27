@@ -432,28 +432,51 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
 
   return (
     <div className="card rounded-xl border transition-colors">
-      <div className="flex items-center gap-3 p-4">
-        {/* Online/offline indicator */}
-        <div
-          className={cn(
-            'h-2 w-2 shrink-0 rounded-full',
-            kasa.is_online ? 'bg-emerald-400' : 'bg-slate-500',
-          )}
-          aria-hidden="true"
-          title={kasa.is_online ? 'Online' : 'Offline'}
-        />
-
-        <div className="min-w-0 flex-1">
+      <div className="flex flex-col gap-1.5 p-4">
+        {/* Row 1: online dot + device label + power toggle */}
+        <div className="flex items-center gap-2">
+          <div
+            className={cn(
+              'h-2 w-2 shrink-0 rounded-full',
+              kasa.is_online ? 'bg-emerald-400' : 'bg-slate-500',
+            )}
+            aria-hidden="true"
+            title={kasa.is_online ? 'Online' : 'Offline'}
+          />
           <Link
             to={`/devices/kasa/${encodeURIComponent(kasa.id)}`}
             className={cn(
-              'block text-sm font-medium hover:text-fairy-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              'min-w-0 flex-1 text-sm font-medium hover:text-fairy-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               isDeactivated ? 'text-slate-500' : device.isOn ? 'text-heading' : 'text-body',
             )}
           >
             {device.label}
           </Link>
-          <p className={cn('mt-0.5 text-xs', isDeactivated ? 'text-slate-600' : 'text-caption')}>
+          <button
+            onClick={() => toggleMutation.mutate()}
+            disabled={toggleMutation.isPending || !kasa.is_online || isDeactivated}
+            className={cn(
+              'flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              (!kasa.is_online || isDeactivated) && 'cursor-not-allowed opacity-40',
+              !isDeactivated && device.isOn && kasa.is_online
+                ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
+                : 'text-caption hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-secondary)]',
+            )}
+            aria-label={
+              isDeactivated
+                ? `${device.label} is deactivated`
+                : !kasa.is_online
+                  ? `${device.label} is offline`
+                  : `Turn ${device.label} ${device.isOn ? 'off' : 'on'}`
+            }
+          >
+            <Power className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Row 2: room/power info + pills/badges (wraps on narrow screens) */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <p className={cn('text-xs', isDeactivated ? 'text-slate-600' : 'text-caption')}>
             {device.roomName && <span>{device.roomName}</span>}
             {device.kasaParentLabel && device.kasaDevice?.parent_id && (
               <span>
@@ -474,61 +497,40 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
               <span> · {energyKwh.toFixed(2)} kWh</span>
             )}
           </p>
+
+          <RoomPill
+            roomName={device.roomName}
+            deviceLabel={device.label}
+            rooms={rooms}
+            onAssign={async (room) => {
+              await api.hubitat.assignDevice({ device_id: kasa.id, device_label: device.label, device_type: 'kasa_' + kasa.device_type, room_name: room })
+              queryClient.invalidateQueries({ queryKey: ['hubitat', 'device-rooms'] })
+            }}
+          />
+
+          <TypeBadge type={kasa.device_type} />
+          {isDeactivated && <StatusBadge status="deactivated" />}
+
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              toggleKeepOn.mutate()
+            }}
+            disabled={toggleKeepOn.isPending || isDeactivated}
+            className={cn(
+              'flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              isDeactivated && 'cursor-not-allowed opacity-40',
+              isKeepOn
+                ? 'bg-amber-500/15 text-amber-400'
+                : 'text-caption hover:bg-amber-500/10 hover:text-amber-300',
+            )}
+            aria-label={isKeepOn ? `Remove keep-on protection from ${device.label}` : `Protect ${device.label} from being turned off`}
+            aria-pressed={isKeepOn}
+          >
+            <Shield className="h-3 w-3" />
+            <span>Keep on</span>
+          </button>
         </div>
-
-        <RoomPill
-          roomName={device.roomName}
-          deviceLabel={device.label}
-          rooms={rooms}
-          onAssign={async (room) => {
-            await api.hubitat.assignDevice({ device_id: kasa.id, device_label: device.label, device_type: 'kasa_' + kasa.device_type, room_name: room })
-            queryClient.invalidateQueries({ queryKey: ['hubitat', 'device-rooms'] })
-          }}
-        />
-
-        <TypeBadge type={kasa.device_type} />
-        {isDeactivated && <StatusBadge status="deactivated" />}
-
-        <button
-          onClick={(e) => {
-            e.stopPropagation()
-            toggleKeepOn.mutate()
-          }}
-          disabled={toggleKeepOn.isPending || isDeactivated}
-          className={cn(
-            'flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            isDeactivated && 'cursor-not-allowed opacity-40',
-            isKeepOn
-              ? 'bg-amber-500/15 text-amber-400'
-              : 'text-caption hover:bg-amber-500/10 hover:text-amber-300',
-          )}
-          aria-label={isKeepOn ? `Remove keep-on protection from ${device.label}` : `Protect ${device.label} from being turned off`}
-          aria-pressed={isKeepOn}
-        >
-          <Shield className="h-3 w-3" />
-          <span>Keep on</span>
-        </button>
-
-        <button
-          onClick={() => toggleMutation.mutate()}
-          disabled={toggleMutation.isPending || !kasa.is_online || isDeactivated}
-          className={cn(
-            'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            (!kasa.is_online || isDeactivated) && 'cursor-not-allowed opacity-40',
-            !isDeactivated && device.isOn && kasa.is_online
-              ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
-              : 'text-caption hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-secondary)]',
-          )}
-          aria-label={
-            isDeactivated
-              ? `${device.label} is deactivated`
-              : !kasa.is_online
-                ? `${device.label} is offline`
-                : `Turn ${device.label} ${device.isOn ? 'off' : 'on'}`
-          }
-        >
-          <Power className="h-4 w-4" />
-        </button>
       </div>
     </div>
   )
@@ -549,21 +551,24 @@ function SensorCard({ device }: { device: UnifiedDevice }) {
 
   return (
     <div className="card rounded-xl border transition-colors">
-      <div className="flex items-center gap-3 p-4">
-        <div className="min-w-0 flex-1">
+      <div className="flex flex-col gap-1.5 p-4">
+        {/* Row 1: device label + badges */}
+        <div className="flex items-center gap-2">
           <Link
             to={`/devices/${hub.id}`}
-            className={cn('block text-sm font-medium hover:text-fairy-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500', isDeactivated ? 'text-slate-500' : 'text-heading')}
+            className={cn('min-w-0 flex-1 text-sm font-medium hover:text-fairy-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500', isDeactivated ? 'text-slate-500' : 'text-heading')}
           >
             {device.label}
           </Link>
-          {device.roomName && (
-            <p className={cn('mt-0.5 text-xs', isDeactivated ? 'text-slate-600' : 'text-caption')}>{device.roomName}</p>
-          )}
+          <TypeBadge type={hub.device_type} />
+          {isDeactivated && <StatusBadge status="deactivated" />}
         </div>
 
-        {/* Sensor readings */}
-        <div className="flex items-center gap-3">
+        {/* Row 2: room name + sensor readings (wrap naturally on narrow screens) */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {device.roomName && (
+            <span className={cn('text-xs', isDeactivated ? 'text-slate-600' : 'text-caption')}>{device.roomName}</span>
+          )}
           {motionState && (
             <span className={cn(
               'flex items-center gap-1 text-xs font-medium',
@@ -603,9 +608,6 @@ function SensorCard({ device }: { device: UnifiedDevice }) {
             </span>
           )}
         </div>
-
-        <TypeBadge type={hub.device_type} />
-        {isDeactivated && <StatusBadge status="deactivated" />}
       </div>
     </div>
   )
