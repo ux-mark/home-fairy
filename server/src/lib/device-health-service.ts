@@ -179,6 +179,12 @@ export const deviceHealthService = {
       [reason, deviceType, deviceId],
     )
 
+    // Dismiss the unreachable notification so it drops out of insights
+    run(
+      `UPDATE notifications SET dismissed = 1 WHERE dedup_key = ? AND dismissed = 0`,
+      [`device_unreachable:${deviceType}:${deviceId}`],
+    )
+
     const label = getDeviceLabel(deviceType, deviceId)
     logToDb(`Device deactivated: ${label} (${reason})`)
   },
