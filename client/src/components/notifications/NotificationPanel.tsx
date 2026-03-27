@@ -20,7 +20,9 @@ function getNotificationRoute(notification: AppNotification): string {
   const deviceType = parts[1]
   const deviceId = parts[2]
   if (deviceType && deviceId) {
-    return deviceType === 'kasa' ? `/devices/kasa/${deviceId}` : `/devices/${deviceId}`
+    if (deviceType === 'kasa') return `/devices/kasa/${deviceId}`
+    if (deviceType === 'lifx') return `/lights/${deviceId}`
+    return `/devices/${deviceId}`
   }
   return '/devices'
 }

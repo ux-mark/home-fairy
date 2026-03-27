@@ -264,6 +264,21 @@ export function initDb(): void {
     db.exec(`UPDATE modes SET icon = 'bed' WHERE LOWER(name) = 'sleep time'`)
   }
 
+  // Sync device_rooms labels with current hub_devices labels (fixes stale names after Hubitat renames)
+  const staleLabels = db.prepare(
+    `SELECT dr.device_id, dr.device_label AS old_label, hd.label AS new_label
+     FROM device_rooms dr
+     JOIN hub_devices hd ON dr.device_id = CAST(hd.id AS TEXT)
+     WHERE dr.device_label != hd.label`,
+  ).all() as Array<{ device_id: string; old_label: string; new_label: string }>
+  if (staleLabels.length > 0) {
+    const updateLabel = db.prepare('UPDATE device_rooms SET device_label = ? WHERE device_id = ?')
+    for (const row of staleLabels) {
+      updateLabel.run(row.new_label, row.device_id)
+      console.log(`[db] Synced device_rooms label: "${row.old_label}" → "${row.new_label}" (device ${row.device_id})`)
+    }
+  }
+
   // Seed defaults for a fresh database
   seedDefaults()
 }

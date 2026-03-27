@@ -488,7 +488,7 @@ export interface AttentionItem {
   description: string
   deviceId: number | string | null
   deviceLabel: string | null
-  deviceSource?: 'hub' | 'kasa' | null
+  deviceSource?: 'hub' | 'kasa' | 'lifx' | null
   action?: 'deactivate' | 'reactivate'
   deviceType?: string | null
 }

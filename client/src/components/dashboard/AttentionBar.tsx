@@ -97,7 +97,9 @@ function ItemCard({ item, onDeactivate, onReactivate }: ItemCardProps) {
             <Link
               to={item.deviceSource === 'kasa'
                 ? `/devices/kasa/${item.deviceId}`
-                : `/devices/${item.deviceId}`}
+                : item.deviceSource === 'lifx'
+                  ? `/lights/${item.deviceId}`
+                  : `/devices/${item.deviceId}`}
               aria-label={`View device: ${item.deviceLabel ?? 'device'}`}
               className={cn(
                 'text-sm text-fairy-400',

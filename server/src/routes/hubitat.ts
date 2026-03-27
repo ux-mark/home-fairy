@@ -105,13 +105,14 @@ router.post('/devices/sync', async (_req: Request, res: Response) => {
         deviceType = 'sensor'
       }
 
-      // Check if device already exists
-      const existing = getOne<HubDeviceRow>('SELECT id FROM hub_devices WHERE id = ?', [fullDevice.id])
-      if (existing) {
+      // Check if device already exists and if label changed
+      const existingDevice = getOne<{ id: number; label: string }>('SELECT id, label FROM hub_devices WHERE id = ?', [fullDevice.id])
+      if (existingDevice) {
         updatedCount++
       } else {
         newCount++
       }
+      const labelChanged = existingDevice && existingDevice.label !== fullDevice.label
 
       // Flatten attributes from Hubitat array format [{name, currentValue}] to {name: currentValue}
       let flatAttrs: Record<string, unknown> = {}
@@ -145,6 +146,15 @@ router.post('/devices/sync', async (_req: Request, res: Response) => {
           JSON.stringify(flatAttrs),
         ],
       )
+
+      // Sync device_rooms.device_label when hub device label changes
+      if (labelChanged) {
+        run(
+          'UPDATE device_rooms SET device_label = ? WHERE device_id = ?',
+          [fullDevice.label, String(fullDevice.id)],
+        )
+        console.log(`[hubitat-sync] Updated device_rooms label: "${existingDevice.label}" → "${fullDevice.label}" (device ${fullDevice.id})`)
+      }
     }
 
     // Remove hub_devices that no longer exist on the hub
