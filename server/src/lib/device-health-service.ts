@@ -38,21 +38,36 @@ interface DeviceHealthRow {
 }
 
 function getDeviceLabel(deviceType: string, deviceId: string): string {
+  // Primary lookup using the declared device type
   if (deviceType === 'hub') {
     const row = getOne<{ label: string }>('SELECT label FROM hub_devices WHERE id = ?', [deviceId])
-    return row?.label ?? deviceId
-  }
-  if (deviceType === 'kasa') {
+    if (row?.label) return row.label
+  } else if (deviceType === 'kasa') {
     const row = getOne<{ label: string }>('SELECT label FROM kasa_devices WHERE id = ?', [deviceId])
-    return row?.label ?? deviceId
-  }
-  if (deviceType === 'lifx') {
+    if (row?.label) return row.label
+  } else if (deviceType === 'lifx') {
     const row = getOne<{ light_label: string }>(
       'SELECT light_label FROM light_rooms WHERE light_id = ? LIMIT 1',
       [deviceId],
     )
-    return row?.light_label ?? deviceId
+    if (row?.light_label) return row.light_label
   }
+
+  // Fallback: try all other tables when the primary lookup misses.
+  // This handles cases where the device_type in device_health is wrong
+  // (e.g. Kasa MAC addresses recorded with type "hub").
+  const hubRow = getOne<{ label: string }>('SELECT label FROM hub_devices WHERE id = ?', [deviceId])
+  if (hubRow?.label) return hubRow.label
+
+  const kasaRow = getOne<{ label: string }>('SELECT label FROM kasa_devices WHERE id = ?', [deviceId])
+  if (kasaRow?.label) return kasaRow.label
+
+  const lifxRow = getOne<{ light_label: string }>(
+    'SELECT light_label FROM light_rooms WHERE light_id = ? LIMIT 1',
+    [deviceId],
+  )
+  if (lifxRow?.light_label) return lifxRow.light_label
+
   return deviceId
 }
 
