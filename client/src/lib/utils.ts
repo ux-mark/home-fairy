@@ -129,3 +129,27 @@ export const DEFAULT_MODES = [
   'Night',
   'Sleep Time',
 ] as const
+
+// ── Currency formatting ──────────────────────────────────────────────────────
+
+/**
+ * Format a cost value with the user's currency symbol.
+ * Returns an em dash for null/undefined values.
+ */
+export function formatCost(amount: number | null | undefined, currencySymbol: string): string {
+  if (amount === null || amount === undefined) return '—'
+  return `${currencySymbol}${amount.toFixed(2)}`
+}
+
+/**
+ * Format a projected monthly cost from a daily cost value.
+ * Clearly labels the value as an approximation with a ~ prefix.
+ */
+export function formatMonthlyCost(
+  dailyCost: number | null | undefined,
+  currencySymbol: string,
+): string {
+  if (dailyCost === null || dailyCost === undefined) return '—'
+  const monthly = dailyCost * 30
+  return `~${currencySymbol}${Math.round(monthly)}`
+}
