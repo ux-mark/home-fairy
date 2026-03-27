@@ -510,7 +510,7 @@ The following issues were discovered during a comprehensive technical and UX aud
 
 ## 2026-03-26 — Allow users to select and manage icons for modes
 - **Severity**: enhancement
-- **Status**: planned
+- **Status**: resolved (2026-03-27, PR #50)
 - **Category**: ux-enhancement
 - **Priority**: low
 - **Description**: The database now has an `icon` column on the `modes` table with sensible defaults (sunrise, sun, sunset, moon-star, moon, bed). There is currently no UI for users to change these. Add a Lucide icon picker on the mode creation/edit page so users can choose from a curated set of icons. The selected icon should appear in: mode pills in auto-play rule forms, mode badges throughout the app, and the mode scheduler/settings page.
@@ -518,8 +518,28 @@ The following issues were discovered during a comprehensive technical and UX aud
 
 ## 2026-03-26 — Allow users to select icons or upload images for rooms
 - **Severity**: enhancement
-- **Status**: planned
+- **Status**: resolved (2026-03-27, PR #50)
 - **Category**: ux-enhancement
 - **Priority**: low
 - **Description**: The database now has an `icon` column on the `rooms` table (currently NULL for all rooms). There is currently no UI for users to set or change room icons. Add a Lucide icon picker (and optionally a small image upload) on the room creation/edit page. The selected icon should appear in: room cards on the home page, room selector dropdowns, and room detail page headers.
 - **Files**: `client/src/pages/RoomsPage.tsx`, `client/src/pages/RoomDetailPage.tsx`, `client/src/pages/HomePage.tsx`, `server/src/routes/rooms.ts`
+
+## 2026-03-27 — Add icons to native select dropdowns for rooms and modes
+- **Severity**: enhancement
+- **Status**: planned
+- **Category**: ux-enhancement
+- **Priority**: low
+- **Description**: Several room/mode selectors use native HTML `<select>` elements which cannot render icons in `<option>` tags. These include: LightDetailPage room dropdown, SonosSetupPage room dropdown, MusicSection room dropdown. A future enhancement could replace these with custom accessible dropdown components (e.g., Radix Select) to support icon rendering. Low priority — the text-only selectors work fine functionally.
+- **Files**: `client/src/pages/LightDetailPage.tsx`, `client/src/pages/SonosSetupPage.tsx`, `client/src/components/settings/MusicSection.tsx`
+
+## 2026-03-27 — Separate Fairy and Twinkly devices from hub_devices
+- **Severity**: enhancement
+- **Status**: planned
+- **Category**: architecture
+- **Priority**: medium
+- **Description**: Fairy (ESP8266) and Twinkly devices are currently stored in `hub_devices` and recorded as type `'hub'` in device_health, but they are completely independent from Hubitat. They should have their own tables and device types. Scope includes:
+  - **Fairy devices**: Dedicated `fairy_devices` table, new `'fairy'` device type in device_health, and a management UI for users to add/edit/remove Fairy devices (currently hardcoded).
+  - **Twinkly lights**: Dedicated `twinkly_devices` table, new `'twinkly'` device type in device_health, and expanded control UI. The Twinkly API offers more capabilities than currently exposed — research the full API surface during planning phase.
+  - Update scene-executor, device-health-service, deactivation API, and all frontend references to handle the new types.
+  - Migrate existing fairy/twinkly rows out of hub_devices.
+- **Files**: `server/src/db/index.ts`, `server/src/lib/scene-executor.ts`, `server/src/lib/device-health-service.ts`, `server/src/lib/fairy-device-client.ts`, `server/src/lib/twinkly-client.ts`, `server/src/routes/system.ts`, `client/src/pages/DevicesPage.tsx`, `client/src/pages/DeviceDetailPage.tsx`

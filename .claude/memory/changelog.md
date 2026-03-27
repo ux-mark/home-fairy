@@ -5,6 +5,17 @@
 
 ---
 
+## 2026-03-27 — Icon beautification across the product (PR #50)
+- **Icon infrastructure**: LucideIcon component (renders icons from string names, curated set of ~90 icons) and IconPicker component (categorised grid with live search)
+- **Mode icons**: Icon picker on ModeDetail settings page. Mode icons displayed at 11 locations: HomePage mode selector, SceneEditorPage mode toggles, ScenesPage filter chips, RoomDetailPage mode group headers, ModesList cards, ModeDetail header, SunModeCard badge, MusicSection auto-play rules, AppLayout header badge, PillSelect, FilterChip
+- **Room icons**: Icon picker on RoomDetailPage header. Room icons displayed at 8 locations: HomePage room cards, RoomsPage room list, WatchPage room buttons/headers, ScenesPage room accordions and scene row badges, NightModeSection room toggle pills
+- **Settings accordions**: Leading icons on all 6 CategoryAccordion sections (Preferences, Music, Modes and schedule, Public transport, Weather, System)
+- **Device type badges**: TypeBadge component extended with device-specific icons for all 11 device types
+- **Page headers**: Icons added to Rooms, Scenes, Devices, Insights, Logs pages — matching navigation icons
+- **Server**: /system/current endpoint enriched with mode_icons map
+- **Accessibility**: aria-modal on IconPicker, aria-hidden on all decorative icons, consistent sizing
+- **Files**: 20+ files changed across client and server
+
 ## 2026-03-27 — Fix notifications and insights (PR #44)
 - **Notification panel mobile layout**: Changed from absolute to fixed positioning on mobile (below md breakpoint) so panel shows full-width instead of being cut off
 - **Clickable notifications**: Each notification is now a tappable button that navigates to the Devices page and closes the panel
