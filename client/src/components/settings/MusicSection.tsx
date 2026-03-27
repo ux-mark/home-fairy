@@ -255,6 +255,7 @@ export function MusicSection() {
   const { toast } = useToast()
   const [showAddForm, setShowAddForm] = useState(false)
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
+  const [editRoom, setEditRoom] = useState('')
   const [editFavourite, setEditFavourite] = useState('')
   const [editMode, setEditMode] = useState('')
   const [editTriggerType, setEditTriggerType] = useState<AutoPlayRule['trigger_type']>('mode_change')
@@ -346,6 +347,7 @@ export function MusicSection() {
 
   function resetEditForm() {
     setEditingRuleId(null)
+    setEditRoom('')
     setEditFavourite('')
     setEditMode('')
     setEditTriggerType('mode_change')
@@ -355,6 +357,7 @@ export function MusicSection() {
   function openEditRule(rule: AutoPlayRule) {
     setShowAddForm(false)
     setEditingRuleId(rule.id)
+    setEditRoom(rule.room_name ?? '')
     setEditFavourite(rule.favourite_name)
     setEditMode(rule.mode_name)
     setEditTriggerType(rule.trigger_type)
@@ -430,9 +433,16 @@ export function MusicSection() {
 
                     <div>
                       <p className="text-heading text-sm mb-1.5">Room</p>
-                      <span className="inline-flex items-center rounded-full bg-fairy-500/10 px-3 py-1.5 text-sm font-medium text-fairy-400">
-                        {rule.room_name ?? 'Whole house'}
-                      </span>
+                      <PillSelect
+                        id="settings-edit-room"
+                        options={[
+                          { value: '', label: 'Whole house' },
+                          ...assignedRooms.map(r => ({ value: r, label: r })),
+                        ]}
+                        value={editRoom}
+                        onChange={setEditRoom}
+                        aria-label="Select a room"
+                      />
                     </div>
 
                     <div>
@@ -482,6 +492,7 @@ export function MusicSection() {
                           editRuleMutation.mutate({
                             id: rule.id,
                             data: {
+                              room_name: editRoom || null,
                               mode_name: editMode,
                               favourite_name: editFavourite,
                               trigger_type: effectiveTrigger,
