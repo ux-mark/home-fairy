@@ -90,7 +90,7 @@ export function IconPicker({ value, onChange, onClose }: IconPickerProps) {
       </div>
 
       {/* Icon grid */}
-      <div className="max-h-64 overflow-y-auto p-3">
+      <div className="max-h-80 overflow-y-auto p-3">
         {filteredCategories.length === 0 ? (
           <p className="py-4 text-center text-sm text-caption">No icons match your search</p>
         ) : (
