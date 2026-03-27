@@ -4,6 +4,7 @@ import { getAll, getOne, run } from '../db/index.js'
 import { sonosClient } from '../lib/sonos-client.js'
 import { sonosManager } from '../lib/sonos-manager.js'
 import { emit } from '../lib/socket.js'
+import { findPodcastFeedUrl } from '../lib/podcast-resolver.js'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
@@ -210,14 +211,15 @@ const autoPlaySchema = z.object({
   trigger_value: z.string().nullable().optional(),
   enabled: z.union([z.boolean(), z.number()]).optional().default(true),
   max_plays: z.number().int().min(1).nullable().optional(),
+  podcast_feed_url: z.string().url().nullable().optional(),
 })
 
 router.post('/auto-play', (req: Request, res: Response) => {
   try {
     const data = autoPlaySchema.parse(req.body)
     const result = run(
-      `INSERT INTO sonos_auto_play (room_name, mode_name, favourite_name, trigger_type, trigger_value, enabled, max_plays)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO sonos_auto_play (room_name, mode_name, favourite_name, trigger_type, trigger_value, enabled, max_plays, podcast_feed_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.room_name ?? null,
         data.mode_name,
@@ -226,6 +228,7 @@ router.post('/auto-play', (req: Request, res: Response) => {
         data.trigger_value ?? null,
         data.enabled ? 1 : 0,
         data.max_plays ?? null,
+        data.podcast_feed_url ?? null,
       ],
     )
     const created = getOne('SELECT * FROM sonos_auto_play WHERE id = ?', [result.lastInsertRowid])
@@ -249,6 +252,7 @@ const autoPlayUpdateSchema = z.object({
   trigger_value: z.string().nullable().optional(),
   enabled: z.union([z.boolean(), z.number()]).optional(),
   max_plays: z.number().int().min(1).nullable().optional(),
+  podcast_feed_url: z.string().url().nullable().optional(),
 })
 
 router.put('/auto-play/:id', (req: Request, res: Response) => {
@@ -271,6 +275,7 @@ router.put('/auto-play/:id', (req: Request, res: Response) => {
     if (data.trigger_value !== undefined) { updates.push('trigger_value = ?'); params.push(data.trigger_value) }
     if (data.enabled !== undefined) { updates.push('enabled = ?'); params.push(data.enabled ? 1 : 0) }
     if (data.max_plays !== undefined) { updates.push('max_plays = ?'); params.push(data.max_plays) }
+    if (data.podcast_feed_url !== undefined) { updates.push('podcast_feed_url = ?'); params.push(data.podcast_feed_url) }
 
     if (updates.length > 0) {
       updates.push("updated_at = datetime('now')")
@@ -295,6 +300,30 @@ router.delete('/auto-play/:id', (req: Request, res: Response) => {
   const id = Number(req.params.id)
   const result = run('DELETE FROM sonos_auto_play WHERE id = ?', [id])
   res.json({ deleted: result.changes > 0 })
+})
+
+// POST /auto-play/resolve-podcast — detect if a favourite is a podcast and find its RSS feed
+router.post('/auto-play/resolve-podcast', async (req: Request, res: Response) => {
+  try {
+    const { favourite_name } = z.object({ favourite_name: z.string().min(1) }).parse(req.body)
+
+    // Check if this favourite is a podcast container
+    const favourites = await sonosClient.getFavourites()
+    const fav = favourites.find(f => f.title === favourite_name)
+    const isPodcast = fav?.contentClass === 'object.container.podcast'
+
+    if (!isPodcast) {
+      res.json({ isPodcast: false, feedUrl: null })
+      return
+    }
+
+    // Search iTunes for the RSS feed URL
+    const feedUrl = await findPodcastFeedUrl(favourite_name)
+    res.json({ isPodcast: true, feedUrl })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
 })
 
 // PUT /volume/:speaker — set live speaker volume
@@ -381,6 +410,40 @@ router.get('/mute-status', (_req: Request, res: Response) => {
     mutedCount,
     totalSpeakers,
   })
+})
+
+// GET /speakers/:room/linked-devices — get device links for a speaker room
+router.get('/speakers/:room/linked-devices', (req: Request, res: Response) => {
+  try {
+    const rawRoom = req.params.room
+    const roomName = Array.isArray(rawRoom) ? rawRoom[0] : rawRoom
+    const links = getAll<{
+      id: number
+      source_type: string
+      source_id: string
+      target_type: string
+      target_id: string
+      link_type: string
+      created_at: string
+    }>(
+      `SELECT * FROM device_links
+       WHERE (source_type = 'sonos' AND source_id = ?)
+          OR (target_type = 'sonos' AND target_id = ?)
+       ORDER BY created_at DESC`,
+      [roomName, roomName],
+    )
+    res.json(links.map(l => ({
+      id: l.id,
+      sourceType: l.source_type,
+      sourceId: l.source_id,
+      targetType: l.target_type,
+      targetId: l.target_id,
+      linkType: l.link_type,
+    })))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
 })
 
 // GET /health — check if Sonos API is reachable

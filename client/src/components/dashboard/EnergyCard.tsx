@@ -3,7 +3,7 @@ import { Zap, ChevronDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatCost } from '@/lib/utils'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
 import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
 import type { PowerDevice, EnergyInsights } from '@/lib/api'
@@ -156,16 +156,269 @@ function DeviceRow({ device, maxWatts, anomaly }: DeviceRowProps) {
   )
 }
 
+// ── Cost summary block ────────────────────────────────────────────────────────
+
+interface CostSummaryProps {
+  insights: EnergyInsights
+  currencySymbol: string
+}
+
+function CostSummary({ insights, currencySymbol }: CostSummaryProps) {
+  const {
+    actualDailyCost,
+    projectedDailyCost,
+    monthToDateCost,
+    lastMonthCost,
+    monthOverMonthPercent,
+  } = insights
+
+  // Only render if we have at least one cost figure
+  if (
+    actualDailyCost === null &&
+    projectedDailyCost === null &&
+    monthToDateCost === null &&
+    lastMonthCost === null
+  ) {
+    return null
+  }
+
+  return (
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg bg-[var(--bg-secondary)] p-3 mb-3">
+      {/* Today */}
+      <div>
+        <dt className="text-[11px] text-[var(--text-muted)]">Today</dt>
+        <dd className="text-sm font-semibold text-heading tabular-nums">
+          {actualDailyCost !== null
+            ? formatCost(actualDailyCost, currencySymbol)
+            : projectedDailyCost !== null
+              ? `~${formatCost(projectedDailyCost, currencySymbol)}`
+              : '—'}
+        </dd>
+      </div>
+
+      {/* This month */}
+      <div>
+        <dt className="text-[11px] text-[var(--text-muted)]">This month</dt>
+        <dd className="text-sm font-semibold text-heading tabular-nums">
+          {monthToDateCost !== null ? formatCost(monthToDateCost, currencySymbol) : '—'}
+        </dd>
+      </div>
+
+      {/* Projected this month */}
+      {projectedDailyCost !== null && (
+        <div>
+          <dt className="text-[11px] text-[var(--text-muted)]">Projected</dt>
+          <dd className="text-sm font-semibold text-heading tabular-nums">
+            ~{formatCost(projectedDailyCost * 30, currencySymbol)}
+          </dd>
+        </div>
+      )}
+
+      {/* Last month */}
+      {lastMonthCost !== null && (
+        <div>
+          <dt className="text-[11px] text-[var(--text-muted)]">Last month</dt>
+          <dd className="flex items-center gap-1.5">
+            <span className="text-sm font-semibold text-heading tabular-nums">
+              {formatCost(lastMonthCost, currencySymbol)}
+            </span>
+            {monthOverMonthPercent !== null && Math.abs(monthOverMonthPercent) > 3 && (
+              <OverUnderBadge percent={monthOverMonthPercent} size="sm" />
+            )}
+          </dd>
+        </div>
+      )}
+    </dl>
+  )
+}
+
+// ── Ranking table wrapper ─────────────────────────────────────────────────────
+
+interface RankingTableProps {
+  title: string
+  id: string
+  children: React.ReactNode
+}
+
+function RankingTable({ title, id, children }: RankingTableProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const headingId = `${id}-heading`
+
+  return (
+    <div className="rounded-lg bg-[var(--bg-secondary)]">
+      <button
+        type="button"
+        aria-expanded={isOpen}
+        aria-controls={id}
+        id={headingId}
+        onClick={() => setIsOpen(prev => !prev)}
+        className={cn(
+          'flex w-full items-center justify-between gap-2 px-3 py-2.5 text-sm font-medium text-body',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <span>{title}</span>
+        <ChevronDown
+          className={cn('h-4 w-4 shrink-0 text-caption transition-transform', isOpen ? 'rotate-180' : '')}
+          aria-hidden="true"
+        />
+      </button>
+
+      <div
+        id={id}
+        role="region"
+        aria-labelledby={headingId}
+        style={{
+          display: 'grid',
+          gridTemplateRows: isOpen ? '1fr' : '0fr',
+          overflow: 'hidden',
+          transition: 'grid-template-rows 200ms ease',
+        }}
+      >
+        <div style={{ minHeight: 0 }}>
+          <div className="px-3 pb-3">
+            {children}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Device cost ranking ───────────────────────────────────────────────────────
+
+interface DeviceCostRankingProps {
+  items: EnergyInsights['deviceCostRanking']
+  currencySymbol: string
+}
+
+function DeviceCostRanking({ items, currencySymbol }: DeviceCostRankingProps) {
+  if (items.length === 0) {
+    return (
+      <p className="text-xs text-[var(--text-muted)] py-2">
+        No device cost data yet — data will appear as energy history is collected.
+      </p>
+    )
+  }
+
+  return (
+    <table className="w-full text-xs" aria-label="Device cost ranking">
+      <thead>
+        <tr className="text-[var(--text-muted)] border-b" style={{ borderColor: 'var(--border-primary)' }}>
+          <th scope="col" className="py-1.5 text-left font-medium">Device</th>
+          <th scope="col" className="py-1.5 text-right font-medium">Monthly kWh</th>
+          <th scope="col" className="py-1.5 text-right font-medium">Monthly cost</th>
+          <th scope="col" className="py-1.5 text-right font-medium">Daily avg</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y" style={{ borderColor: 'var(--border-primary)' }}>
+        {items.map(item => (
+          <tr key={item.deviceId}>
+            <td className="py-1.5 pr-2">
+              <Link
+                to={`/devices/${item.deviceId}`}
+                className="text-fairy-400 hover:text-fairy-300 hover:underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+              >
+                {item.label}
+              </Link>
+            </td>
+            <td className="py-1.5 text-right tabular-nums text-[var(--text-secondary)]">
+              {item.monthlyKwh.toFixed(1)}
+            </td>
+            <td className="py-1.5 text-right tabular-nums text-heading font-medium">
+              {formatCost(item.monthlyCost, currencySymbol)}
+            </td>
+            <td className="py-1.5 text-right tabular-nums text-[var(--text-muted)]">
+              {formatCost(item.dailyAvgCost, currencySymbol)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+// ── Room cost ranking ─────────────────────────────────────────────────────────
+
+interface RoomCostRankingProps {
+  items: EnergyInsights['roomCostRanking']
+  currencySymbol: string
+}
+
+function RoomCostRanking({ items, currencySymbol }: RoomCostRankingProps) {
+  if (items.length === 0) {
+    return (
+      <p className="text-xs text-[var(--text-muted)] py-2">
+        No room cost data yet — assign devices to rooms to see per-room costs.
+      </p>
+    )
+  }
+
+  return (
+    <table className="w-full text-xs" aria-label="Room cost ranking">
+      <thead>
+        <tr className="text-[var(--text-muted)] border-b" style={{ borderColor: 'var(--border-primary)' }}>
+          <th scope="col" className="py-1.5 text-left font-medium">Room</th>
+          <th scope="col" className="py-1.5 text-right font-medium">Today</th>
+          <th scope="col" className="py-1.5 text-right font-medium">This month</th>
+          <th scope="col" className="py-1.5 text-right font-medium">Devices</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y" style={{ borderColor: 'var(--border-primary)' }}>
+        {items.map(item => (
+          <tr key={item.roomName}>
+            <td className="py-1.5 pr-2">
+              <Link
+                to={`/rooms/${encodeURIComponent(item.roomName)}`}
+                className="text-fairy-400 hover:text-fairy-300 hover:underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+              >
+                {item.roomName}
+              </Link>
+            </td>
+            <td className="py-1.5 text-right tabular-nums text-heading font-medium">
+              {formatCost(item.dailyCost, currencySymbol)}
+            </td>
+            <td className="py-1.5 text-right tabular-nums text-[var(--text-secondary)]">
+              {formatCost(item.monthToDateCost, currencySymbol)}
+            </td>
+            <td className="py-1.5 text-right tabular-nums text-[var(--text-muted)]">
+              {item.deviceCount}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
 // ── Energy narrative ──────────────────────────────────────────────────────────
 
 interface EnergyNarrativeProps {
   insights: EnergyInsights
+  currencySymbol: string
 }
 
-function EnergyNarrative({ insights }: EnergyNarrativeProps) {
-  const { overUnderPercent, totalWatts, averageWattsThisHour } = insights
+function EnergyNarrative({ insights, currencySymbol }: EnergyNarrativeProps) {
+  const { overUnderPercent, totalWatts, averageWattsThisHour, actualDailyCost, projectedDailyCost } = insights
+
+  // Lead with cost context when available
+  const costDisplay = actualDailyCost !== null
+    ? formatCost(actualDailyCost, currencySymbol)
+    : projectedDailyCost !== null
+      ? `~${formatCost(projectedDailyCost, currencySymbol)}`
+      : null
 
   if (overUnderPercent == null) {
+    if (costDisplay) {
+      return (
+        <p className="text-body text-sm">
+          Your home has used{' '}
+          <span className="font-semibold text-heading">{costDisplay}</span>{' '}
+          of electricity today. Collecting data to establish your energy baseline — trends will appear within a week.
+        </p>
+      )
+    }
     return (
       <p className="text-body text-sm">
         Collecting data to establish your energy baseline. Trends will appear within a week.
@@ -176,6 +429,11 @@ function EnergyNarrative({ insights }: EnergyNarrativeProps) {
   if (overUnderPercent > 30) {
     return (
       <p className="text-body text-sm">
+        {costDisplay && (
+          <>
+            <span className="font-semibold text-heading">{costDisplay}</span> spent today.{' '}
+          </>
+        )}
         Your home is using{' '}
         <span className="font-semibold text-heading">{overUnderPercent}% more</span>{' '}
         energy than usual for this time of day. Currently{' '}
@@ -195,6 +453,11 @@ function EnergyNarrative({ insights }: EnergyNarrativeProps) {
   if (overUnderPercent >= 5) {
     return (
       <p className="text-body text-sm">
+        {costDisplay && (
+          <>
+            <span className="font-semibold text-heading">{costDisplay}</span> spent today.{' '}
+          </>
+        )}
         Energy usage is slightly above your weekly average.
       </p>
     )
@@ -203,6 +466,11 @@ function EnergyNarrative({ insights }: EnergyNarrativeProps) {
   if (overUnderPercent >= -5) {
     return (
       <p className="text-body text-sm">
+        {costDisplay && (
+          <>
+            <span className="font-semibold text-heading">{costDisplay}</span> spent today.{' '}
+          </>
+        )}
         Energy usage is typical for this time of day.
       </p>
     )
@@ -210,6 +478,11 @@ function EnergyNarrative({ insights }: EnergyNarrativeProps) {
 
   return (
     <p className="text-body text-sm">
+      {costDisplay && (
+        <>
+          <span className="font-semibold text-heading">{costDisplay}</span> spent today.{' '}
+        </>
+      )}
       Energy usage is{' '}
       <span className="font-semibold text-heading">{Math.abs(overUnderPercent)}% below</span>{' '}
       your weekly average.
@@ -223,7 +496,7 @@ interface DeviceBandProps {
   label: string
   items: PowerDevice[]
   maxWatts: number
-  anomalyMap: Map<number, EnergyInsights['deviceAnomalies'][number]>
+  anomalyMap: Map<number | string, EnergyInsights['deviceAnomalies'][number]>
   defaultOpen: boolean
   accentClass?: string
 }
@@ -354,17 +627,17 @@ export default function EnergyCard({ power, insights, currencySymbol = '$' }: En
             </span>
           )}
         </p>
-        {insights?.dailyCostEstimate != null && (
-          <p className="text-caption mt-0.5 text-xs">
-            Estimated daily cost: {currencySymbol}{insights.dailyCostEstimate.toFixed(2)}
-          </p>
-        )}
       </div>
+
+      {/* Cost summary block */}
+      {insights && (
+        <CostSummary insights={insights} currencySymbol={currencySymbol} />
+      )}
 
       {/* Narrative */}
       {insights && (
         <div className="mb-3">
-          <EnergyNarrative insights={insights} />
+          <EnergyNarrative insights={insights} currencySymbol={currencySymbol} />
         </div>
       )}
 
@@ -407,6 +680,22 @@ export default function EnergyCard({ power, insights, currencySymbol = '$' }: En
           />
         )}
       </div>
+
+      {/* Cost ranking tables */}
+      {insights && (
+        <div className="mt-4 space-y-2">
+          {insights.deviceCostRanking.length > 0 && (
+            <RankingTable title="Device cost breakdown" id="device-cost-ranking">
+              <DeviceCostRanking items={insights.deviceCostRanking} currencySymbol={currencySymbol} />
+            </RankingTable>
+          )}
+          {insights.roomCostRanking.length > 0 && (
+            <RankingTable title="Cost by room" id="room-cost-ranking">
+              <RoomCostRanking items={insights.roomCostRanking} currencySymbol={currencySymbol} />
+            </RankingTable>
+          )}
+        </div>
+      )}
     </section>
   )
 }

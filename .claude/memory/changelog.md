@@ -5,6 +5,14 @@
 
 ---
 
+## 2026-03-27 — Energy cost intelligence, visual indicators, Sonos-Kasa linking (PR #59)
+- **Backend energy cost** (WS1): Actual daily/monthly cost from Kasa device hardware memory (not projected). Per-room and per-device cost ranking. Monthly cost with month-over-month comparison. Daily over/under vs same day last week. Extended dashboard API and client types.
+- **Homepage visual indicators** (WS2): Dynamic lux icons (sun/cloud-sun/cloud-moon/moon) paired with lux number. Temperature with comfort-zone colouring. Footprints activity icon replacing dots. Single horizontal metadata row. Preserved PR #54 accordion MTA and scroll pills.
+- **Contextualised cost display** (WS3): RoomIntelligence cost headline with monthly projection and over/under badge. EnergyCard actual cost, month-to-date, last month, rankings. Enhanced narrative with cost context. Currency formatting utilities.
+- **Sonos-Kasa device linking** (WS4): device_links table (generic). CRUD API with live Kasa energy enrichment. SonosDetailPage power source section. DeviceDetailPage reverse linking in All Attributes. SonosSetupPage smart plug suggestion. Kasa device detail cost headline (today/month/projected from hardware memory).
+- **Data journey plan** (WS5): `.specs/DATA_JOURNEY_PLAN.md` — 42KB vision document for cross-comparison, interactive charts, drill-down, activity correlation.
+- **Files**: 15 files changed (+1,879 lines)
+
 ## 2026-03-27 — Icon beautification across the product (PR #50)
 - **Icon infrastructure**: LucideIcon component (renders icons from string names, curated set of ~90 icons) and IconPicker component (categorised grid with live search)
 - **Mode icons**: Icon picker on ModeDetail settings page. Mode icons displayed at 11 locations: HomePage mode selector, SceneEditorPage mode toggles, ScenesPage filter chips, RoomDetailPage mode group headers, ModesList cards, ModeDetail header, SunModeCard badge, MusicSection auto-play rules, AppLayout header badge, PillSelect, FilterChip

@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Thermometer, Sun, Clock, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock, AlertTriangle, ChevronRight, Activity, Loader2, Volume2, VolumeX } from 'lucide-react'
+import { Thermometer, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, Lock, AlertTriangle, ChevronRight, Activity, Loader2, Volume2, VolumeX, Footprints } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useState, useRef, useEffect } from 'react'
 import { api } from '@/lib/api'
 import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
@@ -9,6 +10,33 @@ import { getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LucideIcon } from '@/components/ui/LucideIcon'
+import { Accordion } from '@/components/ui/Accordion'
+
+// ── Visual state helpers ──────────────────────────────────────────────────────
+
+function getLuxIcon(lux: number): { icon: string; className: string; label: string } {
+  if (lux >= 1000) return { icon: 'sun', className: 'text-amber-400', label: 'Bright' }
+  if (lux >= 400) return { icon: 'sun-dim', className: 'text-yellow-400', label: 'Moderate light' }
+  if (lux >= 50) return { icon: 'cloud-sun', className: 'text-slate-400', label: 'Low light' }
+  if (lux >= 5) return { icon: 'cloud-moon', className: 'text-slate-500', label: 'Dim' }
+  return { icon: 'moon', className: 'text-indigo-400', label: 'Dark' }
+}
+
+function getTempColor(temp: number): string {
+  if (temp >= 28) return 'text-red-400'
+  if (temp >= 24) return 'text-amber-400'
+  if (temp >= 20) return 'text-emerald-400'
+  if (temp >= 16) return 'text-sky-400'
+  return 'text-blue-400'
+}
+
+function getActivityColor(lastActive: string | null): string {
+  if (!lastActive) return 'text-slate-500 dark:text-slate-400'
+  const minutesAgo = (Date.now() - new Date(lastActive).getTime()) / 60000
+  if (minutesAgo < 5) return 'text-slate-700 dark:text-slate-300'
+  if (minutesAgo < 30) return 'text-slate-600 dark:text-slate-400'
+  return 'text-slate-500 dark:text-slate-400'
+}
 
 // ── Skeleton loader ──────────────────────────────────────────────────────────
 
@@ -42,17 +70,24 @@ function ModeSelector({
   onSelect: (mode: string) => void
   isPending: boolean
 }) {
+  const activeRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    activeRef.current?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
+  }, [currentMode])
+
   return (
     <section aria-label="System mode" className="mb-6">
       <h2 className="text-heading mb-3 text-sm font-semibold">Current Mode</h2>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {modes.map(mode => (
           <button
             key={mode}
+            ref={currentMode === mode ? activeRef : undefined}
             onClick={() => onSelect(mode)}
             disabled={isPending}
             className={cn(
-              'inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-all',
+              'inline-flex shrink-0 items-center gap-2 rounded-full px-3.5 py-2 text-sm font-medium transition-all',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               'min-h-[44px]',
               currentMode === mode
@@ -138,28 +173,27 @@ function RoomCard({
         </div>
       </div>
 
-      {/* Sensor data */}
-      {(room.temperature !== null || room.lux !== null) && (
-        <div className="text-body mb-3 flex items-center gap-4 text-xs">
-          {room.temperature !== null && (
-            <span className="flex items-center gap-1">
-              <Thermometer className="h-3.5 w-3.5" />
-              {room.temperature !== null && Math.round(room.temperature * 10) / 10}&deg;C
-            </span>
-          )}
-          {room.lux !== null && (
-            <span className="flex items-center gap-1">
-              <Sun className="h-3.5 w-3.5" />
+      {/* Environmental indicators + activity */}
+      <div className="text-body mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        {room.lux !== null && (() => {
+          const { icon, className, label } = getLuxIcon(room.lux)
+          return (
+            <span className="flex items-center gap-1 text-slate-600 dark:text-slate-400">
+              <LucideIcon name={icon} className={cn('h-3.5 w-3.5', className)} aria-label={label} />
               {room.lux} lux
             </span>
-          )}
-        </div>
-      )}
-
-      {/* Last active */}
-      <div className="text-caption mb-3 flex items-center gap-1 text-xs">
-        <Clock className="h-3 w-3" />
-        {formatTimeAgo(room.last_active)}
+          )
+        })()}
+        {room.temperature !== null && (
+          <span className={cn('flex items-center gap-1', getTempColor(room.temperature))}>
+            <Thermometer className="h-3.5 w-3.5" />
+            {Math.round(room.temperature * 10) / 10}&deg;C
+          </span>
+        )}
+        <span className={cn('flex items-center gap-1', getActivityColor(room.last_active))}>
+          <Footprints className="h-3 w-3" />
+          {formatTimeAgo(room.last_active)}
+        </span>
       </div>
 
       {/* Quick scene buttons — all scenes, no limit */}
@@ -423,6 +457,8 @@ function MtaLineBadge({ line }: { line: string }) {
 }
 
 function MtaCard() {
+  const [open, setOpen] = useState(false)
+
   const { data: combinedStatus } = useQuery({
     queryKey: ['mta', 'combined-status'],
     queryFn: api.system.getCombinedMtaStatus,
@@ -436,100 +472,91 @@ function MtaCard() {
   const overallColor = STATUS_DOT_COLORS[combinedStatus.overallStatus]
   const bgClass = STATUS_BG_COLORS[combinedStatus.overallStatus]
 
+  // Build accordion summary — only show the catchable train, not just the next arrival
+  const soonestStop = combinedStatus.overallStatus === 'green' || combinedStatus.overallStatus === 'orange'
+    ? combinedStatus.stops.reduce<typeof combinedStatus.stops[0] | null>((best, stop) => {
+        if (!stop.catchableTrain) return best
+        if (!best || !best.catchableTrain) return stop
+        return stop.catchableTrain.minutesAway < best.catchableTrain.minutesAway ? stop : best
+      }, null)
+    : null
+
+  const accordionTitle: React.ReactNode = (
+    <span className="flex items-center gap-2 min-w-0">
+      <span
+        className="h-3 w-3 flex-shrink-0 rounded-full"
+        style={{ backgroundColor: overallColor }}
+        aria-hidden="true"
+      />
+      {soonestStop?.catchableTrain ? (
+        <span className="flex items-center gap-1.5 min-w-0">
+          <MtaLineBadge line={soonestStop.catchableTrain.routeId} />
+          <span className="truncate">at {soonestStop.config.name} in {soonestStop.catchableTrain.minutesAway} min</span>
+        </span>
+      ) : combinedStatus.overallStatus === 'red'
+        ? 'Nothing catchable right now'
+        : combinedStatus.overallMessage
+      }
+    </span>
+  )
+
   return (
-    <div className={cn('card mb-6 rounded-xl border px-4 py-3', bgClass)}>
-      {/* Main status header */}
-      <div className="mb-3 flex items-center gap-3">
-        <span
-          className="h-10 w-10 flex-shrink-0 rounded-full"
-          style={{ backgroundColor: overallColor }}
-          aria-hidden="true"
-        />
-        <div>
-          <p className="text-heading text-base font-semibold">
-            {combinedStatus.overallMessage}
-          </p>
-          <p className="text-caption text-xs">
-            {combinedStatus.stops.length} station{combinedStatus.stops.length !== 1 ? 's' : ''} tracked
-          </p>
-        </div>
-        <Train className="ml-auto h-5 w-5 text-caption" />
-      </div>
+    <div className={cn('card mb-6 rounded-xl border', bgClass)}>
+      <Accordion
+        id="mta"
+        title={accordionTitle}
+        open={open}
+        onToggle={() => setOpen(o => !o)}
+        card={false}
+        trailing={<Train className="h-4 w-4 text-caption" aria-hidden="true" />}
+      >
+        {/* Per-stop rows */}
+        <div className="space-y-1">
+          {combinedStatus.stops.map((stop, i) => {
+            const dotColor = STATUS_DOT_COLORS[stop.status]
+            const next = stop.nextArrival
+            const displayTrain = stop.catchableTrain ?? next
+            const buffer = displayTrain ? displayTrain.minutesAway - stop.config.walkTime : 0
 
-      {/* Per-stop rows */}
-      <div className="space-y-2">
-        {combinedStatus.stops.map((stop, i) => {
-          const DirIcon = stop.config.direction === 'S' ? ArrowDown : ArrowUp
-          const dotColor = STATUS_DOT_COLORS[stop.status]
-          const next = stop.nextArrival
-          const displayTrain = stop.catchableTrain ?? next
-          const buffer = displayTrain ? displayTrain.minutesAway - stop.config.walkTime : 0
+            // Build the helpful message
+            let message = ''
+            if (!displayTrain) {
+              message = 'No trains'
+            } else if (stop.status === 'red') {
+              message = `in ${next?.minutesAway ?? displayTrain.minutesAway} min — won't make it in time`
+            } else if (stop.status === 'green') {
+              const leaveMsg = stop.leaveInMinutes != null && stop.leaveInMinutes > 0
+                ? `Leave within ${stop.leaveInMinutes} min`
+                : 'Leave now'
+              message = `in ${displayTrain.minutesAway} min — ${leaveMsg}, ${buffer - (stop.leaveInMinutes ?? 0)} min wait at station`
+            } else if (stop.status === 'orange') {
+              message = `in ${displayTrain.minutesAway} min — Leave now, tight!`
+            }
 
-          return (
-            <div
-              key={`${stop.config.stopId}-${stop.config.direction}-${i}`}
-              className="surface flex items-center gap-2.5 rounded-lg px-3 py-2"
-            >
-              {/* Mini status dot */}
-              <span
-                className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
-                style={{ backgroundColor: dotColor }}
-                aria-label={`Status: ${stop.status}`}
-              />
-
-              {/* Line badges */}
-              <div className="flex items-center gap-0.5 flex-shrink-0">
-                {stop.config.routes.slice(0, 3).map(line => (
-                  <MtaLineBadge key={line} line={line} />
-                ))}
-              </div>
-
-              {/* Direction */}
-              <span className="flex items-center gap-0.5 text-caption text-xs flex-shrink-0">
-                <DirIcon className="h-3 w-3" />
-              </span>
-
-              {/* Arrival info */}
-              {displayTrain ? (
-                <div className="flex-1 min-w-0">
-                  {stop.status === 'red' ? (
-                    <>
-                      <span className="text-heading text-sm font-medium">
-                        Next in {next?.minutesAway ?? displayTrain.minutesAway} min
-                      </span>
-                      <span className="text-caption text-xs ml-1.5">
-                        (won't make it in time)
-                      </span>
-                    </>
-                  ) : stop.status === 'green' ? (
-                    <>
-                      <span className="text-heading text-sm font-medium">
-                        {stop.leaveInMinutes != null && stop.leaveInMinutes > 0
-                          ? `Leave within ${stop.leaveInMinutes} min`
-                          : 'Leave now'}
-                      </span>
-                      <span className="text-caption text-xs ml-1.5">
-                        ({displayTrain.routeId} in {displayTrain.minutesAway} min, {buffer - (stop.leaveInMinutes ?? 0)} min wait at station)
-                      </span>
-                    </>
-                  ) : stop.status === 'orange' ? (
-                    <>
-                      <span className="text-heading text-sm font-medium">
-                        Leave now
-                      </span>
-                      <span className="text-caption text-xs ml-1.5">
-                        ({displayTrain.routeId} in {displayTrain.minutesAway} min — tight!)
-                      </span>
-                    </>
-                  ) : null}
+            return (
+              <div
+                key={`${stop.config.stopId}-${stop.config.direction}-${i}`}
+                className="flex items-start gap-2 py-1.5 text-sm"
+              >
+                {/* Fixed-width leading column: dot + badge */}
+                <span className="flex shrink-0 items-center gap-1.5 pt-0.5">
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{ backgroundColor: dotColor }}
+                    aria-label={`Status: ${stop.status}`}
+                  />
+                  {displayTrain && <MtaLineBadge line={displayTrain.routeId} />}
+                </span>
+                {/* Station name + message */}
+                <div className="min-w-0 flex-1">
+                  <p className="text-heading font-medium">{stop.config.name}</p>
+                  <p className="text-caption text-xs">{message}</p>
                 </div>
-              ) : (
-                <span className="text-caption text-xs flex-1">No trains</span>
-              )}
-            </div>
-          )
-        })}
-      </div>
+              </div>
+            )
+          })}
+        </div>
+      </Accordion>
     </div>
   )
 }

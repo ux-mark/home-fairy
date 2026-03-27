@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Pencil, Zap, CirclePause, CircleSlash } from 'lucide-react'
@@ -94,9 +94,12 @@ function ToggleSwitch({
 function ruleDescription(rule: AutoPlayRule): { main: string; condition?: string } {
   const room = rule.room_name ?? 'whole house'
   const isContinue = rule.favourite_name === '__continue__'
+  const isPodcast = !!rule.podcast_feed_url
   const action = isContinue
     ? `Continue what's already playing in ${room}`
-    : `Play "${rule.favourite_name}" in ${room}`
+    : isPodcast
+      ? `Play latest "${rule.favourite_name}" episode in ${room}`
+      : `Play "${rule.favourite_name}" in ${room}`
   const main = `${action} when mode changes to "${rule.mode_name}".`
 
   let condition: string | undefined
@@ -142,9 +145,45 @@ function AddRuleForm({
   const [triggerType, setTriggerType] = useState<TriggerType>('if_not_playing')
   const [sourceValue, setSourceValue] = useState<string>('')
   const [maxPlays, setMaxPlays] = useState<string>('')
+  const [podcastFeedUrl, setPodcastFeedUrl] = useState<string | null>(null)
+  const [podcastResolving, setPodcastResolving] = useState(false)
+  const [podcastFailed, setPodcastFailed] = useState(false)
+  const [manualFeedUrl, setManualFeedUrl] = useState('')
+
+  // Auto-detect podcast when favourite changes
+  useEffect(() => {
+    if (!favourite || favourite === '__continue__') {
+      setPodcastFeedUrl(null)
+      setPodcastFailed(false)
+      setManualFeedUrl('')
+      return
+    }
+    let cancelled = false
+    setPodcastResolving(true)
+    setPodcastFailed(false)
+    api.sonos.resolvePodcast(favourite).then(result => {
+      if (cancelled) return
+      setPodcastResolving(false)
+      if (result.isPodcast) {
+        if (result.feedUrl) {
+          setPodcastFeedUrl(result.feedUrl)
+        } else {
+          setPodcastFailed(true)
+          setPodcastFeedUrl(null)
+        }
+      } else {
+        setPodcastFeedUrl(null)
+      }
+    }).catch(() => {
+      if (!cancelled) setPodcastResolving(false)
+    })
+    return () => { cancelled = true }
+  }, [favourite])
 
   const effectiveTrigger = favourite === '__continue__' ? 'mode_change' : triggerType
+  const resolvedFeedUrl = podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null)
   const isValid = favourite && mode && !(triggerType === 'if_source_not' && favourite !== '__continue__' && !sourceValue)
+    && (!podcastFailed || manualFeedUrl)
 
   const handleSave = () => {
     if (!isValid) return
@@ -156,8 +195,12 @@ function AddRuleForm({
       trigger_value: effectiveTrigger === 'if_source_not' ? sourceValue : null,
       enabled: 1,
       max_plays: maxPlays ? Number(maxPlays) : null,
+      podcast_feed_url: resolvedFeedUrl,
     })
     setMaxPlays('')
+    setPodcastFeedUrl(null)
+    setPodcastFailed(false)
+    setManualFeedUrl('')
   }
 
 
@@ -191,6 +234,24 @@ function AddRuleForm({
           onChange={setFavourite}
           id="rule-favourite"
         />
+        {podcastResolving && (
+          <p className="text-caption text-xs mt-1">Detecting podcast...</p>
+        )}
+        {podcastFeedUrl && !podcastResolving && (
+          <p className="text-xs mt-1 text-fairy-400">Podcast detected. The latest episode will play automatically.</p>
+        )}
+        {podcastFailed && !podcastResolving && (
+          <div className="mt-2">
+            <p className="text-xs text-amber-400 mb-1">Podcast detected, but we could not find its feed automatically.</p>
+            <input
+              type="url"
+              value={manualFeedUrl}
+              onChange={e => setManualFeedUrl(e.target.value)}
+              placeholder="Paste the podcast RSS feed URL"
+              className="w-full h-11 rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            />
+          </div>
+        )}
       </div>
 
       {/* Mode */}
@@ -291,6 +352,34 @@ export function MusicSection() {
   const [editTriggerType, setEditTriggerType] = useState<AutoPlayRule['trigger_type']>('if_not_playing')
   const [editSourceValue, setEditSourceValue] = useState('')
   const [editMaxPlays, setEditMaxPlays] = useState<string>('')
+  const [editPodcastFeedUrl, setEditPodcastFeedUrl] = useState<string | null>(null)
+  const [editPodcastResolving, setEditPodcastResolving] = useState(false)
+  const [editPodcastFailed, setEditPodcastFailed] = useState(false)
+  const [editManualFeedUrl, setEditManualFeedUrl] = useState('')
+
+  // Auto-detect podcast when edit favourite changes
+  useEffect(() => {
+    if (!editFavourite || editFavourite === '__continue__' || !editingRuleId) {
+      return
+    }
+    let cancelled = false
+    setEditPodcastResolving(true)
+    setEditPodcastFailed(false)
+    api.sonos.resolvePodcast(editFavourite).then(result => {
+      if (cancelled) return
+      setEditPodcastResolving(false)
+      if (result.isPodcast) {
+        if (result.feedUrl) {
+          setEditPodcastFeedUrl(prev => prev ?? result.feedUrl)
+        } else if (!editPodcastFeedUrl) {
+          setEditPodcastFailed(true)
+        }
+      } else {
+        setEditPodcastFeedUrl(null)
+      }
+    }).catch(() => { if (!cancelled) setEditPodcastResolving(false) })
+    return () => { cancelled = true }
+  }, [editFavourite, editingRuleId])
 
   // Preferences
   const { data: prefs } = useQuery({
@@ -384,6 +473,9 @@ export function MusicSection() {
     setEditTriggerType('if_not_playing')
     setEditSourceValue('')
     setEditMaxPlays('')
+    setEditPodcastFeedUrl(null)
+    setEditPodcastFailed(false)
+    setEditManualFeedUrl('')
   }
 
   function openEditRule(rule: AutoPlayRule) {
@@ -395,6 +487,9 @@ export function MusicSection() {
     setEditTriggerType(rule.trigger_type)
     setEditSourceValue(rule.trigger_value ?? '')
     setEditMaxPlays(rule.max_plays !== null ? String(rule.max_plays) : '')
+    setEditPodcastFeedUrl(rule.podcast_feed_url ?? null)
+    setEditPodcastFailed(false)
+    setEditManualFeedUrl('')
   }
 
   const { data: availableSources } = useQuery({
@@ -486,6 +581,24 @@ export function MusicSection() {
                     <div>
                       <label htmlFor="settings-edit-favourite" className="text-heading text-sm mb-1.5 block">Favourite</label>
                       <FavouriteSelector favourites={favourites ?? []} value={editFavourite} onChange={setEditFavourite} id="settings-edit-favourite" />
+                      {editPodcastResolving && (
+                        <p className="text-caption text-xs mt-1">Detecting podcast...</p>
+                      )}
+                      {editPodcastFeedUrl && !editPodcastResolving && (
+                        <p className="text-xs mt-1 text-fairy-400">Podcast detected. The latest episode will play automatically.</p>
+                      )}
+                      {editPodcastFailed && !editPodcastResolving && (
+                        <div className="mt-2">
+                          <p className="text-xs text-amber-400 mb-1">Podcast detected, but we could not find its feed automatically.</p>
+                          <input
+                            type="url"
+                            value={editManualFeedUrl}
+                            onChange={e => setEditManualFeedUrl(e.target.value)}
+                            placeholder="Paste the podcast RSS feed URL"
+                            className="w-full h-11 rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                          />
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -562,6 +675,7 @@ export function MusicSection() {
                               trigger_type: effectiveTrigger,
                               trigger_value: effectiveTrigger === 'if_source_not' ? editSourceValue : null,
                               max_plays: editMaxPlays ? Number(editMaxPlays) : null,
+                              podcast_feed_url: editPodcastFeedUrl ?? (editPodcastFailed && editManualFeedUrl ? editManualFeedUrl : null),
                             },
                           })
                         }}

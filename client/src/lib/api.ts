@@ -379,6 +379,10 @@ export interface DashboardSummary {
 export interface ActivityInsights {
   roomRanking: Array<{ room: string; events24h: number; peakHours: string }>
   dailyTrend: Array<{ day: string; totalEvents: number }>
+  hourlyPattern: Array<{ hour: number; avgEvents: number }>
+  hourlyByRoom: Array<{ room: string; data: Array<{ hour: number; avgEvents: number }> }>
+  dailyByRoom: Array<{ room: string; data: Array<{ day: string; totalEvents: number }> }>
+  roomIcons: Record<string, string | null>
   mostActiveRoom: { room: string; events24h: number } | null
   quietestRoom: { room: string; events24h: number } | null
 }
@@ -399,6 +403,9 @@ export interface RoomIntelligenceData {
     id: number; label: string; battery: number; status: string
     drainPerDay: number | null; predictedDaysRemaining: number | null
   }>
+  dailyCost: number | null
+  monthToDateCost: number | null
+  dailyOverUnderPercent: number | null
 }
 
 export interface DeviceInsightsData {
@@ -438,16 +445,37 @@ export interface EnergyInsights {
   totalWatts: number
   averageWattsThisHour: number | null
   overUnderPercent: number | null
+  /** @deprecated Use projectedDailyCost. Kept for backwards compatibility. */
   dailyCostEstimate: number | null
+  projectedDailyCost: number | null
+  actualDailyCost: number | null
+  monthToDateCost: number | null
+  lastMonthCost: number | null
+  monthOverMonthPercent: number | null
+  dailyOverUnderPercent: number | null
+  deviceCostRanking: Array<{
+    deviceId: string
+    label: string
+    monthlyKwh: number
+    monthlyCost: number
+    dailyAvgCost: number
+  }>
+  roomCostRanking: Array<{
+    roomName: string
+    dailyCost: number
+    monthToDateCost: number
+    deviceCount: number
+  }>
   energyRate: number
   dailyKwhHistory: Array<{ day: string; totalKwh: number }>
   peakHours: Array<{ hour: number; avgWatts: number }>
   deviceAnomalies: Array<{
-    deviceId: number
+    deviceId: number | string
     label: string
     currentWatts: number
     averageWatts: number
     percentAbove: number
+    source?: 'hub' | 'kasa'
   }>
 }
 
@@ -659,12 +687,32 @@ export interface AutoPlayRule {
   trigger_value: string | null
   enabled: number
   max_plays: number | null
+  podcast_feed_url: string | null
 }
 
 export interface FollowMeStatus {
   enabled: boolean
   activeRooms: string[]
   anchorRoom: string | null
+}
+
+export interface DeviceLink {
+  id: number
+  sourceType: string
+  sourceId: string
+  targetType: string
+  targetId: string
+  linkType: string
+  target?: {
+    label: string
+    isOnline: boolean
+    power: number | null
+    todayWh: number | null
+    todayCost: number | null
+    monthWh: number | null
+    monthlyCost: number | null
+    currencySymbol: string
+  } | null
 }
 
 // ── API client ───────────────────────────────────────────────────────────────
@@ -1096,6 +1144,11 @@ export const api = {
       }),
     deleteAutoPlayRule: (id: number) =>
       fetchApi<{ deleted: boolean }>('/sonos/auto-play/' + id, { method: 'DELETE' }),
+    resolvePodcast: (favouriteName: string) =>
+      fetchApi<{ isPodcast: boolean; feedUrl: string | null }>('/sonos/auto-play/resolve-podcast', {
+        method: 'POST',
+        body: JSON.stringify({ favourite_name: favouriteName }),
+      }),
     setVolume: (speaker: string, level: number) =>
       fetchApi<{ speaker: string; volume: number }>('/sonos/volume/' + encodeURIComponent(speaker), {
         method: 'PUT',
@@ -1114,5 +1167,24 @@ export const api = {
     getMuteStatus: () =>
       fetchApi<{ allMuted: boolean; mutedCount: number; totalSpeakers: number }>('/sonos/mute-status'),
     health: () => fetchApi<{ available: boolean }>('/sonos/health'),
+  },
+
+  deviceLinks: {
+    list: () => fetchApi<DeviceLink[]>('/device-links'),
+    getForDevice: (type: string, id: string) =>
+      fetchApi<DeviceLink[]>(`/device-links/${encodeURIComponent(type)}/${encodeURIComponent(id)}`),
+    create: (data: {
+      source_type: string
+      source_id: string
+      target_type: string
+      target_id: string
+      link_type?: string
+    }) =>
+      fetchApi<DeviceLink>('/device-links', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    delete: (id: number) =>
+      fetchApi<{ deleted: boolean }>(`/device-links/${id}`, { method: 'DELETE' }),
   },
 }

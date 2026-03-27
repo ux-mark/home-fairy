@@ -213,6 +213,17 @@ export function initDb(): void {
       PRIMARY KEY (room_name, mode_name)
     );
 
+    CREATE TABLE IF NOT EXISTS device_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_type TEXT NOT NULL CHECK(source_type IN ('sonos', 'kasa', 'lifx', 'hub')),
+      source_id TEXT NOT NULL,
+      target_type TEXT NOT NULL CHECK(target_type IN ('kasa', 'sonos', 'lifx', 'hub')),
+      target_id TEXT NOT NULL,
+      link_type TEXT DEFAULT 'power' CHECK(link_type IN ('power')),
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(source_type, source_id, target_type, target_id)
+    );
+
     CREATE TABLE IF NOT EXISTS sonos_speakers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       room_name TEXT NOT NULL REFERENCES rooms(name) ON UPDATE CASCADE ON DELETE CASCADE,
@@ -242,6 +253,9 @@ export function initDb(): void {
   const autoPlayColNames = autoPlayCols.map(c => c.name)
   if (!autoPlayColNames.includes('max_plays')) {
     db.exec('ALTER TABLE sonos_auto_play ADD COLUMN max_plays INTEGER DEFAULT NULL')
+  }
+  if (!autoPlayColNames.includes('podcast_feed_url')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN podcast_feed_url TEXT DEFAULT NULL')
   }
 
   // Add sonos columns to rooms table if they don't exist

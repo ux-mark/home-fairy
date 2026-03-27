@@ -341,6 +341,39 @@ export default function RoomDetailPage() {
   const [newRuleTriggerType, setNewRuleTriggerType] = useState<'mode_change' | 'if_not_playing' | 'if_source_not'>('if_not_playing')
   const [newRuleSourceValue, setNewRuleSourceValue] = useState('')
   const [newRuleMaxPlays, setNewRuleMaxPlays] = useState<string>('')
+  const [podcastFeedUrl, setPodcastFeedUrl] = useState<string | null>(null)
+  const [podcastResolving, setPodcastResolving] = useState(false)
+  const [podcastFailed, setPodcastFailed] = useState(false)
+  const [manualFeedUrl, setManualFeedUrl] = useState('')
+
+  // Auto-detect podcast when favourite changes
+  useEffect(() => {
+    const fav = newRuleFavourite
+    if (!fav || fav === '__continue__') {
+      setPodcastFeedUrl(null)
+      setPodcastFailed(false)
+      setManualFeedUrl('')
+      return
+    }
+    let cancelled = false
+    setPodcastResolving(true)
+    setPodcastFailed(false)
+    api.sonos.resolvePodcast(fav).then(result => {
+      if (cancelled) return
+      setPodcastResolving(false)
+      if (result.isPodcast) {
+        if (result.feedUrl) {
+          setPodcastFeedUrl(result.feedUrl)
+        } else {
+          setPodcastFailed(true)
+          setPodcastFeedUrl(null)
+        }
+      } else {
+        setPodcastFeedUrl(null)
+      }
+    }).catch(() => { if (!cancelled) setPodcastResolving(false) })
+    return () => { cancelled = true }
+  }, [newRuleFavourite])
 
   // Open groups state for available lights and devices
   const [openLightGroups, setOpenLightGroups] = useState<Set<string>>(new Set())
@@ -840,6 +873,9 @@ export default function RoomDetailPage() {
     setNewRuleTriggerType('if_not_playing')
     setNewRuleSourceValue('')
     setNewRuleMaxPlays('')
+    setPodcastFeedUrl(null)
+    setPodcastFailed(false)
+    setManualFeedUrl('')
   }
 
   function openEditRule(rule: AutoPlayRule) {
@@ -850,6 +886,9 @@ export default function RoomDetailPage() {
     setNewRuleTriggerType(rule.trigger_type)
     setNewRuleSourceValue(rule.trigger_value ?? '')
     setNewRuleMaxPlays(rule.max_plays !== null ? String(rule.max_plays) : '')
+    setPodcastFeedUrl(rule.podcast_feed_url ?? null)
+    setPodcastFailed(false)
+    setManualFeedUrl('')
   }
 
   const createAutoPlayRuleMutation = useMutation({
@@ -1438,9 +1477,12 @@ export default function RoomDetailPage() {
                     <ul className="space-y-2" role="list">
                       {roomAutoPlayRules.map(rule => {
                         const isEditing = editingRuleId === rule.id
+                        const isPodcast = !!rule.podcast_feed_url
                         const mainText = rule.favourite_name === '__continue__'
                           ? `Continue what's already playing when mode changes to "${rule.mode_name}".`
-                          : `Play "${rule.favourite_name}" when mode changes to "${rule.mode_name}".`
+                          : isPodcast
+                            ? `Play latest "${rule.favourite_name}" episode when mode changes to "${rule.mode_name}".`
+                            : `Play "${rule.favourite_name}" when mode changes to "${rule.mode_name}".`
                         let conditionText: string | undefined
                         if (rule.trigger_type === 'if_not_playing') conditionText = 'Only if nothing is playing.'
                         else if (rule.trigger_type === 'if_source_not' && rule.trigger_value) conditionText = `Only if "${rule.trigger_value}" is not active.`
@@ -1462,6 +1504,24 @@ export default function RoomDetailPage() {
                               <div>
                                 <label htmlFor="room-edit-rule-favourite" className="text-heading text-sm mb-1.5 block">Favourite</label>
                                 <FavouriteSelector favourites={sonosFavourites ?? []} value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-edit-rule-favourite" />
+                                {podcastResolving && (
+                                  <p className="text-caption text-xs mt-1">Detecting podcast...</p>
+                                )}
+                                {podcastFeedUrl && !podcastResolving && (
+                                  <p className="text-xs mt-1 text-fairy-400">Podcast detected. The latest episode will play automatically.</p>
+                                )}
+                                {podcastFailed && !podcastResolving && (
+                                  <div className="mt-2">
+                                    <p className="text-xs text-amber-400 mb-1">Podcast detected, but we could not find its feed automatically.</p>
+                                    <input
+                                      type="url"
+                                      value={manualFeedUrl}
+                                      onChange={e => setManualFeedUrl(e.target.value)}
+                                      placeholder="Paste the podcast RSS feed URL"
+                                      className="w-full h-11 rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                                    />
+                                  </div>
+                                )}
                               </div>
 
                               <div>
@@ -1538,6 +1598,7 @@ export default function RoomDetailPage() {
                                         trigger_type: effectiveTrigger,
                                         trigger_value: effectiveTrigger === 'if_source_not' ? newRuleSourceValue : null,
                                         max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
+                                        podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
                                       },
                                     })
                                   }}
@@ -1638,6 +1699,24 @@ export default function RoomDetailPage() {
                       <div>
                         <label htmlFor="room-detail-rule-favourite" className="text-heading text-sm mb-1.5 block">Favourite</label>
                         <FavouriteSelector favourites={sonosFavourites ?? []} value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-detail-rule-favourite" />
+                        {podcastResolving && (
+                          <p className="text-caption text-xs mt-1">Detecting podcast...</p>
+                        )}
+                        {podcastFeedUrl && !podcastResolving && (
+                          <p className="text-xs mt-1 text-fairy-400">Podcast detected. The latest episode will play automatically.</p>
+                        )}
+                        {podcastFailed && !podcastResolving && (
+                          <div className="mt-2">
+                            <p className="text-xs text-amber-400 mb-1">Podcast detected, but we could not find its feed automatically.</p>
+                            <input
+                              type="url"
+                              value={manualFeedUrl}
+                              onChange={e => setManualFeedUrl(e.target.value)}
+                              placeholder="Paste the podcast RSS feed URL"
+                              className="w-full h-11 rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                            />
+                          </div>
+                        )}
                       </div>
 
                       <div>
@@ -1714,6 +1793,7 @@ export default function RoomDetailPage() {
                               trigger_value: effectiveTrigger === 'if_source_not' ? newRuleSourceValue : null,
                               enabled: 1,
                               max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
+                              podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
                             })
                           }}
                           disabled={!newRuleFavourite || !newRuleMode || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || createAutoPlayRuleMutation.isPending}

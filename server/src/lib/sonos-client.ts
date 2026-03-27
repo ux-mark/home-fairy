@@ -155,6 +155,14 @@ class SonosClient {
     }
   }
 
+  async setAVTransportURI(speaker: string, uri: string): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/setavtransporturi/${encodeURIComponent(uri)}`)
+    } catch (err) {
+      this.handleError(err, `setAVTransportURI(${speaker})`)
+    }
+  }
+
   async playFavourite(speaker: string, name: string): Promise<void> {
     try {
       await this.api.get(`/${encodeURIComponent(speaker)}/favorite/${encodeURIComponent(name)}`)

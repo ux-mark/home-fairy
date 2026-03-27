@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useParams, useMatch, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, Pencil, Check, X, Power, Shield, AlertTriangle } from 'lucide-react'
-import { api, type DeviceInsightsData, type KasaDevice } from '@/lib/api'
+import { ChevronRight, Pencil, Check, X, Power, Shield, AlertTriangle, Link2, Volume2 } from 'lucide-react'
+import { api, type DeviceInsightsData, type KasaDevice, type DeviceLink } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
 import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
@@ -278,6 +278,49 @@ function rssiLabel(rssi: number | null): { text: string; color: string } {
 
 function KasaAtAGlance({ device }: { device: KasaDevice }) {
   const attrs = device.attributes
+  const hasEmeter = device.has_emeter
+  const now = new Date()
+  const currentDay = now.getDate()
+  const currentMonth = now.getMonth() + 1
+  const daysInMonth = new Date(now.getFullYear(), currentMonth, 0).getDate()
+
+  const { data: dailyStats } = useQuery({
+    queryKey: ['kasa', 'energy', 'daily', device.id],
+    queryFn: () => api.kasa.getDailyStats(device.id),
+    enabled: !!hasEmeter,
+    staleTime: 5 * 60_000,
+  })
+
+  const { data: monthlyStats } = useQuery({
+    queryKey: ['kasa', 'energy', 'monthly', device.id],
+    queryFn: () => api.kasa.getMonthlyStats(device.id),
+    enabled: !!hasEmeter,
+    staleTime: 5 * 60_000,
+  })
+
+  const { data: prefs } = useQuery({
+    queryKey: ['system', 'preferences'],
+    queryFn: api.system.getPreferences,
+    staleTime: 60_000,
+  })
+
+  const energyRate = parseFloat(prefs?.energy_rate ?? '0.30')
+  const currencySymbol = prefs?.currency_symbol ?? '$'
+
+  // Actual cost from device hardware memory
+  const todayWh = dailyStats?.data?.[currentDay] ?? null
+  const todayCost = todayWh !== null ? (todayWh / 1000) * energyRate : null
+  const monthWh = monthlyStats?.data?.[currentMonth] ?? null
+  const monthCost = monthWh !== null ? (monthWh / 1000) * energyRate : null
+  const projectedMonthCost = monthCost !== null && currentDay > 1
+    ? (monthCost / currentDay) * daysInMonth
+    : null
+
+  // Last month comparison
+  const lastMonthNum = currentMonth === 1 ? 12 : currentMonth - 1
+  const lastMonthWh = monthlyStats?.data?.[lastMonthNum] ?? null
+  const lastMonthCost = lastMonthWh !== null ? (lastMonthWh / 1000) * energyRate : null
+
   const hasAny =
     typeof attrs.power === 'number' ||
     typeof attrs.voltage === 'number' ||
@@ -285,7 +328,7 @@ function KasaAtAGlance({ device }: { device: KasaDevice }) {
     typeof attrs.runtime_today === 'number' ||
     typeof attrs.energy === 'number'
 
-  if (!hasAny) return null
+  if (!hasAny && !hasEmeter) return null
 
   return (
     <section aria-labelledby="kasa-glance-heading">
@@ -293,12 +336,69 @@ function KasaAtAGlance({ device }: { device: KasaDevice }) {
         <h2 id="kasa-glance-heading" className="mb-4 text-sm font-semibold text-heading">
           At a glance
         </h2>
+
+        {/* Cost headline — the most important info */}
+        {hasEmeter && todayCost !== null && (
+          <div className="mb-5 rounded-lg bg-fairy-500/5 p-4">
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+              <div>
+                <p className="text-xs text-caption">Today</p>
+                <p className="text-xl font-bold tabular-nums text-heading">{currencySymbol}{todayCost.toFixed(2)}</p>
+              </div>
+              {monthCost !== null && (
+                <div>
+                  <p className="text-xs text-caption">This month</p>
+                  <p className="text-xl font-bold tabular-nums text-heading">{currencySymbol}{monthCost.toFixed(2)}</p>
+                </div>
+              )}
+              {projectedMonthCost !== null && (
+                <div>
+                  <p className="text-xs text-caption">Projected month</p>
+                  <p className="text-xl font-bold tabular-nums text-heading">~{currencySymbol}{Math.round(projectedMonthCost)}</p>
+                </div>
+              )}
+            </div>
+            {lastMonthCost !== null && projectedMonthCost !== null && lastMonthCost > 0 && (
+              <p className="mt-2 text-xs text-body">
+                {projectedMonthCost > lastMonthCost
+                  ? `On track to cost ${Math.round(((projectedMonthCost - lastMonthCost) / lastMonthCost) * 100)}% more than last month (${currencySymbol}${lastMonthCost.toFixed(2)})`
+                  : `On track to cost ${Math.round(((lastMonthCost - projectedMonthCost) / lastMonthCost) * 100)}% less than last month (${currencySymbol}${lastMonthCost.toFixed(2)})`
+                }
+              </p>
+            )}
+          </div>
+        )}
+
         <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           {typeof attrs.power === 'number' && (
             <div>
               <dt className="text-xs text-caption">Power draw</dt>
               <dd className="mt-0.5 text-xl font-bold tabular-nums text-heading">
                 {attrs.power.toFixed(1)}<span className="ml-0.5 text-sm font-normal text-caption">W</span>
+              </dd>
+            </div>
+          )}
+          {typeof attrs.runtime_today === 'number' && (
+            <div>
+              <dt className="text-xs text-caption">On today</dt>
+              <dd className="mt-0.5 text-xl font-bold tabular-nums text-heading">
+                {formatRuntime(attrs.runtime_today)}
+              </dd>
+            </div>
+          )}
+          {typeof attrs.runtime_month === 'number' && (
+            <div>
+              <dt className="text-xs text-caption">On this month</dt>
+              <dd className="mt-0.5 text-xl font-bold tabular-nums text-heading">
+                {formatRuntime(attrs.runtime_month)}
+              </dd>
+            </div>
+          )}
+          {typeof attrs.energy === 'number' && (
+            <div>
+              <dt className="text-xs text-caption">Total energy</dt>
+              <dd className="mt-0.5 text-xl font-bold tabular-nums text-heading">
+                {attrs.energy.toFixed(2)}<span className="ml-0.5 text-sm font-normal text-caption">kWh</span>
               </dd>
             </div>
           )}
@@ -315,30 +415,6 @@ function KasaAtAGlance({ device }: { device: KasaDevice }) {
               <dt className="text-xs text-caption">Current</dt>
               <dd className="mt-0.5 text-xl font-bold tabular-nums text-heading">
                 {attrs.current.toFixed(3)}<span className="ml-0.5 text-sm font-normal text-caption">A</span>
-              </dd>
-            </div>
-          )}
-          {typeof attrs.energy === 'number' && (
-            <div>
-              <dt className="text-xs text-caption">Total energy</dt>
-              <dd className="mt-0.5 text-xl font-bold tabular-nums text-heading">
-                {attrs.energy.toFixed(2)}<span className="ml-0.5 text-sm font-normal text-caption">kWh</span>
-              </dd>
-            </div>
-          )}
-          {typeof attrs.runtime_today === 'number' && (
-            <div>
-              <dt className="text-xs text-caption">Runtime today</dt>
-              <dd className="mt-0.5 text-xl font-bold tabular-nums text-heading">
-                {formatRuntime(attrs.runtime_today)}
-              </dd>
-            </div>
-          )}
-          {typeof attrs.runtime_month === 'number' && (
-            <div>
-              <dt className="text-xs text-caption">Runtime this month</dt>
-              <dd className="mt-0.5 text-xl font-bold tabular-nums text-heading">
-                {formatRuntime(attrs.runtime_month)}
               </dd>
             </div>
           )}
@@ -461,9 +537,9 @@ function PeriodTabs({ value, onChange }: { value: Period; onChange: (period: Per
 
 // ── All attributes collapsible ────────────────────────────────────────────────
 
-function AllAttributesSection({ attributeEntries }: { attributeEntries: [string, unknown][] }) {
+function AllAttributesSection({ attributeEntries, children }: { attributeEntries: [string, unknown][]; children?: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false)
-  if (attributeEntries.length === 0) return null
+  if (attributeEntries.length === 0 && !children) return null
 
   return (
     <section>
@@ -489,6 +565,7 @@ function AllAttributesSection({ attributeEntries }: { attributeEntries: [string,
             )
           })}
         </dl>
+        {children}
       </Accordion>
     </section>
   )
@@ -594,6 +671,52 @@ function KasaDeviceDetail({ id }: { id: string }) {
     queryFn: () => api.kasa.getDevice(device!.parent_id!),
     enabled: !!device?.parent_id,
     staleTime: 60_000,
+  })
+
+  const { data: deviceLinks = [] } = useQuery({
+    queryKey: ['device-links', 'kasa', id],
+    queryFn: () => api.deviceLinks.getForDevice('kasa', id),
+    staleTime: 30_000,
+  })
+
+  const { data: sonosSpeakers = [] } = useQuery({
+    queryKey: ['sonos', 'speakers'],
+    queryFn: api.sonos.getSpeakers,
+    staleTime: 60_000,
+  })
+
+  // Links where this Kasa device is the TARGET (i.e., which Sonos rooms use this as a power source)
+  const inboundLinks = deviceLinks.filter(
+    (l: DeviceLink) => l.targetType === 'kasa' && l.targetId === id,
+  )
+
+  const [unlinkKasaConfirmId, setUnlinkKasaConfirmId] = useState<number | null>(null)
+  const [showSpeakerPicker, setShowSpeakerPicker] = useState(false)
+
+  const deleteLinkMutation = useMutation({
+    mutationFn: (linkId: number) => api.deviceLinks.delete(linkId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['device-links', 'kasa', id] })
+      setUnlinkKasaConfirmId(null)
+      toast({ message: 'Power source link removed' })
+    },
+    onError: () => toast({ message: 'Failed to remove link. Try again.', type: 'error' }),
+  })
+
+  const linkToSpeakerMutation = useMutation({
+    mutationFn: (speakerRoom: string) => api.deviceLinks.create({
+      source_type: 'sonos',
+      source_id: speakerRoom,
+      target_type: 'kasa',
+      target_id: id,
+      link_type: 'power',
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['device-links', 'kasa', id] })
+      setShowSpeakerPicker(false)
+      toast({ message: 'Linked to speaker' })
+    },
+    onError: () => toast({ message: 'Failed to link speaker. Try again.', type: 'error' }),
   })
 
   const assignRoomMutation = useMutation({
@@ -948,7 +1071,60 @@ function KasaDeviceDetail({ id }: { id: string }) {
       <KasaDeviceInfo device={device} />
 
       {/* ── 6. All attributes (collapsed by default) ────────────────────── */}
-      <AllAttributesSection attributeEntries={attributeEntries} />
+      <AllAttributesSection attributeEntries={attributeEntries}>
+        {/* Sonos speaker link — inside All attributes */}
+        {device?.has_emeter && sonosSpeakers.length > 0 && (
+          <div className="mt-4 border-t border-[var(--border-secondary)] pt-4">
+            <p className="mb-2 text-xs font-medium text-heading">Sonos speaker link</p>
+            {inboundLinks.length > 0 ? (
+              <div className="space-y-1.5">
+                {inboundLinks.map((link: DeviceLink) => (
+                  <div key={link.id} className="flex items-center gap-2 text-sm">
+                    <Volume2 className="h-3.5 w-3.5 text-fairy-400" aria-hidden="true" />
+                    <span className="text-body">Powers <strong className="text-heading">{link.sourceId}</strong></span>
+                    <button
+                      onClick={() => unlinkKasaConfirmId === link.id ? deleteLinkMutation.mutate(link.id) : setUnlinkKasaConfirmId(link.id)}
+                      disabled={deleteLinkMutation.isPending}
+                      className="ml-auto text-xs text-caption hover:text-red-400 transition-colors"
+                    >
+                      {unlinkKasaConfirmId === link.id ? 'Confirm remove' : 'Remove'}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : !showSpeakerPicker ? (
+              <button
+                onClick={() => setShowSpeakerPicker(true)}
+                className="flex items-center gap-1.5 text-xs text-caption hover:text-heading transition-colors"
+              >
+                <Link2 className="h-3 w-3 text-fairy-400" aria-hidden="true" />
+                Link to a Sonos speaker
+              </button>
+            ) : (
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-xs text-body">Select a speaker</span>
+                  <button onClick={() => setShowSpeakerPicker(false)} className="text-xs text-caption hover:text-heading transition-colors">Cancel</button>
+                </div>
+                <div className="space-y-1">
+                  {sonosSpeakers.map((s: { room_name: string; speaker_name: string }) => (
+                    <button
+                      key={s.room_name}
+                      onClick={() => linkToSpeakerMutation.mutate(s.room_name)}
+                      disabled={linkToSpeakerMutation.isPending}
+                      className="flex w-full items-center gap-2 rounded-lg border border-[var(--border-secondary)] px-2.5 py-1.5 text-xs text-heading hover:border-fairy-500/50 transition-colors"
+                    >
+                      <Volume2 className="h-3.5 w-3.5 text-fairy-400" aria-hidden="true" />
+                      <span className="flex-1 text-left">{s.speaker_name}</span>
+                      <span className="text-caption">{s.room_name}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </AllAttributesSection>
 
       {/* ── 7. Device management ──────────────────────────────────────────── */}
       {!isDeactivated && (

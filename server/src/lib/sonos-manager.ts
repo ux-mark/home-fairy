@@ -1,6 +1,7 @@
 import { sonosClient, type SonosZone } from './sonos-client.js'
 import { getAll, getOne, run } from '../db/index.js'
 import { emit } from './socket.js'
+import { getLatestEpisodeUrl } from './podcast-resolver.js'
 
 const log = (msg: string) => console.log(`[sonos] ${msg}`)
 
@@ -28,6 +29,7 @@ interface AutoPlayRow {
   trigger_value: string | null
   enabled: number
   max_plays: number | null
+  podcast_feed_url: string | null
 }
 
 interface SpeakerTimer {
@@ -242,14 +244,26 @@ class SonosManager {
   }
 
   async onModeChange(newMode: string): Promise<void> {
+    // Mode change only resets play counts — auto-play rules are triggered by motion
     if (newMode !== this.currentMode) {
       this.rulePlayCounts.clear()
       this.currentMode = newMode
+      log(`Mode changed to "${newMode}", auto-play repeat counts reset`)
     }
+  }
+
+  /**
+   * Called when motion is detected in a room. Evaluates auto-play rules for the
+   * current mode. Not gated by lux, auto-enable, or night lockout — like follow-me.
+   * - Room-specific rules: fire only when that room activates
+   * - Whole-house rules (room_name = null): fire on first motion in any room
+   */
+  async onRoomActive(roomName: string): Promise<void> {
+    const mode = this.currentMode ?? this.getCurrentModeFromDb()
 
     const rules = getAll<AutoPlayRow>(
-      'SELECT * FROM sonos_auto_play WHERE mode_name = ? AND enabled = 1',
-      [newMode],
+      'SELECT * FROM sonos_auto_play WHERE mode_name = ? AND enabled = 1 AND (room_name = ? OR room_name IS NULL)',
+      [mode, roomName],
     )
 
     if (rules.length === 0) return
@@ -261,6 +275,13 @@ class SonosManager {
         log(`Auto-play rule ${rule.id} failed: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
+  }
+
+  private getCurrentModeFromDb(): string {
+    const row = getOne<{ value: string }>(
+      "SELECT value FROM current_state WHERE key = 'mode'",
+    )
+    return row?.value ?? 'Evening'
   }
 
   private async evaluateAutoPlayRule(rule: AutoPlayRow): Promise<void> {
@@ -330,8 +351,21 @@ class SonosManager {
       return
     }
 
-    log(`Auto-play rule ${rule.id}: playing "${rule.favourite_name}" on ${targetSpeaker}`)
-    await sonosClient.playFavourite(targetSpeaker, rule.favourite_name)
+    // Podcast rules: fetch latest episode from RSS and play directly
+    if (rule.podcast_feed_url) {
+      log(`Auto-play rule ${rule.id}: resolving podcast "${rule.favourite_name}" from RSS`)
+      const episode = await getLatestEpisodeUrl(rule.podcast_feed_url)
+      if (!episode) {
+        log(`Auto-play rule ${rule.id}: failed to resolve podcast episode`)
+        return
+      }
+      log(`Auto-play rule ${rule.id}: playing episode "${episode.title}" on ${targetSpeaker}`)
+      await sonosClient.setAVTransportURI(targetSpeaker, episode.url)
+      await sonosClient.play(targetSpeaker)
+    } else {
+      log(`Auto-play rule ${rule.id}: playing "${rule.favourite_name}" on ${targetSpeaker}`)
+      await sonosClient.playFavourite(targetSpeaker, rule.favourite_name)
+    }
     this.rulePlayCounts.set(rule.id, (this.rulePlayCounts.get(rule.id) ?? 0) + 1)
     emit('sonos:playback-update', { speaker: targetSpeaker })
   }

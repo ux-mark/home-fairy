@@ -7,7 +7,7 @@ import { getSunTimes, getCurrentSunPhase } from '../lib/sun-tracker.js'
 import { sunModeScheduler } from '../lib/sun-mode-scheduler.js'
 import { motionHandler } from '../lib/motion-handler.js'
 import { getHistoryStats } from '../lib/history-collector.js'
-import { computeInsights } from '../lib/insights-engine.js'
+import { computeInsights, getCachedInsights } from '../lib/insights-engine.js'
 
 const router = Router()
 
@@ -182,7 +182,7 @@ router.get('/summary', async (_req: Request, res: Response) => {
     const currencySymbol = currencyRow?.value || '$'
 
     // Compute insights from current state + historical data
-    const insights = computeInsights({
+    const insights = await computeInsights({
       power,
       rooms: rooms as Array<{ name: string; temperature: number | null; lux: number | null }>,
       battery,
@@ -534,10 +534,19 @@ router.get('/room/:name', (req: Request, res: Response) => {
       }
     })
 
+    // Look up room cost data from cached insights (populated by /summary)
+    const cachedInsights = getCachedInsights()
+    const roomCostData = cachedInsights?.energy?.roomCostRanking.find(
+      (r) => r.roomName === roomName,
+    )
+
     res.json({
       temperature: room.temperature, lux: room.lux,
       lastActive: room.last_active, temperatureHistory,
       totalWatts, devices, events24h, hourlyPattern, batteryDevices,
+      dailyCost: roomCostData?.dailyCost ?? null,
+      monthToDateCost: roomCostData?.monthToDateCost ?? null,
+      dailyOverUnderPercent: cachedInsights?.energy?.dailyOverUnderPercent ?? null,
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

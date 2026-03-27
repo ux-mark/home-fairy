@@ -368,3 +368,24 @@
 - **Branch cleanup**: done
 - **Summary**: SensorCard, KasaDeviceCard, and AttentionBar ItemCard restructured from single-row to two-row layouts so text gets full width and metadata/actions wrap below
 - **Files**: `client/src/pages/DevicesPage.tsx`, `client/src/components/dashboard/AttentionBar.tsx`
+
+## PR #54 — Homepage progressive disclosure: accordion subway + pill modes
+- **Branch**: feature/homepage-progressive-disclosure → dev
+- **Created**: 2026-03-27
+- **Status**: merged
+- **Merge date**: 2026-03-27
+- **Branch cleanup**: done
+- **Summary**: MTA subway card wrapped in collapsible accordion. Mode selector converted to horizontal scroll pills.
+- **Files**: `client/src/pages/HomePage.tsx`
+
+## PRs #55-58 — Individual workstream PRs (superseded by #59)
+- **Status**: closed
+
+## PR #59 — Energy cost intelligence, visual indicators, Sonos-Kasa linking
+- **Branch**: review/all-workstreams → dev
+- **Created**: 2026-03-27
+- **Status**: merged
+- **Merge date**: 2026-03-27
+- **Branch cleanup**: done
+- **Summary**: WS1-WS4 consolidated. Backend energy cost from Kasa hardware memory. Homepage visual indicators (lux icons, temp colours, footprints). Contextualised cost on room detail and insights. Sonos-Kasa device linking with cost attribution. Kasa device detail cost headline.
+- **Files**: 15 files changed (+1,879 lines) — insights-engine.ts, dashboard.ts, device-links.ts (new), db/index.ts, index.ts, sonos.ts, api.ts, utils.ts, HomePage.tsx, EnergyCard.tsx, RoomIntelligence.tsx, SonosDetailPage.tsx, DeviceDetailPage.tsx, SonosSetupPage.tsx
