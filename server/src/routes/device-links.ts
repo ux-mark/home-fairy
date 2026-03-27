@@ -51,7 +51,7 @@ async function getKasaEnrichedData(
   const rateRow = getOne<CurrentStateRow>("SELECT value FROM current_state WHERE key = 'pref_energy_rate'")
   const energyRate = rateRow ? parseFloat(rateRow.value) : 0
   const currRow = getOne<CurrentStateRow>("SELECT value FROM current_state WHERE key = 'pref_currency_symbol'")
-  const currencySymbol = currRow?.value ?? '€'
+  const currencySymbol = currRow?.value || '$'
 
   if (!isOnline || !hasEmeter) {
     return {

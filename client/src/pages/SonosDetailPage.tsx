@@ -170,41 +170,37 @@ function PowerSourceSection({
   linkPending,
   unlinkPending,
 }: PowerSourceSectionProps) {
+  const [plugSearch, setPlugSearch] = useState('')
   const powerLinks = links.filter(l => l.linkType === 'power')
   const linkedIds = new Set(powerLinks.map(l => l.targetId))
 
-  // Only show plugs/strips that have emeter
+  // Only show plugs and sockets (outlets) that have emeter — NOT strips
   const eligiblePlugs = (kasaDevices ?? []).filter(
-    d => d.has_emeter && !d.parent_id && (d.device_type === 'plug' || d.device_type === 'strip' || d.device_type === 'outlet'),
+    d => d.has_emeter && (d.device_type === 'plug' || d.device_type === 'outlet'),
   )
+
+  const filteredPlugs = plugSearch.trim()
+    ? eligiblePlugs.filter(p => p.label.toLowerCase().includes(plugSearch.toLowerCase()))
+    : eligiblePlugs
 
   return (
     <section aria-labelledby={`power-source-heading-${roomName}`}>
-      <h3
-        id={`power-source-heading-${roomName}`}
-        className="mb-3 text-sm font-medium text-body"
-      >
-        Power source
-      </h3>
-
       {linksLoading ? (
         <div className="space-y-2">
           <div className="h-14 animate-pulse rounded-lg bg-[var(--bg-tertiary)]" />
         </div>
-      ) : powerLinks.length === 0 ? (
+      ) : powerLinks.length === 0 && !showPlugPicker ? (
         <div className="rounded-lg border border-dashed border-[var(--border-secondary)] p-4">
           <p className="text-sm text-caption">
             No power source linked. Link a smart plug to track the energy cost of this speaker.
           </p>
-          {!showPlugPicker && (
-            <button
-              onClick={() => setShowPlugPicker(true)}
-              className="mt-3 flex min-h-[44px] items-center gap-2 rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-heading transition-colors hover:bg-[var(--bg-tertiary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-            >
-              <Plug className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
-              Link a smart plug
-            </button>
-          )}
+          <button
+            onClick={() => setShowPlugPicker(true)}
+            className="mt-3 flex min-h-[44px] items-center gap-2 rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-heading transition-colors hover:bg-[var(--bg-tertiary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          >
+            <Plug className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+            Link a smart plug
+          </button>
         </div>
       ) : (
         <div className="space-y-2">
@@ -281,14 +277,33 @@ function PowerSourceSection({
       {/* Plug picker */}
       {showPlugPicker && (
         <div className="mt-3 rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-secondary)] p-4">
-          <p className="mb-3 text-sm font-medium text-heading">Select a smart plug</p>
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-sm font-medium text-heading">Select a smart plug</p>
+            <button
+              onClick={() => { setShowPlugPicker(false); setPlugSearch('') }}
+              className="text-xs text-caption hover:text-heading transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+          {eligiblePlugs.length > 3 && (
+            <input
+              type="text"
+              value={plugSearch}
+              onChange={e => setPlugSearch(e.target.value)}
+              placeholder="Search plugs and sockets..."
+              className="mb-3 w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-heading placeholder:text-caption focus:border-fairy-500 focus:outline-none"
+            />
+          )}
           {eligiblePlugs.length === 0 ? (
             <p className="text-sm text-caption">
               No energy-monitoring smart plugs found. Make sure your Kasa devices are discovered and have energy monitoring enabled.
             </p>
+          ) : filteredPlugs.length === 0 ? (
+            <p className="text-sm text-caption">No plugs match your search.</p>
           ) : (
             <div className="space-y-2">
-              {eligiblePlugs.map(plug => {
+              {filteredPlugs.map(plug => {
                 const alreadyLinked = linkedIds.has(plug.id)
                 return (
                   <button
@@ -579,8 +594,8 @@ export default function SonosDetailPage() {
         target_type: 'kasa',
         target_id: kasaId,
       }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['device-links', 'sonos', assignedRoom?.name] })
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['device-links', 'sonos', assignedRoom?.name] })
       setShowPlugPicker(false)
       toast({ message: 'Smart plug linked as power source' })
     },
