@@ -3,9 +3,10 @@ import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import type { RoomIntelligenceData } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, formatCost, formatMonthlyCost } from '@/lib/utils'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
 import { Accordion } from '@/components/ui/Accordion'
+import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -117,29 +118,100 @@ function EnvironmentRow({ data }: { data: RoomIntelligenceData }) {
   )
 }
 
-function EnergyRow({ data }: { data: RoomIntelligenceData }) {
+// ── Energy row ────────────────────────────────────────────────────────────────
+
+interface EnergyRowProps {
+  data: RoomIntelligenceData
+  currencySymbol: string
+}
+
+function EnergyRow({ data, currencySymbol }: EnergyRowProps) {
   const powerDevices = data.devices.filter(d => d.power > 0)
+  const hasCostData = data.dailyCost !== null
+
+  // Sort by proportional daily cost (most expensive first).
+  // When actual daily cost is available, split proportionally by wattage.
+  const devicesWithCost = powerDevices
+    .map(device => {
+      let dailyCost: number | null = null
+      if (hasCostData && data.totalWatts > 0) {
+        dailyCost =
+          Math.round((device.power / data.totalWatts) * (data.dailyCost as number) * 100) / 100
+      }
+      return { ...device, dailyCost }
+    })
+    .sort((a, b) => (b.dailyCost ?? b.power) - (a.dailyCost ?? a.power))
 
   return (
     <div>
       <p className="text-xs font-medium text-[var(--text-muted)] mb-2">Energy</p>
-      <p className="text-lg font-semibold text-heading mb-2">{data.totalWatts} W total</p>
-      {powerDevices.length > 0 ? (
-        <ul className="space-y-1">
-          {powerDevices.map(device => (
-            <li key={device.id} className="flex items-center justify-between gap-2 text-sm">
-              <Link
-                to={`/devices/${device.id}`}
-                className="text-fairy-400 hover:text-fairy-300 hover:underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 break-words"
-              >
-                {device.label}
-              </Link>
-              <span className="shrink-0 text-[var(--text-muted)]">{device.power} W</span>
-            </li>
-          ))}
-        </ul>
+
+      {powerDevices.length === 0 ? (
+        <p className="text-sm text-[var(--text-muted)]">
+          No power-monitoring devices in this room. Assign Kasa devices with energy monitoring to
+          track cost.
+        </p>
       ) : (
-        <p className="text-sm text-[var(--text-muted)]">No power-monitoring devices in this room</p>
+        <>
+          {/* Cost headline */}
+          {hasCostData ? (
+            <div className="mb-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-lg font-semibold text-heading">
+                  {formatCost(data.dailyCost, currencySymbol)} today
+                  <span className="text-sm font-normal text-[var(--text-muted)] ml-1">
+                    — about {formatMonthlyCost(data.dailyCost, currencySymbol)} per month
+                  </span>
+                </p>
+                {data.dailyOverUnderPercent !== null &&
+                  Math.abs(data.dailyOverUnderPercent) > 5 && (
+                    <OverUnderBadge
+                      percent={data.dailyOverUnderPercent}
+                      label={`${data.dailyOverUnderPercent > 0 ? '+' : ''}${data.dailyOverUnderPercent}% vs last week`}
+                      size="sm"
+                    />
+                  )}
+              </div>
+              {data.monthToDateCost !== null && (
+                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                  {formatCost(data.monthToDateCost, currencySymbol)} this month so far
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-[var(--text-muted)] mb-3">
+              No energy cost data yet — costs will appear once energy history is collected.
+            </p>
+          )}
+
+          {/* Per-device breakdown sorted by cost */}
+          <ul className="space-y-1.5 mb-3" aria-label="Device energy breakdown">
+            {devicesWithCost.map(device => (
+              <li key={device.id} className="flex items-center justify-between gap-2 text-sm">
+                <Link
+                  to={`/devices/${device.id}`}
+                  className="text-fairy-400 hover:text-fairy-300 hover:underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 break-words"
+                >
+                  {device.label}
+                </Link>
+                <span className="shrink-0 text-[var(--text-muted)] tabular-nums text-right">
+                  {device.power} W
+                  {device.dailyCost !== null && (
+                    <span className="text-xs ml-1.5 text-[var(--text-secondary)]">
+                      · {formatCost(device.dailyCost, currencySymbol)}/day
+                    </span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+
+          {/* Total watts — secondary context */}
+          <p className="text-xs text-[var(--text-muted)]">
+            Currently drawing {data.totalWatts} W across {powerDevices.length} device
+            {powerDevices.length !== 1 ? 's' : ''}
+          </p>
+        </>
       )}
     </div>
   )
@@ -183,14 +255,20 @@ function BatteryRow({ data }: { data: RoomIntelligenceData }) {
                 {device.label}
               </Link>
               <span
-                className={cn('shrink-0 text-sm font-medium tabular-nums', batteryColorClass(device.battery))}
+                className={cn(
+                  'shrink-0 text-sm font-medium tabular-nums',
+                  batteryColorClass(device.battery),
+                )}
                 aria-label={`Battery level: ${device.battery}%`}
               >
                 {device.battery}%
               </span>
             </div>
             {/* Battery bar — colour is not the sole indicator; percentage is shown in text */}
-            <div className="h-1.5 w-full rounded-full bg-[var(--bg-tertiary)] overflow-hidden" aria-hidden="true">
+            <div
+              className="h-1.5 w-full rounded-full bg-[var(--bg-tertiary)] overflow-hidden"
+              aria-hidden="true"
+            >
               <div
                 className={cn('h-full rounded-full transition-all', batteryBgClass(device.battery))}
                 style={{ width: `${device.battery}%` }}
@@ -222,6 +300,16 @@ export default function RoomIntelligence({ roomName }: RoomIntelligenceProps) {
     enabled: !!roomName,
   })
 
+  // Fetch currency symbol from the dashboard summary.
+  // TanStack Query returns cached data immediately if the insights page was visited first.
+  // Long staleTime prevents unnecessary refetches on room detail pages.
+  const { data: summaryData } = useQuery({
+    queryKey: ['dashboard', 'summary'],
+    queryFn: api.dashboard.getSummary,
+    staleTime: 5 * 60 * 1000,
+  })
+  const currencySymbol = summaryData?.currencySymbol ?? '€'
+
   if (isLoading) {
     return <IntelligenceSkeleton />
   }
@@ -248,7 +336,7 @@ export default function RoomIntelligence({ roomName }: RoomIntelligenceProps) {
         <div className="space-y-5 pt-1">
           <EnvironmentRow data={data} />
           <div className="border-t border-[var(--border-secondary)]" aria-hidden="true" />
-          <EnergyRow data={data} />
+          <EnergyRow data={data} currencySymbol={currencySymbol} />
           <div className="border-t border-[var(--border-secondary)]" aria-hidden="true" />
           <ActivityRow data={data} />
           <div className="border-t border-[var(--border-secondary)]" aria-hidden="true" />
