@@ -15,6 +15,7 @@ import type { ChartOptions, ChartData } from 'chart.js'
 import { Activity } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { ActivityInsights } from '@/lib/api'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 import { cn } from '@/lib/utils'
 
 Chart.register(BarElement, CategoryScale, LinearScale, LineElement, PointElement, Filler, Tooltip, Legend)
@@ -53,22 +54,24 @@ function getRoomColor(index: number): string {
 interface RoomToggleProps {
   rooms: string[]
   activeRooms: Set<string>
+  roomIcons: Record<string, string | null>
   onToggle: (room: string) => void
 }
 
-function RoomToggles({ rooms, activeRooms, onToggle }: RoomToggleProps) {
+function RoomToggles({ rooms, activeRooms, roomIcons, onToggle }: RoomToggleProps) {
   return (
     <div className="mb-4 flex flex-wrap gap-1.5" role="group" aria-label="Filter by room">
       {rooms.map((room, i) => {
         const active = activeRooms.has(room)
         const color = getRoomColor(i)
+        const icon = roomIcons[room]
         return (
           <button
             key={room}
             type="button"
             onClick={() => onToggle(room)}
             className={cn(
-              'rounded-full px-2.5 py-1 text-xs font-medium transition-all min-h-[32px]',
+              'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all min-h-[32px]',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               active
                 ? 'text-white shadow-sm'
@@ -77,6 +80,7 @@ function RoomToggles({ rooms, activeRooms, onToggle }: RoomToggleProps) {
             style={active ? { backgroundColor: color } : undefined}
             aria-pressed={active}
           >
+            <LucideIcon name={icon} className="h-3 w-3 shrink-0" aria-hidden="true" />
             {room}
           </button>
         )
@@ -406,7 +410,7 @@ export default function ActivityCard({ activity }: ActivityCardProps) {
     )
   }
 
-  const { roomRanking, hourlyByRoom, dailyByRoom, mostActiveRoom, quietestRoom } = activity
+  const { roomRanking, hourlyByRoom, dailyByRoom, roomIcons, mostActiveRoom, quietestRoom } = activity
   const activeCount = roomRanking
     .filter((r) => activeRooms.has(r.room))
     .reduce((sum, r) => sum + r.events24h, 0)
@@ -458,7 +462,7 @@ export default function ActivityCard({ activity }: ActivityCardProps) {
       </div>
 
       {/* Room toggle pills */}
-      <RoomToggles rooms={allRooms} activeRooms={activeRooms} onToggle={toggleRoom} />
+      <RoomToggles rooms={allRooms} activeRooms={activeRooms} roomIcons={roomIcons} onToggle={toggleRoom} />
 
       {/* Room activity chart (horizontal bars, coloured per room) */}
       {roomRanking.length > 0 && (

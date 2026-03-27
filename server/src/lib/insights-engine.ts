@@ -114,6 +114,7 @@ export interface ActivityInsights {
   hourlyPattern: Array<{ hour: number; avgEvents: number }>
   hourlyByRoom: Array<{ room: string; data: Array<{ hour: number; avgEvents: number }> }>
   dailyByRoom: Array<{ room: string; data: Array<{ day: string; totalEvents: number }> }>
+  roomIcons: Record<string, string | null>
   mostActiveRoom: { room: string; events24h: number } | null
   quietestRoom: { room: string; events24h: number } | null
 }
@@ -882,6 +883,14 @@ function computeActivityInsights(): ActivityInsights | null {
     }
   })
 
+  // Room icons
+  const iconRows = getAll<{ name: string; icon: string | null }>(
+    'SELECT name, icon FROM rooms',
+    [],
+  )
+  const roomIcons: Record<string, string | null> = {}
+  for (const row of iconRows) roomIcons[row.name] = row.icon
+
   // Most active / quietest
   const mostActiveRoom = { room: roomRanking[0].room, events24h: roomRanking[0].events24h }
   const quietestRoom =
@@ -892,7 +901,7 @@ function computeActivityInsights(): ActivityInsights | null {
         }
       : null
 
-  return { roomRanking, dailyTrend, hourlyPattern, hourlyByRoom, dailyByRoom, mostActiveRoom, quietestRoom }
+  return { roomRanking, dailyTrend, hourlyPattern, hourlyByRoom, dailyByRoom, roomIcons, mostActiveRoom, quietestRoom }
 }
 
 // ── Device label resolver (fallback for notifications with null source_label) ─
