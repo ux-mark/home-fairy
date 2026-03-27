@@ -12,8 +12,8 @@ export default function NotificationBell() {
   const buttonRef = useRef<HTMLButtonElement>(null)
   const navigate = useNavigate()
 
-  const handleNavigateToDevices = () => {
-    navigate('/devices')
+  const handleNavigate = (path: string) => {
+    navigate(path)
     setOpen(false)
   }
 
@@ -47,7 +47,7 @@ export default function NotificationBell() {
         )}
       </button>
 
-      <NotificationPanel open={open} onClose={() => setOpen(false)} returnFocusRef={buttonRef} onNavigate={handleNavigateToDevices} />
+      <NotificationPanel open={open} onClose={() => setOpen(false)} returnFocusRef={buttonRef} onNavigate={handleNavigate} />
     </div>
   )
 }

@@ -8,7 +8,21 @@ interface NotificationPanelProps {
   open: boolean
   onClose: () => void
   returnFocusRef?: React.RefObject<HTMLButtonElement | null>
-  onNavigate?: () => void
+  onNavigate: (path: string) => void
+}
+
+/**
+ * Derive the best navigation target from a notification's dedup_key.
+ * Format: `category:deviceType:deviceId` e.g. `device_unreachable:kasa:ABC123`
+ */
+function getNotificationRoute(notification: AppNotification): string {
+  const parts = notification.dedup_key?.split(':') ?? []
+  const deviceType = parts[1]
+  const deviceId = parts[2]
+  if (deviceType && deviceId) {
+    return deviceType === 'kasa' ? `/devices/kasa/${deviceId}` : `/devices/${deviceId}`
+  }
+  return '/devices'
 }
 
 function timeAgo(dateStr: string): string {
@@ -54,7 +68,7 @@ function NotificationItem({
   notification: AppNotification
   onMarkRead: (id: number) => void
   onDismiss: (id: number) => void
-  onNavigate?: () => void
+  onNavigate: (path: string) => void
 }) {
   const config = SEVERITY_CONFIG[notification.severity]
   const { Icon } = config
@@ -72,16 +86,15 @@ function NotificationItem({
           : 'bg-[var(--bg-primary)] opacity-75',
       )}
     >
-      {/* Clickable content area — navigates to Devices and closes the panel */}
       <button
         type="button"
-        onClick={onNavigate}
+        onClick={() => onNavigate(getNotificationRoute(notification))}
         className={cn(
           'w-full text-left p-3 cursor-pointer rounded-lg',
           'hover:bg-white/5 transition-colors',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
         )}
-        aria-label={`View devices — ${config.label}: ${notification.title}`}
+        aria-label={`View ${notification.source_label ?? 'device'} — ${notification.title}`}
       >
         <div className="flex items-start gap-2.5">
           <Icon
