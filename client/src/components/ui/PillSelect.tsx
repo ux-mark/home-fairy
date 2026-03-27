@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
 
 export interface PillSelectOption {
@@ -25,8 +26,22 @@ export function PillSelect({
   placeholder,
   'aria-label': ariaLabel,
 }: PillSelectProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Scroll the selected pill into view on mount and when value changes
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+    const selectedId = value ? `${id}-option-${value}` : `${id}-option-placeholder`
+    const selected = container.querySelector(`#${CSS.escape(selectedId)}`) as HTMLElement | null
+    if (selected) {
+      selected.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' })
+    }
+  }, [id, value])
+
   return (
     <div
+      ref={containerRef}
       id={id}
       role="listbox"
       aria-label={ariaLabel}
