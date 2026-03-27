@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { CheckCircle, AlertCircle, ChevronDown, Pencil, Zap, CirclePause, CircleSlash } from 'lucide-react'
+import { CheckCircle, AlertCircle, Pencil, Zap, CirclePause, CircleSlash } from 'lucide-react'
 import * as Switch from '@radix-ui/react-switch'
 import { api } from '@/lib/api'
 import type { AutoPlayRule, SonosFavourite } from '@/lib/api'
@@ -149,8 +149,6 @@ function AddRuleForm({
     })
   }
 
-  const selectClass =
-    'surface w-full appearance-none rounded-lg border px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500'
 
   return (
     <div className="surface rounded-lg border p-4 space-y-4" style={{ borderColor: 'var(--border-secondary)' }}>
@@ -158,25 +156,17 @@ function AddRuleForm({
 
       {/* Target room */}
       <div>
-        <label htmlFor="rule-room" className="text-heading text-sm mb-1.5 block">
-          Room
-        </label>
-        <div className="relative">
-          <select
-            id="rule-room"
-            value={targetRoom}
-            onChange={(e) => setTargetRoom(e.target.value)}
-            className={selectClass}
-          >
-            <option value="">Whole house</option>
-            {rooms.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" />
-        </div>
+        <p className="text-heading text-sm mb-1.5">Room</p>
+        <PillSelect
+          id="rule-room"
+          options={[
+            { value: '', label: 'Whole house' },
+            ...rooms.map(r => ({ value: r, label: r })),
+          ]}
+          value={targetRoom}
+          onChange={setTargetRoom}
+          aria-label="Select a room"
+        />
       </div>
 
       {/* Favourite */}
@@ -430,7 +420,7 @@ export function MusicSection() {
               const isEditing = editingRuleId === rule.id
 
               if (isEditing) {
-                const selectClass = 'w-full appearance-none rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500'
+
                 const effectiveTrigger = editFavourite === '__continue__' ? 'mode_change' : editTriggerType
                 const isValid = editFavourite && editMode && !(editTriggerType === 'if_source_not' && editFavourite !== '__continue__' && !editSourceValue)
 
@@ -439,14 +429,10 @@ export function MusicSection() {
                     <p className="text-heading text-sm font-medium">Edit auto-play rule</p>
 
                     <div>
-                      <label htmlFor="settings-edit-rule-room" className="text-heading text-sm mb-1.5 block">Room</label>
-                      <div className="relative">
-                        <select id="settings-edit-rule-room" value={rule.room_name ?? ''} disabled className={cn(selectClass, 'opacity-70')}>
-                          <option value="">Whole house</option>
-                          {assignedRooms.map(r => <option key={r} value={r}>{r}</option>)}
-                        </select>
-                        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" />
-                      </div>
+                      <p className="text-heading text-sm mb-1.5">Room</p>
+                      <span className="inline-flex items-center rounded-full bg-fairy-500/10 px-3 py-1.5 text-sm font-medium text-fairy-400">
+                        {rule.room_name ?? 'Whole house'}
+                      </span>
                     </div>
 
                     <div>

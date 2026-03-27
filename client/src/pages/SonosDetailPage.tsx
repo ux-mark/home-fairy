@@ -656,8 +656,8 @@ export default function SonosDetailPage() {
 
                         {/* Room — read-only */}
                         <div>
-                          <label htmlFor="edit-rule-room" className="text-heading text-sm mb-1.5 block">Room</label>
-                          <input id="edit-rule-room" type="text" readOnly value={assignedRoom.name} className="flex min-h-[44px] w-full items-center rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-tertiary)] px-3 text-sm text-caption opacity-70" />
+                          <p className="text-heading text-sm mb-1.5">Room</p>
+                          <span className="inline-flex items-center rounded-full bg-fairy-500/10 px-3 py-1.5 text-sm font-medium text-fairy-400">{assignedRoom.name}</span>
                         </div>
 
                         {/* Favourite */}
@@ -826,8 +826,8 @@ export default function SonosDetailPage() {
 
                 {/* Room — read-only */}
                 <div>
-                  <label htmlFor="detail-rule-room" className="text-heading text-sm mb-1.5 block">Room</label>
-                  <input id="detail-rule-room" type="text" readOnly value={assignedRoom.name} className="flex min-h-[44px] w-full items-center rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-tertiary)] px-3 text-sm text-caption opacity-70" />
+                  <p className="text-heading text-sm mb-1.5">Room</p>
+                  <span className="inline-flex items-center rounded-full bg-fairy-500/10 px-3 py-1.5 text-sm font-medium text-fairy-400">{assignedRoom.name}</span>
                 </div>
 
                 {/* Favourite */}
