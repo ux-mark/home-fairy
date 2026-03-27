@@ -1,37 +1,57 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
-import { ListMusic, Radio, Disc3, Music, Folder, RotateCcw, ImageOff } from 'lucide-react'
+import { ListMusic, Radio, Disc3, Music, Folder, Podcast, BookOpen, RotateCcw, ImageOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SonosFavourite } from '@/lib/api'
 
 // ── Content type classification by URI prefix ────────────────────────────────
 
-type ContentType = 'Radio' | 'Playlists' | 'Albums' | 'Tracks' | 'Other'
+type ContentType = 'Radio' | 'Playlists' | 'Podcasts' | 'Audiobooks' | 'Albums' | 'Tracks' | 'Other'
 
 function getContentType(uri?: string): ContentType {
   if (!uri) return 'Other'
 
-  if (uri.includes('spotify')) {
-    const decoded = decodeURIComponent(uri).toLowerCase()
+  const decoded = decodeURIComponent(uri).toLowerCase()
+
+  // Spotify-specific classification
+  if (decoded.includes('spotify')) {
+    if (decoded.includes('episode') || decoded.includes('show')) return 'Podcasts'
+    if (decoded.includes('audiobook')) return 'Audiobooks'
     if (decoded.includes('playlist')) return 'Playlists'
     if (decoded.includes('album')) return 'Albums'
     if (decoded.includes('track')) return 'Tracks'
     return 'Other'
   }
 
+  // Sonos radio streams
   if (uri.startsWith('x-sonosapi-stream:') || uri.startsWith('x-rincon-stream:')) return 'Radio'
-  if (uri.startsWith('x-rincon-cpcontainer:')) return 'Playlists'
+
+  // Audiobook services (Audible uses HLS static streams)
+  if (uri.startsWith('x-sonosapi-hls-static:') || decoded.includes('audible')) return 'Audiobooks'
+
+  // Content containers (playlists, podcasts, audiobooks)
+  if (uri.startsWith('x-rincon-cpcontainer:')) {
+    if (decoded.includes('podcast') || decoded.includes('show') || decoded.includes('episode')) return 'Podcasts'
+    if (decoded.includes('audiobook')) return 'Audiobooks'
+    return 'Playlists'
+  }
+
+  // Generic keyword detection for other services (Apple Podcasts, Pocket Casts, etc.)
+  if (decoded.includes('podcast') || decoded.includes('episode')) return 'Podcasts'
+  if (decoded.includes('audiobook')) return 'Audiobooks'
 
   return 'Other'
 }
 
 // ── Pill filter config ────────────────────────────────────────────────────────
 
-const ALL_TYPES: ContentType[] = ['Radio', 'Playlists', 'Albums', 'Tracks', 'Other']
+const ALL_TYPES: ContentType[] = ['Radio', 'Playlists', 'Podcasts', 'Audiobooks', 'Albums', 'Tracks', 'Other']
 
 const TYPE_ICON: Record<ContentType | 'All', React.ElementType> = {
   All: ListMusic,
   Radio: Radio,
   Playlists: ListMusic,
+  Podcasts: Podcast,
+  Audiobooks: BookOpen,
   Albums: Disc3,
   Tracks: Music,
   Other: Folder,
