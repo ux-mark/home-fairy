@@ -501,9 +501,11 @@ The `room_activity` table is uniquely powerful. Unlike sensor readings that are 
 - Activity timeline: actual motion events as a timeline strip
 
 **Insights Page (Level 3):**
-- House-level daily activity trend (7 days)
-- Room ranking by activity
-- Most active/quietest room callout
+- **Charts are the primary presentation** — not ranked lists, not tables. Activity data is inherently visual: where are people, when, and how much?
+- House-level daily activity trend (7-day bar chart)
+- Room activity as a **horizontal bar chart** (rooms on y-axis, event counts on x-axis) — not a numbered list. The chart communicates relative magnitude instantly; a list forces the user to read numbers.
+- Hourly activity pattern as a **24-hour bar chart** showing house-wide motion distribution across hours of the day (7-day average). This answers "when is the house most active?" at a glance.
+- Most active/quietest room callout as a concise headline above the charts
 - Activity overlay available on energy charts
 
 **Device Detail (Level 4):**

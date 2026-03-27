@@ -111,6 +111,7 @@ export interface BatteryInsights {
 export interface ActivityInsights {
   roomRanking: Array<{ room: string; events24h: number; peakHours: string }>
   dailyTrend: Array<{ day: string; totalEvents: number }>
+  hourlyPattern: Array<{ hour: number; avgEvents: number }>
   mostActiveRoom: { room: string; events24h: number } | null
   quietestRoom: { room: string; events24h: number } | null
 }
@@ -802,6 +803,28 @@ function computeActivityInsights(): ActivityInsights | null {
     return { day: dayNames[d.getDay()], totalEvents: r.total_events }
   })
 
+  // Hourly pattern: 7-day average events per hour of day (house-wide)
+  const daysOfData = getOne<{ days: number }>(
+    `SELECT MAX(1, CAST(julianday('now') - julianday(MIN(recorded_at)) AS INTEGER)) as days
+     FROM room_activity
+     WHERE event_type = 'motion_active' AND recorded_at > datetime('now', '-7 days')`,
+    [],
+  )?.days ?? 7
+  const hourlyRows = getAll<{ hour: number; total: number }>(
+    `SELECT CAST(strftime('%H', recorded_at, 'localtime') AS INTEGER) as hour, COUNT(*) as total
+     FROM room_activity
+     WHERE event_type = 'motion_active'
+       AND recorded_at > datetime('now', '-7 days')
+     GROUP BY strftime('%H', recorded_at, 'localtime')
+     ORDER BY hour`,
+    [],
+  )
+  const hourlyMap = new Map(hourlyRows.map((r) => [r.hour, r.total]))
+  const hourlyPattern = Array.from({ length: 24 }, (_, h) => ({
+    hour: h,
+    avgEvents: Math.round((hourlyMap.get(h) ?? 0) / daysOfData),
+  }))
+
   // Most active / quietest
   const mostActiveRoom = { room: roomRanking[0].room, events24h: roomRanking[0].events24h }
   const quietestRoom =
@@ -812,7 +835,7 @@ function computeActivityInsights(): ActivityInsights | null {
         }
       : null
 
-  return { roomRanking, dailyTrend, mostActiveRoom, quietestRoom }
+  return { roomRanking, dailyTrend, hourlyPattern, mostActiveRoom, quietestRoom }
 }
 
 // ── Device label resolver (fallback for notifications with null source_label) ─
