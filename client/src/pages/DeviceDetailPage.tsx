@@ -543,6 +543,17 @@ function KasaDeviceDetail({ id }: { id: string }) {
     onError: () => toast({ message: 'Failed to deactivate device', type: 'error' }),
   })
 
+  const checkMutation = useMutation({
+    mutationFn: () => api.devices.checkConnectivity('kasa', id),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['kasa'] })
+      queryClient.invalidateQueries({ queryKey: ['device', 'health', 'kasa', id] })
+      queryClient.invalidateQueries({ queryKey: ['devices', 'deactivated'] })
+      toast({ message: result.online ? 'Device is online' : 'Device is still offline', type: result.online ? 'success' : 'error' })
+    },
+    onError: () => toast({ message: 'Failed to check connectivity', type: 'error' }),
+  })
+
   const toggleMutation = useMutation({
     mutationFn: () => {
       const isOn = device?.attributes.switch === 'on'
@@ -844,13 +855,22 @@ function KasaDeviceDetail({ id }: { id: string }) {
             It was not responding to commands and will be skipped in scenes and automations.
             {health?.lastFailureReason && ` Last error: ${health.lastFailureReason}`}
           </p>
-          <button
-            onClick={() => reactivateMutation.mutate()}
-            disabled={reactivateMutation.isPending}
-            className="rounded-lg bg-amber-500/15 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/25 transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
-          >
-            {reactivateMutation.isPending ? 'Reactivating...' : 'Reactivate this device'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => checkMutation.mutate()}
+              disabled={checkMutation.isPending}
+              className="rounded-lg border border-[var(--border-secondary)] px-4 py-2 text-sm font-medium text-body hover:bg-[var(--bg-tertiary)] transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            >
+              {checkMutation.isPending ? 'Checking...' : 'Check connectivity'}
+            </button>
+            <button
+              onClick={() => reactivateMutation.mutate()}
+              disabled={reactivateMutation.isPending}
+              className="rounded-lg bg-amber-500/15 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/25 transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+            >
+              {reactivateMutation.isPending ? 'Reactivating...' : 'Reactivate this device'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -937,13 +957,22 @@ function KasaDeviceDetail({ id }: { id: string }) {
             <h2 id="kasa-management-heading" className="mb-4 text-sm font-semibold text-heading">
               Device management
             </h2>
-            <button
-              onClick={() => deactivateMutation.mutate()}
-              disabled={deactivateMutation.isPending}
-              className="rounded-lg border border-[var(--border-primary)] px-4 py-2 text-sm text-body hover:bg-[var(--bg-tertiary)] transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
-            >
-              {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate device'}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => checkMutation.mutate()}
+                disabled={checkMutation.isPending}
+                className="rounded-lg border border-[var(--border-primary)] px-4 py-2 text-sm text-body hover:bg-[var(--bg-tertiary)] transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+              >
+                {checkMutation.isPending ? 'Checking...' : 'Check connectivity'}
+              </button>
+              <button
+                onClick={() => deactivateMutation.mutate()}
+                disabled={deactivateMutation.isPending}
+                className="rounded-lg border border-[var(--border-primary)] px-4 py-2 text-sm text-body hover:bg-[var(--bg-tertiary)] transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+              >
+                {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate device'}
+              </button>
+            </div>
             <p className="mt-2 text-xs text-caption">
               Deactivated devices are skipped in scenes and automations. You can reactivate at any time.
             </p>
@@ -1059,6 +1088,17 @@ function HubDeviceDetail({ id }: { id: string }) {
       toast({ message: 'Device deactivated. It will be skipped in scenes and automations.' })
     },
     onError: () => toast({ message: 'Failed to deactivate device', type: 'error' }),
+  })
+
+  const checkMutation = useMutation({
+    mutationFn: () => api.devices.checkConnectivity('hub', id),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['hubitat'] })
+      queryClient.invalidateQueries({ queryKey: ['device', 'health', 'hub', id] })
+      queryClient.invalidateQueries({ queryKey: ['devices', 'deactivated'] })
+      toast({ message: result.online ? 'Device is reachable' : 'Device is still not responding', type: result.online ? 'success' : 'error' })
+    },
+    onError: () => toast({ message: 'Failed to check connectivity', type: 'error' }),
   })
 
   useEffect(() => {
@@ -1217,13 +1257,22 @@ function HubDeviceDetail({ id }: { id: string }) {
             It was not responding to commands and will be skipped in scenes and automations.
             {health?.lastFailureReason && ` Last error: ${health.lastFailureReason}`}
           </p>
-          <button
-            onClick={() => reactivateMutation.mutate()}
-            disabled={reactivateMutation.isPending}
-            className="rounded-lg bg-amber-500/15 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/25 transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
-          >
-            {reactivateMutation.isPending ? 'Reactivating...' : 'Reactivate this device'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => checkMutation.mutate()}
+              disabled={checkMutation.isPending}
+              className="rounded-lg border border-[var(--border-secondary)] px-4 py-2 text-sm font-medium text-body hover:bg-[var(--bg-tertiary)] transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            >
+              {checkMutation.isPending ? 'Checking...' : 'Check connectivity'}
+            </button>
+            <button
+              onClick={() => reactivateMutation.mutate()}
+              disabled={reactivateMutation.isPending}
+              className="rounded-lg bg-amber-500/15 px-4 py-2 text-sm font-medium text-amber-400 hover:bg-amber-500/25 transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500"
+            >
+              {reactivateMutation.isPending ? 'Reactivating...' : 'Reactivate this device'}
+            </button>
+          </div>
         </div>
       )}
 
@@ -1414,13 +1463,22 @@ function HubDeviceDetail({ id }: { id: string }) {
             <h2 id="hub-management-heading" className="mb-4 text-sm font-semibold text-heading">
               Device management
             </h2>
-            <button
-              onClick={() => deactivateMutation.mutate()}
-              disabled={deactivateMutation.isPending}
-              className="rounded-lg border border-[var(--border-primary)] px-4 py-2 text-sm text-body hover:bg-[var(--bg-tertiary)] transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
-            >
-              {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate device'}
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => checkMutation.mutate()}
+                disabled={checkMutation.isPending}
+                className="rounded-lg border border-[var(--border-primary)] px-4 py-2 text-sm text-body hover:bg-[var(--bg-tertiary)] transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+              >
+                {checkMutation.isPending ? 'Checking...' : 'Check connectivity'}
+              </button>
+              <button
+                onClick={() => deactivateMutation.mutate()}
+                disabled={deactivateMutation.isPending}
+                className="rounded-lg border border-[var(--border-primary)] px-4 py-2 text-sm text-body hover:bg-[var(--bg-tertiary)] transition-colors min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+              >
+                {deactivateMutation.isPending ? 'Deactivating...' : 'Deactivate device'}
+              </button>
+            </div>
             <p className="mt-2 text-xs text-caption">
               Deactivated devices are skipped in scenes and automations. You can reactivate at any time.
             </p>

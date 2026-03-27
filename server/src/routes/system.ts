@@ -1609,6 +1609,55 @@ router.get('/devices/:type/:id/health', (req: Request, res: Response) => {
   }
 })
 
+// POST /devices/:type/:id/check — check device connectivity
+router.post('/devices/:type/:id/check', async (req: Request, res: Response) => {
+  const type = String(req.params.type)
+  const id = String(req.params.id)
+  if (!['hub', 'kasa', 'lifx'].includes(type)) {
+    res.status(400).json({ error: 'Invalid device type. Must be hub, kasa, or lifx.' })
+    return
+  }
+  const deviceType = type as 'hub' | 'kasa' | 'lifx'
+  try {
+    let online = false
+    let message = ''
+
+    switch (deviceType) {
+      case 'lifx': {
+        const lights = await lifxClient.listBySelector(`id:${id}`)
+        const light = Array.isArray(lights) ? lights[0] : null
+        online = !!light?.connected
+        message = online ? 'Light is connected' : 'Light is not responding'
+        break
+      }
+      case 'kasa': {
+        const device = await kasaClient.getDevice(id)
+        online = !!device?.is_online
+        message = online ? 'Device is online' : 'Device is offline'
+        break
+      }
+      case 'hub': {
+        await hubitatClient.getDevice(id)
+        online = true
+        message = 'Device is reachable'
+        break
+      }
+    }
+
+    if (online) {
+      deviceHealthService.recordSuccess(deviceType, id)
+    } else {
+      deviceHealthService.recordFailure(deviceType, id, message)
+    }
+
+    res.json({ success: true, online, message })
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    deviceHealthService.recordFailure(deviceType, id, reason)
+    res.json({ success: true, online: false, message: 'Device is not reachable' })
+  }
+})
+
 // POST /devices/:type/:id/deactivate — manually deactivate a device
 router.post('/devices/:type/:id/deactivate', (req: Request, res: Response) => {
   const type = String(req.params.type)

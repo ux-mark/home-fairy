@@ -95,7 +95,7 @@ export interface AttentionItem {
   description: string
   deviceId: number | string | null
   deviceLabel: string | null
-  deviceSource: 'hub' | 'kasa' | null
+  deviceSource: 'hub' | 'kasa' | 'lifx' | null
   /** Optional action hint for the frontend (e.g. deactivate/reactivate buttons) */
   action?: 'deactivate' | 'reactivate'
   /** Device type extracted from the notification dedup key */
@@ -474,9 +474,10 @@ function resolveDeviceLabel(deviceType: string, deviceId: string): string | null
   return null
 }
 
-function mapDeviceSource(deviceType: string): 'hub' | 'kasa' | null {
+function mapDeviceSource(deviceType: string): 'hub' | 'kasa' | 'lifx' | null {
   if (deviceType === 'kasa') return 'kasa'
   if (deviceType === 'hub') return 'hub'
+  if (deviceType === 'lifx') return 'lifx'
   return null
 }
 

@@ -488,7 +488,7 @@ export interface AttentionItem {
   description: string
   deviceId: number | string | null
   deviceLabel: string | null
-  deviceSource?: 'hub' | 'kasa' | null
+  deviceSource?: 'hub' | 'kasa' | 'lifx' | null
   action?: 'deactivate' | 'reactivate'
   deviceType?: string | null
 }
@@ -950,6 +950,8 @@ export const api = {
       fetchApi<{ success: boolean }>('/system/devices/' + encodeURIComponent(type) + '/' + encodeURIComponent(id) + '/deactivate', { method: 'POST' }),
     reactivate: (type: string, id: string) =>
       fetchApi<{ success: boolean }>('/system/devices/' + encodeURIComponent(type) + '/' + encodeURIComponent(id) + '/reactivate', { method: 'POST' }),
+    checkConnectivity: (type: string, id: string) =>
+      fetchApi<{ success: boolean; online: boolean; message: string }>('/system/devices/' + encodeURIComponent(type) + '/' + encodeURIComponent(id) + '/check', { method: 'POST' }),
   },
   dashboard: {
     getSummary: () => fetchApi<DashboardSummary>('/dashboard/summary'),
