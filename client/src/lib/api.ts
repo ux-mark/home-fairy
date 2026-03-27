@@ -1059,6 +1059,7 @@ export const api = {
     getZones: () => fetchApi<SonosZone[]>('/sonos/zones'),
     getState: (speaker: string) => fetchApi<SonosPlaybackState>('/sonos/state/' + encodeURIComponent(speaker)),
     getFavourites: () => fetchApi<SonosFavourite[]>('/sonos/favourites'),
+    getServices: () => fetchApi<string[]>('/sonos/services'),
     getFollowMeStatus: () => fetchApi<FollowMeStatus>('/sonos/follow-me/status'),
     toggleFollowMe: (enabled: boolean) =>
       fetchApi<{ enabled: boolean }>('/sonos/follow-me/toggle', {

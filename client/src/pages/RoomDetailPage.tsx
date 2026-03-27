@@ -39,7 +39,6 @@ import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
 import { PillSelect } from '@/components/ui/PillSelect'
 import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
 import { getScenesForRoom, getModesForRoom, getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
-import { getAvailableSources } from '@/lib/sonos-sources'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -508,7 +507,11 @@ export default function RoomDetailPage() {
     [autoPlayRules, name],
   )
 
-  const availableSources = useMemo(() => getAvailableSources(sonosFavourites ?? []), [sonosFavourites])
+  const { data: availableSources } = useQuery({
+    queryKey: ['sonos', 'services'],
+    queryFn: api.sonos.getServices,
+    staleTime: 60_000,
+  })
 
   // Fetch default scene assignments for this room
   const { data: roomDefaultScenes } = useQuery({
@@ -1420,7 +1423,7 @@ export default function RoomDetailPage() {
                                       <label htmlFor="room-edit-rule-source" className="text-caption text-xs mb-1.5 block">Source</label>
                                       <PillSelect
                                         id="room-edit-rule-source"
-                                        options={availableSources.map(s => ({ value: s, label: s }))}
+                                        options={(availableSources ?? []).map(s => ({ value: s, label: s }))}
                                         value={newRuleSourceValue}
                                         onChange={setNewRuleSourceValue}
                                         aria-label="Select a source"
@@ -1575,7 +1578,7 @@ export default function RoomDetailPage() {
                               <label htmlFor="room-detail-rule-source" className="text-caption text-xs mb-1.5 block">Source</label>
                               <PillSelect
                                 id="room-detail-rule-source"
-                                options={availableSources.map(s => ({ value: s, label: s }))}
+                                options={(availableSources ?? []).map(s => ({ value: s, label: s }))}
                                 value={newRuleSourceValue}
                                 onChange={setNewRuleSourceValue}
                                 aria-label="Select a source"

@@ -1,11 +1,10 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as Switch from '@radix-ui/react-switch'
 import { Pencil, Volume2, VolumeX, Zap, CirclePause, CircleSlash } from 'lucide-react'
 import { io, Socket } from 'socket.io-client'
 import { api, type Room, type AutoPlayRule } from '@/lib/api'
-import { getAvailableSources } from '@/lib/sonos-sources'
 import { cn } from '@/lib/utils'
 import { BackLink } from '@/components/ui/BackLink'
 import { Accordion } from '@/components/ui/Accordion'
@@ -199,7 +198,11 @@ export default function SonosDetailPage() {
   const speakerMapping = speakers?.find(s => s.speaker_name === speaker)
   const assignedRoom: Room | undefined = rooms?.find(r => r.name === speakerMapping?.room_name)
   const assignedRoomRules = autoPlayRules?.filter(r => r.room_name === assignedRoom?.name) ?? []
-  const availableSources = useMemo(() => getAvailableSources(favourites ?? []), [favourites])
+  const { data: availableSources } = useQuery({
+    queryKey: ['sonos', 'services'],
+    queryFn: api.sonos.getServices,
+    staleTime: 60_000,
+  })
 
   // ── Socket subscription ──────────────────────────────────────────────────────
 
@@ -706,7 +709,7 @@ export default function SonosDetailPage() {
                                 <label htmlFor="edit-rule-source" className="text-caption text-xs mb-1.5 block">Source</label>
                                 <PillSelect
                                   id="edit-rule-source"
-                                  options={availableSources.map(s => ({ value: s, label: s }))}
+                                  options={(availableSources ?? []).map(s => ({ value: s, label: s }))}
                                   value={newRuleSourceValue}
                                   onChange={setNewRuleSourceValue}
                                   aria-label="Select a source"
@@ -879,7 +882,7 @@ export default function SonosDetailPage() {
                         </label>
                         <PillSelect
                           id="detail-rule-source"
-                          options={availableSources.map(s => ({ value: s, label: s }))}
+                          options={(availableSources ?? []).map(s => ({ value: s, label: s }))}
                           value={newRuleSourceValue}
                           onChange={setNewRuleSourceValue}
                           aria-label="Select a source"

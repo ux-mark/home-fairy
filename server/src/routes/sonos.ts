@@ -54,6 +54,17 @@ router.get('/favourites', async (_req: Request, res: Response) => {
   }
 })
 
+// GET /services — list music services the user has in their favourites
+router.get('/services', async (_req: Request, res: Response) => {
+  try {
+    const services = await sonosClient.getUserServices()
+    res.json(services)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
 // GET /follow-me/status — get follow-me state
 router.get('/follow-me/status', (_req: Request, res: Response) => {
   res.json(sonosManager.getFollowMeStatus())

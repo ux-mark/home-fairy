@@ -195,6 +195,40 @@ class SonosClient {
     }
   }
 
+  async getUserServices(): Promise<string[]> {
+    try {
+      // Get all known Sonos services (id → name mapping)
+      const { data: allServices } = await this.api.get('/services/all')
+      if (!allServices || typeof allServices !== 'object' || allServices.status) return []
+
+      const idToName = new Map<number, string>()
+      for (const [name, info] of Object.entries(allServices as Record<string, { id: number }>)) {
+        idToName.set(info.id, name)
+      }
+
+      // Get user's favourites to find which services they actually use
+      const favourites = await this.getFavourites()
+      const serviceNames = new Set<string>()
+
+      for (const fav of favourites) {
+        if (!fav.uri) continue
+        const sidMatch = fav.uri.match(/sid=(\d+)/)
+        if (sidMatch) {
+          const sid = Number(sidMatch[1])
+          const name = idToName.get(sid)
+          if (name) serviceNames.add(name)
+        }
+        if (fav.uri.startsWith('x-sonos-htastream:')) {
+          serviceNames.add('TV')
+        }
+      }
+
+      return Array.from(serviceNames).sort()
+    } catch (err) {
+      this.handleError(err, 'getUserServices')
+    }
+  }
+
   async isAvailable(): Promise<boolean> {
     try {
       await this.getZones()

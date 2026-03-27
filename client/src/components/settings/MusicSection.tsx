@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Pencil, Zap, CirclePause, CircleSlash } from 'lucide-react'
@@ -11,7 +11,6 @@ import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
 import { PillSelect } from '@/components/ui/PillSelect'
 import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
 import { Section } from './Section'
-import { getAvailableSources } from '@/lib/sonos-sources'
 
 // ── Connection status ────────────────────────────────────────────────────────
 
@@ -220,7 +219,7 @@ function AddRuleForm({
               </label>
               <PillSelect
                 id="rule-source"
-                options={availableSources.map(s => ({ value: s, label: s }))}
+                options={(availableSources ?? []).map(s => ({ value: s, label: s }))}
                 value={sourceValue}
                 onChange={setSourceValue}
                 aria-label="Select a source"
@@ -366,7 +365,11 @@ export function MusicSection() {
     setEditSourceValue(rule.trigger_value ?? '')
   }
 
-  const availableSources = useMemo(() => getAvailableSources(favourites ?? []), [favourites])
+  const { data: availableSources } = useQuery({
+    queryKey: ['sonos', 'services'],
+    queryFn: api.sonos.getServices,
+    staleTime: 60_000,
+  })
 
   const modeNames = modes?.map((m) => m.name) ?? []
   const assignedRooms = speakers?.map((s) => s.room_name) ?? []
@@ -485,7 +488,7 @@ export function MusicSection() {
                             <label htmlFor="settings-edit-source" className="text-caption text-xs mb-1.5 block">Source</label>
                             <PillSelect
                               id="settings-edit-source"
-                              options={availableSources.map(s => ({ value: s, label: s }))}
+                              options={(availableSources ?? []).map(s => ({ value: s, label: s }))}
                               value={editSourceValue}
                               onChange={setEditSourceValue}
                               aria-label="Select a source"
@@ -609,7 +612,7 @@ export function MusicSection() {
               favourites={favourites ?? []}
               modes={modeNames}
               isSaving={createRuleMutation.isPending}
-              availableSources={availableSources}
+              availableSources={availableSources ?? []}
             />
           ) : !editingRuleId && (
             <button
