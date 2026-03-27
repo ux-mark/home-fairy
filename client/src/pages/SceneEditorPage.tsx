@@ -36,6 +36,7 @@ import { cn, hsbToHex, kelvinToHex, debounce, DEFAULT_MODES } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/Badge'
 import { useToast } from '@/hooks/useToast'
 import ColorBrightnessPicker from '@/components/ui/ColorBrightnessPicker'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 
 // ── Fairy device patterns ────────────────────────────────────────────────────
 
@@ -520,6 +521,7 @@ export default function SceneEditorPage() {
   })
 
   const availableModes = systemCurrent?.all_modes ?? [...DEFAULT_MODES]
+  const modeIcons = systemCurrent?.mode_icons ?? {}
 
   // ── Form state ───────────────────────────────────────────────────────────
 
@@ -1524,18 +1526,20 @@ export default function SceneEditorPage() {
             <div className="flex flex-wrap gap-2">
               {availableModes.map(mode => {
                 const selected = modes.includes(mode)
+                const modeIcon = modeIcons[mode] ?? null
                 return (
                   <button
                     key={mode}
                     onClick={() => handleModeToggle(mode)}
                     className={cn(
-                      'min-h-[44px] rounded-lg px-3.5 py-2 text-sm font-medium transition-colors',
+                      'inline-flex items-center gap-1.5 min-h-[44px] rounded-lg px-3.5 py-2 text-sm font-medium transition-colors',
                       'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                       selected
                         ? 'bg-fairy-500 text-white'
                         : 'surface text-body hover:text-heading',
                     )}
                   >
+                    <LucideIcon name={modeIcon} className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     {mode}
                   </button>
                 )
@@ -1592,7 +1596,11 @@ export default function SceneEditorPage() {
                           </button>
                           <div className="min-w-0 flex-1">
                             <p className="text-sm font-medium text-heading">
-                              {sceneRoom.name} during {mode}
+                              {sceneRoom.name} during{' '}
+                              <span className="inline-flex items-center gap-1">
+                                <LucideIcon name={modeIcons[mode] ?? null} className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                                {mode}
+                              </span>
                             </p>
                             {replacingScene && (
                               <p className="mt-0.5 text-xs text-caption">

@@ -1,6 +1,9 @@
+import { useQuery } from '@tanstack/react-query'
 import { Sun, Sunrise, Sunset } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { api } from '@/lib/api'
 import type { SunScheduleEntry } from '@/lib/api'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -47,9 +50,10 @@ function minuteToPercent(minute: number): string {
 
 // ── Mode badge ────────────────────────────────────────────────────────────────
 
-function ModeBadge({ label }: { label: string }) {
+function ModeBadge({ label, icon }: { label: string; icon?: string | null }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400">
+    <span className="inline-flex items-center gap-1 rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400">
+      {icon && <LucideIcon name={icon} className="h-3 w-3" aria-hidden="true" />}
       {label}
     </span>
   )
@@ -180,6 +184,13 @@ export default function SunModeCard({
 }: SunModeCardProps) {
   const now = new Date()
 
+  const { data: system } = useQuery({
+    queryKey: ['system', 'current'],
+    queryFn: api.system.getCurrent,
+    staleTime: 60_000,
+  })
+  const modeIcons: Record<string, string | null> = system?.mode_icons ?? {}
+
   // Next transition: first schedule entry that is not yet past
   const nextTransition = sunSchedule.find(e => !e.isPast) ?? null
 
@@ -188,15 +199,9 @@ export default function SunModeCard({
   const sunsetParsed = sunTimes.sunset ? parseTime(sunTimes.sunset) : null
 
   // Next transition display
-  let nextTransitionLabel: string
-  if (nextTransition) {
-    const parsed = parseTime(nextTransition.time)
-    nextTransitionLabel = parsed
-      ? `Next: ${nextTransition.mode} at ${parsed.label}`
-      : `Next: ${nextTransition.mode}`
-  } else {
-    nextTransitionLabel = 'No more transitions today'
-  }
+  const nextTransitionTimeLabel: string | null = nextTransition
+    ? (parseTime(nextTransition.time)?.label ?? null)
+    : null
 
   return (
     <section
@@ -211,16 +216,28 @@ export default function SunModeCard({
 
       {/* Current mode + sun phase row */}
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <ModeBadge label={mode} />
+        <ModeBadge label={mode} icon={modeIcons[mode] ?? null} />
         {sunPhase && sunPhase.toLowerCase() !== mode.toLowerCase() && (
           <span className="text-caption text-sm">{sunPhase}</span>
         )}
       </div>
 
       {/* Next transition */}
-      <p className="text-body mb-4 text-sm">
-        {nextTransitionLabel}
-      </p>
+      {nextTransition ? (
+        <p className="text-body mb-4 flex items-center gap-1 text-sm">
+          <span>Next:</span>
+          {modeIcons[nextTransition.mode] && (
+            <LucideIcon name={modeIcons[nextTransition.mode]!} className="h-3 w-3" aria-hidden="true" />
+          )}
+          <span>
+            {nextTransitionTimeLabel
+              ? `${nextTransition.mode} at ${nextTransitionTimeLabel}`
+              : nextTransition.mode}
+          </span>
+        </p>
+      ) : (
+        <p className="text-body mb-4 text-sm">No more transitions today</p>
+      )}
 
       {/* Sunrise / sunset row */}
       {(sunriseParsed || sunsetParsed) && (

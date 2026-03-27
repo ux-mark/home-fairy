@@ -6,6 +6,8 @@ import type { ModeWithTriggers, ModeTrigger } from '@/lib/api'
 import { cn, formatTime } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { SUN_EVENT_LABELS } from './ModesList'
+import { LucideIcon } from '@/components/ui/LucideIcon'
+import { IconPicker } from '@/components/ui/IconPicker'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -533,6 +535,7 @@ export default function ModeDetail({ modeName, onBack }: ModeDetailProps) {
   const [showAddTrigger, setShowAddTrigger] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [confirmingTriggerId, setConfirmingTriggerId] = useState<number | null>(null)
+  const [showIconPicker, setShowIconPicker] = useState(false)
 
   // Track the "live" name — it changes after a successful rename
   const [currentName, setCurrentName] = useState(modeName)
@@ -612,6 +615,29 @@ export default function ModeDetail({ modeName, onBack }: ModeDetailProps) {
       setNameError(null)
       setEditingName(false)
     }
+  }
+
+  // ── Update icon mutation ─────────────────────────────────────────────────────
+
+  const updateIconMutation = useMutation({
+    mutationFn: (icon: string) =>
+      fetch(`/api/system/modes/${encodeURIComponent(currentName)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ icon }),
+      }).then(async res => {
+        if (!res.ok) throw new Error(await res.text().catch(() => 'API error'))
+        return res.json()
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system', 'modes'] })
+    },
+    onError: () => toast({ message: 'Failed to update icon', type: 'error' }),
+  })
+
+  const handleIconSelect = (iconName: string) => {
+    setShowIconPicker(false)
+    updateIconMutation.mutate(iconName)
   }
 
   // ── Delete mode mutation ────────────────────────────────────────────────────
@@ -765,29 +791,56 @@ export default function ModeDetail({ modeName, onBack }: ModeDetailProps) {
                 )}
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setNameValue(currentName)
-                  setEditingName(true)
-                }}
-                aria-label={`Rename mode: ${currentName}`}
-                className="group flex items-center gap-1.5 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-              >
-                {modeData.isSleepMode && (
-                  <Moon
-                    className="h-4 w-4 shrink-0 text-[var(--text-muted)]"
-                    aria-label="Sleep mode"
+              <div className="flex items-center gap-2">
+                {/* Icon picker trigger */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowIconPicker(prev => !prev)}
+                    aria-label={modeData.icon ? `Change icon: ${modeData.icon.replace(/-/g, ' ')}` : 'Add an icon'}
+                    aria-expanded={showIconPicker}
+                    className={cn(
+                      'flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
+                      'hover:bg-[var(--bg-tertiary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                      modeData.icon ? 'text-fairy-400' : 'text-[var(--text-muted)]',
+                    )}
+                  >
+                    {modeData.icon ? (
+                      <LucideIcon name={modeData.icon} className="h-5 w-5" aria-hidden="true" />
+                    ) : (
+                      <span className="text-xs leading-none">+icon</span>
+                    )}
+                  </button>
+                  {showIconPicker && (
+                    <div className="absolute left-0 top-full z-50 pt-1">
+                      <IconPicker
+                        value={modeData.icon ?? null}
+                        onChange={handleIconSelect}
+                        onClose={() => setShowIconPicker(false)}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Mode name / rename trigger */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNameValue(currentName)
+                    setEditingName(true)
+                  }}
+                  aria-label={`Rename mode: ${currentName}`}
+                  className="group flex items-center gap-1.5 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                >
+                  <h2 className="text-base font-semibold text-heading">
+                    {currentName}
+                  </h2>
+                  <Pencil
+                    className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                    aria-hidden="true"
                   />
-                )}
-                <h2 className="text-base font-semibold text-heading">
-                  {currentName}
-                </h2>
-                <Pencil
-                  className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
-                  aria-hidden="true"
-                />
-              </button>
+                </button>
+              </div>
             )}
           </div>
         </div>

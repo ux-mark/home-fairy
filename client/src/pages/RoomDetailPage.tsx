@@ -39,6 +39,7 @@ import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
 import { PillSelect } from '@/components/ui/PillSelect'
 import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
 import { getScenesForRoom, getModesForRoom, getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1737,6 +1738,7 @@ export default function RoomDetailPage() {
       {(() => {
         const roomScenes = allScenes && name ? getScenesForRoom(allScenes, name) : []
         const modesForRoom = allScenes && name ? getModesForRoom(allScenes, name, systemCurrent?.all_modes) : []
+        const modeIcons = systemCurrent?.mode_icons ?? {}
 
         return (
           <section>
@@ -1771,7 +1773,10 @@ export default function RoomDetailPage() {
 
                       return (
                         <div key={mode}>
-                          <h4 className="mb-1.5 text-xs font-semibold text-caption">{mode}</h4>
+                          <h4 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-caption">
+                            <LucideIcon name={modeIcons[mode] ?? null} className="h-4 w-4 text-fairy-400" aria-hidden="true" />
+                            {mode}
+                          </h4>
                           <ul className="divide-y divide-[var(--border-secondary)] rounded-xl card border overflow-hidden">
                             {scenesInMode.map(scene => {
                               const isActive = room?.current_scene === scene.name

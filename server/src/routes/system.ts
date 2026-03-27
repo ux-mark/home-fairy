@@ -58,6 +58,7 @@ router.get('/current', (_req: Request, res: Response) => {
     res.json({
       mode: modeRow?.value ?? 'Evening',
       all_modes: allModes,
+      mode_icons: getAllModeIcons(),
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -314,6 +315,13 @@ function upsertState(key: string, value: string): void {
 
 function getAllModeNames(): string[] {
   return getAll<{ name: string }>('SELECT name FROM modes ORDER BY display_order').map(m => m.name)
+}
+
+function getAllModeIcons(): Record<string, string | null> {
+  const rows = getAll<{ name: string; icon: string | null }>('SELECT name, icon FROM modes ORDER BY display_order')
+  const map: Record<string, string | null> = {}
+  for (const row of rows) map[row.name] = row.icon
+  return map
 }
 
 function parseTrigger(row: ModeTriggerRow) {

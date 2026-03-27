@@ -8,6 +8,7 @@ import type { Room, Scene } from '@/lib/api'
 import { getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 
 // ── Skeleton loader ──────────────────────────────────────────────────────────
 
@@ -31,11 +32,13 @@ function RoomCardSkeleton() {
 function ModeSelector({
   currentMode,
   modes,
+  modeIcons,
   onSelect,
   isPending,
 }: {
   currentMode: string
   modes: string[]
+  modeIcons: Record<string, string | null>
   onSelect: (mode: string) => void
   isPending: boolean
 }) {
@@ -49,7 +52,7 @@ function ModeSelector({
             onClick={() => onSelect(mode)}
             disabled={isPending}
             className={cn(
-              'rounded-lg px-3.5 py-2 text-sm font-medium transition-all',
+              'inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-all',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               'min-h-[44px]',
               currentMode === mode
@@ -57,6 +60,7 @@ function ModeSelector({
                 : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
             )}
           >
+            <LucideIcon name={modeIcons[mode]} className="h-4 w-4" aria-hidden="true" />
             {mode}
           </button>
         ))}
@@ -747,6 +751,7 @@ export default function HomePage() {
 
   const currentMode = system?.mode ?? 'Evening'
   const allModes = system?.all_modes ?? [...DEFAULT_MODES]
+  const modeIcons = system?.mode_icons ?? {}
 
   return (
     <div>
@@ -784,6 +789,7 @@ export default function HomePage() {
       <ModeSelector
         currentMode={currentMode}
         modes={allModes}
+        modeIcons={modeIcons}
         onSelect={mode => setModeMutation.mutate(mode)}
         isPending={setModeMutation.isPending}
       />

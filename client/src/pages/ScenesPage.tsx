@@ -151,6 +151,7 @@ interface RoomAccordionProps {
   activeSceneNames: Set<string>
   defaultScenes: Record<string, Record<string, string>> | undefined
   systemModes: string[] | undefined
+  modeIcons: Record<string, string | null> | undefined
   isOpen: boolean
   onToggle: () => void
 }
@@ -162,6 +163,7 @@ function RoomAccordion({
   activeSceneNames,
   defaultScenes,
   systemModes,
+  modeIcons,
   isOpen,
   onToggle,
 }: RoomAccordionProps) {
@@ -232,6 +234,7 @@ function RoomAccordion({
               label={mode}
               active={activeMode === mode}
               onClick={() => setActiveMode(mode)}
+              icon={modeIcons?.[mode] ?? null}
             />
           ))}
         </div>
@@ -643,6 +646,7 @@ export default function ScenesPage() {
                       activeSceneNames={activeSceneNames}
                       defaultScenes={defaultScenes}
                       systemModes={systemCurrent?.all_modes}
+                      modeIcons={systemCurrent?.mode_icons}
                       isOpen={computedOpenRooms.has(roomName)}
                       onToggle={() => toggleRoom(roomName)}
                     />

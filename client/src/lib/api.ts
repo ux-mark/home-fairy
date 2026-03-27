@@ -782,7 +782,7 @@ export const api = {
       }),
   },
   system: {
-    getCurrent: () => fetchApi<{ mode: string; all_modes?: string[] }>('/system/current'),
+    getCurrent: () => fetchApi<{ mode: string; all_modes?: string[]; mode_icons?: Record<string, string | null> }>('/system/current'),
     getPreferences: () => fetchApi<Record<string, string>>('/system/preferences'),
     setPreference: (key: string, value: string) =>
       fetchApi<unknown>('/system/preferences', {

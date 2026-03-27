@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Pencil, Zap, CirclePause, CircleSlash } from 'lucide-react'
 import * as Switch from '@radix-ui/react-switch'
 import { api } from '@/lib/api'
-import type { AutoPlayRule, SonosFavourite } from '@/lib/api'
+import type { AutoPlayRule, ModeWithTriggers, SonosFavourite } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
@@ -132,13 +132,13 @@ function AddRuleForm({
   onCancel: () => void
   rooms: string[]
   favourites: SonosFavourite[]
-  modes: string[]
+  modes: ModeWithTriggers[]
   isSaving: boolean
   availableSources: string[]
 }) {
   const [targetRoom, setTargetRoom] = useState<string>('')
   const [favourite, setFavourite] = useState<string>('')
-  const [mode, setMode] = useState<string>(modes[0] ?? '')
+  const [mode, setMode] = useState<string>(modes[0]?.name ?? '')
   const [triggerType, setTriggerType] = useState<TriggerType>('if_not_playing')
   const [sourceValue, setSourceValue] = useState<string>('')
   const [maxPlays, setMaxPlays] = useState<string>('')
@@ -198,7 +198,7 @@ function AddRuleForm({
         <p className="text-heading text-sm mb-1.5">Mode</p>
         <PillSelect
           id="rule-mode"
-          options={modes.map((m) => ({ value: m, label: m }))}
+          options={modes.map((m) => ({ value: m.name, label: m.name, icon: m.icon ?? undefined }))}
           value={mode}
           onChange={setMode}
           placeholder="Select a mode"
@@ -493,7 +493,7 @@ export function MusicSection() {
                       <p className="text-heading text-sm mb-1.5">Mode</p>
                       <PillSelect
                         id="settings-edit-mode"
-                        options={modeNames.map(m => ({ value: m, label: m }))}
+                        options={(modes ?? []).map(m => ({ value: m.name, label: m.name, icon: m.icon ?? undefined }))}
                         value={editMode}
                         onChange={setEditMode}
                         placeholder="Select a mode"
@@ -663,7 +663,7 @@ export function MusicSection() {
               onCancel={() => setShowAddForm(false)}
               rooms={assignedRooms}
               favourites={favourites ?? []}
-              modes={modeNames}
+              modes={modes ?? []}
               isSaving={createRuleMutation.isPending}
               availableSources={availableSources ?? []}
             />

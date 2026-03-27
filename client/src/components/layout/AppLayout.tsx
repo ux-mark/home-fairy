@@ -7,6 +7,7 @@ import { useDashboardSocket } from '@/hooks/useSocket'
 import { useScrollRestoration } from '@/hooks/useScrollRestoration'
 import ToastContainer from '@/components/ui/Toast'
 import NotificationBell from '@/components/notifications/NotificationBell'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 
 function HomeFairyIcon({ className }: { className?: string }) {
   return (
@@ -45,7 +46,8 @@ export default function AppLayout() {
         </div>
         {system?.mode && (
           <div className="border-b px-5 py-3">
-            <span className="inline-flex items-center rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400">
+            <span className="inline-flex items-center gap-1 rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400">
+              <LucideIcon name={system.mode_icons?.[system.mode] ?? null} className="h-3.5 w-3.5" aria-hidden="true" />
               {system.mode}
             </span>
           </div>
@@ -108,7 +110,8 @@ export default function AppLayout() {
               <Settings className="h-5 w-5" />
             </NavLink>
             {system?.mode && (
-              <span className="inline-flex items-center rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400 md:hidden">
+              <span className="inline-flex items-center gap-1 rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400 md:hidden">
+                <LucideIcon name={system.mode_icons?.[system.mode] ?? null} className="h-3.5 w-3.5" aria-hidden="true" />
                 {system.mode}
               </span>
             )}

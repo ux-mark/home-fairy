@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { cn } from '@/lib/utils'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 
 export interface PillSelectOption {
   value: string
@@ -80,7 +81,7 @@ export function PillSelect({
             aria-selected={isSelected}
             onClick={() => onChange(option.value)}
             className={cn(
-              'inline-flex shrink-0 items-center rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
+              'inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
               'min-h-[44px] min-w-[44px]',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               isSelected
@@ -88,6 +89,9 @@ export function PillSelect({
                 : 'bg-[var(--bg-tertiary)] text-caption hover:bg-[var(--bg-secondary)]',
             )}
           >
+            {option.icon && (
+              <LucideIcon name={option.icon} className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            )}
             {option.label}
           </button>
         )
