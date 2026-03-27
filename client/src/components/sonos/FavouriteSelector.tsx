@@ -79,20 +79,23 @@ export function FavouriteSelector({
     })
   }, [])
 
+  // Exclude items with no URI — they're non-playable service bookmarks
+  const playableFavourites = useMemo(() => favourites.filter(f => f.uri), [favourites])
+
   // Determine which content types are present in the favourites list
   const presentTypes = useMemo<ContentType[]>(() => {
     const seen = new Set<ContentType>()
-    for (const fav of favourites) {
+    for (const fav of playableFavourites) {
       seen.add(getContentType(fav.uri))
     }
     return ALL_TYPES.filter(t => seen.has(t))
-  }, [favourites])
+  }, [playableFavourites])
 
   // Filter the displayed favourites based on the selected pill
   const filteredFavourites = useMemo<SonosFavourite[]>(() => {
-    if (selectedType === 'All') return favourites
-    return favourites.filter(f => getContentType(f.uri) === selectedType)
-  }, [favourites, selectedType])
+    if (selectedType === 'All') return playableFavourites
+    return playableFavourites.filter(f => getContentType(f.uri) === selectedType)
+  }, [playableFavourites, selectedType])
 
   // When the type pill changes, clear selection if the current value no longer
   // appears in the filtered list
