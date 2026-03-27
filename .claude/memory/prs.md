@@ -332,3 +332,39 @@
 - **Branch cleanup**: done
 - **Summary**: Follow-me music (motion-driven speaker grouping), auto-play rules (favourites on mode change), line-in detection, locked state integration. Backend: sonos-client, sonos-manager, sonos routes, DB schema, motion/scheduler hooks. Frontend: SonosSetupPage, SonosDetailPage, MusicSection settings, Sonos tab on Devices, per-room controls on RoomDetail. PM2 + deploy config. Bug fixes: motion hook placement, webhook auth query param, auto-play validation.
 - **Files**: 25 files changed (+3,205/-14)
+
+## PR #40 — Fix follow-me auto-start UX and add inline auto-play rules
+- **Branch**: fix/sonos-follow-me-autostart → dev
+- **Created**: 2026-03-26
+- **Status**: merged
+- **Merge date**: 2026-03-26
+- **Branch cleanup**: done
+- **Summary**: Follow-me no longer auto-starts music (only moves already-playing). Removed default favourite, auto-start toggles, room favourite dropdowns. Added __continue__ auto-play option. Inline auto-play rule creator on SonosDetailPage and RoomDetailPage with read-only room field. Condition fieldset hidden for __continue__. Source value validation for if_source_not.
+- **Files**: `server/src/lib/sonos-manager.ts`, `client/src/components/settings/MusicSection.tsx`, `client/src/pages/SonosDetailPage.tsx`, `client/src/pages/RoomDetailPage.tsx`
+
+## PR #41 — Add Sonos volume control, mute all, and content type browser
+- **Branch**: feature/sonos-volume-mute-content-browser → dev
+- **Created**: 2026-03-26
+- **Status**: merged
+- **Merge date**: 2026-03-26
+- **Branch cleanup**: done
+- **Summary**: Live volume slider + mute toggle on speaker detail page (300ms debounce, auto-unmute). Mute all speakers button on homepage (groupMute/groupUnmute, optimistic UI). Two-step content type browser for auto-play favourites (URI-prefix classification, shared FavouriteSelector component).
+- **Files**: `server/src/lib/sonos-client.ts`, `server/src/routes/sonos.ts`, `client/src/lib/api.ts`, `client/src/components/sonos/FavouriteSelector.tsx` (new), `client/src/pages/SonosDetailPage.tsx`, `client/src/pages/HomePage.tsx`, `client/src/pages/RoomDetailPage.tsx`, `client/src/components/settings/MusicSection.tsx`
+
+## PR #42 — Improve mobile nav touch targets, move Settings to header
+- **Branch**: fix/mobile-nav-touch-targets → dev
+- **Created**: 2026-03-27
+- **Status**: merged
+- **Merge date**: 2026-03-27
+- **Branch cleanup**: done
+- **Summary**: Moved Settings from bottom nav to header gear icon (mobile only). Removed theme toggle. Increased touch targets (56→60px, 5 items). Added safe-area-inset-bottom for iPhone. Fixed text clipping on descenders.
+- **Files**: `client/index.html`, `client/src/components/layout/AppLayout.tsx`
+
+## PR #43 — Fix card text layout — give text full width
+- **Branch**: fix/card-text-layout → dev
+- **Created**: 2026-03-27
+- **Status**: merged
+- **Merge date**: 2026-03-27
+- **Branch cleanup**: done
+- **Summary**: SensorCard, KasaDeviceCard, and AttentionBar ItemCard restructured from single-row to two-row layouts so text gets full width and metadata/actions wrap below
+- **Files**: `client/src/pages/DevicesPage.tsx`, `client/src/components/dashboard/AttentionBar.tsx`

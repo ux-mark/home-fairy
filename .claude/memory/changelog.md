@@ -5,6 +5,26 @@
 
 ---
 
+## 2026-03-27 — Fix notifications and insights (PR #44)
+- **Notification panel mobile layout**: Changed from absolute to fixed positioning on mobile (below md breakpoint) so panel shows full-width instead of being cut off
+- **Clickable notifications**: Each notification is now a tappable button that navigates to the Devices page and closes the panel
+- **Device label resolution**: Added sourceType/sourceId/sourceLabel to device_unreachable and device_online notifications in device-health-service. Added fallback DB lookup in insights-engine for existing notifications with null source_label
+- **Device source mapping**: AttentionBar "View device" links now route to correct detail page (kasa vs hub)
+- **Files**: `NotificationPanel.tsx`, `NotificationBell.tsx`, `device-health-service.ts`, `insights-engine.ts`
+
+## 2026-03-27 — Fix card text layout (PR #43)
+- **SensorCard**: Two-row layout — device label + badges on top, room name + sensor readings below with flex-wrap
+- **KasaDeviceCard**: Two-row layout — label + power toggle on top, metadata + pills below with flex-wrap
+- **AttentionBar ItemCard**: Action buttons moved into text column below description instead of beside it
+- **Files**: `client/src/pages/DevicesPage.tsx`, `client/src/components/dashboard/AttentionBar.tsx`
+
+## 2026-03-26 — Sonos Phase 2: Volume control, mute all, content type browser
+- **Live volume + mute**: Interactive volume slider (300ms debounce) and mute toggle on SonosDetailPage. Auto-unmutes when slider moves while muted. Default volume slider retained for follow-me join behaviour.
+- **Mute all speakers**: Full-width toggle button on homepage below quick actions. Uses groupMute/groupUnmute for efficiency. Optimistic UI, only shows when speakers assigned. GET /mute-status endpoint for state.
+- **Content type browser**: FavouriteSelector component replaces flat dropdown with two-step type filter + item selector. Types from URI prefix (Spotify playlists, Radio, Sonos Radio, etc.). Shared across SonosDetailPage, RoomDetailPage, MusicSection.
+- **Backend**: 4 new sonos-client methods (mute, unmute, groupMute, groupUnmute), 4 new routes (PUT volume, PUT mute, PUT mute-all, GET mute-status), expanded SonosFavourite with uri/albumArtURI
+- **Files**: 8 files (1 new, 7 modified)
+
 ## 2026-03-26 — Sonos integration: Follow-Me Music and Auto-Play
 - **Backend**: sonos-client.ts (axios wrapper for node-sonos-http-api), sonos-manager.ts (follow-me + auto-play business logic), sonos.ts routes (13 endpoints)
 - **Database**: sonos_speakers and sonos_auto_play tables, sonos_follow_me + sonos_auto_start columns on rooms
