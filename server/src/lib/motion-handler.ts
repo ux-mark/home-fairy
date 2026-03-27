@@ -273,6 +273,7 @@ export class MotionHandler {
 
       // Notify Sonos manager of room activity (non-blocking, has its own guards)
       sonosManager.onRoomMotionActive(roomName).catch(() => {})
+      sonosManager.onRoomActive(roomName).catch(() => {})
 
       // Update room.last_active
       run(

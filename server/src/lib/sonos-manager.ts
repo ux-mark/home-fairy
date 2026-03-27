@@ -242,14 +242,26 @@ class SonosManager {
   }
 
   async onModeChange(newMode: string): Promise<void> {
+    // Mode change only resets play counts — auto-play rules are triggered by motion
     if (newMode !== this.currentMode) {
       this.rulePlayCounts.clear()
       this.currentMode = newMode
+      log(`Mode changed to "${newMode}", auto-play repeat counts reset`)
     }
+  }
+
+  /**
+   * Called when motion is detected in a room. Evaluates auto-play rules for the
+   * current mode. Not gated by lux, auto-enable, or night lockout — like follow-me.
+   * - Room-specific rules: fire only when that room activates
+   * - Whole-house rules (room_name = null): fire on first motion in any room
+   */
+  async onRoomActive(roomName: string): Promise<void> {
+    const mode = this.currentMode ?? this.getCurrentModeFromDb()
 
     const rules = getAll<AutoPlayRow>(
-      'SELECT * FROM sonos_auto_play WHERE mode_name = ? AND enabled = 1',
-      [newMode],
+      'SELECT * FROM sonos_auto_play WHERE mode_name = ? AND enabled = 1 AND (room_name = ? OR room_name IS NULL)',
+      [mode, roomName],
     )
 
     if (rules.length === 0) return
@@ -261,6 +273,13 @@ class SonosManager {
         log(`Auto-play rule ${rule.id} failed: ${err instanceof Error ? err.message : String(err)}`)
       }
     }
+  }
+
+  private getCurrentModeFromDb(): string {
+    const row = getOne<{ value: string }>(
+      "SELECT value FROM current_state WHERE key = 'mode'",
+    )
+    return row?.value ?? 'Evening'
   }
 
   private async evaluateAutoPlayRule(rule: AutoPlayRow): Promise<void> {
