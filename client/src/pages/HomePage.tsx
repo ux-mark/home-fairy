@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Thermometer, Sun, Clock, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock, AlertTriangle, ChevronRight, Activity, Loader2 } from 'lucide-react'
+import { Thermometer, Sun, Clock, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock, AlertTriangle, ChevronRight, Activity, Loader2, Volume2, VolumeX } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
@@ -529,6 +529,89 @@ function MtaCard() {
   )
 }
 
+// ── Music quick action ───────────────────────────────────────────────────────
+
+function MusicQuickAction() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const { data: muteStatus } = useQuery({
+    queryKey: ['sonos', 'mute-status'],
+    queryFn: api.sonos.getMuteStatus,
+    staleTime: 10_000,
+    retry: false,
+  })
+
+  const muteAllMutation = useMutation({
+    mutationFn: (muted: boolean) => api.sonos.muteAll(muted),
+    onMutate: async (muted) => {
+      await queryClient.cancelQueries({ queryKey: ['sonos', 'mute-status'] })
+      const previous = queryClient.getQueryData<{ allMuted: boolean; mutedCount: number; totalSpeakers: number }>(['sonos', 'mute-status'])
+      if (previous) {
+        queryClient.setQueryData(['sonos', 'mute-status'], {
+          ...previous,
+          allMuted: muted,
+          mutedCount: muted ? previous.totalSpeakers : 0,
+        })
+      }
+      return { previous }
+    },
+    onSuccess: (_data, muted) => {
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'mute-status'] })
+      toast({ message: muted ? 'All speakers muted' : 'All speakers unmuted' })
+    },
+    onError: (_err, _muted, context) => {
+      if (context?.previous) queryClient.setQueryData(['sonos', 'mute-status'], context.previous)
+      toast({ message: 'Failed to update speakers', type: 'error' })
+    },
+  })
+
+  // Don't render if no speakers are configured
+  if (!muteStatus || muteStatus.totalSpeakers === 0) return null
+
+  const isMuted = muteStatus.allMuted
+  const speakerLabel = muteStatus.totalSpeakers === 1
+    ? '1 speaker'
+    : `${muteStatus.totalSpeakers} speakers`
+
+  return (
+    <section className="mb-6" aria-label="Music controls">
+      <button
+        onClick={() => muteAllMutation.mutate(!isMuted)}
+        disabled={muteAllMutation.isPending}
+        className={cn(
+          'flex w-full min-h-[48px] items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all',
+          'active:scale-[0.98]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2',
+          'disabled:opacity-50',
+          isMuted
+            ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25 focus-visible:outline-fairy-500'
+            : 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 focus-visible:outline-amber-500',
+        )}
+      >
+        {muteAllMutation.isPending ? (
+          <Loader2 className="h-4.5 w-4.5 animate-spin" />
+        ) : isMuted ? (
+          <VolumeX className="h-4.5 w-4.5" />
+        ) : (
+          <Volume2 className="h-4.5 w-4.5" />
+        )}
+        {muteAllMutation.isPending
+          ? (isMuted ? 'Unmuting...' : 'Muting...')
+          : isMuted
+            ? 'Unmute all speakers'
+            : 'Mute all speakers'}
+        <span className={cn(
+          'ml-1 text-xs font-normal',
+          isMuted ? 'text-fairy-400/60' : 'text-amber-400/60',
+        )}>
+          ({speakerLabel})
+        </span>
+      </button>
+    </section>
+  )
+}
+
 // ── Home page ────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
@@ -672,6 +755,8 @@ export default function HomePage() {
       <MtaCard />
 
       <QuickActions />
+
+      <MusicQuickAction />
 
       {nightStatus?.active && (
         <div className="card mb-6 rounded-xl border border-indigo-500/30 bg-indigo-500/5 px-4 py-3">

@@ -48,6 +48,8 @@ export interface SonosZone {
 
 export interface SonosFavourite {
   title: string
+  uri?: string
+  albumArtURI?: string
 }
 
 class SonosClient {
@@ -129,9 +131,15 @@ class SonosClient {
       const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/favorites`)
       // API returns an array of objects or strings
       if (Array.isArray(data)) {
-        return data.map((item: unknown) =>
-          typeof item === 'string' ? { title: item } : (item as SonosFavourite),
-        )
+        return data.map((item: unknown) => {
+          if (typeof item === 'string') return { title: item }
+          const obj = item as Record<string, unknown>
+          return {
+            title: String(obj.title ?? ''),
+            uri: obj.uri ? String(obj.uri) : undefined,
+            albumArtURI: obj.albumArtURI ? String(obj.albumArtURI) : undefined,
+          }
+        })
       }
       return []
     } catch (err) {
@@ -152,6 +160,38 @@ class SonosClient {
       await this.api.get(`/${encodeURIComponent(speaker)}/volume/${level}`)
     } catch (err) {
       this.handleError(err, `setVolume(${speaker}, ${level})`)
+    }
+  }
+
+  async mute(speaker: string): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/mute`)
+    } catch (err) {
+      this.handleError(err, `mute(${speaker})`)
+    }
+  }
+
+  async unmute(speaker: string): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/unmute`)
+    } catch (err) {
+      this.handleError(err, `unmute(${speaker})`)
+    }
+  }
+
+  async groupMute(speaker: string): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/groupMute`)
+    } catch (err) {
+      this.handleError(err, `groupMute(${speaker})`)
+    }
+  }
+
+  async groupUnmute(speaker: string): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/groupUnmute`)
+    } catch (err) {
+      this.handleError(err, `groupUnmute(${speaker})`)
     }
   }
 

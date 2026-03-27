@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { getAll, getOne, run } from '../db/index.js'
 import { sonosClient } from '../lib/sonos-client.js'
 import { sonosManager } from '../lib/sonos-manager.js'
+import { emit } from '../lib/socket.js'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
@@ -279,6 +280,92 @@ router.delete('/auto-play/:id', (req: Request, res: Response) => {
   const id = Number(req.params.id)
   const result = run('DELETE FROM sonos_auto_play WHERE id = ?', [id])
   res.json({ deleted: result.changes > 0 })
+})
+
+// PUT /volume/:speaker — set live speaker volume
+const volumeSchema = z.object({ level: z.number().int().min(0).max(100) })
+
+router.put('/volume/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const { level } = volumeSchema.parse(req.body)
+    await sonosClient.setVolume(speaker, level)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, volume: level })
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: err.errors })
+      return
+    }
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// PUT /mute/:speaker — mute or unmute a speaker
+const muteSchema = z.object({ muted: z.boolean() })
+
+router.put('/mute/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const { muted } = muteSchema.parse(req.body)
+    if (muted) {
+      await sonosClient.mute(speaker)
+    } else {
+      await sonosClient.unmute(speaker)
+    }
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, muted })
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: err.errors })
+      return
+    }
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// PUT /mute-all — mute or unmute all zone coordinators
+router.put('/mute-all', async (req: Request, res: Response) => {
+  try {
+    const { muted } = muteSchema.parse(req.body)
+    const zones = sonosManager.getZones()
+    const coordinators = zones.map(z => z.coordinator.roomName)
+    await Promise.allSettled(
+      coordinators.map(speaker =>
+        muted ? sonosClient.groupMute(speaker) : sonosClient.groupUnmute(speaker),
+      ),
+    )
+    emit('sonos:playback-update', { allMuted: muted })
+    res.json({ muted, affectedSpeakers: coordinators.length })
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: err.errors })
+      return
+    }
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// GET /mute-status — get mute state across all zones
+router.get('/mute-status', (_req: Request, res: Response) => {
+  const zones = sonosManager.getZones()
+  let totalSpeakers = 0
+  let mutedCount = 0
+  for (const zone of zones) {
+    const memberCount = zone.members.length
+    totalSpeakers += memberCount
+    if (zone.coordinator.state.mute) {
+      mutedCount += memberCount
+    }
+  }
+  res.json({
+    allMuted: totalSpeakers > 0 && mutedCount === totalSpeakers,
+    mutedCount,
+    totalSpeakers,
+  })
 })
 
 // GET /health — check if Sonos API is reachable

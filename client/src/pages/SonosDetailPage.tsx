@@ -2,12 +2,13 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as Switch from '@radix-ui/react-switch'
-import { Trash2, ChevronDown } from 'lucide-react'
+import { Trash2, ChevronDown, Volume2, VolumeX } from 'lucide-react'
 import { io, Socket } from 'socket.io-client'
 import { api, type Room, type AutoPlayRule } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { BackLink } from '@/components/ui/BackLink'
 import { Accordion } from '@/components/ui/Accordion'
+import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
 import { useToast } from '@/hooks/useToast'
 
 // ── Socket singleton (reuse the same pattern as useSocket.ts) ─────────────────
@@ -274,6 +275,45 @@ export default function SonosDetailPage() {
     onError: () => toast({ message: 'Failed to delete rule', type: 'error' }),
   })
 
+  // ── Live volume + mute mutations ────────────────────────────────────────────
+
+  const [liveVolume, setLiveVolume] = useState<number | null>(null)
+  const liveVolumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const setLiveVolumeMutation = useMutation({
+    mutationFn: (level: number) => api.sonos.setVolume(speaker!, level),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'state', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to set volume', type: 'error' }),
+  })
+
+  const setMuteMutation = useMutation({
+    mutationFn: (muted: boolean) => api.sonos.setMute(speaker!, muted),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'state', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to toggle mute', type: 'error' }),
+  })
+
+  function handleLiveVolumeChange(value: number) {
+    setLiveVolume(value)
+    if (liveVolumeTimer.current) clearTimeout(liveVolumeTimer.current)
+    liveVolumeTimer.current = setTimeout(() => {
+      // Auto-unmute when slider moves while muted
+      if (playbackState?.mute) {
+        setMuteMutation.mutate(false)
+      }
+      setLiveVolumeMutation.mutate(value)
+      setLiveVolume(null)
+    }, 300)
+  }
+
+  function handleMuteToggle() {
+    if (!playbackState) return
+    setMuteMutation.mutate(!playbackState.mute)
+  }
+
   // ── Volume save on debounce ──────────────────────────────────────────────────
 
   function handleVolumeChange(value: number) {
@@ -393,7 +433,7 @@ export default function SonosDetailPage() {
                 </div>
               </div>
             )}
-            <div className="flex items-center gap-3 pt-1">
+            <div className="space-y-2 pt-1">
               <span
                 className={cn(
                   'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium',
@@ -404,12 +444,43 @@ export default function SonosDetailPage() {
               >
                 {formatPlaybackState(playbackState.playbackState)}
               </span>
-              <span className="text-caption text-xs">
-                Volume: {playbackState.volume}%
-              </span>
-              {playbackState.mute && (
-                <span className="text-xs text-amber-400">Muted</span>
-              )}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleMuteToggle}
+                  disabled={setMuteMutation.isPending}
+                  aria-label={playbackState.mute ? `Unmute ${speaker}` : `Mute ${speaker}`}
+                  className={cn(
+                    'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors',
+                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                    'disabled:cursor-not-allowed disabled:opacity-40',
+                    playbackState.mute
+                      ? 'text-amber-400 hover:bg-amber-500/10'
+                      : 'text-body hover:bg-fairy-500/10',
+                  )}
+                >
+                  {playbackState.mute
+                    ? <VolumeX className="h-5 w-5" aria-hidden="true" />
+                    : <Volume2 className="h-5 w-5" aria-hidden="true" />}
+                </button>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={liveVolume ?? playbackState.volume}
+                  onChange={e => handleLiveVolumeChange(Number(e.target.value))}
+                  aria-label={`Volume for ${speaker}`}
+                  className={cn(
+                    'h-11 flex-1 cursor-pointer appearance-none rounded-lg',
+                    playbackState.mute && 'opacity-40',
+                  )}
+                />
+                <span className={cn(
+                  'w-10 text-right text-sm tabular-nums',
+                  playbackState.mute ? 'text-amber-400' : 'text-body',
+                )}>
+                  {liveVolume ?? playbackState.volume}%
+                </span>
+              </div>
             </div>
           </div>
         ) : (
@@ -482,7 +553,7 @@ export default function SonosDetailPage() {
               <span>Default volume</span>
               <span className="text-body text-sm font-normal">{effectiveVolume}%</span>
             </label>
-            <p className="text-caption text-xs mb-3">Default volume for this speaker.</p>
+            <p className="text-caption text-xs mb-3">Volume level used when follow-me joins this speaker to a group.</p>
             <input
               id="default-volume"
               type="range"
@@ -600,21 +671,12 @@ export default function SonosDetailPage() {
                   <label htmlFor="detail-rule-favourite" className="text-heading text-sm mb-1.5 block">
                     Favourite
                   </label>
-                  <div className="relative">
-                    <select
-                      id="detail-rule-favourite"
-                      value={newRuleFavourite}
-                      onChange={e => setNewRuleFavourite(e.target.value)}
-                      className="surface w-full appearance-none rounded-lg border border-[var(--border-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                    >
-                      <option value="">Select a favourite</option>
-                      <option value="__continue__">Continue what's already playing</option>
-                      {favourites?.map(fav => (
-                        <option key={fav.title} value={fav.title}>{fav.title}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-caption" aria-hidden="true" />
-                  </div>
+                  <FavouriteSelector
+                    favourites={favourites ?? []}
+                    value={newRuleFavourite}
+                    onChange={setNewRuleFavourite}
+                    id="detail-rule-favourite"
+                  />
                 </div>
 
                 {/* Mode */}

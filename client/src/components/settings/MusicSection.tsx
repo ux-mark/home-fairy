@@ -3,9 +3,10 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { CheckCircle, AlertCircle, ChevronDown, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { AutoPlayRule } from '@/lib/api'
+import type { AutoPlayRule, SonosFavourite } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
+import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
 import { Section } from './Section'
 
 // ── Connection status ────────────────────────────────────────────────────────
@@ -120,12 +121,12 @@ function AddRuleForm({
   onSave: (data: Omit<AutoPlayRule, 'id'>) => void
   onCancel: () => void
   rooms: string[]
-  favourites: string[]
+  favourites: SonosFavourite[]
   modes: string[]
   isSaving: boolean
 }) {
   const [targetRoom, setTargetRoom] = useState<string>('')
-  const [favourite, setFavourite] = useState<string>(favourites[0] ?? '')
+  const [favourite, setFavourite] = useState<string>('')
   const [mode, setMode] = useState<string>(modes[0] ?? '')
   const [triggerType, setTriggerType] = useState<TriggerType>('mode_change')
   const [sourceValue, setSourceValue] = useState<string>('')
@@ -180,23 +181,12 @@ function AddRuleForm({
         <label htmlFor="rule-favourite" className="text-heading text-sm mb-1.5 block">
           Favourite
         </label>
-        <div className="relative">
-          <select
-            id="rule-favourite"
-            value={favourite}
-            onChange={(e) => setFavourite(e.target.value)}
-            className={selectClass}
-          >
-            <option value="">Select a favourite</option>
-            <option value="__continue__">Continue what's already playing</option>
-            {favourites.map((f) => (
-              <option key={f} value={f}>
-                {f}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" />
-        </div>
+        <FavouriteSelector
+          favourites={favourites}
+          value={favourite}
+          onChange={setFavourite}
+          id="rule-favourite"
+        />
       </div>
 
       {/* Mode */}
@@ -364,7 +354,6 @@ export function MusicSection() {
     onError: () => toast({ message: 'Failed to delete rule', type: 'error' }),
   })
 
-  const favouriteNames = favourites?.map((f) => f.title) ?? []
   const modeNames = modes?.map((m) => m.name) ?? []
   const assignedRooms = speakers?.map((s) => s.room_name) ?? []
   const speakerCount = speakers?.length ?? 0
@@ -463,7 +452,7 @@ export function MusicSection() {
               onSave={(data) => createRuleMutation.mutate(data)}
               onCancel={() => setShowAddForm(false)}
               rooms={assignedRooms}
-              favourites={favouriteNames}
+              favourites={favourites ?? []}
               modes={modeNames}
               isSaving={createRuleMutation.isPending}
             />

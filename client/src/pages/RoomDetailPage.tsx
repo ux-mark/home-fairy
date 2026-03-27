@@ -33,6 +33,7 @@ import { BackLink } from '@/components/ui/BackLink'
 import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
 import RoomIntelligence from '@/components/room/RoomIntelligence'
+import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
 import { getScenesForRoom, getModesForRoom, getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1397,21 +1398,12 @@ export default function RoomDetailPage() {
                         <label htmlFor="room-detail-rule-favourite" className="text-heading text-sm mb-1.5 block">
                           Favourite
                         </label>
-                        <div className="relative">
-                          <select
-                            id="room-detail-rule-favourite"
-                            value={newRuleFavourite}
-                            onChange={e => setNewRuleFavourite(e.target.value)}
-                            className="surface w-full appearance-none rounded-lg border border-[var(--border-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                          >
-                            <option value="">Select a favourite</option>
-                            <option value="__continue__">Continue what's already playing</option>
-                            {sonosFavourites?.map(fav => (
-                              <option key={fav.title} value={fav.title}>{fav.title}</option>
-                            ))}
-                          </select>
-                          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-caption" aria-hidden="true" />
-                        </div>
+                        <FavouriteSelector
+                          favourites={sonosFavourites ?? []}
+                          value={newRuleFavourite}
+                          onChange={setNewRuleFavourite}
+                          id="room-detail-rule-favourite"
+                        />
                       </div>
 
                       {/* Mode */}
