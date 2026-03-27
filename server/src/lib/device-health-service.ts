@@ -1,5 +1,6 @@
 import { getOne, getAll, run, db } from '../db/index.js'
 import { notificationService } from './notification-service.js'
+import { invalidateInsightsCache } from './insights-engine.js'
 
 type DeviceType = 'hub' | 'kasa' | 'lifx'
 
@@ -187,6 +188,7 @@ export const deviceHealthService = {
 
     const label = getDeviceLabel(deviceType, deviceId)
     logToDb(`Device deactivated: ${label} (${reason})`)
+    invalidateInsightsCache()
   },
 
   reactivateDevice(deviceType: DeviceType, deviceId: string): { success: boolean; error?: string } {
@@ -201,6 +203,7 @@ export const deviceHealthService = {
 
     const label = getDeviceLabel(deviceType, deviceId)
     logToDb(`Device reactivated: ${label}`)
+    invalidateInsightsCache()
 
     return { success: true }
   },

@@ -697,6 +697,11 @@ function computeAttentionItems(
 
 // ── Main export ─────────────────────────────────────────────────────────────
 
+export function invalidateInsightsCache(): void {
+  cachedInsights = null
+  cacheTimestamp = 0
+}
+
 export function computeInsights(state: CurrentState): InsightsData {
   const now = Date.now()
   if (cachedInsights && now - cacheTimestamp < CACHE_TTL_MS) {
