@@ -412,6 +412,40 @@ router.get('/mute-status', (_req: Request, res: Response) => {
   })
 })
 
+// GET /speakers/:room/linked-devices — get device links for a speaker room
+router.get('/speakers/:room/linked-devices', (req: Request, res: Response) => {
+  try {
+    const rawRoom = req.params.room
+    const roomName = Array.isArray(rawRoom) ? rawRoom[0] : rawRoom
+    const links = getAll<{
+      id: number
+      source_type: string
+      source_id: string
+      target_type: string
+      target_id: string
+      link_type: string
+      created_at: string
+    }>(
+      `SELECT * FROM device_links
+       WHERE (source_type = 'sonos' AND source_id = ?)
+          OR (target_type = 'sonos' AND target_id = ?)
+       ORDER BY created_at DESC`,
+      [roomName, roomName],
+    )
+    res.json(links.map(l => ({
+      id: l.id,
+      sourceType: l.source_type,
+      sourceId: l.source_id,
+      targetType: l.target_type,
+      targetId: l.target_id,
+      linkType: l.link_type,
+    })))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
 // GET /health — check if Sonos API is reachable
 router.get('/health', async (_req: Request, res: Response) => {
   const available = await sonosClient.isAvailable()

@@ -213,6 +213,17 @@ export function initDb(): void {
       PRIMARY KEY (room_name, mode_name)
     );
 
+    CREATE TABLE IF NOT EXISTS device_links (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_type TEXT NOT NULL CHECK(source_type IN ('sonos', 'kasa', 'lifx', 'hub')),
+      source_id TEXT NOT NULL,
+      target_type TEXT NOT NULL CHECK(target_type IN ('kasa', 'sonos', 'lifx', 'hub')),
+      target_id TEXT NOT NULL,
+      link_type TEXT DEFAULT 'power' CHECK(link_type IN ('power')),
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(source_type, source_id, target_type, target_id)
+    );
+
     CREATE TABLE IF NOT EXISTS sonos_speakers (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       room_name TEXT NOT NULL REFERENCES rooms(name) ON UPDATE CASCADE ON DELETE CASCADE,
