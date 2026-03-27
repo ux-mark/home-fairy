@@ -17,6 +17,7 @@ interface RoomRow {
   last_active: string | null
   sonos_follow_me: number
   sonos_auto_start: number
+  icon: string | null
   created_at: string
   updated_at: string
 }
@@ -75,6 +76,7 @@ const createRoomSchema = z.object({
   auto: z.boolean().optional(),
   timer: z.number().optional(),
   tags: z.array(z.string()).optional(),
+  icon: z.string().nullable().optional(),
 })
 
 const updateRoomSchema = z.object({
@@ -87,6 +89,7 @@ const updateRoomSchema = z.object({
   last_active: z.string().nullable().optional(),
   sonos_follow_me: z.boolean().optional(),
   sonos_auto_start: z.boolean().optional(),
+  icon: z.string().nullable().optional(),
 })
 
 // GET /default-scenes — bulk: all default scene assignments for all rooms
@@ -143,8 +146,8 @@ router.post('/', (req: Request, res: Response) => {
     console.log('[rooms POST] body:', JSON.stringify(req.body))
     const body = createRoomSchema.parse(req.body)
     run(
-      `INSERT INTO rooms (name, display_order, parent_room, auto, timer, tags)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO rooms (name, display_order, parent_room, auto, timer, tags, icon)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [
         body.name,
         body.display_order ?? 0,
@@ -152,6 +155,7 @@ router.post('/', (req: Request, res: Response) => {
         body.auto !== undefined ? Number(body.auto) : 1,
         body.timer ?? 15,
         JSON.stringify(body.tags ?? []),
+        body.icon ?? null,
       ],
     )
     const created = getOne<RoomRow>('SELECT * FROM rooms WHERE name = ?', [body.name])
@@ -190,6 +194,7 @@ router.put('/:name', (req: Request, res: Response) => {
     if (body.last_active !== undefined) { fields.push('last_active = ?'); values.push(body.last_active) }
     if (body.sonos_follow_me !== undefined) { fields.push('sonos_follow_me = ?'); values.push(Number(body.sonos_follow_me)) }
     if (body.sonos_auto_start !== undefined) { fields.push('sonos_auto_start = ?'); values.push(Number(body.sonos_auto_start)) }
+    if (body.icon !== undefined) { fields.push('icon = ?'); values.push(body.icon) }
 
     if (fields.length > 0) {
       fields.push("updated_at = datetime('now')")

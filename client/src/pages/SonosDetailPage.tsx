@@ -2,12 +2,14 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as Switch from '@radix-ui/react-switch'
-import { Pencil, ChevronDown, Volume2, VolumeX } from 'lucide-react'
+import { Pencil, Volume2, VolumeX, Zap, CirclePause, CircleSlash } from 'lucide-react'
 import { io, Socket } from 'socket.io-client'
 import { api, type Room, type AutoPlayRule } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { BackLink } from '@/components/ui/BackLink'
 import { Accordion } from '@/components/ui/Accordion'
+import { PillSelect } from '@/components/ui/PillSelect'
+import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
 import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
 import { useToast } from '@/hooks/useToast'
 
@@ -671,46 +673,32 @@ export default function SonosDetailPage() {
 
                         {/* Mode */}
                         <div>
-                          <label htmlFor="edit-rule-mode" className="text-heading text-sm mb-1.5 block">Mode</label>
-                          <div className="relative">
-                            <select
-                              id="edit-rule-mode"
-                              value={newRuleMode}
-                              onChange={e => setNewRuleMode(e.target.value)}
-                              className="surface w-full appearance-none rounded-lg border border-[var(--border-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                            >
-                              <option value="">Select a mode</option>
-                              {modes?.map(m => (
-                                <option key={m.name} value={m.name}>{m.name}</option>
-                              ))}
-                            </select>
-                            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-caption" aria-hidden="true" />
-                          </div>
+                          <p className="text-heading text-sm mb-1.5">Mode</p>
+                          <PillSelect
+                            id="edit-rule-mode"
+                            options={modes?.map(m => ({ value: m.name, label: m.name })) ?? []}
+                            value={newRuleMode}
+                            onChange={setNewRuleMode}
+                            placeholder="Select a mode"
+                            aria-label="Select a mode"
+                          />
                         </div>
 
                         {/* Condition */}
                         {newRuleFavourite !== '__continue__' && (
-                          <fieldset>
-                            <legend className="text-heading text-sm mb-2">Condition</legend>
-                            <div className="space-y-2">
-                              {([
-                                { value: 'mode_change', label: 'Always when mode changes' },
-                                { value: 'if_not_playing', label: 'Only if nothing is playing' },
-                                { value: 'if_source_not', label: 'Only if a source is not active' },
-                              ] as { value: AutoPlayRule['trigger_type']; label: string }[]).map(({ value, label }) => (
-                                <label key={value} className="flex items-center gap-2 cursor-pointer min-h-[44px]">
-                                  <input
-                                    type="radio"
-                                    name="edit-trigger-type"
-                                    value={value}
-                                    checked={newRuleTriggerType === value}
-                                    onChange={() => setNewRuleTriggerType(value)}
-                                    className="h-4 w-4 accent-fairy-500"
-                                  />
-                                  <span className="text-heading text-sm">{label}</span>
-                                </label>
-                              ))}
-                            </div>
+                          <div>
+                            <p className="text-heading text-sm mb-2">Condition</p>
+                            <CardRadioGroup
+                              name="edit-trigger-type"
+                              options={[
+                                { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
+                                { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
+                                { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
+                              ]}
+                              value={newRuleTriggerType}
+                              onChange={(v) => setNewRuleTriggerType(v as AutoPlayRule['trigger_type'])}
+                              aria-label="Trigger condition"
+                            />
                             {newRuleTriggerType === 'if_source_not' && (
                               <div className="mt-3">
                                 <label htmlFor="edit-rule-source" className="text-caption text-xs mb-1.5 block">Source name</label>
@@ -724,7 +712,7 @@ export default function SonosDetailPage() {
                                 />
                               </div>
                             )}
-                          </fieldset>
+                          </div>
                         )}
 
                         {/* Save / Cancel */}
@@ -857,48 +845,32 @@ export default function SonosDetailPage() {
 
                 {/* Mode */}
                 <div>
-                  <label htmlFor="detail-rule-mode" className="text-heading text-sm mb-1.5 block">
-                    Mode
-                  </label>
-                  <div className="relative">
-                    <select
-                      id="detail-rule-mode"
-                      value={newRuleMode}
-                      onChange={e => setNewRuleMode(e.target.value)}
-                      className="surface w-full appearance-none rounded-lg border border-[var(--border-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                    >
-                      <option value="">Select a mode</option>
-                      {modes?.map(m => (
-                        <option key={m.name} value={m.name}>{m.name}</option>
-                      ))}
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-caption" aria-hidden="true" />
-                  </div>
+                  <p className="text-heading text-sm mb-1.5">Mode</p>
+                  <PillSelect
+                    id="detail-rule-mode"
+                    options={modes?.map(m => ({ value: m.name, label: m.name })) ?? []}
+                    value={newRuleMode}
+                    onChange={setNewRuleMode}
+                    placeholder="Select a mode"
+                    aria-label="Select a mode"
+                  />
                 </div>
 
                 {/* Condition — hidden when __continue__ (only mode_change makes sense) */}
                 {newRuleFavourite !== '__continue__' && (
-                  <fieldset>
-                    <legend className="text-heading text-sm mb-2">Condition</legend>
-                    <div className="space-y-2">
-                      {([
-                        { value: 'mode_change', label: 'Always when mode changes' },
-                        { value: 'if_not_playing', label: 'Only if nothing is playing' },
-                        { value: 'if_source_not', label: 'Only if a source is not active' },
-                      ] as { value: AutoPlayRule['trigger_type']; label: string }[]).map(({ value, label }) => (
-                        <label key={value} className="flex items-center gap-2 cursor-pointer min-h-[44px]">
-                          <input
-                            type="radio"
-                            name="detail-trigger-type"
-                            value={value}
-                            checked={newRuleTriggerType === value}
-                            onChange={() => setNewRuleTriggerType(value)}
-                            className="h-4 w-4 accent-fairy-500"
-                          />
-                          <span className="text-heading text-sm">{label}</span>
-                        </label>
-                      ))}
-                    </div>
+                  <div>
+                    <p className="text-heading text-sm mb-2">Condition</p>
+                    <CardRadioGroup
+                      name="detail-trigger-type"
+                      options={[
+                        { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
+                        { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
+                        { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
+                      ]}
+                      value={newRuleTriggerType}
+                      onChange={(v) => setNewRuleTriggerType(v as AutoPlayRule['trigger_type'])}
+                      aria-label="Trigger condition"
+                    />
                     {newRuleTriggerType === 'if_source_not' && (
                       <div className="mt-3">
                         <label htmlFor="detail-rule-source" className="text-caption text-xs mb-1.5 block">
@@ -914,7 +886,7 @@ export default function SonosDetailPage() {
                         />
                       </div>
                     )}
-                  </fieldset>
+                  </div>
                 )}
 
                 {/* Actions */}

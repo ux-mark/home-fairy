@@ -508,3 +508,19 @@ The following issues were discovered during a comprehensive technical and UX aud
 - **Severity**: low
 - **Status**: resolved (2026-03-22)
 - **Resolution**: Token updated
+
+## 2026-03-26 — Allow users to select and manage icons for modes
+- **Severity**: enhancement
+- **Status**: planned
+- **Category**: ux-enhancement
+- **Priority**: low
+- **Description**: The database now has an `icon` column on the `modes` table with sensible defaults (sunrise, sun, sunset, moon-star, moon, bed). There is currently no UI for users to change these. Add a Lucide icon picker on the mode creation/edit page so users can choose from a curated set of icons. The selected icon should appear in: mode pills in auto-play rule forms, mode badges throughout the app, and the mode scheduler/settings page.
+- **Files**: `client/src/pages/SettingsPage.tsx` (or extracted mode settings component), `server/src/routes/modes.ts`
+
+## 2026-03-26 — Allow users to select icons or upload images for rooms
+- **Severity**: enhancement
+- **Status**: planned
+- **Category**: ux-enhancement
+- **Priority**: low
+- **Description**: The database now has an `icon` column on the `rooms` table (currently NULL for all rooms). There is currently no UI for users to set or change room icons. Add a Lucide icon picker (and optionally a small image upload) on the room creation/edit page. The selected icon should appear in: room cards on the home page, room selector dropdowns, and room detail page headers.
+- **Files**: `client/src/pages/RoomsPage.tsx`, `client/src/pages/RoomDetailPage.tsx`, `client/src/pages/HomePage.tsx`, `server/src/routes/rooms.ts`

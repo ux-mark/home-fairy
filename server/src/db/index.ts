@@ -246,6 +246,23 @@ export function initDb(): void {
   if (!colNames.includes('sonos_auto_start')) {
     db.exec('ALTER TABLE rooms ADD COLUMN sonos_auto_start INTEGER DEFAULT 1')
   }
+  if (!colNames.includes('icon')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN icon TEXT DEFAULT NULL')
+  }
+
+  // Add icon column to modes table if it doesn't exist
+  const modeCols = db.prepare("PRAGMA table_info('modes')").all() as { name: string }[]
+  const modeColNames = modeCols.map(c => c.name)
+  if (!modeColNames.includes('icon')) {
+    db.exec("ALTER TABLE modes ADD COLUMN icon TEXT DEFAULT NULL")
+    db.exec(`UPDATE modes SET icon = 'sunrise' WHERE LOWER(name) = 'early morning'`)
+    db.exec(`UPDATE modes SET icon = 'sun' WHERE LOWER(name) = 'morning'`)
+    db.exec(`UPDATE modes SET icon = 'sun' WHERE LOWER(name) = 'afternoon'`)
+    db.exec(`UPDATE modes SET icon = 'sunset' WHERE LOWER(name) = 'evening'`)
+    db.exec(`UPDATE modes SET icon = 'moon-star' WHERE LOWER(name) = 'late evening'`)
+    db.exec(`UPDATE modes SET icon = 'moon' WHERE LOWER(name) = 'night'`)
+    db.exec(`UPDATE modes SET icon = 'bed' WHERE LOWER(name) = 'sleep time'`)
+  }
 
   // Seed defaults for a fresh database
   seedDefaults()

@@ -1,13 +1,15 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { CheckCircle, AlertCircle, ChevronDown, Pencil } from 'lucide-react'
+import { CheckCircle, AlertCircle, ChevronDown, Pencil, Zap, CirclePause, CircleSlash } from 'lucide-react'
 import * as Switch from '@radix-ui/react-switch'
 import { api } from '@/lib/api'
 import type { AutoPlayRule, SonosFavourite } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
+import { PillSelect } from '@/components/ui/PillSelect'
+import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
 import { Section } from './Section'
 
 // ── Connection status ────────────────────────────────────────────────────────
@@ -192,52 +194,32 @@ function AddRuleForm({
 
       {/* Mode */}
       <div>
-        <label htmlFor="rule-mode" className="text-heading text-sm mb-1.5 block">
-          Mode
-        </label>
-        <div className="relative">
-          <select
-            id="rule-mode"
-            value={mode}
-            onChange={(e) => setMode(e.target.value)}
-            className={selectClass}
-          >
-            <option value="">Select a mode</option>
-            {modes.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" />
-        </div>
+        <p className="text-heading text-sm mb-1.5">Mode</p>
+        <PillSelect
+          id="rule-mode"
+          options={modes.map((m) => ({ value: m, label: m }))}
+          value={mode}
+          onChange={setMode}
+          placeholder="Select a mode"
+          aria-label="Select a mode"
+        />
       </div>
 
       {/* Condition — hidden when __continue__ (only mode_change makes sense) */}
       {favourite !== '__continue__' && (
-        <fieldset>
-          <legend className="text-heading text-sm mb-2">Condition</legend>
-          <div className="space-y-2">
-            {(
-              [
-                { value: 'mode_change', label: 'Always when mode changes' },
-                { value: 'if_not_playing', label: 'Only if nothing is playing' },
-                { value: 'if_source_not', label: 'Only if a source is not active' },
-              ] as { value: TriggerType; label: string }[]
-            ).map(({ value, label }) => (
-              <label key={value} className="flex items-center gap-2 cursor-pointer min-h-[44px]">
-                <input
-                  type="radio"
-                  name="trigger-type"
-                  value={value}
-                  checked={triggerType === value}
-                  onChange={() => setTriggerType(value)}
-                  className="h-4 w-4 accent-fairy-500"
-                />
-                <span className="text-heading text-sm">{label}</span>
-              </label>
-            ))}
-          </div>
+        <div>
+          <p className="text-heading text-sm mb-2">Condition</p>
+          <CardRadioGroup
+            name="trigger-type"
+            options={[
+              { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
+              { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
+              { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
+            ]}
+            value={triggerType}
+            onChange={(v) => setTriggerType(v as TriggerType)}
+            aria-label="Trigger condition"
+          />
           {triggerType === 'if_source_not' && (
             <div className="mt-3">
               <label htmlFor="rule-source" className="text-caption text-xs mb-1.5 block">
@@ -253,7 +235,7 @@ function AddRuleForm({
               />
             </div>
           )}
-        </fieldset>
+        </div>
       )}
 
       {/* Actions */}
@@ -473,38 +455,38 @@ export function MusicSection() {
                     </div>
 
                     <div>
-                      <label htmlFor="settings-edit-mode" className="text-heading text-sm mb-1.5 block">Mode</label>
-                      <div className="relative">
-                        <select id="settings-edit-mode" value={editMode} onChange={e => setEditMode(e.target.value)} className={selectClass}>
-                          <option value="">Select a mode</option>
-                          {modeNames.map(m => <option key={m} value={m}>{m}</option>)}
-                        </select>
-                        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden="true" />
-                      </div>
+                      <p className="text-heading text-sm mb-1.5">Mode</p>
+                      <PillSelect
+                        id="settings-edit-mode"
+                        options={modeNames.map(m => ({ value: m, label: m }))}
+                        value={editMode}
+                        onChange={setEditMode}
+                        placeholder="Select a mode"
+                        aria-label="Select a mode"
+                      />
                     </div>
 
                     {editFavourite !== '__continue__' && (
-                      <fieldset>
-                        <legend className="text-heading text-sm mb-2">Condition</legend>
-                        <div className="space-y-2">
-                          {([
-                            { value: 'mode_change' as const, label: 'Always when mode changes' },
-                            { value: 'if_not_playing' as const, label: 'Only if nothing is playing' },
-                            { value: 'if_source_not' as const, label: 'Only if a source is not active' },
-                          ]).map(({ value, label }) => (
-                            <label key={value} className="flex items-center gap-2 cursor-pointer min-h-[44px]">
-                              <input type="radio" name="settings-edit-trigger-type" value={value} checked={editTriggerType === value} onChange={() => setEditTriggerType(value)} className="h-4 w-4 accent-fairy-500" />
-                              <span className="text-heading text-sm">{label}</span>
-                            </label>
-                          ))}
-                        </div>
+                      <div>
+                        <p className="text-heading text-sm mb-2">Condition</p>
+                        <CardRadioGroup
+                          name="settings-edit-trigger-type"
+                          options={[
+                            { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
+                            { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
+                            { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
+                          ]}
+                          value={editTriggerType}
+                          onChange={(v) => setEditTriggerType(v as AutoPlayRule['trigger_type'])}
+                          aria-label="Trigger condition"
+                        />
                         {editTriggerType === 'if_source_not' && (
                           <div className="mt-3">
                             <label htmlFor="settings-edit-source" className="text-caption text-xs mb-1.5 block">Source name</label>
                             <input id="settings-edit-source" type="text" value={editSourceValue} onChange={e => setEditSourceValue(e.target.value)} placeholder="e.g. Spotify" className="w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500" />
                           </div>
                         )}
-                      </fieldset>
+                      </div>
                     )}
 
                     <div className="flex items-center gap-2 pt-1">

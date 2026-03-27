@@ -17,10 +17,11 @@ import {
   Square,
   Shield,
   ChevronRight,
-  ChevronDown,
   Sparkles,
   Check,
   ExternalLink,
+  CirclePause,
+  CircleSlash,
 } from 'lucide-react'
 import * as Switch from '@radix-ui/react-switch'
 import * as Tabs from '@radix-ui/react-tabs'
@@ -35,6 +36,8 @@ import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
 import RoomIntelligence from '@/components/room/RoomIntelligence'
 import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
+import { PillSelect } from '@/components/ui/PillSelect'
+import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
 import { getScenesForRoom, getModesForRoom, getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -1384,38 +1387,38 @@ export default function RoomDetailPage() {
                               </div>
 
                               <div>
-                                <label htmlFor="room-edit-rule-mode" className="text-heading text-sm mb-1.5 block">Mode</label>
-                                <div className="relative">
-                                  <select id="room-edit-rule-mode" value={newRuleMode} onChange={e => setNewRuleMode(e.target.value)} className="surface w-full appearance-none rounded-lg border border-[var(--border-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
-                                    <option value="">Select a mode</option>
-                                    {sonosModes?.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
-                                  </select>
-                                  <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-caption" aria-hidden="true" />
-                                </div>
+                                <p className="text-heading text-sm mb-1.5">Mode</p>
+                                <PillSelect
+                                  id="room-edit-rule-mode"
+                                  options={sonosModes?.map(m => ({ value: m.name, label: m.name })) ?? []}
+                                  value={newRuleMode}
+                                  onChange={setNewRuleMode}
+                                  placeholder="Select a mode"
+                                  aria-label="Select a mode"
+                                />
                               </div>
 
                               {newRuleFavourite !== '__continue__' && (
-                                <fieldset>
-                                  <legend className="text-heading text-sm mb-2">Condition</legend>
-                                  <div className="space-y-2">
-                                    {([
-                                      { value: 'mode_change' as const, label: 'Always when mode changes' },
-                                      { value: 'if_not_playing' as const, label: 'Only if nothing is playing' },
-                                      { value: 'if_source_not' as const, label: 'Only if a source is not active' },
-                                    ]).map(({ value, label }) => (
-                                      <label key={value} className="flex items-center gap-2 cursor-pointer min-h-[44px]">
-                                        <input type="radio" name="room-edit-trigger-type" value={value} checked={newRuleTriggerType === value} onChange={() => setNewRuleTriggerType(value)} className="h-4 w-4 accent-fairy-500" />
-                                        <span className="text-heading text-sm">{label}</span>
-                                      </label>
-                                    ))}
-                                  </div>
+                                <div>
+                                  <p className="text-heading text-sm mb-2">Condition</p>
+                                  <CardRadioGroup
+                                    name="room-edit-trigger-type"
+                                    options={[
+                                      { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
+                                      { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
+                                      { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
+                                    ]}
+                                    value={newRuleTriggerType}
+                                    onChange={(v) => setNewRuleTriggerType(v as AutoPlayRule['trigger_type'])}
+                                    aria-label="Trigger condition"
+                                  />
                                   {newRuleTriggerType === 'if_source_not' && (
                                     <div className="mt-3">
                                       <label htmlFor="room-edit-rule-source" className="text-caption text-xs mb-1.5 block">Source name</label>
                                       <input id="room-edit-rule-source" type="text" value={newRuleSourceValue} onChange={e => setNewRuleSourceValue(e.target.value)} placeholder="e.g. Spotify" className="w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500" />
                                     </div>
                                   )}
-                                </fieldset>
+                                </div>
                               )}
 
                               <div className="flex items-center gap-2 pt-1">
@@ -1533,38 +1536,38 @@ export default function RoomDetailPage() {
                       </div>
 
                       <div>
-                        <label htmlFor="room-detail-rule-mode" className="text-heading text-sm mb-1.5 block">Mode</label>
-                        <div className="relative">
-                          <select id="room-detail-rule-mode" value={newRuleMode} onChange={e => setNewRuleMode(e.target.value)} className="surface w-full appearance-none rounded-lg border border-[var(--border-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
-                            <option value="">Select a mode</option>
-                            {sonosModes?.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
-                          </select>
-                          <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-caption" aria-hidden="true" />
-                        </div>
+                        <p className="text-heading text-sm mb-1.5">Mode</p>
+                        <PillSelect
+                          id="room-detail-rule-mode"
+                          options={sonosModes?.map(m => ({ value: m.name, label: m.name })) ?? []}
+                          value={newRuleMode}
+                          onChange={setNewRuleMode}
+                          placeholder="Select a mode"
+                          aria-label="Select a mode"
+                        />
                       </div>
 
                       {newRuleFavourite !== '__continue__' && (
-                        <fieldset>
-                          <legend className="text-heading text-sm mb-2">Condition</legend>
-                          <div className="space-y-2">
-                            {([
-                              { value: 'mode_change' as const, label: 'Always when mode changes' },
-                              { value: 'if_not_playing' as const, label: 'Only if nothing is playing' },
-                              { value: 'if_source_not' as const, label: 'Only if a source is not active' },
-                            ]).map(({ value, label }) => (
-                              <label key={value} className="flex items-center gap-2 cursor-pointer min-h-[44px]">
-                                <input type="radio" name="room-detail-trigger-type" value={value} checked={newRuleTriggerType === value} onChange={() => setNewRuleTriggerType(value)} className="h-4 w-4 accent-fairy-500" />
-                                <span className="text-heading text-sm">{label}</span>
-                              </label>
-                            ))}
-                          </div>
+                        <div>
+                          <p className="text-heading text-sm mb-2">Condition</p>
+                          <CardRadioGroup
+                            name="room-detail-trigger-type"
+                            options={[
+                              { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
+                              { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
+                              { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
+                            ]}
+                            value={newRuleTriggerType}
+                            onChange={(v) => setNewRuleTriggerType(v as AutoPlayRule['trigger_type'])}
+                            aria-label="Trigger condition"
+                          />
                           {newRuleTriggerType === 'if_source_not' && (
                             <div className="mt-3">
                               <label htmlFor="room-detail-rule-source" className="text-caption text-xs mb-1.5 block">Source name</label>
                               <input id="room-detail-rule-source" type="text" value={newRuleSourceValue} onChange={e => setNewRuleSourceValue(e.target.value)} placeholder="e.g. Spotify" className="w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-heading min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500" />
                             </div>
                           )}
-                        </fieldset>
+                        </div>
                       )}
 
                       <div className="flex items-center gap-2 pt-1">

@@ -42,6 +42,7 @@ export interface Room {
   lux: number | null
   sonos_follow_me: boolean
   sonos_auto_start: boolean
+  icon: string | null
 }
 
 export interface RoomDetail extends Room {
@@ -242,6 +243,7 @@ export interface ModeTrigger {
 
 export interface ModeWithTriggers {
   name: string
+  icon: string | null
   triggers: ModeTrigger[]
   isSleepMode: boolean
 }

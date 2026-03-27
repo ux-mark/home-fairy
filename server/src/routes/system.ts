@@ -290,7 +290,8 @@ interface ModeTriggerRow {
 }
 
 const modeRenameSchema = z.object({
-  name: z.string().min(1).max(50),
+  name: z.string().min(1).max(50).optional(),
+  icon: z.string().nullable().optional(),
 })
 
 const triggerSchema = z.object({
@@ -332,7 +333,9 @@ function parseTrigger(row: ModeTriggerRow) {
 // GET /modes — get all modes with their triggers
 router.get('/modes', (_req: Request, res: Response) => {
   try {
-    const allModes = getAllModeNames()
+    const modeRows = getAll<{ name: string; icon: string | null }>(
+      'SELECT name, icon FROM modes ORDER BY display_order',
+    )
     const sleepRow = getOne<CurrentStateRow>(
       "SELECT value FROM current_state WHERE key = 'sleep_mode_name'",
     )
@@ -345,8 +348,9 @@ router.get('/modes', (_req: Request, res: Response) => {
       triggersByMode[t.mode_name].push(t)
     }
 
-    const result = allModes.map(name => ({
+    const result = modeRows.map(({ name, icon }) => ({
       name,
+      icon: icon ?? null,
       triggers: (triggersByMode[name] ?? []).map(parseTrigger),
       isSleepMode: name === sleepModeName,
     }))
@@ -358,10 +362,14 @@ router.get('/modes', (_req: Request, res: Response) => {
   }
 })
 
+const modeCreateSchema = modeSchema.extend({
+  icon: z.string().nullable().optional(),
+})
+
 // POST /modes — add a mode
 router.post('/modes', (req: Request, res: Response) => {
   try {
-    const body = modeSchema.parse(req.body)
+    const body = modeCreateSchema.parse(req.body)
     const allModes = getAllModeNames()
 
     if (allModes.includes(body.mode)) {
@@ -370,7 +378,7 @@ router.post('/modes', (req: Request, res: Response) => {
     }
 
     const maxOrder = getOne<{ m: number | null }>('SELECT MAX(display_order) as m FROM modes')
-    run('INSERT INTO modes (name, display_order) VALUES (?, ?)', [body.mode, (maxOrder?.m ?? 0) + 1])
+    run('INSERT INTO modes (name, display_order, icon) VALUES (?, ?, ?)', [body.mode, (maxOrder?.m ?? 0) + 1, body.icon ?? null])
     res.json(getAllModeNames())
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -414,68 +422,80 @@ router.put('/modes/reorder', (req: Request, res: Response) => {
   }
 })
 
-// PUT /modes/:mode — rename a mode
+// PUT /modes/:mode — rename a mode and/or update its icon
 router.put('/modes/:mode', (req: Request, res: Response) => {
   try {
     const oldName = decodeURIComponent(String(req.params.mode))
     const body = modeRenameSchema.parse(req.body)
     const newName = body.name
 
-    if (oldName === newName) {
-      res.status(400).json({ error: 'New name is the same as current name' })
-      return
-    }
-
     const modeExists = getOne<{ name: string }>('SELECT name FROM modes WHERE name = ?', [oldName])
     if (!modeExists) {
       res.status(404).json({ error: 'Mode not found' })
       return
     }
-    const newNameExists = getOne<{ name: string }>('SELECT name FROM modes WHERE name = ?', [newName])
-    if (newNameExists) {
-      res.status(409).json({ error: 'A mode with that name already exists' })
-      return
+
+    // Update icon if provided (can be done without a rename)
+    if (body.icon !== undefined) {
+      run('UPDATE modes SET icon = ? WHERE name = ?', [body.icon, oldName])
     }
 
-    // Count scenes that will be affected (for response metadata)
-    const affectedSceneCount = getOne<{ cnt: number }>(
-      'SELECT COUNT(DISTINCT scene_name) as cnt FROM scene_modes WHERE mode_name = ?',
-      [oldName],
-    )
-    const updatedScenes = affectedSceneCount?.cnt ?? 0
+    // Perform rename if a new name was provided
+    let updatedScenes = 0
+    const effectiveName = newName ?? oldName
 
-    const renameTransaction = db.transaction(() => {
-      // 1. Rename in modes table — CASCADE propagates to mode_triggers and scene_modes
-      run('UPDATE modes SET name = ? WHERE name = ?', [newName, oldName])
-
-      // 2. If current mode matches old name, update it
-      const currentModeRow = getOne<CurrentStateRow>(
-        "SELECT value FROM current_state WHERE key = 'mode'",
-      )
-      if (currentModeRow?.value === oldName) {
-        upsertState('mode', newName)
+    if (newName !== undefined) {
+      if (oldName === newName) {
+        res.status(400).json({ error: 'New name is the same as current name' })
+        return
       }
 
-      // 3. If pref_night_wake_mode matches, update it
-      const wakeModeRow = getOne<CurrentStateRow>(
-        "SELECT value FROM current_state WHERE key = 'pref_night_wake_mode'",
-      )
-      if (wakeModeRow?.value === oldName) {
-        upsertState('pref_night_wake_mode', newName)
+      const newNameExists = getOne<{ name: string }>('SELECT name FROM modes WHERE name = ?', [newName])
+      if (newNameExists) {
+        res.status(409).json({ error: 'A mode with that name already exists' })
+        return
       }
 
-      // 4. If sleep_mode_name matches, update it
-      const sleepModeRow = getOne<CurrentStateRow>(
-        "SELECT value FROM current_state WHERE key = 'sleep_mode_name'",
+      // Count scenes that will be affected (for response metadata)
+      const affectedSceneCount = getOne<{ cnt: number }>(
+        'SELECT COUNT(DISTINCT scene_name) as cnt FROM scene_modes WHERE mode_name = ?',
+        [oldName],
       )
-      if (sleepModeRow?.value === oldName) {
-        upsertState('sleep_mode_name', newName)
-      }
-    })
+      updatedScenes = affectedSceneCount?.cnt ?? 0
 
-    renameTransaction()
+      const renameTransaction = db.transaction(() => {
+        // 1. Rename in modes table — CASCADE propagates to mode_triggers and scene_modes
+        run('UPDATE modes SET name = ? WHERE name = ?', [newName, oldName])
 
-    res.json({ name: newName, updatedScenes })
+        // 2. If current mode matches old name, update it
+        const currentModeRow = getOne<CurrentStateRow>(
+          "SELECT value FROM current_state WHERE key = 'mode'",
+        )
+        if (currentModeRow?.value === oldName) {
+          upsertState('mode', newName)
+        }
+
+        // 3. If pref_night_wake_mode matches, update it
+        const wakeModeRow = getOne<CurrentStateRow>(
+          "SELECT value FROM current_state WHERE key = 'pref_night_wake_mode'",
+        )
+        if (wakeModeRow?.value === oldName) {
+          upsertState('pref_night_wake_mode', newName)
+        }
+
+        // 4. If sleep_mode_name matches, update it
+        const sleepModeRow = getOne<CurrentStateRow>(
+          "SELECT value FROM current_state WHERE key = 'sleep_mode_name'",
+        )
+        if (sleepModeRow?.value === oldName) {
+          upsertState('sleep_mode_name', newName)
+        }
+      })
+
+      renameTransaction()
+    }
+
+    res.json({ name: effectiveName, updatedScenes })
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: 'Validation failed', details: err.errors })
