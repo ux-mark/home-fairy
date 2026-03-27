@@ -1,14 +1,44 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Thermometer, Sun, Clock, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock, AlertTriangle, ChevronRight, Activity, Loader2, Volume2, VolumeX } from 'lucide-react'
+import { Thermometer, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock, AlertTriangle, ChevronRight, Activity, Loader2, Volume2, VolumeX } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
-import type { Room, Scene } from '@/lib/api'
+import type { Room, Scene, EnergyInsights } from '@/lib/api'
 import { getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LucideIcon } from '@/components/ui/LucideIcon'
+
+// ── Visual state helpers ──────────────────────────────────────────────────────
+
+function getLuxIcon(lux: number): { icon: string; className: string; label: string } {
+  if (lux >= 1000) return { icon: 'sun', className: 'text-amber-400', label: 'Bright' }
+  if (lux >= 400) return { icon: 'sun-dim', className: 'text-yellow-400', label: 'Moderate light' }
+  if (lux >= 100) return { icon: 'cloud-sun', className: 'text-slate-400', label: 'Low light' }
+  if (lux >= 10) return { icon: 'cloud', className: 'text-slate-500', label: 'Dim' }
+  return { icon: 'moon', className: 'text-indigo-400', label: 'Dark' }
+}
+
+function getTempColor(temp: number): string {
+  if (temp >= 28) return 'text-red-400'
+  if (temp >= 24) return 'text-amber-400'
+  if (temp >= 20) return 'text-emerald-400'
+  if (temp >= 16) return 'text-sky-400'
+  return 'text-blue-400'
+}
+
+function getActivityIndicator(lastActive: string | null): { dotColor: string; label: string } {
+  if (!lastActive) return { dotColor: 'bg-slate-600', label: 'No recent activity' }
+  const normalized = lastActive.includes('T') || lastActive.endsWith('Z')
+    ? lastActive
+    : lastActive.replace(' ', 'T') + 'Z'
+  const minutesAgo = (Date.now() - new Date(normalized).getTime()) / 60000
+  if (minutesAgo < 5) return { dotColor: 'bg-green-400', label: 'Active now' }
+  if (minutesAgo < 30) return { dotColor: 'bg-yellow-400', label: 'Recently active' }
+  if (minutesAgo < 120) return { dotColor: 'bg-slate-400', label: 'Idle' }
+  return { dotColor: 'bg-slate-600', label: 'Inactive' }
+}
 
 // ── Skeleton loader ──────────────────────────────────────────────────────────
 
@@ -79,6 +109,7 @@ function RoomCard({
   onToggleScene,
   onToggleAuto,
   isLocked,
+  energyInsights,
 }: {
   room: Room
   scenes: Scene[]
@@ -87,6 +118,7 @@ function RoomCard({
   onToggleScene: (name: string, isActive: boolean) => void
   onToggleAuto: () => void
   isLocked?: boolean
+  energyInsights?: EnergyInsights | null
 }) {
   // Show ALL scenes for room + mode, in season
   const roomScenes = scenes.filter(s => {
@@ -138,28 +170,58 @@ function RoomCard({
         </div>
       </div>
 
-      {/* Sensor data */}
-      {(room.temperature !== null || room.lux !== null) && (
-        <div className="text-body mb-3 flex items-center gap-4 text-xs">
-          {room.temperature !== null && (
-            <span className="flex items-center gap-1">
-              <Thermometer className="h-3.5 w-3.5" />
-              {room.temperature !== null && Math.round(room.temperature * 10) / 10}&deg;C
-            </span>
-          )}
-          {room.lux !== null && (
-            <span className="flex items-center gap-1">
-              <Sun className="h-3.5 w-3.5" />
-              {room.lux} lux
-            </span>
-          )}
-        </div>
-      )}
+      {/* Metadata row — lux icon, temperature, activity presence, optional cost badge */}
+      <div className="text-body mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        {/* Lux — icon only, no number */}
+        {room.lux !== null && (() => {
+          const lux = getLuxIcon(room.lux)
+          return (
+            <LucideIcon
+              name={lux.icon}
+              className={cn('h-3.5 w-3.5 shrink-0', lux.className)}
+              aria-label={lux.label}
+            />
+          )
+        })()}
 
-      {/* Last active */}
-      <div className="text-caption mb-3 flex items-center gap-1 text-xs">
-        <Clock className="h-3 w-3" />
-        {formatTimeAgo(room.last_active)}
+        {/* Temperature — number with comfort colour */}
+        {room.temperature !== null && (
+          <span className={cn('flex items-center gap-1', getTempColor(room.temperature))}>
+            <Thermometer className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            {Math.round(room.temperature * 10) / 10}&deg;C
+          </span>
+        )}
+
+        {/* Activity — presence dot + relative time */}
+        {(() => {
+          const activity = getActivityIndicator(room.last_active)
+          return (
+            <span className="flex items-center gap-1.5 text-caption">
+              <span
+                className={cn('h-1.5 w-1.5 shrink-0 rounded-full', activity.dotColor)}
+                aria-label={activity.label}
+              />
+              {formatTimeAgo(room.last_active)}
+            </span>
+          )
+        })()}
+
+        {/* Cost badge — visible when house energy is notably above normal */}
+        {energyInsights?.overUnderPercent != null && energyInsights.overUnderPercent > 15 && (
+          <Link
+            to="/dashboard"
+            className={cn(
+              'ml-auto flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
+              energyInsights.overUnderPercent > 30
+                ? 'bg-red-500/15 text-red-400'
+                : 'bg-amber-500/15 text-amber-400',
+            )}
+            aria-label={`House energy ${Math.round(energyInsights.overUnderPercent)}% above normal — view dashboard`}
+          >
+            <Zap className="h-2.5 w-2.5 shrink-0" aria-hidden="true" />
+            {Math.round(energyInsights.overUnderPercent)}% above
+          </Link>
+        )}
       </div>
 
       {/* Quick scene buttons — all scenes, no limit */}
@@ -855,6 +917,7 @@ export default function HomePage() {
                     toggleAutoMutation.mutate({ name: room.name, auto: !room.auto })
                   }
                   isLocked={nightStatus?.lockedRooms.includes(room.name)}
+                  energyInsights={dashboardData?.insights?.energy}
                 />
               ))}
           </div>
