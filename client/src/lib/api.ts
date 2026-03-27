@@ -399,6 +399,9 @@ export interface RoomIntelligenceData {
     id: number; label: string; battery: number; status: string
     drainPerDay: number | null; predictedDaysRemaining: number | null
   }>
+  dailyCost: number | null
+  monthToDateCost: number | null
+  dailyOverUnderPercent: number | null
 }
 
 export interface DeviceInsightsData {
@@ -448,6 +451,26 @@ export interface EnergyInsights {
     currentWatts: number
     averageWatts: number
     percentAbove: number
+  }>
+  actualDailyCost: number | null
+  projectedDailyCost: number | null
+  monthToDateCost: number | null
+  lastMonthCost: number | null
+  monthOverMonthPercent: number | null
+  dailyOverUnderPercent: number | null
+  deviceCostRanking: Array<{
+    deviceId: number
+    label: string
+    roomName: string
+    monthlyKwh: number
+    monthlyCost: number
+    dailyAvgCost: number
+  }>
+  roomCostRanking: Array<{
+    roomName: string
+    dailyCost: number
+    monthToDateCost: number
+    deviceCount: number
   }>
 }
 
@@ -666,6 +689,25 @@ export interface FollowMeStatus {
   enabled: boolean
   activeRooms: string[]
   anchorRoom: string | null
+}
+
+export interface DeviceLink {
+  id: number
+  sourceType: string
+  sourceId: string
+  targetType: string
+  targetId: string
+  linkType: string
+  target?: {
+    label: string
+    isOnline: boolean
+    power: number | null
+    todayWh: number | null
+    todayCost: number | null
+    monthWh: number | null
+    monthlyCost: number | null
+    currencySymbol: string
+  } | null
 }
 
 // ── API client ───────────────────────────────────────────────────────────────

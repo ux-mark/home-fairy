@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Speaker, Wifi, WifiOff, Trash2, Plus } from 'lucide-react'
+import { Speaker, Wifi, WifiOff, Trash2, Plus, Plug, Link2 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { SonosZone, SonosSpeakerMapping, Room } from '@/lib/api'
+import type { SonosZone, SonosSpeakerMapping, Room, KasaDevice } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { BackLink } from '@/components/ui/BackLink'
@@ -92,7 +92,7 @@ function AssignSpeakerCard({
   zone: SonosZone
   rooms: Room[]
   assignedRoomNames: Set<string>
-  onAssigned: () => void
+  onAssigned: (roomName: string) => void
 }) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -113,10 +113,11 @@ function AssignSpeakerCard({
       }),
     onSuccess: () => {
       toast({ message: `"${speakerName}" assigned to ${selectedRoom}.` })
+      const assignedRoomName = selectedRoom
       setSelectedRoom('')
       setDefaultVolume(30)
       queryClient.invalidateQueries({ queryKey: ['sonos', 'speakers'] })
-      onAssigned()
+      onAssigned(assignedRoomName)
     },
     onError: () => {
       toast({
@@ -292,6 +293,7 @@ function AssignedSpeakerCard({
 
 export default function SonosSetupPage() {
   const queryClient = useQueryClient()
+  const { toast } = useToast()
 
   const {
     data: zones,
@@ -320,6 +322,33 @@ export default function SonosSetupPage() {
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ['sonos'] })
   }
+
+  // Track which room was just assigned so we can suggest linking a smart plug
+  const [suggestPlugForRoom, setSuggestPlugForRoom] = useState<string | null>(null)
+  const [plugSuggestionDismissed, setPlugSuggestionDismissed] = useState(false)
+
+  const { data: kasaDevices } = useQuery({
+    queryKey: ['kasa', 'devices'],
+    queryFn: api.kasa.getDevices,
+    enabled: !!suggestPlugForRoom && !plugSuggestionDismissed,
+    staleTime: 60_000,
+  })
+
+  const linkPlugMutation = useMutation({
+    mutationFn: (kasaId: string) =>
+      api.deviceLinks.create({
+        source_type: 'sonos',
+        source_id: suggestPlugForRoom!,
+        target_type: 'kasa',
+        target_id: kasaId,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['device-links'] })
+      setPlugSuggestionDismissed(true)
+      toast({ message: 'Smart plug linked as power source' })
+    },
+    onError: () => toast({ message: 'Failed to link plug. You can do this later from the speaker settings.', type: 'error' }),
+  })
 
   const isLoading = zonesLoading || speakersLoading || roomsLoading
 
@@ -431,13 +460,67 @@ export default function SonosSetupPage() {
                     zone={zone}
                     rooms={rooms ?? []}
                     assignedRoomNames={assignedRoomNames}
-                    onAssigned={handleRefresh}
+                    onAssigned={(roomName) => {
+                      setSuggestPlugForRoom(roomName)
+                      setPlugSuggestionDismissed(false)
+                      handleRefresh()
+                    }}
                   />
                 ))}
               </div>
             )}
           </section>
         </div>
+      )}
+
+      {/* ── Smart plug suggestion ──────────────────────────────── */}
+      {suggestPlugForRoom && !plugSuggestionDismissed && (
+        <section
+          aria-labelledby="plug-suggestion-heading"
+          className="rounded-xl border border-fairy-500/30 bg-fairy-500/5 p-4"
+        >
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="rounded-full bg-fairy-500/10 p-1.5 text-fairy-400 shrink-0" aria-hidden="true">
+              <Plug className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 id="plug-suggestion-heading" className="text-sm font-medium text-heading">
+                Track energy use for {suggestPlugForRoom}
+              </h3>
+              <p className="mt-0.5 text-xs text-caption">
+                Link a Kasa smart plug to see how much power this speaker uses and its running cost.
+              </p>
+
+              {kasaDevices && kasaDevices.filter(d => d.has_emeter && !d.parent_id).length > 0 ? (
+                <div className="mt-3 space-y-1.5">
+                  {kasaDevices
+                    .filter((d: KasaDevice) => d.has_emeter && !d.parent_id)
+                    .map((plug: KasaDevice) => (
+                      <button
+                        key={plug.id}
+                        onClick={() => linkPlugMutation.mutate(plug.id)}
+                        disabled={linkPlugMutation.isPending}
+                        className="flex w-full min-h-[44px] items-center gap-2 rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-left text-sm text-heading transition-colors hover:border-fairy-500/50 hover:bg-[var(--bg-tertiary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 disabled:opacity-50"
+                      >
+                        <Link2 className="h-3.5 w-3.5 shrink-0 text-fairy-400" aria-hidden="true" />
+                        {plug.label}
+                        {!plug.is_online && (
+                          <span className="ml-auto text-xs text-slate-400">Offline</span>
+                        )}
+                      </button>
+                    ))}
+                </div>
+              ) : null}
+            </div>
+            <button
+              onClick={() => setPlugSuggestionDismissed(true)}
+              className="shrink-0 text-xs text-caption hover:text-body focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+              aria-label="Dismiss plug suggestion"
+            >
+              Skip
+            </button>
+          </div>
+        </section>
       )}
     </div>
   )
