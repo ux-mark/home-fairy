@@ -6,8 +6,8 @@ const HUBITAT_TOKEN = process.env.HUBITAT_TOKEN || ''
 const hubApi = axios.create({
   baseURL: HUB_BASE_URL,
   timeout: 10000,
-  headers: {
-    'Authorization': `Bearer ${HUBITAT_TOKEN}`,
+  params: {
+    access_token: HUBITAT_TOKEN,
   },
 })
 

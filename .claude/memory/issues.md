@@ -83,12 +83,11 @@ The following issues were discovered during a comprehensive technical and UX aud
 - **Files**: `server/src/index.ts`
 
 ### 2026-03-25 — Hubitat webhook token read from URL query parameter
-- **Severity**: medium
-- **Status**: open (outbound client fixed to use Authorization header in PR #30, but inbound webhook at index.ts:89 still reads `req.query.token`)
+- **Severity**: low
+- **Status**: resolved (2026-03-27 — outbound client corrected to use axios `params` instead of fake Authorization header; inbound webhook must use query param per Hubitat Maker API limitation)
 - **Category**: security
-- **Description**: `hubitat-client.ts` sends `access_token` as a URL query parameter. Query params appear in server logs, proxy logs, and browser history. The Hubitat Maker API supports header-based auth.
-- **Impact**: Token leaks into every access log. Lower risk on a home network but poor practice.
-- **Fix**: Pass as `Authorization: Bearer` header instead.
+- **Description**: The Hubitat Maker API only supports access tokens as URL query parameters — both for outbound API calls and inbound webhooks. There is no header-based auth option. PR #30 incorrectly replaced the query param with an `Authorization: Bearer` header that Hubitat silently ignores. Fixed to use axios `params: { access_token }` which correctly appends the token to URLs.
+- **Impact**: Accepted limitation of the Hubitat Maker API. Query param token exposure is low risk on a home network.
 - **Files**: `server/src/lib/hubitat-client.ts`
 
 ### 2026-03-25 — Preferences endpoint accepts arbitrary key names without allowlist
