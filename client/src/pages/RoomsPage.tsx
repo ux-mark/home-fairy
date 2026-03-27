@@ -3,14 +3,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import {
   Plus,
-  ChevronRight,
   Sparkles,
   DoorOpen,
+  AlertTriangle,
 } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 
 function RoomCardSkeleton() {
   return (
@@ -29,7 +31,7 @@ export default function RoomsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [newRoomName, setNewRoomName] = useState('')
 
-  const { data: rooms, isLoading } = useQuery({
+  const { data: rooms, isLoading, isError, refetch } = useQuery({
     queryKey: ['rooms'],
     queryFn: api.rooms.getAll,
   })
@@ -59,16 +61,22 @@ export default function RoomsPage() {
   const lightsPerRoom = (name: string) =>
     assignments?.filter(a => a.room_name === name).length ?? 0
 
+  const sensorDeviceTypes = ['motion', 'sensor', 'contact', 'temperature']
+
   const devicesPerRoom = (name: string) =>
-    deviceAssignments?.filter(a => a.room_name === name).length ?? 0
+    deviceAssignments?.filter(a => a.room_name === name && !sensorDeviceTypes.includes(a.device_type)).length ?? 0
 
   const sensorsPerRoom = (name: string) =>
     rooms?.find(r => r.name === name)?.sensors?.length ?? 0
 
   return (
     <div>
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-body text-sm font-medium">All Rooms</h2>
+      <div className="mb-6 flex items-center gap-2">
+        <DoorOpen className="h-5 w-5 text-fairy-400" aria-hidden="true" />
+        <h1 className="text-heading text-lg font-semibold">All Rooms</h1>
+      </div>
+
+      <div className="mb-4 flex items-center justify-end">
         <Dialog.Root open={dialogOpen} onOpenChange={setDialogOpen}>
           <Dialog.Trigger asChild>
             <button className="flex min-h-[44px] items-center gap-1.5 rounded-lg bg-fairy-500 px-3.5 py-2 text-sm font-medium text-white transition-colors hover:bg-fairy-600 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
@@ -129,6 +137,17 @@ export default function RoomsPage() {
             <RoomCardSkeleton key={i} />
           ))}
         </div>
+      ) : isError ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+          <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
+          <p className="text-zinc-400">Unable to load rooms. Check your connection and try again.</p>
+          <button
+            onClick={() => refetch()}
+            className="rounded-lg bg-fairy-600 px-4 py-2 text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          >
+            Try again
+          </button>
+        </div>
       ) : rooms && rooms.length > 0 ? (
         <div className="space-y-3">
           {rooms
@@ -137,10 +156,11 @@ export default function RoomsPage() {
               <Link
                 key={room.name}
                 to={`/rooms/${encodeURIComponent(room.name)}`}
-                className="card group flex items-center gap-4 rounded-xl border p-4 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="card flex items-center gap-4 rounded-xl border p-4 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               >
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-heading text-base font-semibold">
+                  <h3 className="flex items-center gap-2 text-heading text-base font-semibold">
+                    <LucideIcon name={room.icon} className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
                     {room.name}
                   </h3>
                   <div className="text-body mt-1 flex flex-wrap items-center gap-3 text-xs">
@@ -165,18 +185,15 @@ export default function RoomsPage() {
                     </span>
                   </div>
                 </div>
-                <ChevronRight className="text-caption h-5 w-5 shrink-0 transition-colors group-hover:text-[var(--text-secondary)]" />
               </Link>
             ))}
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed py-12 text-center" style={{ borderColor: 'var(--border-secondary)' }}>
-          <DoorOpen className="text-caption mx-auto mb-3 h-8 w-8" />
-          <p className="text-body text-sm">No rooms yet.</p>
-          <p className="text-caption mt-1 text-xs">
-            Tap "Add Room" above to create your first room.
-          </p>
-        </div>
+        <EmptyState
+          icon={DoorOpen}
+          message="No rooms yet."
+          sub='Tap "Add Room" above to create your first room.'
+        />
       )}
     </div>
   )

@@ -1,5 +1,7 @@
 import { getAll, run, db } from '../db/index.js'
 import { getCurrentWeather } from './weather-client.js'
+import { deviceHealthService } from './device-health-service.js'
+import { lifxClient } from './lifx-client.js'
 
 const SNAPSHOT_INTERVAL_MS = 10 * 60 * 1000 // 10 minutes
 
@@ -9,6 +11,8 @@ interface BatteryReading {
 }
 
 let intervalId: ReturnType<typeof setInterval> | null = null
+let initTimeout: ReturnType<typeof setTimeout> | null = null
+let pruneIntervalId: ReturnType<typeof setInterval> | null = null
 
 async function collectSnapshot(): Promise<void> {
   const timestamp = new Date().toISOString().replace('T', ' ').slice(0, 19)
@@ -48,6 +52,22 @@ async function collectSnapshot(): Promise<void> {
           insert.run('battery', device.label, Number(device.battery), timestamp)
         }
       }
+
+      // Kasa energy snapshots
+      const kasaDevices = getAll<{ label: string; attributes: string }>(
+        "SELECT label, attributes FROM kasa_devices WHERE has_emeter = 1",
+      )
+      for (const device of kasaDevices) {
+        try {
+          const attrs = JSON.parse(device.attributes)
+          if (attrs.power != null) insert.run('power', device.label, attrs.power, timestamp)
+          if (attrs.energy != null) insert.run('energy', device.label, attrs.energy, timestamp)
+          if (attrs.voltage != null) insert.run('voltage', device.label, attrs.voltage, timestamp)
+          if (attrs.current != null) insert.run('current', device.label, attrs.current, timestamp)
+        } catch {
+          // Skip devices with invalid attributes
+        }
+      }
     })
 
     transaction()
@@ -66,8 +86,41 @@ async function collectSnapshot(): Promise<void> {
     } catch {
       // Weather may fail (API down, no key) — don't block other snapshots
     }
+
+    // LIFX health check
+    try {
+      const lifxApiLights = await lifxClient.listAll() as Array<{ id: string; connected: boolean }>
+      const lifxApiById = new Map(lifxApiLights.map(l => [l.id, l]))
+
+      const knownLights = getAll<{ light_id: string }>('SELECT light_id FROM light_rooms')
+      for (const light of knownLights) {
+        const apiLight = lifxApiById.get(light.light_id)
+        if (!apiLight) {
+          deviceHealthService.recordFailure('lifx', light.light_id, 'Light not found in LIFX API response')
+        } else if (apiLight.connected) {
+          deviceHealthService.recordSuccess('lifx', light.light_id)
+        } else {
+          deviceHealthService.recordFailure('lifx', light.light_id, 'LIFX cloud reports disconnected')
+        }
+      }
+    } catch {
+      // LIFX health check failure must not break the rest of the snapshot
+    }
   } catch (err) {
     console.error('[history] Snapshot failed:', err instanceof Error ? err.message : err)
+  }
+}
+
+function pruneOldLogs(): void {
+  try {
+    const result = run(
+      "DELETE FROM logs WHERE created_at < datetime('now', '-30 days')"
+    )
+    if (result.changes > 0) {
+      console.log(`[history] Pruned ${result.changes} log entries older than 30 days`)
+    }
+  } catch (err) {
+    console.error('[history] Log pruning failed:', err instanceof Error ? err.message : err)
   }
 }
 
@@ -75,17 +128,30 @@ export function startHistoryCollector(): void {
   if (intervalId) return
   console.log('[history] Starting collector (10-minute interval)')
   // Take initial snapshot after a short delay (let server finish starting)
-  setTimeout(() => {
+  initTimeout = setTimeout(() => {
+    initTimeout = null
     collectSnapshot()
     intervalId = setInterval(collectSnapshot, SNAPSHOT_INTERVAL_MS)
   }, 30_000)
+
+  // Run log pruning once daily (check every hour, prune if needed)
+  pruneIntervalId = setInterval(pruneOldLogs, 60 * 60 * 1000) // hourly check
+  pruneOldLogs() // initial prune on startup
 }
 
 export function stopHistoryCollector(): void {
+  if (initTimeout) {
+    clearTimeout(initTimeout)
+    initTimeout = null
+  }
   if (intervalId) {
     clearInterval(intervalId)
     intervalId = null
     console.log('[history] Collector stopped')
+  }
+  if (pruneIntervalId) {
+    clearInterval(pruneIntervalId)
+    pruneIntervalId = null
   }
 }
 

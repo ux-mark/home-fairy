@@ -1,15 +1,16 @@
-import { getAll, db } from '../db/index.js'
+import { getAll, getOne, db } from '../db/index.js'
 import { notificationService } from './notification-service.js'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface PowerDevice {
-  id: number
+  id: number | string
   label: string
   room_name: string | null
   power: number
   energy: number | null
   switch: 'on' | 'off'
+  source?: 'hub' | 'kasa'
 }
 
 interface BatteryDevice {
@@ -48,11 +49,12 @@ export interface EnergyInsights {
   dailyKwhHistory: Array<{ day: string; totalKwh: number }>
   peakHours: Array<{ hour: number; avgWatts: number }>
   deviceAnomalies: Array<{
-    deviceId: number
+    deviceId: number | string
     label: string
     currentWatts: number
     averageWatts: number
     percentAbove: number
+    source: 'hub' | 'kasa'
   }>
 }
 
@@ -88,11 +90,16 @@ export interface BatteryInsights {
 export interface AttentionItem {
   id: string
   severity: 'critical' | 'warning' | 'info'
-  category: 'battery' | 'energy' | 'temperature' | 'device_error' | 'scene'
+  category: 'battery' | 'energy' | 'temperature' | 'device_error' | 'scene' | 'device_unreachable' | 'device_online'
   title: string
   description: string
-  deviceId: number | null
+  deviceId: number | string | null
   deviceLabel: string | null
+  deviceSource: 'hub' | 'kasa' | 'lifx' | null
+  /** Optional action hint for the frontend (e.g. deactivate/reactivate buttons) */
+  action?: 'deactivate' | 'reactivate'
+  /** Device type extracted from the notification dedup key */
+  deviceType?: string | null
 }
 
 export interface InsightsData {
@@ -177,6 +184,7 @@ function computeEnergyInsights(power: PowerDevice[], energyRate: number): Energy
           currentWatts: device.power,
           averageWatts: Math.round(avg * 10) / 10,
           percentAbove: Math.round(((device.power - avg) / avg) * 100),
+          source: device.source ?? 'hub',
         })
       }
     }
@@ -444,6 +452,35 @@ function computeBatteryInsights(battery: BatteryDevice[]): BatteryInsights | nul
   }
 }
 
+// ── Device label resolver (fallback for notifications with null source_label) ─
+
+function resolveDeviceLabel(deviceType: string, deviceId: string): string | null {
+  if (deviceType === 'hub') {
+    const row = getOne<{ label: string }>('SELECT label FROM hub_devices WHERE id = ?', [deviceId])
+    return row?.label ?? null
+  }
+  if (deviceType === 'kasa') {
+    const row = getOne<{ label: string }>('SELECT label FROM kasa_devices WHERE id = ?', [deviceId])
+    return row?.label ?? null
+  }
+  if (deviceType === 'lifx') {
+    const row = getOne<{ light_label: string }>(
+      'SELECT light_label FROM light_rooms WHERE light_id = ? LIMIT 1',
+      [deviceId],
+    )
+    return row?.light_label ?? null
+  }
+
+  return null
+}
+
+function mapDeviceSource(deviceType: string): 'hub' | 'kasa' | 'lifx' | null {
+  if (deviceType === 'kasa') return 'kasa'
+  if (deviceType === 'hub') return 'hub'
+  if (deviceType === 'lifx') return 'lifx'
+  return null
+}
+
 // ── Attention items ─────────────────────────────────────────────────────────
 
 function computeAttentionItems(
@@ -472,6 +509,7 @@ function computeAttentionItems(
           : ''),
       deviceId: device.id,
       deviceLabel: device.label,
+      deviceSource: 'hub',
     })
   }
 
@@ -485,6 +523,7 @@ function computeAttentionItems(
       description: `${device.battery}% remaining`,
       deviceId: device.id,
       deviceLabel: device.label,
+      deviceSource: 'hub',
     })
   }
 
@@ -499,6 +538,7 @@ function computeAttentionItems(
         description: `Currently ${anomaly.currentWatts}W — 7-day average for this hour is ${anomaly.averageWatts}W`,
         deviceId: anomaly.deviceId,
         deviceLabel: anomaly.label,
+        deviceSource: anomaly.source,
       })
     }
   }
@@ -517,6 +557,7 @@ function computeAttentionItems(
         description: `Currently ${outlier.temp}° — house average is ${tempInsights.houseAvgTemp}°`,
         deviceId: null,
         deviceLabel: null,
+        deviceSource: null,
       })
     }
   }
@@ -541,6 +582,7 @@ function computeAttentionItems(
             : ''),
         deviceId: device.deviceId,
         deviceLabel: device.label,
+        deviceSource: 'hub',
       })
     }
   }
@@ -559,6 +601,7 @@ function computeAttentionItems(
       description: `Currently ${energyInsights.totalWatts}W — typical for this hour is ${energyInsights.averageWattsThisHour}W`,
       deviceId: null,
       deviceLabel: null,
+      deviceSource: null,
     })
   }
 
@@ -576,6 +619,74 @@ function computeAttentionItems(
           : err.message,
         deviceId: null,
         deviceLabel: err.source_label,
+        deviceSource: null,
+      })
+    }
+  } catch {
+    // Ignore notification query errors
+  }
+
+  // Device unreachable notifications (last 24 hours)
+  try {
+    const unreachableNotifs = notificationService.getRecentByCategory('device_unreachable', 1440)
+    for (const notif of unreachableNotifs) {
+      const dedupParts = notif.dedup_key?.split(':') ?? []
+      const deviceType = dedupParts[1] ?? null
+      const deviceId = dedupParts[2] ?? notif.source_id ?? null
+
+      // Fall back to DB lookup when source_label was not set at notification creation time
+      const deviceLabel = notif.source_label
+        ?? (deviceType && deviceId ? resolveDeviceLabel(deviceType, deviceId) : null)
+
+      // Skip notifications for devices that no longer exist
+      if (!deviceLabel) continue
+
+      items.push({
+        id: `device-unreachable-${notif.id}`,
+        severity: notif.severity as AttentionItem['severity'],
+        category: 'device_unreachable',
+        title: notif.title,
+        description: notif.occurrence_count > 1
+          ? `${notif.message} (${notif.occurrence_count} occurrences)`
+          : notif.message,
+        deviceId,
+        deviceLabel,
+        deviceSource: deviceType ? mapDeviceSource(deviceType) : null,
+        action: 'deactivate',
+        deviceType,
+      })
+    }
+  } catch {
+    // Ignore notification query errors
+  }
+
+  // Device online notifications — deactivated devices that came back (last 24 hours)
+  try {
+    const onlineNotifs = notificationService.getRecentByCategory('device_online', 1440)
+    for (const notif of onlineNotifs) {
+      const dedupParts = notif.dedup_key?.split(':') ?? []
+      const deviceType = dedupParts[1] ?? null
+      const deviceId = dedupParts[2] ?? notif.source_id ?? null
+
+      const deviceLabel = notif.source_label
+        ?? (deviceType && deviceId ? resolveDeviceLabel(deviceType, deviceId) : null)
+
+      // Skip notifications for devices that no longer exist
+      if (!deviceLabel) continue
+
+      items.push({
+        id: `device-online-${notif.id}`,
+        severity: notif.severity as AttentionItem['severity'],
+        category: 'device_online',
+        title: notif.title,
+        description: notif.occurrence_count > 1
+          ? `${notif.message} (${notif.occurrence_count} occurrences)`
+          : notif.message,
+        deviceId,
+        deviceLabel,
+        deviceSource: deviceType ? mapDeviceSource(deviceType) : null,
+        action: 'reactivate',
+        deviceType,
       })
     }
   } catch {
@@ -586,6 +697,11 @@ function computeAttentionItems(
 }
 
 // ── Main export ─────────────────────────────────────────────────────────────
+
+export function invalidateInsightsCache(): void {
+  cachedInsights = null
+  cacheTimestamp = 0
+}
 
 export function computeInsights(state: CurrentState): InsightsData {
   const now = Date.now()

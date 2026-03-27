@@ -40,6 +40,9 @@ export interface Room {
   last_active: string | null
   temperature: number | null
   lux: number | null
+  sonos_follow_me: boolean
+  sonos_auto_start: boolean
+  icon: string | null
 }
 
 export interface RoomDetail extends Room {
@@ -48,6 +51,7 @@ export interface RoomDetail extends Room {
 
 export interface Sensor {
   name: string
+  id?: string  // device_id from device_rooms (numeric hub device ID as string)
 }
 
 export interface Scene {
@@ -59,13 +63,12 @@ export interface Scene {
   tags: string[]
   active_from?: string | null // "MM-DD" format
   active_to?: string | null   // "MM-DD" format
-  auto_activate?: boolean     // false = manual only, true = motion-triggered + shown on room cards
   last_activated_at?: string | null
+  sort_order?: number
 }
 
 export interface SceneRoom {
   name: string
-  priority: number
 }
 
 export type LightEffect = 'breathe' | 'pulse' | 'move'
@@ -100,6 +103,7 @@ export interface SceneCommand {
     | 'lifx_light'
     | 'lifx_off'
     | 'hubitat_device'
+    | 'kasa_device'
     | 'all_off'
     | 'scene_timer'
     | 'mode_update'
@@ -130,6 +134,7 @@ export interface LightRoom {
   has_color: boolean
   min_kelvin: number
   max_kelvin: number
+  active?: boolean
 }
 
 export interface LightAssignment {
@@ -147,6 +152,59 @@ export interface HubDevice {
   device_type: string
   capabilities: string[]
   attributes: Record<string, unknown>
+  active?: boolean
+}
+
+export interface KasaEmeterData {
+  power: number
+  voltage: number
+  current: number
+  total: number
+  today?: number
+}
+
+export interface KasaDevice {
+  id: string
+  label: string
+  device_type: 'plug' | 'strip' | 'outlet' | 'switch' | 'dimmer'
+  model: string | null
+  parent_id: string | null
+  ip_address: string | null
+  has_emeter: boolean
+  firmware: string | null
+  hardware: string | null
+  rssi: number | null
+  is_online: boolean
+  attributes: {
+    switch?: string
+    brightness?: number
+    power?: number
+    voltage?: number
+    current?: number
+    energy?: number
+    runtime_today?: number
+    runtime_month?: number
+  }
+  children?: KasaDevice[]
+  last_seen: string | null
+  active?: boolean
+}
+
+export interface KasaDailyStats {
+  year: number
+  month: number
+  data: Record<number, number>
+}
+
+export interface KasaMonthlyStats {
+  year: number
+  data: Record<number, number>
+}
+
+export interface KasaHealth {
+  status: string
+  device_count: number
+  online_count: number
 }
 
 export interface DeviceRoomAssignment {
@@ -185,6 +243,7 @@ export interface ModeTrigger {
 
 export interface ModeWithTriggers {
   name: string
+  icon: string | null
   triggers: ModeTrigger[]
   isSleepMode: boolean
 }
@@ -424,11 +483,36 @@ export interface BatteryInsights {
 export interface AttentionItem {
   id: string
   severity: 'critical' | 'warning' | 'info'
-  category: 'battery' | 'energy' | 'temperature' | 'device_error' | 'scene'
+  category: 'battery' | 'energy' | 'temperature' | 'device_error' | 'scene' | 'device_unreachable' | 'device_online'
   title: string
   description: string
-  deviceId: number | null
+  deviceId: number | string | null
   deviceLabel: string | null
+  deviceSource?: 'hub' | 'kasa' | 'lifx' | null
+  action?: 'deactivate' | 'reactivate'
+  deviceType?: string | null
+}
+
+export interface DeactivatedDevice {
+  deviceType: 'hub' | 'kasa' | 'lifx'
+  deviceId: string
+  deviceLabel: string
+  roomName: string | null
+  deactivatedAt: string
+  deactivatedReason: string
+  lastFailureReason: string | null
+}
+
+export interface DeviceHealth {
+  deviceType: string
+  deviceId: string
+  consecutiveFailures: number
+  unreachableSince: string | null
+  lastSuccess: string | null
+  lastFailure: string | null
+  lastFailureReason: string | null
+  deactivatedAt: string | null
+  deactivatedReason: string | null
 }
 
 export interface AppNotification {
@@ -496,15 +580,91 @@ export interface CombinedMtaStatus {
 const API_BASE = '/api'
 
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    ...options,
-  })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    throw new Error(text || `API error: ${res.status}`)
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 30000)
+
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json', ...options?.headers },
+      ...options,
+      signal: options?.signal ?? controller.signal,
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(text || `API error: ${res.status}`)
+    }
+    return res.json()
+  } finally {
+    clearTimeout(timeoutId)
   }
-  return res.json()
+}
+
+// ── Sonos types ─────────────────────────────────────────────────────────────
+
+export interface SonosTrack {
+  artist: string
+  title: string
+  album: string
+  albumArtUri: string
+  type: string
+  stationName?: string
+}
+
+export interface SonosPlaybackState {
+  playbackState: 'PLAYING' | 'PAUSED_PLAYBACK' | 'STOPPED' | 'TRANSITIONING'
+  currentTrack: SonosTrack
+  volume: number
+  mute: boolean
+  trackNo: number
+  elapsedTime: number
+  elapsedTimeFormatted: string
+}
+
+export interface SonosMember {
+  roomName: string
+  uuid: string
+}
+
+export interface SonosZone {
+  coordinator: {
+    roomName: string
+    state: SonosPlaybackState
+    uuid: string
+  }
+  members: SonosMember[]
+}
+
+export interface SonosFavourite {
+  title: string
+  uri?: string
+  albumArtURI?: string
+  contentClass?: string
+}
+
+export interface SonosSpeakerMapping {
+  id: number
+  room_name: string
+  speaker_name: string
+  favourite: string | null
+  default_volume: number
+  created_at: string
+}
+
+export interface AutoPlayRule {
+  id: number
+  room_name: string | null
+  mode_name: string
+  favourite_name: string
+  trigger_type: 'mode_change' | 'if_not_playing' | 'if_source_not'
+  trigger_value: string | null
+  enabled: number
+  max_plays: number | null
+}
+
+export interface FollowMeStatus {
+  enabled: boolean
+  activeRooms: string[]
+  anchorRoom: string | null
 }
 
 // ── API client ───────────────────────────────────────────────────────────────
@@ -546,6 +706,16 @@ export const api = {
     getRateLimit: () => fetchApi<RateLimitStatus>('/lifx/rate-limit'),
     getUsage: (lightId: string) =>
       fetchApi<DeviceUsage>('/lifx/lights/' + encodeURIComponent(lightId) + '/usage'),
+  },
+  roomDefaultScenes: {
+    getAll: () => fetchApi<Record<string, Record<string, string>>>('/rooms/default-scenes'),
+    getForRoom: (name: string) =>
+      fetchApi<Record<string, string>>('/rooms/' + encodeURIComponent(name) + '/default-scenes'),
+    set: (roomName: string, mode: string, scene: string | null) =>
+      fetchApi<Record<string, string>>('/rooms/' + encodeURIComponent(roomName) + '/default-scene', {
+        method: 'PUT',
+        body: JSON.stringify({ mode, scene }),
+      }),
   },
   rooms: {
     getAll: () => fetchApi<Room[]>('/rooms'),
@@ -591,6 +761,11 @@ export const api = {
         '/scenes/' + encodeURIComponent(name) + '/deactivate',
         { method: 'POST' },
       ),
+    reorder: (scenes: string[]) =>
+      fetchApi<Scene[]>('/scenes/reorder', {
+        method: 'PUT',
+        body: JSON.stringify({ scenes }),
+      }),
   },
   lights: {
     getRoomAssignments: () => fetchApi<LightRoom[]>('/lights/rooms'),
@@ -607,7 +782,7 @@ export const api = {
       }),
   },
   system: {
-    getCurrent: () => fetchApi<{ mode: string; all_modes?: string[] }>('/system/current'),
+    getCurrent: () => fetchApi<{ mode: string; all_modes?: string[]; mode_icons?: Record<string, string | null> }>('/system/current'),
     getPreferences: () => fetchApi<Record<string, string>>('/system/preferences'),
     setPreference: (key: string, value: string) =>
       fetchApi<unknown>('/system/preferences', {
@@ -638,6 +813,11 @@ export const api = {
       fetchApi<string[]>('/system/modes', {
         method: 'POST',
         body: JSON.stringify({ mode }),
+      }),
+    reorderModes: (modes: string[]) =>
+      fetchApi<{ modes: string[] }>('/system/modes/reorder', {
+        method: 'PUT',
+        body: JSON.stringify({ modes }),
       }),
     renameMode: (oldName: string, newName: string) =>
       fetchApi<{ name: string; updatedScenes: number }>(
@@ -763,6 +943,17 @@ export const api = {
       >('/system/logs' + (qs ? '?' + qs : ''))
     },
   },
+  devices: {
+    getDeactivated: () => fetchApi<DeactivatedDevice[]>('/system/devices/deactivated'),
+    getHealth: (type: string, id: string) =>
+      fetchApi<DeviceHealth | null>('/system/devices/' + encodeURIComponent(type) + '/' + encodeURIComponent(id) + '/health'),
+    deactivate: (type: string, id: string) =>
+      fetchApi<{ success: boolean }>('/system/devices/' + encodeURIComponent(type) + '/' + encodeURIComponent(id) + '/deactivate', { method: 'POST' }),
+    reactivate: (type: string, id: string) =>
+      fetchApi<{ success: boolean }>('/system/devices/' + encodeURIComponent(type) + '/' + encodeURIComponent(id) + '/reactivate', { method: 'POST' }),
+    checkConnectivity: (type: string, id: string) =>
+      fetchApi<{ success: boolean; online: boolean; message: string }>('/system/devices/' + encodeURIComponent(type) + '/' + encodeURIComponent(id) + '/check', { method: 'POST' }),
+  },
   dashboard: {
     getSummary: () => fetchApi<DashboardSummary>('/dashboard/summary'),
     getHistory: (source: string, sourceId: string, period?: string) =>
@@ -788,7 +979,7 @@ export const api = {
   },
   hubitat: {
     getDevices: () => fetchApi<HubDevice[]>('/hubitat/devices'),
-    syncDevices: () => fetchApi<unknown>('/hubitat/devices/sync'),
+    syncDevices: () => fetchApi<unknown>('/hubitat/devices/sync', { method: 'POST' }),
     getDeviceRooms: () => fetchApi<DeviceRoomAssignment[]>('/hubitat/device-rooms'),
     getDevicesForRoom: (room: string) =>
       fetchApi<DeviceRoomAssignment[]>(
@@ -827,5 +1018,101 @@ export const api = {
           '/config',
         { method: 'PATCH', body: JSON.stringify({ config }) },
       ),
+    updateDeviceLevelConfig: (deviceId: string, config: Record<string, unknown>) =>
+      fetchApi<{ id: number; config: Record<string, unknown> }>(
+        '/hubitat/devices/' + encodeURIComponent(deviceId) + '/config',
+        { method: 'PATCH', body: JSON.stringify({ config }) },
+      ),
+  },
+  kasa: {
+    getDevices: () => fetchApi<KasaDevice[]>('/kasa/devices'),
+    getDevice: (id: string) => fetchApi<KasaDevice>('/kasa/devices/' + encodeURIComponent(id)),
+    sendCommand: (id: string, command: string, value?: number) =>
+      fetchApi<{ success: boolean }>('/kasa/devices/' + encodeURIComponent(id) + '/command', {
+        method: 'POST',
+        body: JSON.stringify({ command, value }),
+      }),
+    discover: () => fetchApi<{ discovered: number; total: number }>('/kasa/discover', { method: 'POST' }),
+    getDailyStats: (id: string, year?: number, month?: number) => {
+      const params = new URLSearchParams()
+      if (year) params.set('year', String(year))
+      if (month) params.set('month', String(month))
+      const qs = params.toString()
+      return fetchApi<KasaDailyStats>('/kasa/devices/' + encodeURIComponent(id) + '/energy/daily' + (qs ? '?' + qs : ''))
+    },
+    getMonthlyStats: (id: string, year?: number) => {
+      const params = new URLSearchParams()
+      if (year) params.set('year', String(year))
+      const qs = params.toString()
+      return fetchApi<KasaMonthlyStats>('/kasa/devices/' + encodeURIComponent(id) + '/energy/monthly' + (qs ? '?' + qs : ''))
+    },
+    renameDevice: (id: string, label: string) =>
+      fetchApi<KasaDevice>('/kasa/devices/' + encodeURIComponent(id) + '/label', {
+        method: 'POST',
+        body: JSON.stringify({ label }),
+      }),
+    updateConfig: (id: string, config: Record<string, unknown>) =>
+      fetchApi<KasaDevice>('/kasa/devices/' + encodeURIComponent(id) + '/config', {
+        method: 'PATCH',
+        body: JSON.stringify({ config }),
+      }),
+    health: () => fetchApi<KasaHealth>('/kasa/health'),
+  },
+
+  sonos: {
+    getZones: () => fetchApi<SonosZone[]>('/sonos/zones'),
+    getState: (speaker: string) => fetchApi<SonosPlaybackState>('/sonos/state/' + encodeURIComponent(speaker)),
+    getFavourites: () => fetchApi<SonosFavourite[]>('/sonos/favourites'),
+    getServices: () => fetchApi<string[]>('/sonos/services'),
+    getFollowMeStatus: () => fetchApi<FollowMeStatus>('/sonos/follow-me/status'),
+    toggleFollowMe: (enabled: boolean) =>
+      fetchApi<{ enabled: boolean }>('/sonos/follow-me/toggle', {
+        method: 'POST',
+        body: JSON.stringify({ enabled }),
+      }),
+    getSpeakers: () => fetchApi<SonosSpeakerMapping[]>('/sonos/speakers'),
+    setSpeaker: (data: { room_name: string; speaker_name: string; favourite?: string | null; default_volume?: number }) =>
+      fetchApi<SonosSpeakerMapping>('/sonos/speakers', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    updateSpeaker: (room: string, data: { favourite?: string | null; default_volume?: number }) =>
+      fetchApi<SonosSpeakerMapping>('/sonos/speakers/' + encodeURIComponent(room), {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    removeSpeaker: (room: string) =>
+      fetchApi<{ deleted: boolean }>('/sonos/speakers/' + encodeURIComponent(room), { method: 'DELETE' }),
+    getAutoPlayRules: () => fetchApi<AutoPlayRule[]>('/sonos/auto-play'),
+    createAutoPlayRule: (data: Omit<AutoPlayRule, 'id'>) =>
+      fetchApi<AutoPlayRule>('/sonos/auto-play', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    updateAutoPlayRule: (id: number, data: Partial<AutoPlayRule>) =>
+      fetchApi<AutoPlayRule>('/sonos/auto-play/' + id, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    deleteAutoPlayRule: (id: number) =>
+      fetchApi<{ deleted: boolean }>('/sonos/auto-play/' + id, { method: 'DELETE' }),
+    setVolume: (speaker: string, level: number) =>
+      fetchApi<{ speaker: string; volume: number }>('/sonos/volume/' + encodeURIComponent(speaker), {
+        method: 'PUT',
+        body: JSON.stringify({ level }),
+      }),
+    setMute: (speaker: string, muted: boolean) =>
+      fetchApi<{ speaker: string; muted: boolean }>('/sonos/mute/' + encodeURIComponent(speaker), {
+        method: 'PUT',
+        body: JSON.stringify({ muted }),
+      }),
+    muteAll: (muted: boolean) =>
+      fetchApi<{ muted: boolean; affectedSpeakers: number }>('/sonos/mute-all', {
+        method: 'PUT',
+        body: JSON.stringify({ muted }),
+      }),
+    getMuteStatus: () =>
+      fetchApi<{ allMuted: boolean; mutedCount: number; totalSpeakers: number }>('/sonos/mute-status'),
+    health: () => fetchApi<{ available: boolean }>('/sonos/health'),
   },
 }

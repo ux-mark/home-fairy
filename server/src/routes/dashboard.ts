@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { getAll, getOne, run, db } from '../db/index.js'
+
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 import { getCurrentWeather } from '../lib/weather-client.js'
 import { getSunTimes, getCurrentSunPhase } from '../lib/sun-tracker.js'
 import { sunModeScheduler } from '../lib/sun-mode-scheduler.js'
@@ -93,8 +95,10 @@ router.get('/summary', async (_req: Request, res: Response) => {
       })
       .sort((a, b) => (a.battery ?? 100) - (b.battery ?? 100))
 
-    // Power-reporting devices
-    const powerDevices = getAll<PowerDeviceRow>(
+    // Power-reporting devices (Hubitat + Kasa, deduplicated by label)
+    // Exclude hub devices that have been migrated to Kasa direct control
+    const kasaLabels = getAll<{ label: string }>('SELECT label FROM kasa_devices').map(r => r.label)
+    const hubPowerDevices = getAll<PowerDeviceRow>(
       `SELECT h.id, h.label,
               dr.room_name,
               json_extract(h.attributes, '$.power') as power,
@@ -103,15 +107,37 @@ router.get('/summary', async (_req: Request, res: Response) => {
        FROM hub_devices h
        LEFT JOIN device_rooms dr ON CAST(h.id AS TEXT) = dr.device_id
        WHERE json_extract(h.attributes, '$.power') IS NOT NULL`,
+    ).filter(d => !kasaLabels.includes(d.label))
+    const kasaPowerDevices = getAll<{ id: string; label: string; room_name: string | null; power: string | null; energy: string | null; switch_state: string | null }>(
+      `SELECT k.id, k.label,
+              dr.room_name,
+              json_extract(k.attributes, '$.power') as power,
+              json_extract(k.attributes, '$.energy') as energy,
+              json_extract(k.attributes, '$.switch') as switch_state
+       FROM kasa_devices k
+       LEFT JOIN device_rooms dr ON k.id = dr.device_id
+       WHERE k.has_emeter = 1 AND json_extract(k.attributes, '$.power') IS NOT NULL`,
     )
-    const power = powerDevices.map((d) => ({
-      id: d.id,
-      label: d.label,
-      room_name: d.room_name,
-      power: d.power !== null ? Number(d.power) : 0,
-      energy: d.energy !== null ? Number(d.energy) : null,
-      switch: (d.switch_state as 'on' | 'off') || 'off',
-    }))
+    const power = [
+      ...hubPowerDevices.map((d) => ({
+        id: d.id,
+        label: d.label,
+        room_name: d.room_name,
+        power: d.power !== null ? Number(d.power) : 0,
+        energy: d.energy !== null ? Number(d.energy) : null,
+        switch: (d.switch_state as 'on' | 'off') || 'off',
+        source: 'hub' as const,
+      })),
+      ...kasaPowerDevices.map((d) => ({
+        id: d.id,
+        label: d.label,
+        room_name: d.room_name,
+        power: d.power !== null ? Number(d.power) : 0,
+        energy: d.energy !== null ? Number(d.energy) : null,
+        switch: (d.switch_state as 'on' | 'off') || 'off',
+        source: 'kasa' as const,
+      })),
+    ]
 
     // Sun schedule and phase
     let sunSchedule: unknown[] = []
@@ -180,7 +206,7 @@ router.get('/summary', async (_req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -247,7 +273,7 @@ router.get('/history/:source/:sourceId', (req: Request, res: Response) => {
     res.json({ data, count: countResult.count, period })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -270,55 +296,72 @@ router.get('/stats', (_req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
 // DELETE /history — delete historical data with flexible criteria
 router.delete('/history', (req: Request, res: Response) => {
   try {
-    const { olderThan, source, all } = req.body as {
+    const { olderThan, source, all, confirm } = req.body as {
       olderThan?: string
       source?: string
       all?: boolean
+      confirm?: string
+    }
+
+    // Require explicit confirmation for full deletion
+    if (all && confirm !== 'DELETE_ALL_HISTORY') {
+      res.status(400).json({ error: 'Full deletion requires confirm: "DELETE_ALL_HISTORY"' })
+      return
     }
 
     let deleted = 0
+    let description = ''
 
     if (all) {
       const result = run('DELETE FROM device_history')
       deleted = result.changes
+      description = 'all device history'
     } else if (olderThan && source) {
       const result = run(
         'DELETE FROM device_history WHERE source = ? AND recorded_at < datetime(?)',
         [source, olderThan],
       )
       deleted = result.changes
+      description = `${source} history older than ${olderThan}`
     } else if (olderThan) {
       const result = run(
         'DELETE FROM device_history WHERE recorded_at < datetime(?)',
         [olderThan],
       )
       deleted = result.changes
+      description = `all history older than ${olderThan}`
     } else if (source) {
       const result = run(
         'DELETE FROM device_history WHERE source = ?',
         [source],
       )
       deleted = result.changes
+      description = `all ${source} history`
     } else {
       res.status(400).json({ error: 'Provide at least one of: all, olderThan, source' })
       return
     }
 
-    // Reclaim disk space
+    // Audit log
+    run(
+      'INSERT INTO logs (message, category) VALUES (?, ?)',
+      [`Data deletion: deleted ${deleted} rows (${description})`, 'system'],
+    )
+
+    // Reclaim disk space (WAL checkpoint only — VACUUM is too slow for Pi)
     db.pragma('wal_checkpoint(TRUNCATE)')
-    db.exec('VACUUM')
 
     res.json({ deleted })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -344,17 +387,29 @@ router.get('/device/:id/context', (req: Request, res: Response) => {
       })
       .map((s) => s.name)
 
-    // Last updated from hub_devices
-    const device = getOne<{ updated_at: string }>(
+    // Last updated from hub_devices or kasa_devices
+    let device = getOne<{ updated_at: string }>(
       'SELECT updated_at FROM hub_devices WHERE id = ?',
-      [Number(deviceId)],
+      [Number(deviceId) || 0],
     )
+    if (!device) {
+      device = getOne<{ updated_at: string }>(
+        'SELECT updated_at FROM kasa_devices WHERE id = ?',
+        [deviceId],
+      )
+    }
 
     // Available history sources for this device
-    const label = getOne<{ label: string }>(
+    let label = getOne<{ label: string }>(
       'SELECT label FROM hub_devices WHERE id = ?',
-      [Number(deviceId)],
+      [Number(deviceId) || 0],
     )
+    if (!label) {
+      label = getOne<{ label: string }>(
+        'SELECT label FROM kasa_devices WHERE id = ?',
+        [deviceId],
+      )
+    }
     const historySources = label
       ? getAll<{ source: string; count: number }>(
           'SELECT source, COUNT(*) as count FROM device_history WHERE source_id = ? GROUP BY source',
@@ -373,7 +428,7 @@ router.get('/device/:id/context', (req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -410,11 +465,11 @@ router.get('/room/:name', (req: Request, res: Response) => {
       [roomName],
     )
 
-    const roomDevices = getAll<{
-      id: number; label: string; device_type: string;
+    const hubRoomDevices = getAll<{
+      id: string; label: string; device_type: string;
       power: string | null; energy: string | null; battery: string | null
     }>(
-      `SELECT h.id, h.label, dr.device_type,
+      `SELECT CAST(h.id AS TEXT) as id, h.label, dr.device_type,
               json_extract(h.attributes, '$.power') as power,
               json_extract(h.attributes, '$.energy') as energy,
               json_extract(h.attributes, '$.battery') as battery
@@ -423,10 +478,24 @@ router.get('/room/:name', (req: Request, res: Response) => {
        WHERE dr.room_name = ?`,
       [roomName],
     )
+    const kasaRoomDevices = getAll<{
+      id: string; label: string; device_type: string;
+      power: string | null; energy: string | null; battery: string | null
+    }>(
+      `SELECT k.id, k.label, dr.device_type,
+              json_extract(k.attributes, '$.power') as power,
+              json_extract(k.attributes, '$.energy') as energy,
+              NULL as battery
+       FROM device_rooms dr
+       JOIN kasa_devices k ON k.id = dr.device_id
+       WHERE dr.room_name = ?`,
+      [roomName],
+    )
+    const roomDevices = [...hubRoomDevices, ...kasaRoomDevices]
 
     const totalWatts = roomDevices.reduce((sum, d) => sum + (d.power ? Number(d.power) : 0), 0)
     const devices = roomDevices.map((d) => ({
-      id: d.id, label: d.label, device_type: d.device_type,
+      id: d.id as unknown as number, label: d.label, device_type: d.device_type,
       power: d.power ? Number(d.power) : 0,
       energy: d.energy ? Number(d.energy) : null,
       battery: d.battery ? Number(d.battery) : null,
@@ -472,17 +541,23 @@ router.get('/room/:name', (req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
-// GET /device/:id/insights — device-specific computed insights
+// GET /device/:id/insights — device-specific computed insights (hub or Kasa)
 router.get('/device/:id/insights', (req: Request, res: Response) => {
   try {
     const deviceId = String(req.params.id)
-    const device = getOne<{ label: string; attributes: string }>(
-      'SELECT label, attributes FROM hub_devices WHERE id = ?', [Number(deviceId)],
+    // Try hub_devices first (numeric ID), then kasa_devices (MAC-based ID)
+    let device = getOne<{ label: string; attributes: string }>(
+      'SELECT label, attributes FROM hub_devices WHERE id = ?', [Number(deviceId) || 0],
     )
+    if (!device) {
+      device = getOne<{ label: string; attributes: string }>(
+        'SELECT label, attributes FROM kasa_devices WHERE id = ?', [deviceId],
+      )
+    }
     if (!device) { res.status(404).json({ error: 'Device not found' }); return }
 
     const attrs = JSON.parse(device.attributes || '{}')
@@ -500,9 +575,16 @@ router.get('/device/:id/insights', (req: Request, res: Response) => {
         `SELECT AVG(value) as v FROM device_history WHERE source = 'power' AND source_id = ? AND recorded_at > datetime('now', '-7 days')`,
       ).get(label) as { v: number | null } | undefined
       const avg7d = avg?.v != null ? Math.round(avg.v * 10) / 10 : null
-      const total = (db.prepare(
-        `SELECT SUM(CAST(json_extract(attributes, '$.power') AS REAL)) as t FROM hub_devices WHERE json_extract(attributes, '$.power') IS NOT NULL`,
-      ).get() as { t: number | null })?.t || 1
+      // Total power across all devices (Kasa-managed devices excluded from hub total to avoid double-counting)
+      const kasaLabelSet = new Set(getAll<{ label: string }>('SELECT label FROM kasa_devices').map(r => r.label))
+      const hubPowerAll = getAll<{ label: string; power: string }>(
+        `SELECT label, json_extract(attributes, '$.power') as power FROM hub_devices WHERE json_extract(attributes, '$.power') IS NOT NULL`,
+      )
+      const hubTotal = hubPowerAll.filter(d => !kasaLabelSet.has(d.label)).reduce((s, d) => s + Number(d.power), 0)
+      const kasaTotal = (db.prepare(
+        `SELECT SUM(CAST(json_extract(attributes, '$.power') AS REAL)) as t FROM kasa_devices WHERE has_emeter = 1 AND json_extract(attributes, '$.power') IS NOT NULL`,
+      ).get() as { t: number | null })?.t || 0
+      const total = (hubTotal + kasaTotal) || 1
       powerIns = {
         currentWatts: cw, averageWatts7d: avg7d,
         overUnderPercent: avg7d && avg7d > 0 ? Math.round(((cw - avg7d) / avg7d) * 100) : null,
@@ -544,7 +626,7 @@ router.get('/device/:id/insights', (req: Request, res: Response) => {
     res.json({ insights: { power: powerIns, battery: batteryIns, temperature: tempIns }, roomDevices, currencySymbol })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 

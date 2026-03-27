@@ -34,28 +34,14 @@ export function isSceneInSeason(scene: Scene): { hasSeason: boolean; inSeason: b
 }
 
 /**
- * Get the default scene for a room in a given mode.
- * Default = highest priority auto_activate scene that is in-season.
+ * Look up the default scene name for a room+mode from the default scenes map.
  */
-export function getDefaultScene(scenes: Scene[], roomName: string, mode: string): Scene | null {
-  const candidates = scenes.filter(s => {
-    if (s.auto_activate === false) return false
-    const rooms = Array.isArray(s.rooms) ? s.rooms : []
-    const modes = Array.isArray(s.modes) ? s.modes : []
-    if (!rooms.some(r => r?.name === roomName)) return false
-    if (!modes.some(m => (m ?? '').toLowerCase() === mode.toLowerCase())) return false
-    const { inSeason } = isSceneInSeason(s)
-    return inSeason
-  })
-
-  if (candidates.length === 0) return null
-
-  // Find the highest priority scene for this room
-  return candidates.reduce((best, scene) => {
-    const bestPriority = best.rooms.find(r => r.name === roomName)?.priority ?? 0
-    const scenePriority = scene.rooms.find(r => r.name === roomName)?.priority ?? 0
-    return scenePriority > bestPriority ? scene : best
-  })
+export function getDefaultScene(
+  defaultScenes: Record<string, Record<string, string>> | undefined,
+  roomName: string,
+  mode: string,
+): string | null {
+  return defaultScenes?.[roomName]?.[mode] ?? null
 }
 
 /**
@@ -71,18 +57,6 @@ export function isStaleScene(scene: Scene, days = 90): boolean {
   const cutoff = new Date()
   cutoff.setDate(cutoff.getDate() - days)
   return lastActivated < cutoff
-}
-
-/**
- * Sort scenes by priority (descending) for a specific room, then alphabetically.
- */
-export function sortScenesByPriority(scenes: Scene[], roomName: string): Scene[] {
-  return [...scenes].sort((a, b) => {
-    const aPriority = a.rooms.find(r => r.name === roomName)?.priority ?? 0
-    const bPriority = b.rooms.find(r => r.name === roomName)?.priority ?? 0
-    if (bPriority !== aPriority) return bPriority - aPriority
-    return a.name.localeCompare(b.name)
-  })
 }
 
 /**
@@ -102,8 +76,10 @@ export function getScenesForRoom(scenes: Scene[], roomName: string, mode?: strin
 
 /**
  * Get all unique modes that have scenes in a specific room.
+ * If allModes is provided, results are returned in that order (respecting display_order
+ * from the backend). Otherwise falls back to alphabetical sort.
  */
-export function getModesForRoom(scenes: Scene[], roomName: string): string[] {
+export function getModesForRoom(scenes: Scene[], roomName: string, allModes?: string[]): string[] {
   const modeSet = new Set<string>()
   for (const scene of scenes) {
     const rooms = Array.isArray(scene.rooms) ? scene.rooms : []
@@ -112,6 +88,9 @@ export function getModesForRoom(scenes: Scene[], roomName: string): string[] {
     for (const m of modes) {
       if (m) modeSet.add(m)
     }
+  }
+  if (allModes) {
+    return allModes.filter(m => modeSet.has(m))
   }
   return Array.from(modeSet).sort()
 }

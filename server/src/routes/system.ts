@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { getAll, getOne, run, db } from '../db/index.js'
+
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 import { notificationService } from '../lib/notification-service.js'
 import { getCurrentWeather } from '../lib/weather-client.js'
 import { getSunTimes, getCurrentSunPhase } from '../lib/sun-tracker.js'
@@ -8,13 +10,17 @@ import { timerManager } from '../lib/timer-manager.js'
 import { sunModeScheduler } from '../lib/sun-mode-scheduler.js'
 import { lifxClient } from '../lib/lifx-client.js'
 import { hubitatClient } from '../lib/hubitat-client.js'
+import { kasaClient } from '../lib/kasa-client.js'
 import { twinklyClient } from '../lib/twinkly-client.js'
 import { fairyDeviceClient } from '../lib/fairy-device-client.js'
 import { mtaClient } from '../lib/mta-client.js'
 import { MTA_STOPS, searchStops } from '../lib/mta-stops.js'
 import { mtaIndicator } from '../lib/mta-indicator.js'
 import { weatherIndicator, WEATHER_COLORS } from '../lib/weather-indicator.js'
+import { sonosManager } from '../lib/sonos-manager.js'
 import { motionHandler } from '../lib/motion-handler.js'
+import { emit } from '../lib/socket.js'
+import { deviceHealthService } from '../lib/device-health-service.js'
 
 const router = Router()
 
@@ -52,10 +58,11 @@ router.get('/current', (_req: Request, res: Response) => {
     res.json({
       mode: modeRow?.value ?? 'Evening',
       all_modes: allModes,
+      mode_icons: getAllModeIcons(),
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -72,28 +79,45 @@ router.get('/preferences', (_req: Request, res: Response) => {
     res.json(prefs)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
 // PUT /preferences — set a user preference
 router.put('/preferences', (req: Request, res: Response) => {
   try {
+    const ALLOWED_PREF_KEYS = [
+      'energy_rate', 'currency_symbol', 'night_wake_mode',
+      'night_exclude_rooms', 'guest_night_exclude_rooms',
+      'mta_stops', 'mta_max_wait', 'mta_indicator',
+      'weather_indicator', 'weather_custom_colors',
+      'sonos_follow_me', 'sonos_default_favourite', 'temp_unit',
+    ] as const
+
     const { key, value } = req.body
     if (!key || value === undefined) {
       res.status(400).json({ error: 'key and value required' })
+      return
+    }
+    if (!ALLOWED_PREF_KEYS.includes(key)) {
+      res.status(400).json({ error: `Invalid preference key: ${key}. Allowed: ${ALLOWED_PREF_KEYS.join(', ')}` })
+      return
+    }
+    const strValue = String(value)
+    if (strValue.length > 10000) {
+      res.status(400).json({ error: 'Value too large (max 10000 characters)' })
       return
     }
     run(
       `INSERT INTO current_state (key, value, updated_at)
        VALUES (?, ?, datetime('now'))
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      [`pref_${key}`, String(value)],
+      [`pref_${key}`, strValue],
     )
     res.json({ key, value })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -121,6 +145,8 @@ router.put('/mode', (req: Request, res: Response) => {
       )
     }
 
+    emit('mode:change', { mode: body.mode })
+    sonosManager.onModeChange(body.mode).catch(() => {})
     res.json({ mode: body.mode })
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -128,7 +154,7 @@ router.put('/mode', (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -153,7 +179,7 @@ router.get('/health', (_req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -179,7 +205,7 @@ router.get('/logs', (req: Request, res: Response) => {
     res.json(rows)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -190,7 +216,7 @@ router.get('/weather', async (_req: Request, res: Response) => {
     res.json(weather)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -202,7 +228,7 @@ router.get('/sun', (_req: Request, res: Response) => {
     res.json({ ...times, phase })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -213,7 +239,7 @@ router.get('/sun-schedule', (_req: Request, res: Response) => {
     res.json(schedule)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -223,7 +249,7 @@ router.get('/timers', (_req: Request, res: Response) => {
     res.json(timerManager.getStatus())
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -238,7 +264,7 @@ router.post('/timers/cancel/:id', (req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -249,7 +275,7 @@ router.post('/timers/cancel-all', (_req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -265,7 +291,8 @@ interface ModeTriggerRow {
 }
 
 const modeRenameSchema = z.object({
-  name: z.string().min(1).max(50),
+  name: z.string().min(1).max(50).optional(),
+  icon: z.string().nullable().optional(),
 })
 
 const triggerSchema = z.object({
@@ -290,6 +317,13 @@ function getAllModeNames(): string[] {
   return getAll<{ name: string }>('SELECT name FROM modes ORDER BY display_order').map(m => m.name)
 }
 
+function getAllModeIcons(): Record<string, string | null> {
+  const rows = getAll<{ name: string; icon: string | null }>('SELECT name, icon FROM modes ORDER BY display_order')
+  const map: Record<string, string | null> = {}
+  for (const row of rows) map[row.name] = row.icon
+  return map
+}
+
 function parseTrigger(row: ModeTriggerRow) {
   return {
     id: row.id,
@@ -307,7 +341,9 @@ function parseTrigger(row: ModeTriggerRow) {
 // GET /modes — get all modes with their triggers
 router.get('/modes', (_req: Request, res: Response) => {
   try {
-    const allModes = getAllModeNames()
+    const modeRows = getAll<{ name: string; icon: string | null }>(
+      'SELECT name, icon FROM modes ORDER BY display_order',
+    )
     const sleepRow = getOne<CurrentStateRow>(
       "SELECT value FROM current_state WHERE key = 'sleep_mode_name'",
     )
@@ -320,8 +356,9 @@ router.get('/modes', (_req: Request, res: Response) => {
       triggersByMode[t.mode_name].push(t)
     }
 
-    const result = allModes.map(name => ({
+    const result = modeRows.map(({ name, icon }) => ({
       name,
+      icon: icon ?? null,
       triggers: (triggersByMode[name] ?? []).map(parseTrigger),
       isSleepMode: name === sleepModeName,
     }))
@@ -329,14 +366,18 @@ router.get('/modes', (_req: Request, res: Response) => {
     res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
+})
+
+const modeCreateSchema = modeSchema.extend({
+  icon: z.string().nullable().optional(),
 })
 
 // POST /modes — add a mode
 router.post('/modes', (req: Request, res: Response) => {
   try {
-    const body = modeSchema.parse(req.body)
+    const body = modeCreateSchema.parse(req.body)
     const allModes = getAllModeNames()
 
     if (allModes.includes(body.mode)) {
@@ -345,7 +386,7 @@ router.post('/modes', (req: Request, res: Response) => {
     }
 
     const maxOrder = getOne<{ m: number | null }>('SELECT MAX(display_order) as m FROM modes')
-    run('INSERT INTO modes (name, display_order) VALUES (?, ?)', [body.mode, (maxOrder?.m ?? 0) + 1])
+    run('INSERT INTO modes (name, display_order, icon) VALUES (?, ?, ?)', [body.mode, (maxOrder?.m ?? 0) + 1, body.icon ?? null])
     res.json(getAllModeNames())
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -353,79 +394,123 @@ router.post('/modes', (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
-// PUT /modes/:mode — rename a mode
-router.put('/modes/:mode', (req: Request, res: Response) => {
+// PUT /modes/reorder — reorder modes by providing an array of mode names in desired order
+router.put('/modes/reorder', (req: Request, res: Response) => {
   try {
-    const oldName = decodeURIComponent(String(req.params.mode))
-    const body = modeRenameSchema.parse(req.body)
-    const newName = body.name
+    const body = z.object({ modes: z.array(z.string().min(1)) }).parse(req.body)
 
-    if (oldName === newName) {
-      res.status(400).json({ error: 'New name is the same as current name' })
-      return
-    }
-
-    const modeExists = getOne<{ name: string }>('SELECT name FROM modes WHERE name = ?', [oldName])
-    if (!modeExists) {
-      res.status(404).json({ error: 'Mode not found' })
-      return
-    }
-    const newNameExists = getOne<{ name: string }>('SELECT name FROM modes WHERE name = ?', [newName])
-    if (newNameExists) {
-      res.status(409).json({ error: 'A mode with that name already exists' })
-      return
-    }
-
-    // Count scenes that will be affected (for response metadata)
-    const affectedSceneCount = getOne<{ cnt: number }>(
-      'SELECT COUNT(DISTINCT scene_name) as cnt FROM scene_modes WHERE mode_name = ?',
-      [oldName],
-    )
-    const updatedScenes = affectedSceneCount?.cnt ?? 0
-
-    const renameTransaction = db.transaction(() => {
-      // 1. Rename in modes table — CASCADE propagates to mode_triggers and scene_modes
-      run('UPDATE modes SET name = ? WHERE name = ?', [newName, oldName])
-
-      // 2. If current mode matches old name, update it
-      const currentModeRow = getOne<CurrentStateRow>(
-        "SELECT value FROM current_state WHERE key = 'mode'",
-      )
-      if (currentModeRow?.value === oldName) {
-        upsertState('mode', newName)
-      }
-
-      // 3. If pref_night_wake_mode matches, update it
-      const wakeModeRow = getOne<CurrentStateRow>(
-        "SELECT value FROM current_state WHERE key = 'pref_night_wake_mode'",
-      )
-      if (wakeModeRow?.value === oldName) {
-        upsertState('pref_night_wake_mode', newName)
-      }
-
-      // 4. If sleep_mode_name matches, update it
-      const sleepModeRow = getOne<CurrentStateRow>(
-        "SELECT value FROM current_state WHERE key = 'sleep_mode_name'",
-      )
-      if (sleepModeRow?.value === oldName) {
-        upsertState('sleep_mode_name', newName)
+    const reorderTransaction = db.transaction(() => {
+      const updateOrder = db.prepare('UPDATE modes SET display_order = ? WHERE name = ?')
+      for (let i = 0; i < body.modes.length; i++) {
+        const result = updateOrder.run(i, body.modes[i])
+        if (result.changes === 0) {
+          throw new Error(`Mode not found: ${body.modes[i]}`)
+        }
       }
     })
 
-    renameTransaction()
+    reorderTransaction()
 
-    res.json({ name: newName, updatedScenes })
+    res.json({ modes: getAllModeNames() })
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: 'Validation failed', details: err.errors })
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    if (msg.startsWith('Mode not found:')) {
+      res.status(404).json({ error: msg })
+      return
+    }
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// PUT /modes/:mode — rename a mode and/or update its icon
+router.put('/modes/:mode', (req: Request, res: Response) => {
+  try {
+    const oldName = decodeURIComponent(String(req.params.mode))
+    const body = modeRenameSchema.parse(req.body)
+    const newName = body.name
+
+    const modeExists = getOne<{ name: string }>('SELECT name FROM modes WHERE name = ?', [oldName])
+    if (!modeExists) {
+      res.status(404).json({ error: 'Mode not found' })
+      return
+    }
+
+    // Update icon if provided (can be done without a rename)
+    if (body.icon !== undefined) {
+      run('UPDATE modes SET icon = ? WHERE name = ?', [body.icon, oldName])
+    }
+
+    // Perform rename if a new name was provided
+    let updatedScenes = 0
+    const effectiveName = newName ?? oldName
+
+    if (newName !== undefined) {
+      if (oldName === newName) {
+        res.status(400).json({ error: 'New name is the same as current name' })
+        return
+      }
+
+      const newNameExists = getOne<{ name: string }>('SELECT name FROM modes WHERE name = ?', [newName])
+      if (newNameExists) {
+        res.status(409).json({ error: 'A mode with that name already exists' })
+        return
+      }
+
+      // Count scenes that will be affected (for response metadata)
+      const affectedSceneCount = getOne<{ cnt: number }>(
+        'SELECT COUNT(DISTINCT scene_name) as cnt FROM scene_modes WHERE mode_name = ?',
+        [oldName],
+      )
+      updatedScenes = affectedSceneCount?.cnt ?? 0
+
+      const renameTransaction = db.transaction(() => {
+        // 1. Rename in modes table — CASCADE propagates to mode_triggers and scene_modes
+        run('UPDATE modes SET name = ? WHERE name = ?', [newName, oldName])
+
+        // 2. If current mode matches old name, update it
+        const currentModeRow = getOne<CurrentStateRow>(
+          "SELECT value FROM current_state WHERE key = 'mode'",
+        )
+        if (currentModeRow?.value === oldName) {
+          upsertState('mode', newName)
+        }
+
+        // 3. If pref_night_wake_mode matches, update it
+        const wakeModeRow = getOne<CurrentStateRow>(
+          "SELECT value FROM current_state WHERE key = 'pref_night_wake_mode'",
+        )
+        if (wakeModeRow?.value === oldName) {
+          upsertState('pref_night_wake_mode', newName)
+        }
+
+        // 4. If sleep_mode_name matches, update it
+        const sleepModeRow = getOne<CurrentStateRow>(
+          "SELECT value FROM current_state WHERE key = 'sleep_mode_name'",
+        )
+        if (sleepModeRow?.value === oldName) {
+          upsertState('sleep_mode_name', newName)
+        }
+      })
+
+      renameTransaction()
+    }
+
+    res.json({ name: effectiveName, updatedScenes })
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: 'Validation failed', details: err.errors })
+      return
+    }
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -482,7 +567,7 @@ router.delete('/modes/:mode', (req: Request, res: Response) => {
     res.json({ modes: getAllModeNames(), affectedScenes })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -528,7 +613,7 @@ router.get('/modes/:mode/dependencies', (req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -594,7 +679,7 @@ router.post('/modes/:mode/triggers', (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -657,7 +742,7 @@ router.put('/modes/:mode/triggers/:id', (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -685,7 +770,7 @@ router.delete('/modes/:mode/triggers/:id', (req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -721,7 +806,7 @@ router.get('/battery', (_req: Request, res: Response) => {
     res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -737,7 +822,7 @@ router.get('/mta/arrivals', async (req: Request, res: Response) => {
     res.json(arrivals.slice(0, Number(req.query.limit) || 10))
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -755,7 +840,7 @@ router.get('/mta/status', async (req: Request, res: Response) => {
     res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -767,7 +852,7 @@ router.get('/mta/stops', (req: Request, res: Response) => {
     res.json(results)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -784,7 +869,7 @@ router.get('/mta/configured', (_req: Request, res: Response) => {
     res.json(stops)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -885,7 +970,7 @@ router.get('/mta/combined-status', async (_req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -898,7 +983,7 @@ router.get('/mta/indicator', (_req: Request, res: Response) => {
     res.json(config)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -914,7 +999,7 @@ router.put('/mta/indicator', (req: Request, res: Response) => {
     res.json(config)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -935,7 +1020,7 @@ router.get('/weather/indicator', (_req: Request, res: Response) => {
     res.json(weatherIndicator.getConfig())
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -953,7 +1038,7 @@ router.put('/weather/indicator', (req: Request, res: Response) => {
     res.json(config)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -968,7 +1053,7 @@ router.post('/weather/indicator/test', async (_req: Request, res: Response) => {
     res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -978,7 +1063,7 @@ router.get('/weather/colors', (_req: Request, res: Response) => {
     res.json(WEATHER_COLORS)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1015,7 +1100,7 @@ router.post('/weather/preview', async (req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1028,7 +1113,7 @@ router.get('/weather/custom-colors', (_req: Request, res: Response) => {
     res.json(customs)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1052,7 +1137,7 @@ router.put('/weather/custom-colors', (req: Request, res: Response) => {
     res.json(customs)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1063,7 +1148,7 @@ router.delete('/weather/custom-colors', (_req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1096,7 +1181,7 @@ router.get('/backup', (_req: Request, res: Response) => {
     res.json(backup)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1157,7 +1242,7 @@ router.post('/restore', (req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1175,10 +1260,36 @@ interface DeviceRoomRow {
 async function runAllOff(excludeRooms: string[] = []): Promise<string[]> {
   const actions: string[] = []
 
-  // 1. Turn off all LIFX lights
+  // 1. Turn off LIFX lights — only in rooms not excluded
   try {
-    await lifxClient.setState('all', { power: 'off', duration: 1 })
-    actions.push('LIFX: all lights off')
+    const allRooms = getAll<{ name: string }>('SELECT name FROM rooms').map(r => r.name)
+    const roomsToOff = allRooms.filter(r => !excludeRooms.includes(r))
+    if (roomsToOff.length > 0) {
+      const lightSelectors: string[] = []
+      for (const roomName of roomsToOff) {
+        const roomLights = getAll<{ light_selector: string }>(
+          'SELECT light_selector FROM light_rooms WHERE room_name = ? AND active = 1',
+          [roomName],
+        )
+        for (const l of roomLights) lightSelectors.push(l.light_selector)
+      }
+      if (lightSelectors.length > 0) {
+        // Batch in groups of 50 (LIFX API limit)
+        for (let i = 0; i < lightSelectors.length; i += 50) {
+          const batch = lightSelectors.slice(i, i + 50).map(selector => ({
+            selector,
+            power: 'off' as const,
+            duration: 1,
+          }))
+          await lifxClient.setStates(batch)
+        }
+        actions.push(`LIFX: turned off lights in ${roomsToOff.length} room(s)`)
+      } else {
+        actions.push('LIFX: no lights assigned to rooms')
+      }
+    } else {
+      actions.push('LIFX: all rooms excluded, no lights turned off')
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     actions.push(`LIFX error: ${msg}`)
@@ -1189,53 +1300,58 @@ async function runAllOff(excludeRooms: string[] = []): Promise<string[]> {
     'SELECT * FROM device_rooms ORDER BY room_name',
   )
 
-  // 3. For each switch/dimmer NOT excluded, send 'off' command
-  for (const row of deviceRows) {
-    // Skip if room is excluded
-    if (excludeRooms.includes(row.room_name)) continue
-
-    // Skip if device is individually excluded from all-off
+  // 3. For each switch/dimmer NOT excluded, send 'off' command — run concurrently
+  const eligibleDevices = deviceRows.filter((row) => {
+    if (excludeRooms.includes(row.room_name)) return false
     let config: Record<string, unknown> = {}
     try { config = JSON.parse(row.config) } catch { config = {} }
-    if (config.exclude_from_all_off) continue
+    if (config.exclude_from_all_off) return false
+    // Skip deactivated devices
+    const healthType = row.device_type.startsWith('kasa_') ? 'kasa' : 'hub'
+    if (!deviceHealthService.isDeviceActive(healthType, row.device_id)) return false
+    return true
+  })
 
-    const type = row.device_type
-    if (type === 'switch' || type === 'dimmer') {
-      try {
+  const deviceResults = await Promise.allSettled(
+    eligibleDevices.map(async (row): Promise<string> => {
+      const type = row.device_type
+      if (type === 'switch' || type === 'dimmer') {
         await hubitatClient.sendCommand(row.device_id, 'off')
-        actions.push(`Hub device off: ${row.device_label}`)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        actions.push(`Hub error (${row.device_label}): ${msg}`)
-      }
-    } else if (type === 'twinkly') {
-      try {
+        return `Hub device off: ${row.device_label}`
+      } else if (type === 'twinkly') {
         const dev = getOne<{ ip: string | null }>(
           "SELECT json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE id = ?",
           [row.device_id],
         )
         if (dev?.ip) {
           await twinklyClient.turnOff(dev.ip)
-          actions.push(`Twinkly off: ${row.device_label}`)
+          return `Twinkly off: ${row.device_label}`
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        actions.push(`Twinkly error (${row.device_label}): ${msg}`)
-      }
-    } else if (type === 'fairy') {
-      try {
+        return `Twinkly skip (no IP): ${row.device_label}`
+      } else if (type === 'fairy') {
         const dev = getOne<{ ip: string | null }>(
           "SELECT json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE id = ?",
           [row.device_id],
         )
         if (dev?.ip) {
           await fairyDeviceClient.turnOff(dev.ip)
-          actions.push(`Fairy off: ${row.device_label}`)
+          return `Fairy off: ${row.device_label}`
         }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        actions.push(`Fairy error (${row.device_label}): ${msg}`)
+        return `Fairy skip (no IP): ${row.device_label}`
+      } else if (type.startsWith('kasa_')) {
+        await kasaClient.sendCommand(row.device_id, 'off')
+        return `Kasa off: ${row.device_label}`
       }
+      return `Skip (unhandled type ${type}): ${row.device_label}`
+    }),
+  )
+
+  for (const result of deviceResults) {
+    if (result.status === 'fulfilled') {
+      actions.push(result.value)
+    } else {
+      const msg = result.reason instanceof Error ? result.reason.message : String(result.reason)
+      actions.push(`Device error: ${msg}`)
     }
   }
 
@@ -1260,10 +1376,11 @@ router.post('/all-off', async (_req: Request, res: Response) => {
       [`All Off executed: ${actions.length} actions`],
     )
 
+    emit('scene:change', { action: 'all_off' })
     res.json({ success: true, actions })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1286,7 +1403,7 @@ router.post('/nighttime', async (_req: Request, res: Response) => {
       if (prefRow?.value) excludeRooms = JSON.parse(prefRow.value)
     } catch { /* keep default */ }
 
-    const actions = await runAllOff(excludeRooms)
+    const actions = await runAllOff()
 
     // Lock rooms that were turned off (all rooms except excluded ones)
     const allRoomNames = getAll<{ name: string }>('SELECT name FROM rooms').map(r => r.name)
@@ -1301,13 +1418,16 @@ router.post('/nighttime', async (_req: Request, res: Response) => {
 
     run(
       "INSERT INTO logs (message, category, created_at) VALUES (?, 'system', datetime('now'))",
-      [`Nighttime executed: excluded rooms [${excludeRooms.join(', ')}], locked ${roomsToLock.length} rooms, wake mode: ${wakeMode}, ${actions.length} actions`],
+      [`Nighttime executed: all lights off, motion-responsive rooms [${excludeRooms.join(', ')}], locked ${roomsToLock.length} rooms, wake mode: ${wakeMode}, ${actions.length} actions`],
     )
 
+    emit('mode:change', { mode: 'Sleep Time' })
+    emit('scene:change', { action: 'nighttime' })
+    sonosManager.onLockedStateActivated().catch(() => {})
     res.json({ success: true, mode: 'Sleep Time', excludeRooms, lockedRooms: roomsToLock, wakeMode, actions })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1356,10 +1476,13 @@ router.post('/guest-night', async (_req: Request, res: Response) => {
       [`Guest Night executed: excluded rooms [${excludeRooms.join(', ')}], locked ${roomsToLock.length} rooms, wake mode: ${wakeMode}, ${actions.length} actions`],
     )
 
+    emit('mode:change', { mode: 'Sleep Time' })
+    emit('scene:change', { action: 'guest_night' })
+    sonosManager.onLockedStateActivated().catch(() => {})
     res.json({ success: true, mode: 'Sleep Time', excludeRooms, lockedRooms: roomsToLock, wakeMode, actions })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1377,7 +1500,7 @@ router.get('/night/status', (_req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1392,7 +1515,7 @@ router.post('/night/unlock', (_req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1409,7 +1532,7 @@ router.get('/notifications', (req: Request, res: Response) => {
     res.json(notifications)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1420,7 +1543,7 @@ router.get('/notifications/count', (_req: Request, res: Response) => {
     res.json({ count })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1431,7 +1554,7 @@ router.patch('/notifications/:id/read', (req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1442,7 +1565,7 @@ router.post('/notifications/read-all', (_req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1453,7 +1576,7 @@ router.post('/notifications/:id/dismiss', (req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -1464,7 +1587,118 @@ router.post('/notifications/dismiss-all', (_req: Request, res: Response) => {
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// ── Device health / deactivation ──────────────────────────────────────────────
+
+// GET /devices/deactivated — list all deactivated devices
+router.get('/devices/deactivated', (_req: Request, res: Response) => {
+  try {
+    const devices = deviceHealthService.getDeactivatedDevices()
+    res.json(devices)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// GET /devices/:type/:id/health — get health record for a device
+router.get('/devices/:type/:id/health', (req: Request, res: Response) => {
+  const type = String(req.params.type)
+  const id = String(req.params.id)
+  try {
+    const health = deviceHealthService.getHealthStatus(type, id)
+    res.json(health)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// POST /devices/:type/:id/check — check device connectivity
+router.post('/devices/:type/:id/check', async (req: Request, res: Response) => {
+  const type = String(req.params.type)
+  const id = String(req.params.id)
+  if (!['hub', 'kasa', 'lifx'].includes(type)) {
+    res.status(400).json({ error: 'Invalid device type. Must be hub, kasa, or lifx.' })
+    return
+  }
+  const deviceType = type as 'hub' | 'kasa' | 'lifx'
+  try {
+    let online = false
+    let message = ''
+
+    switch (deviceType) {
+      case 'lifx': {
+        const lights = await lifxClient.listBySelector(`id:${id}`)
+        const light = Array.isArray(lights) ? lights[0] : null
+        online = !!light?.connected
+        message = online ? 'Light is connected' : 'Light is not responding'
+        break
+      }
+      case 'kasa': {
+        const device = await kasaClient.getDevice(id)
+        online = !!device?.is_online
+        message = online ? 'Device is online' : 'Device is offline'
+        break
+      }
+      case 'hub': {
+        await hubitatClient.getDevice(id)
+        online = true
+        message = 'Device is reachable'
+        break
+      }
+    }
+
+    if (online) {
+      deviceHealthService.recordSuccess(deviceType, id)
+    } else {
+      deviceHealthService.recordFailure(deviceType, id, message)
+    }
+
+    res.json({ success: true, online, message })
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err)
+    deviceHealthService.recordFailure(deviceType, id, reason)
+    res.json({ success: true, online: false, message: 'Device is not reachable' })
+  }
+})
+
+// POST /devices/:type/:id/deactivate — manually deactivate a device
+router.post('/devices/:type/:id/deactivate', (req: Request, res: Response) => {
+  const type = String(req.params.type)
+  const id = String(req.params.id)
+  if (!['hub', 'kasa', 'lifx'].includes(type)) {
+    res.status(400).json({ error: 'Invalid device type. Must be hub, kasa, or lifx.' })
+    return
+  }
+  try {
+    deviceHealthService.deactivateDevice(type as 'hub' | 'kasa' | 'lifx', id, 'manual')
+    emit('device:deactivated', { deviceType: type, deviceId: id })
+    res.json({ success: true })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// POST /devices/:type/:id/reactivate — reactivate a deactivated device
+router.post('/devices/:type/:id/reactivate', (req: Request, res: Response) => {
+  const type = String(req.params.type)
+  const id = String(req.params.id)
+  if (!['hub', 'kasa', 'lifx'].includes(type)) {
+    res.status(400).json({ error: 'Invalid device type. Must be hub, kasa, or lifx.' })
+    return
+  }
+  try {
+    const result = deviceHealthService.reactivateDevice(type as 'hub' | 'kasa' | 'lifx', id)
+    emit('device:reactivated', { deviceType: type, deviceId: id })
+    res.json(result)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 

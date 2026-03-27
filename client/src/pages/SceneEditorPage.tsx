@@ -1,8 +1,8 @@
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
+import { BackLink } from '@/components/ui/BackLink'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft,
   Save,
   Eye,
   EyeOff,
@@ -18,6 +18,7 @@ import {
   Timer,
   Link2,
   CalendarDays,
+  Activity,
 } from 'lucide-react'
 import * as Tabs from '@radix-ui/react-tabs'
 import * as Switch from '@radix-ui/react-switch'
@@ -28,10 +29,14 @@ import type {
   SceneRoom,
   LightRoom,
   DeviceRoomAssignment,
+  KasaDevice,
+  DeactivatedDevice,
 } from '@/lib/api'
 import { cn, hsbToHex, kelvinToHex, debounce, DEFAULT_MODES } from '@/lib/utils'
+import { StatusBadge } from '@/components/ui/Badge'
 import { useToast } from '@/hooks/useToast'
 import ColorBrightnessPicker from '@/components/ui/ColorBrightnessPicker'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 
 // ── Fairy device patterns ────────────────────────────────────────────────────
 
@@ -73,11 +78,13 @@ function LightEditorCard({
   livePreview,
   onChange,
   onLivePreviewToggle,
+  deactivated,
 }: {
   state: LightEditorState
   livePreview: boolean
   onChange: (updated: LightEditorState) => void
   onLivePreviewToggle: () => void
+  deactivated?: boolean
 }) {
   const [expanded, setExpanded] = useState(false)
   const isOn = state.power === 'on'
@@ -123,35 +130,38 @@ function LightEditorCard({
 
   return (
     <div className="card rounded-xl border transition-colors">
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setExpanded(!expanded)}
-        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded(!expanded) } }}
-        className="flex w-full cursor-pointer items-center gap-3 p-4 text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-fairy-500"
-      >
-        <div
-          className={cn(
-            'h-10 w-10 shrink-0 rounded-full border-2 border-[var(--border-secondary)]',
-            !isOn && 'opacity-30',
-          )}
-          style={{
-            backgroundColor: isOn ? previewHex : '#475569',
-            opacity: isOn ? Math.max(state.brightness / 100, 0.05) : 0.3,
-          }}
-          aria-hidden="true"
-        />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-heading">
-            {state.label}
-          </p>
-          <p className="text-xs text-caption">
-            {isOn ? `${state.brightness}% brightness` : 'Off'}
-          </p>
-        </div>
+      <div className="flex items-center gap-3 p-4">
         <button
-          onClick={e => {
-            e.stopPropagation()
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          aria-label={`${state.label} — ${isOn ? `${state.brightness}% brightness` : 'Off'}`}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded-lg"
+        >
+          <div
+            className={cn(
+              'h-10 w-10 shrink-0 rounded-full border-2 border-[var(--border-secondary)]',
+              !isOn && 'opacity-30',
+            )}
+            style={{
+              backgroundColor: isOn ? previewHex : '#475569',
+              opacity: isOn ? Math.max(state.brightness / 100, 0.05) : 0.3,
+            }}
+            aria-hidden="true"
+          />
+          <div className="min-w-0 flex-1">
+            <p className={cn('break-words text-sm font-medium', deactivated ? 'text-slate-500' : 'text-heading')}>
+              {state.label}
+              {deactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
+            </p>
+            <p className="text-xs text-caption">
+              {isOn ? `${state.brightness}% brightness` : 'Off'}
+            </p>
+          </div>
+        </button>
+        <button
+          type="button"
+          onClick={() => {
             onChange({ ...state, power: isOn ? 'off' : 'on' })
             if (livePreview) {
               api.lifx.setState(state.selector, {
@@ -251,6 +261,7 @@ function DeviceToggleCard({
   isDimmer,
   level,
   onLevelChange,
+  deactivated,
 }: {
   label: string
   isOn: boolean
@@ -258,12 +269,16 @@ function DeviceToggleCard({
   isDimmer?: boolean
   level?: number
   onLevelChange?: (level: number) => void
+  deactivated?: boolean
 }) {
   return (
     <div className="card rounded-xl border p-4">
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-heading">{label}</p>
+          <p className={cn('break-words text-sm font-medium', deactivated ? 'text-slate-500' : 'text-heading')}>
+            {label}
+            {deactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
+          </p>
           <p className="text-xs text-caption">
             {isOn ? (isDimmer && level !== undefined ? `On at ${level}%` : 'On') : 'Off'}
           </p>
@@ -316,6 +331,7 @@ function FairyDeviceCard({
   onToggle,
   onPatternChange,
   onBrightnessChange,
+  deactivated,
 }: {
   label: string
   isOn: boolean
@@ -324,12 +340,16 @@ function FairyDeviceCard({
   onToggle: (on: boolean) => void
   onPatternChange: (pattern: string) => void
   onBrightnessChange: (brightness: number) => void
+  deactivated?: boolean
 }) {
   return (
     <div className="card rounded-xl border p-4">
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-heading">{label}</p>
+          <p className={cn('break-words text-sm font-medium', deactivated ? 'text-slate-500' : 'text-heading')}>
+            {label}
+            {deactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
+          </p>
           <p className="text-xs text-caption">
             {isOn ? `${pattern} at ${brightness}%` : 'Off'}
           </p>
@@ -485,7 +505,23 @@ export default function SceneEditorPage() {
     queryFn: api.scenes.getAll,
   })
 
+  const { data: kasaDevices } = useQuery({
+    queryKey: ['kasa'],
+    queryFn: api.kasa.getDevices,
+  })
+
+  const { data: allDefaultScenes } = useQuery({
+    queryKey: ['room-default-scenes'],
+    queryFn: api.roomDefaultScenes.getAll,
+  })
+
+  const { data: deactivatedDevices } = useQuery({
+    queryKey: ['devices', 'deactivated'],
+    queryFn: api.devices.getDeactivated,
+  })
+
   const availableModes = systemCurrent?.all_modes ?? [...DEFAULT_MODES]
+  const modeIcons = systemCurrent?.mode_icons ?? {}
 
   // ── Form state ───────────────────────────────────────────────────────────
 
@@ -516,9 +552,6 @@ export default function SceneEditorPage() {
   const [sceneTimerDuration, setSceneTimerDuration] = useState(300)
   const [chainSceneEnabled, setChainSceneEnabled] = useState(false)
   const [chainSceneTarget, setChainSceneTarget] = useState('')
-
-  // Auto-activate (show on room cards + motion-triggered)
-  const [autoActivate, setAutoActivate] = useState(true)
 
   // Season date range state
   const [seasonEnabled, setSeasonEnabled] = useState(false)
@@ -577,7 +610,7 @@ export default function SceneEditorPage() {
       // Route device commands
       setDeviceCommands(
         cmds.filter(c =>
-          c.type === 'hubitat_device' || c.type === 'twinkly' || c.type === 'fairy_device',
+          c.type === 'hubitat_device' || c.type === 'twinkly' || c.type === 'fairy_device' || c.type === 'kasa_device',
         ),
       )
 
@@ -602,9 +635,6 @@ export default function SceneEditorPage() {
         setChainSceneEnabled(true)
         setChainSceneTarget(chainCmd.name || '')
       }
-
-      // Initialize auto-activate
-      setAutoActivate(scene.auto_activate !== false)
 
       // Initialize season date range
       if (scene.active_from && scene.active_to) {
@@ -719,6 +749,38 @@ export default function SceneEditorPage() {
     return { switches, twinkly, fairy }
   }, [roomDevices])
 
+  // Build a set of deactivated device IDs keyed as "type:id"
+  const deactivatedSet = useMemo(() => {
+    if (!deactivatedDevices) return new Set<string>()
+    return new Set(
+      (deactivatedDevices as DeactivatedDevice[]).map(d => `${d.deviceType}:${d.deviceId}`),
+    )
+  }, [deactivatedDevices])
+
+  const isLightDeactivated = (lightId: string) => deactivatedSet.has(`lifx:${lightId}`)
+  const isHubDeviceDeactivated = (deviceId: string) => deactivatedSet.has(`hub:${deviceId}`)
+  const isKasaDeviceDeactivated = (deviceId: string) => deactivatedSet.has(`kasa:${deviceId}`)
+
+  // Count how many commands in this scene reference deactivated devices
+  const deactivatedCount = useMemo(() => {
+    if (deactivatedSet.size === 0) return 0
+    let count = 0
+    // LIFX light commands
+    for (const [lightId] of lightStates) {
+      if (isLightDeactivated(lightId)) count++
+    }
+    // Hub/twinkly/fairy device commands
+    for (const cmd of deviceCommands) {
+      if (cmd.type === 'hubitat_device' && cmd.device_id && isHubDeviceDeactivated(String(cmd.device_id))) count++
+      if (cmd.type === 'twinkly' || cmd.type === 'fairy_device') {
+        // these are identified by label, not id — skip for now (no reliable id mapping)
+      }
+      if (cmd.type === 'kasa_device' && cmd.device_id && isKasaDeviceDeactivated(String(cmd.device_id))) count++
+    }
+    return count
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deactivatedSet, lightStates, deviceCommands])
+
   // ── Mutations ──────────────────────────────────────────────────────────
 
   const saveMutation = useMutation({
@@ -783,7 +845,6 @@ export default function SceneEditorPage() {
         active_to: seasonEnabled
           ? `${String(seasonToMonth).padStart(2, '0')}-${String(seasonToDay).padStart(2, '0')}`
           : null,
-        auto_activate: autoActivate,
       }
 
       return api.scenes.update(name!, data)
@@ -804,6 +865,15 @@ export default function SceneEditorPage() {
     },
     onError: () =>
       toast({ message: 'Failed to delete scene', type: 'error' }),
+  })
+
+  const setDefaultSceneMutation = useMutation({
+    mutationFn: ({ roomName, mode, scene }: { roomName: string; mode: string; scene: string | null }) =>
+      api.roomDefaultScenes.set(roomName, mode, scene),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['room-default-scenes'] })
+    },
+    onError: () => toast({ message: 'Failed to update default scene', type: 'error' }),
   })
 
   // ── Handlers ───────────────────────────────────────────────────────────
@@ -833,14 +903,8 @@ export default function SceneEditorPage() {
     if (exists) {
       setSceneRooms(sceneRooms.filter(r => r.name !== roomName))
     } else {
-      setSceneRooms([...sceneRooms, { name: roomName, priority: 50 }])
+      setSceneRooms([...sceneRooms, { name: roomName }])
     }
-  }
-
-  const handleRoomPriorityChange = (roomName: string, priority: number) => {
-    setSceneRooms(
-      sceneRooms.map(r => (r.name === roomName ? { ...r, priority } : r)),
-    )
   }
 
   const handleModeToggle = (mode: string) => {
@@ -991,6 +1055,29 @@ export default function SceneEditorPage() {
     [],
   )
 
+  const handleKasaToggle = useCallback(
+    (device: KasaDevice, on: boolean) => {
+      setDeviceCommands(prev => {
+        const filtered = prev.filter(
+          c => !(c.type === 'kasa_device' && c.device_id === device.id),
+        )
+        if (on) {
+          return [
+            ...filtered,
+            {
+              type: 'kasa_device' as const,
+              name: device.label,
+              device_id: device.id,
+              command: 'on',
+            },
+          ]
+        }
+        return filtered
+      })
+    },
+    [],
+  )
+
   const filterRoomLights = useCallback(
     (roomLights: LightRoom[]) => {
       if (!lightSearch.trim()) return roomLights
@@ -1039,10 +1126,16 @@ export default function SceneEditorPage() {
 
   // ── Helpers for device tab ──────────────────────────────────────────────
 
+  const KASA_CONTROLLABLE_TYPES: KasaDevice['device_type'][] = ['plug', 'strip', 'outlet', 'switch', 'dimmer']
+  const filteredKasaDevices = (kasaDevices ?? []).filter(
+    d => KASA_CONTROLLABLE_TYPES.includes(d.device_type),
+  )
+
   const totalDevices =
     categorizedDevices.switches.length +
     categorizedDevices.twinkly.length +
-    categorizedDevices.fairy.length
+    categorizedDevices.fairy.length +
+    filteredKasaDevices.length
 
   const otherScenes = allScenes?.filter(s => s.name !== name) ?? []
 
@@ -1051,13 +1144,7 @@ export default function SceneEditorPage() {
   return (
     <div className="pb-24">
       {/* Back link */}
-      <Link
-        to="/scenes"
-        className="mb-4 inline-flex items-center gap-1.5 text-sm text-body transition-colors hover:text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        All Scenes
-      </Link>
+      <BackLink to="/scenes" label="All Scenes" className="mb-3" />
 
       {/* ── Top section: name + icon ──────────────────────────────────────── */}
       <section className="mb-6 space-y-3">
@@ -1080,6 +1167,18 @@ export default function SceneEditorPage() {
           />
         </div>
       </section>
+
+      {/* ── Deactivated devices warning ───────────────────────────────────── */}
+      {deactivatedCount > 0 && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 mb-4">
+          <p className="text-heading text-sm font-medium">
+            {deactivatedCount} device{deactivatedCount !== 1 ? 's' : ''} in this scene {deactivatedCount === 1 ? 'is' : 'are'} deactivated
+          </p>
+          <p className="text-caption text-xs mt-1">
+            Deactivated devices will be skipped when this scene activates. Reactivate them from the Devices page.
+          </p>
+        </div>
+      )}
 
       {/* ── Tabs ──────────────────────────────────────────────────────────── */}
       <Tabs.Root defaultValue="lights" className="space-y-4">
@@ -1179,6 +1278,7 @@ export default function SceneEditorPage() {
                               onLivePreviewToggle={() =>
                                 toggleLivePreview(rl.light_id)
                               }
+                              deactivated={isLightDeactivated(rl.light_id)}
                             />
                           )
                         })}
@@ -1193,7 +1293,7 @@ export default function SceneEditorPage() {
 
         {/* ── Tab 2: Devices ─────────────────────────────────────────────── */}
         <Tabs.Content value="devices" className="space-y-6">
-          {sceneRooms.length === 0 ? (
+          {sceneRooms.length === 0 && filteredKasaDevices.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[var(--border-secondary)] py-8 text-center">
               <ToggleLeft className="mx-auto mb-2 h-8 w-8 text-caption" />
               <p className="text-sm text-body">
@@ -1238,6 +1338,7 @@ export default function SceneEditorPage() {
                           isDimmer={isDimmer}
                           level={level}
                           onLevelChange={l => handleSwitchLevel(device, l)}
+                          deactivated={isHubDeviceDeactivated(String(device.device_id))}
                         />
                       )
                     })}
@@ -1262,6 +1363,7 @@ export default function SceneEditorPage() {
                           label={device.device_label}
                           isOn={!!cmd}
                           onToggle={on => handleTwinklyToggle(device, on)}
+                          deactivated={isHubDeviceDeactivated(String(device.device_id))}
                         />
                       )
                     })}
@@ -1294,7 +1396,64 @@ export default function SceneEditorPage() {
                           onToggle={on => handleFairyToggle(device, on)}
                           onPatternChange={p => handleFairyPatternChange(device, p)}
                           onBrightnessChange={b => handleFairyBrightnessChange(device, b)}
+                          deactivated={isHubDeviceDeactivated(String(device.device_id))}
                         />
+                      )
+                    })}
+                  </div>
+                </section>
+              )}
+
+              {/* Kasa Devices section */}
+              {filteredKasaDevices.length > 0 && (
+                <section>
+                  <h3 className="mb-3 text-sm font-medium text-body">
+                    Kasa Devices
+                  </h3>
+                  <div className="space-y-3">
+                    {filteredKasaDevices.map(device => {
+                      const cmd = deviceCommands.find(
+                        c => c.type === 'kasa_device' && c.device_id === device.id,
+                      )
+                      const isOn = !!cmd
+                      const kasaDeactivated = isKasaDeviceDeactivated(device.id)
+
+                      return (
+                        <div key={`kasa-${device.id}`} className="card rounded-xl border p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="min-w-0 flex-1">
+                              <p className={cn('break-words text-sm font-medium', kasaDeactivated ? 'text-slate-500' : 'text-heading')}>
+                                {device.label}
+                                {kasaDeactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
+                              </p>
+                              <p className="text-xs text-caption">
+                                {device.model ? (
+                                  <span className="mr-1.5 inline-block rounded bg-[var(--surface-2)] px-1.5 py-0.5 font-mono text-[10px] text-body">
+                                    {device.model}
+                                  </span>
+                                ) : null}
+                                {isOn ? 'On' : 'Off'}
+                              </p>
+                            </div>
+                            <Switch.Root
+                              checked={isOn}
+                              onCheckedChange={on => handleKasaToggle(device, on)}
+                              aria-label={`${isOn ? 'Remove' : 'Add'} ${device.label}`}
+                              className={cn(
+                                'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
+                                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                                isOn ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
+                              )}
+                            >
+                              <Switch.Thumb
+                                className={cn(
+                                  'block h-5 w-5 rounded-full bg-white shadow transition-transform',
+                                  isOn ? 'translate-x-6' : 'translate-x-1',
+                                )}
+                              />
+                            </Switch.Root>
+                          </div>
+                        </div>
                       )
                     })}
                   </div>
@@ -1352,26 +1511,6 @@ export default function SceneEditorPage() {
                     <span className="min-w-0 flex-1 text-sm font-medium text-heading">
                       {room.name}
                     </span>
-                    {inScene && (
-                      <div className="flex items-center gap-2">
-                        <label className="text-xs text-caption">
-                          Priority
-                        </label>
-                        <input
-                          type="number"
-                          min={0}
-                          max={100}
-                          value={inScene.priority}
-                          onChange={e =>
-                            handleRoomPriorityChange(
-                              room.name,
-                              Number(e.target.value),
-                            )
-                          }
-                          className="input-field h-9 w-16 rounded-lg border px-2 text-center text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                        />
-                      </div>
-                    )}
                   </div>
                 )
               })}
@@ -1387,18 +1526,20 @@ export default function SceneEditorPage() {
             <div className="flex flex-wrap gap-2">
               {availableModes.map(mode => {
                 const selected = modes.includes(mode)
+                const modeIcon = modeIcons[mode] ?? null
                 return (
                   <button
                     key={mode}
                     onClick={() => handleModeToggle(mode)}
                     className={cn(
-                      'min-h-[44px] rounded-lg px-3.5 py-2 text-sm font-medium transition-colors',
+                      'inline-flex items-center gap-1.5 min-h-[44px] rounded-lg px-3.5 py-2 text-sm font-medium transition-colors',
                       'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                       selected
                         ? 'bg-fairy-500 text-white'
                         : 'surface text-body hover:text-heading',
                     )}
                   >
+                    <LucideIcon name={modeIcon} className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
                     {mode}
                   </button>
                 )
@@ -1406,37 +1547,74 @@ export default function SceneEditorPage() {
             </div>
           </section>
 
-          {/* Auto-activate */}
+          {/* Default scene */}
           <section>
-            <h3 className="mb-3 text-sm font-medium text-body">Automation</h3>
-            <div className="card rounded-lg border p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-heading text-sm font-medium">Auto-activate</p>
-                  <p className="text-caption text-xs mt-0.5">
-                    {autoActivate
-                      ? 'This scene can be triggered by motion sensors and appears on room cards'
-                      : 'This scene is manual only — activate it from the Scenes page or Quick Actions'}
-                  </p>
-                </div>
-                <Switch.Root
-                  checked={autoActivate}
-                  onCheckedChange={setAutoActivate}
-                  className={cn(
-                    'relative h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors',
-                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                    autoActivate ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
-                  )}
-                >
-                  <Switch.Thumb
-                    className={cn(
-                      'block h-4 w-4 rounded-full bg-white shadow transition-transform',
-                      autoActivate ? 'translate-x-5' : 'translate-x-1',
-                    )}
-                  />
-                </Switch.Root>
-              </div>
-            </div>
+            <h3 className="mb-3 text-sm font-medium text-body">Default scene</h3>
+            <p className="mb-3 text-xs text-caption">
+              Set this scene as the default for a room and mode. The default scene activates automatically when motion is detected.
+            </p>
+            {sceneRooms.length === 0 ? (
+              <p className="text-xs text-caption">Assign this scene to at least one room to set it as a default.</p>
+            ) : modes.length === 0 ? (
+              <p className="text-xs text-caption">Assign this scene to at least one mode to set it as a default.</p>
+            ) : (
+              <ul className="space-y-2">
+                {sceneRooms.flatMap(sceneRoom =>
+                  modes.map(mode => {
+                    const currentDefault = allDefaultScenes?.[sceneRoom.name]?.[mode] ?? null
+                    const isThisDefault = currentDefault === name
+                    const replacingScene = !isThisDefault && currentDefault
+                      ? allScenes?.find(s => s.name === currentDefault)
+                      : null
+
+                    return (
+                      <li key={`${sceneRoom.name}::${mode}`} className="card rounded-lg border p-3">
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDefaultSceneMutation.mutate({
+                                roomName: sceneRoom.name,
+                                mode,
+                                scene: isThisDefault ? null : (name ?? null),
+                              })
+                            }}
+                            aria-label={isThisDefault
+                              ? `Clear as default scene for ${sceneRoom.name} during ${mode}`
+                              : `Set as default scene for ${sceneRoom.name} during ${mode}`}
+                            className={cn(
+                              'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+                              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                              isThisDefault
+                                ? 'border-fairy-500 bg-fairy-500'
+                                : 'border-[var(--border-secondary)] hover:border-fairy-400',
+                            )}
+                          >
+                            {isThisDefault && (
+                              <Activity className="h-3 w-3 text-white" aria-hidden="true" />
+                            )}
+                          </button>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-heading">
+                              {sceneRoom.name} during{' '}
+                              <span className="inline-flex items-center gap-1">
+                                <LucideIcon name={modeIcons[mode] ?? null} className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                                {mode}
+                              </span>
+                            </p>
+                            {replacingScene && (
+                              <p className="mt-0.5 text-xs text-caption">
+                                Currently &quot;{replacingScene.name}&quot; is the default. Setting this scene will replace it.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </li>
+                    )
+                  })
+                )}
+              </ul>
+            )}
           </section>
 
           {/* Season */}

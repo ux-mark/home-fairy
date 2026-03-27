@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Thermometer, Sun, Clock, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock, AlertTriangle, ChevronRight, Star } from 'lucide-react'
+import { Thermometer, Sun, Clock, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, ArrowDown, ArrowUp, Lock, AlertTriangle, ChevronRight, Activity, Loader2, Volume2, VolumeX } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
@@ -7,6 +7,8 @@ import { useToast } from '@/hooks/useToast'
 import type { Room, Scene } from '@/lib/api'
 import { getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 
 // ── Skeleton loader ──────────────────────────────────────────────────────────
 
@@ -30,17 +32,19 @@ function RoomCardSkeleton() {
 function ModeSelector({
   currentMode,
   modes,
+  modeIcons,
   onSelect,
   isPending,
 }: {
   currentMode: string
   modes: string[]
+  modeIcons: Record<string, string | null>
   onSelect: (mode: string) => void
   isPending: boolean
 }) {
   return (
     <section aria-label="System mode" className="mb-6">
-      <h2 className="text-body mb-3 text-sm font-medium">Current Mode</h2>
+      <h2 className="text-heading mb-3 text-sm font-semibold">Current Mode</h2>
       <div className="flex flex-wrap gap-2">
         {modes.map(mode => (
           <button
@@ -48,7 +52,7 @@ function ModeSelector({
             onClick={() => onSelect(mode)}
             disabled={isPending}
             className={cn(
-              'rounded-lg px-3.5 py-2 text-sm font-medium transition-all',
+              'inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-all',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               'min-h-[44px]',
               currentMode === mode
@@ -56,6 +60,7 @@ function ModeSelector({
                 : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
             )}
           >
+            <LucideIcon name={modeIcons[mode]} className="h-4 w-4" aria-hidden="true" />
             {mode}
           </button>
         ))}
@@ -70,6 +75,7 @@ function RoomCard({
   room,
   scenes,
   currentMode,
+  defaultScenes,
   onToggleScene,
   onToggleAuto,
   isLocked,
@@ -77,17 +83,15 @@ function RoomCard({
   room: Room
   scenes: Scene[]
   currentMode: string
+  defaultScenes: Record<string, Record<string, string>> | undefined
   onToggleScene: (name: string, isActive: boolean) => void
   onToggleAuto: () => void
   isLocked?: boolean
 }) {
-  // Filter scenes: auto-activate only, match room + mode, in season
+  // Show ALL scenes for room + mode, in season
   const roomScenes = scenes.filter(s => {
-    // Only show scenes marked for automatic activation
-    if (s.auto_activate === false) return false
     const rooms = Array.isArray(s.rooms) ? s.rooms : []
     const modes = Array.isArray(s.modes) ? s.modes : []
-    // Skip out-of-season scenes
     const { inSeason } = isSceneInSeason(s)
     if (!inSeason) return false
     return (
@@ -95,14 +99,21 @@ function RoomCard({
       modes.some(m => (m ?? '').toLowerCase() === currentMode.toLowerCase())
     )
   })
-  const sortedScenes = [...roomScenes].sort((a, b) => a.name.localeCompare(b.name))
-  const displayScenes = sortedScenes.slice(0, 4)
-  const defaultScene = getDefaultScene(scenes, room.name, currentMode)
+
+  const defaultSceneName = getDefaultScene(defaultScenes, room.name, currentMode)
+
+  // Sort: default scene first, then alphabetical
+  const sortedScenes = [...roomScenes].sort((a, b) => {
+    if (a.name === defaultSceneName) return -1
+    if (b.name === defaultSceneName) return 1
+    return a.name.localeCompare(b.name)
+  })
 
   return (
     <div className="card rounded-xl border p-4 transition-colors" style={{ borderColor: 'var(--border-primary)' }}>
       <div className="mb-3 flex items-start justify-between">
-        <div>
+        <div className="flex items-center gap-2">
+          <LucideIcon name={room.icon} className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
           <h3 className="text-heading text-base font-semibold">
             {room.name}
           </h3>
@@ -133,7 +144,7 @@ function RoomCard({
           {room.temperature !== null && (
             <span className="flex items-center gap-1">
               <Thermometer className="h-3.5 w-3.5" />
-              {room.temperature !== null && Math.round(room.temperature * 10) / 10}°C
+              {room.temperature !== null && Math.round(room.temperature * 10) / 10}&deg;C
             </span>
           )}
           {room.lux !== null && (
@@ -151,11 +162,12 @@ function RoomCard({
         {formatTimeAgo(room.last_active)}
       </div>
 
-      {/* Quick scene buttons */}
-      {displayScenes.length > 0 && (
+      {/* Quick scene buttons — all scenes, no limit */}
+      {sortedScenes.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {displayScenes.map(scene => {
+          {sortedScenes.map(scene => {
             const isActive = room.current_scene === scene.name
+            const isDefault = scene.name === defaultSceneName
             return (
               <button
                 key={scene.name}
@@ -169,13 +181,11 @@ function RoomCard({
                     : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
                 )}
               >
-                {scene.icon && <span className="text-sm">{scene.icon}</span>}
-                {scene.name}
-                {defaultScene?.name === scene.name && (
-                  <span className="flex items-center gap-0.5 text-fairy-400" aria-label="Default scene for this mode">
-                    <Star className="h-2.5 w-2.5" fill="currentColor" />
-                  </span>
+                {isDefault && (
+                  <Activity className="h-3 w-3 text-fairy-400" aria-label="Default scene for this mode" />
                 )}
+                {scene.icon && <span className="text-sm" aria-hidden="true">{scene.icon}</span>}
+                {scene.name}
               </button>
             )
           })}
@@ -222,7 +232,7 @@ function WeatherCard() {
       <div className="flex-1">
         <div className="flex items-baseline gap-2">
           <span className="text-heading text-2xl font-semibold">
-            {displayTemp}°{unit}
+            {displayTemp}&deg;{unit}
           </span>
           <span className="text-body text-sm capitalize">
             {weather.description}
@@ -251,39 +261,69 @@ function QuickActions() {
 
   const allOffMutation = useMutation({
     mutationFn: api.system.allOff,
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['rooms'] })
+      const previous = queryClient.getQueryData<Room[]>(['rooms'])
+      queryClient.setQueryData<Room[]>(['rooms'], old =>
+        old?.map(r => ({ ...r, current_scene: null }))
+      )
+      return { previous }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms'] })
       queryClient.invalidateQueries({ queryKey: ['system'] })
       queryClient.invalidateQueries({ queryKey: ['lifx'] })
       toast({ message: 'All devices turned off' })
     },
-    onError: () => toast({ message: 'Failed to turn off devices', type: 'error' }),
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(['rooms'], context.previous)
+      toast({ message: 'Failed to turn off devices', type: 'error' })
+    },
   })
 
   const nighttimeMutation = useMutation({
     mutationFn: api.system.nighttime,
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['rooms'] })
+      const previous = queryClient.getQueryData<Room[]>(['rooms'])
+      queryClient.setQueryData<Room[]>(['rooms'], old =>
+        old?.map(r => ({ ...r, current_scene: null }))
+      )
+      return { previous }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms'] })
       queryClient.invalidateQueries({ queryKey: ['system'] })
       queryClient.invalidateQueries({ queryKey: ['lifx'] })
       toast({ message: 'Nighttime mode activated' })
     },
-    onError: () => toast({ message: 'Failed to set nighttime', type: 'error' }),
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(['rooms'], context.previous)
+      toast({ message: 'Failed to set nighttime', type: 'error' })
+    },
   })
 
   const guestNightMutation = useMutation({
     mutationFn: api.system.guestNight,
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['rooms'] })
+      const previous = queryClient.getQueryData<Room[]>(['rooms'])
+      queryClient.setQueryData<Room[]>(['rooms'], old =>
+        old?.map(r => ({ ...r, current_scene: null }))
+      )
+      return { previous }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms'] })
       queryClient.invalidateQueries({ queryKey: ['system'] })
       queryClient.invalidateQueries({ queryKey: ['lifx'] })
       toast({ message: 'Guest night mode activated' })
     },
-    onError: () => toast({ message: 'Failed to set guest night', type: 'error' }),
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(['rooms'], context.previous)
+      toast({ message: 'Failed to set guest night', type: 'error' })
+    },
   })
-
-  // Also invalidate night status from QuickActions context
-  // This is handled by the queryKey: ['system'] invalidation above
 
   const anyPending = allOffMutation.isPending || nighttimeMutation.isPending || guestNightMutation.isPending
 
@@ -300,8 +340,10 @@ function QuickActions() {
             'disabled:opacity-50',
           )}
         >
-          <Power className="h-4.5 w-4.5" />
-          All Off
+          {allOffMutation.isPending
+            ? <Loader2 className="h-4.5 w-4.5 animate-spin" />
+            : <Power className="h-4.5 w-4.5" />}
+          {allOffMutation.isPending ? 'Turning off...' : 'All Off'}
         </button>
         <button
           onClick={() => nighttimeMutation.mutate()}
@@ -313,8 +355,10 @@ function QuickActions() {
             'disabled:opacity-50',
           )}
         >
-          <Moon className="h-4.5 w-4.5" />
-          Nighttime
+          {nighttimeMutation.isPending
+            ? <Loader2 className="h-4.5 w-4.5 animate-spin" />
+            : <Moon className="h-4.5 w-4.5" />}
+          {nighttimeMutation.isPending ? 'Activating...' : 'Nighttime'}
         </button>
         <button
           onClick={() => guestNightMutation.mutate()}
@@ -326,9 +370,10 @@ function QuickActions() {
             'disabled:opacity-50',
           )}
         >
-          <Moon className="h-4 w-4" />
-          <Users className="h-4 w-4" />
-          Guest
+          {guestNightMutation.isPending
+            ? <Loader2 className="h-4.5 w-4.5 animate-spin" />
+            : <><Moon className="h-4 w-4" /><Users className="h-4 w-4" /></>}
+          {guestNightMutation.isPending ? 'Activating...' : 'Guest'}
         </button>
       </div>
     </section>
@@ -417,7 +462,6 @@ function MtaCard() {
           const DirIcon = stop.config.direction === 'S' ? ArrowDown : ArrowUp
           const dotColor = STATUS_DOT_COLORS[stop.status]
           const next = stop.nextArrival
-          // Use catchableTrain when available (re-evaluated status from a later train)
           const displayTrain = stop.catchableTrain ?? next
           const buffer = displayTrain ? displayTrain.minutesAway - stop.config.walkTime : 0
 
@@ -490,13 +534,96 @@ function MtaCard() {
   )
 }
 
+// ── Music quick action ───────────────────────────────────────────────────────
+
+function MusicQuickAction() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const { data: muteStatus } = useQuery({
+    queryKey: ['sonos', 'mute-status'],
+    queryFn: api.sonos.getMuteStatus,
+    staleTime: 10_000,
+    retry: false,
+  })
+
+  const muteAllMutation = useMutation({
+    mutationFn: (muted: boolean) => api.sonos.muteAll(muted),
+    onMutate: async (muted) => {
+      await queryClient.cancelQueries({ queryKey: ['sonos', 'mute-status'] })
+      const previous = queryClient.getQueryData<{ allMuted: boolean; mutedCount: number; totalSpeakers: number }>(['sonos', 'mute-status'])
+      if (previous) {
+        queryClient.setQueryData(['sonos', 'mute-status'], {
+          ...previous,
+          allMuted: muted,
+          mutedCount: muted ? previous.totalSpeakers : 0,
+        })
+      }
+      return { previous }
+    },
+    onSuccess: (_data, muted) => {
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'mute-status'] })
+      toast({ message: muted ? 'All speakers muted' : 'All speakers unmuted' })
+    },
+    onError: (_err, _muted, context) => {
+      if (context?.previous) queryClient.setQueryData(['sonos', 'mute-status'], context.previous)
+      toast({ message: 'Failed to update speakers', type: 'error' })
+    },
+  })
+
+  // Don't render if no speakers are configured
+  if (!muteStatus || muteStatus.totalSpeakers === 0) return null
+
+  const isMuted = muteStatus.allMuted
+  const speakerLabel = muteStatus.totalSpeakers === 1
+    ? '1 speaker'
+    : `${muteStatus.totalSpeakers} speakers`
+
+  return (
+    <section className="mb-6" aria-label="Music controls">
+      <button
+        onClick={() => muteAllMutation.mutate(!isMuted)}
+        disabled={muteAllMutation.isPending}
+        className={cn(
+          'flex w-full min-h-[48px] items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all',
+          'active:scale-[0.98]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2',
+          'disabled:opacity-50',
+          isMuted
+            ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25 focus-visible:outline-fairy-500'
+            : 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 focus-visible:outline-amber-500',
+        )}
+      >
+        {muteAllMutation.isPending ? (
+          <Loader2 className="h-4.5 w-4.5 animate-spin" />
+        ) : isMuted ? (
+          <VolumeX className="h-4.5 w-4.5" />
+        ) : (
+          <Volume2 className="h-4.5 w-4.5" />
+        )}
+        {muteAllMutation.isPending
+          ? (isMuted ? 'Unmuting...' : 'Muting...')
+          : isMuted
+            ? 'Unmute all speakers'
+            : 'Mute all speakers'}
+        <span className={cn(
+          'ml-1 text-xs font-normal',
+          isMuted ? 'text-fairy-400/60' : 'text-amber-400/60',
+        )}>
+          ({speakerLabel})
+        </span>
+      </button>
+    </section>
+  )
+}
+
 // ── Home page ────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
-  const { data: rooms, isLoading: roomsLoading } = useQuery({
+  const { data: rooms, isLoading: roomsLoading, isError: roomsError, refetch: refetchRooms } = useQuery({
     queryKey: ['rooms'],
     queryFn: api.rooms.getAll,
   })
@@ -515,6 +642,11 @@ export default function HomePage() {
     queryKey: ['system', 'night-status'],
     queryFn: api.system.getNightStatus,
     refetchInterval: 10_000,
+  })
+
+  const { data: defaultScenes } = useQuery({
+    queryKey: ['room-default-scenes'],
+    queryFn: api.roomDefaultScenes.getAll,
   })
 
   const { data: dashboardData } = useQuery({
@@ -620,6 +752,7 @@ export default function HomePage() {
 
   const currentMode = system?.mode ?? 'Evening'
   const allModes = system?.all_modes ?? [...DEFAULT_MODES]
+  const modeIcons = system?.mode_icons ?? {}
 
   return (
     <div>
@@ -628,6 +761,8 @@ export default function HomePage() {
       <MtaCard />
 
       <QuickActions />
+
+      <MusicQuickAction />
 
       {nightStatus?.active && (
         <div className="card mb-6 rounded-xl border border-indigo-500/30 bg-indigo-500/5 px-4 py-3">
@@ -655,6 +790,7 @@ export default function HomePage() {
       <ModeSelector
         currentMode={currentMode}
         modes={allModes}
+        modeIcons={modeIcons}
         onSelect={mode => setModeMutation.mutate(mode)}
         isPending={setModeMutation.isPending}
       />
@@ -674,7 +810,7 @@ export default function HomePage() {
 
       <section aria-label="Rooms">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-body text-sm font-medium">Rooms</h2>
+          <h2 className="text-heading text-sm font-semibold">Rooms</h2>
           {rooms && (
             <span className="text-caption text-xs">
               {rooms.length} room{rooms.length !== 1 ? 's' : ''}
@@ -688,6 +824,17 @@ export default function HomePage() {
               <RoomCardSkeleton key={i} />
             ))}
           </div>
+        ) : roomsError ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+            <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
+            <p className="text-zinc-400">Unable to load home data. Check your connection and try again.</p>
+            <button
+              onClick={() => refetchRooms()}
+              className="rounded-lg bg-fairy-600 px-4 py-2 text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            >
+              Try again
+            </button>
+          </div>
         ) : rooms && rooms.length > 0 ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {rooms
@@ -698,6 +845,7 @@ export default function HomePage() {
                   room={room}
                   scenes={scenes ?? []}
                   currentMode={currentMode}
+                  defaultScenes={defaultScenes}
                   onToggleScene={(name, isActive) =>
                     isActive
                       ? deactivateSceneMutation.mutate(name)
@@ -711,13 +859,11 @@ export default function HomePage() {
               ))}
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed py-12 text-center" style={{ borderColor: 'var(--border-secondary)' }}>
-            <Zap className="text-caption mx-auto mb-3 h-8 w-8" />
-            <p className="text-body text-sm">No rooms set up yet.</p>
-            <p className="text-caption mt-1 text-xs">
-              Head to the Rooms tab to get started.
-            </p>
-          </div>
+          <EmptyState
+            icon={Zap}
+            message="No rooms set up yet."
+            sub="Head to the Rooms tab to get started."
+          />
         )}
       </section>
     </div>

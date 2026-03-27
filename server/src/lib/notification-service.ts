@@ -147,4 +147,16 @@ export const notificationService = {
       [minutesBack],
     )
   },
+
+  /** Get recent notifications by category for insights engine integration */
+  getRecentByCategory(category: string, minutesBack = 60): NotificationRow[] {
+    return getAll<NotificationRow>(
+      `SELECT * FROM notifications
+       WHERE category = ?
+         AND dismissed = 0
+         AND last_occurred_at > datetime('now', '-' || ? || ' minutes')
+       ORDER BY last_occurred_at DESC`,
+      [category, minutesBack],
+    )
+  },
 }

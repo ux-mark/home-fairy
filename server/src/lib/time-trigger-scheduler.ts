@@ -1,6 +1,7 @@
 import { getAll, getOne, run } from '../db/index.js'
 import type { Server as SocketServer } from 'socket.io'
 import { motionHandler } from './motion-handler.js'
+import { sonosManager } from './sonos-manager.js'
 
 interface TimeTrigger {
   id: number
@@ -65,6 +66,7 @@ class TimeTriggerScheduler {
   private transitionMode(mode: string, trigger: string) {
     try {
       // Check if current mode is the sleep mode — don't override it
+      // UNLESS this transition IS the wake mode (which should unlock from sleep)
       const sleepRow = getOne<{ value: string }>(
         "SELECT value FROM current_state WHERE key = 'sleep_mode_name'"
       )
@@ -72,7 +74,13 @@ class TimeTriggerScheduler {
       const currentModeRow = getOne<{ value: string }>(
         "SELECT value FROM current_state WHERE key = 'mode'"
       )
-      if (sleepMode && currentModeRow?.value === sleepMode) return
+      if (sleepMode && currentModeRow?.value === sleepMode) {
+        const wakeModeRow = getOne<{ value: string }>(
+          "SELECT value FROM current_state WHERE key = 'pref_night_wake_mode'"
+        )
+        const wakeMode = wakeModeRow?.value || 'Morning'
+        if (mode !== wakeMode) return
+      }
 
       run(
         `INSERT INTO current_state (key, value, updated_at) VALUES ('mode', ?, datetime('now'))
@@ -100,6 +108,9 @@ class TimeTriggerScheduler {
       if (this.io) {
         this.io.emit('mode_changed', { mode, trigger, auto: true })
       }
+
+      // Notify Sonos manager of mode change (non-blocking)
+      sonosManager.onModeChange(mode).catch(() => {})
     } catch (err) {
       console.error('Failed to transition mode (time trigger):', err)
     }
@@ -119,7 +130,7 @@ class TimeTriggerScheduler {
     this.timers.push(timer)
   }
 
-  private clearTimers() {
+  clearTimers() {
     for (const t of this.timers) clearTimeout(t)
     this.timers = []
   }

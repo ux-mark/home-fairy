@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { Bell } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { useNotificationCount } from '@/hooks/useNotifications'
 import NotificationPanel from './NotificationPanel'
@@ -9,6 +10,12 @@ export default function NotificationBell() {
   const { data } = useNotificationCount()
   const count = data?.count ?? 0
   const buttonRef = useRef<HTMLButtonElement>(null)
+  const navigate = useNavigate()
+
+  const handleNavigate = (path: string) => {
+    navigate(path)
+    setOpen(false)
+  }
 
   return (
     <div className="relative">
@@ -40,7 +47,7 @@ export default function NotificationBell() {
         )}
       </button>
 
-      <NotificationPanel open={open} onClose={() => setOpen(false)} />
+      <NotificationPanel open={open} onClose={() => setOpen(false)} returnFocusRef={buttonRef} onNavigate={handleNavigate} />
     </div>
   )
 }

@@ -11,9 +11,14 @@ const SceneEditorPage = React.lazy(() => import('@/pages/SceneEditorPage'))
 const DashboardPage = React.lazy(() => import('@/pages/DashboardPage'))
 const DevicesPage = React.lazy(() => import('@/pages/DevicesPage'))
 const DeviceDetailPage = React.lazy(() => import('@/pages/DeviceDetailPage'))
+const LightDetailPage = React.lazy(() => import('@/pages/LightDetailPage'))
 const WatchPage = React.lazy(() => import('@/pages/WatchPage'))
 const SettingsPage = React.lazy(() => import('@/pages/SettingsPage'))
 const LogsPage = React.lazy(() => import('@/pages/LogsPage'))
+const KasaSetupPage = React.lazy(() => import('@/pages/KasaSetupPage'))
+const LightsPage = React.lazy(() => import('@/pages/LightsPage'))
+const SonosSetupPage = React.lazy(() => import('@/pages/SonosSetupPage'))
+const SonosDetailPage = React.lazy(() => import('@/pages/SonosDetailPage'))
 
 function PageLoader() {
   return (
@@ -38,9 +43,15 @@ export default function App() {
           <Route path="/scenes/:name" element={<SceneEditorPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/devices" element={<DevicesPage />} />
+          <Route path="/devices/kasa/:id" element={<DeviceDetailPage />} />
           <Route path="/devices/:id" element={<DeviceDetailPage />} />
+          <Route path="/lights" element={<LightsPage />} />
+          <Route path="/lights/:id" element={<LightDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/logs" element={<LogsPage />} />
+          <Route path="/settings/kasa" element={<KasaSetupPage />} />
+          <Route path="/sonos-setup" element={<SonosSetupPage />} />
+          <Route path="/sonos/:speaker" element={<SonosDetailPage />} />
         </Route>
         <Route element={<WatchLayout />}>
           <Route path="/watch" element={<WatchPage />} />

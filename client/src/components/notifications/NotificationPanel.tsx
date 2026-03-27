@@ -7,6 +7,24 @@ import type { AppNotification } from '@/lib/api'
 interface NotificationPanelProps {
   open: boolean
   onClose: () => void
+  returnFocusRef?: React.RefObject<HTMLButtonElement | null>
+  onNavigate: (path: string) => void
+}
+
+/**
+ * Derive the best navigation target from a notification's dedup_key.
+ * Format: `category:deviceType:deviceId` e.g. `device_unreachable:kasa:ABC123`
+ */
+function getNotificationRoute(notification: AppNotification): string {
+  const parts = notification.dedup_key?.split(':') ?? []
+  const deviceType = parts[1]
+  const deviceId = parts[2]
+  if (deviceType && deviceId) {
+    if (deviceType === 'kasa') return `/devices/kasa/${deviceId}`
+    if (deviceType === 'lifx') return `/lights/${deviceId}`
+    return `/devices/${deviceId}`
+  }
+  return '/devices'
 }
 
 function timeAgo(dateStr: string): string {
@@ -47,10 +65,12 @@ function NotificationItem({
   notification,
   onMarkRead,
   onDismiss,
+  onNavigate,
 }: {
   notification: AppNotification
   onMarkRead: (id: number) => void
   onDismiss: (id: number) => void
+  onNavigate: (path: string) => void
 }) {
   const config = SEVERITY_CONFIG[notification.severity]
   const { Icon } = config
@@ -61,66 +81,89 @@ function NotificationItem({
       role={notification.severity === 'critical' ? 'alert' : 'status'}
       aria-label={`${config.label}: ${notification.title}`}
       className={cn(
-        'relative rounded-lg border-l-4 p-3 transition-colors',
+        'relative rounded-lg border-l-4 transition-colors',
         config.borderClass,
         isUnread
           ? 'bg-[var(--bg-secondary)]'
           : 'bg-[var(--bg-primary)] opacity-75',
       )}
     >
-      <div className="flex items-start gap-2.5">
-        <Icon
-          className={cn('mt-0.5 h-4 w-4 shrink-0', config.iconClass)}
-          aria-hidden="true"
-        />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <p className={cn(
-              'text-sm leading-snug',
-              isUnread ? 'text-[var(--text-heading)] font-medium' : 'text-[var(--text-body)]',
-            )}>
-              {notification.title}
-            </p>
-            <button
-              type="button"
-              onClick={() => onDismiss(notification.id)}
-              aria-label={`Dismiss notification: ${notification.title}`}
-              className={cn(
-                'shrink-0 rounded p-1 transition-colors',
-                'text-[var(--text-muted)] hover:text-[var(--text-primary)]',
-                'hover:bg-[var(--bg-tertiary)]',
-              )}
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
-          </div>
-          <p className="mt-0.5 text-xs leading-snug text-[var(--text-muted)]">
-            {notification.message}
-          </p>
-          <div className="mt-1.5 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
-            <span>{timeAgo(notification.last_occurred_at)}</span>
-            {notification.occurrence_count > 1 && (
-              <span className="rounded-full bg-[var(--bg-tertiary)] px-1.5 py-0.5">
-                {notification.occurrence_count} times
-              </span>
-            )}
-            {isUnread && (
-              <button
-                type="button"
-                onClick={() => onMarkRead(notification.id)}
-                className="text-fairy-400 hover:text-fairy-300 transition-colors"
+      <button
+        type="button"
+        onClick={() => onNavigate(getNotificationRoute(notification))}
+        className={cn(
+          'w-full text-left p-3 cursor-pointer rounded-lg',
+          'hover:bg-white/5 transition-colors',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+        )}
+        aria-label={`View ${notification.source_label ?? 'device'} — ${notification.title}`}
+      >
+        <div className="flex items-start gap-2.5">
+          <Icon
+            className={cn('mt-0.5 h-4 w-4 shrink-0', config.iconClass)}
+            aria-hidden="true"
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-2">
+              <p className={cn(
+                'text-sm leading-snug',
+                isUnread ? 'text-[var(--text-heading)] font-medium' : 'text-[var(--text-body)]',
+              )}>
+                {notification.title}
+              </p>
+              {/* Stop propagation so dismissing doesn't also navigate */}
+              <span
+                role="presentation"
+                onClick={(e) => e.stopPropagation()}
+                className="shrink-0"
               >
-                Mark as read
-              </button>
-            )}
+                <button
+                  type="button"
+                  onClick={() => onDismiss(notification.id)}
+                  aria-label={`Dismiss notification: ${notification.title}`}
+                  className={cn(
+                    'rounded p-1 transition-colors',
+                    'text-[var(--text-muted)] hover:text-[var(--text-primary)]',
+                    'hover:bg-[var(--bg-tertiary)]',
+                  )}
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            </div>
+            <p className="mt-0.5 text-xs leading-snug text-[var(--text-muted)]">
+              {notification.message}
+            </p>
+            <div className="mt-1.5 flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+              <span>{timeAgo(notification.last_occurred_at)}</span>
+              {notification.occurrence_count > 1 && (
+                <span className="rounded-full bg-[var(--bg-tertiary)] px-1.5 py-0.5">
+                  {notification.occurrence_count} times
+                </span>
+              )}
+              {isUnread && (
+                <span
+                  role="presentation"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onMarkRead(notification.id)}
+                    className="text-fairy-400 hover:text-fairy-300 transition-colors"
+                  >
+                    Mark as read
+                  </button>
+                </span>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      </button>
     </li>
   )
 }
 
-export default function NotificationPanel({ open, onClose }: NotificationPanelProps) {
+export default function NotificationPanel({ open, onClose, returnFocusRef, onNavigate }: NotificationPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null)
   const { data: notifications, isLoading } = useNotifications()
   const markRead = useMarkRead()
@@ -163,6 +206,13 @@ export default function NotificationPanel({ open, onClose }: NotificationPanelPr
     }
   }, [open])
 
+  // Return focus to the trigger button when the panel closes
+  useEffect(() => {
+    if (!open) {
+      returnFocusRef?.current?.focus()
+    }
+  }, [open, returnFocusRef])
+
   if (!open) return null
 
   const hasUnread = notifications?.some(n => n.read === 0)
@@ -175,8 +225,10 @@ export default function NotificationPanel({ open, onClose }: NotificationPanelPr
       aria-label="Notifications"
       tabIndex={-1}
       className={cn(
-        'absolute right-0 top-full z-50 mt-2',
-        'w-[360px] max-w-[calc(100vw-2rem)]',
+        // Mobile: fixed, full-width with margin, below the header
+        'fixed left-4 right-4 top-[60px] z-50',
+        // Desktop (md+): switch back to absolute, right-aligned dropdown
+        'md:absolute md:left-auto md:right-0 md:top-full md:mt-2 md:w-[360px]',
         'card rounded-xl border shadow-lg',
         'max-h-[70vh] flex flex-col',
         'focus:outline-none',
@@ -239,6 +291,7 @@ export default function NotificationPanel({ open, onClose }: NotificationPanelPr
                 notification={notification}
                 onMarkRead={(id) => markRead.mutate(id)}
                 onDismiss={(id) => dismiss.mutate(id)}
+                onNavigate={onNavigate}
               />
             ))}
           </ul>

@@ -43,7 +43,7 @@ export default function LightCard({
         <div className="min-w-0 flex-1">
           <p
             className={cn(
-              'truncate font-medium',
+              'break-words font-medium',
               compact ? 'text-sm' : 'text-base',
               isOn ? 'text-heading' : 'text-body',
             )}
@@ -51,7 +51,7 @@ export default function LightCard({
             {light.label}
           </p>
           {!compact && (
-            <p className="text-caption mt-0.5 truncate text-xs">
+            <p className="text-caption mt-0.5 break-words text-xs">
               {light.group.name}
               {isOn && ` \u00B7 ${Math.round(light.brightness * 100)}%`}
             </p>

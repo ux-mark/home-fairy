@@ -5,6 +5,156 @@
 
 ---
 
+## 2026-03-27 — Icon beautification across the product (PR #50)
+- **Icon infrastructure**: LucideIcon component (renders icons from string names, curated set of ~90 icons) and IconPicker component (categorised grid with live search)
+- **Mode icons**: Icon picker on ModeDetail settings page. Mode icons displayed at 11 locations: HomePage mode selector, SceneEditorPage mode toggles, ScenesPage filter chips, RoomDetailPage mode group headers, ModesList cards, ModeDetail header, SunModeCard badge, MusicSection auto-play rules, AppLayout header badge, PillSelect, FilterChip
+- **Room icons**: Icon picker on RoomDetailPage header. Room icons displayed at 8 locations: HomePage room cards, RoomsPage room list, WatchPage room buttons/headers, ScenesPage room accordions and scene row badges, NightModeSection room toggle pills
+- **Settings accordions**: Leading icons on all 6 CategoryAccordion sections (Preferences, Music, Modes and schedule, Public transport, Weather, System)
+- **Device type badges**: TypeBadge component extended with device-specific icons for all 11 device types
+- **Page headers**: Icons added to Rooms, Scenes, Devices, Insights, Logs pages — matching navigation icons
+- **Server**: /system/current endpoint enriched with mode_icons map
+- **Accessibility**: aria-modal on IconPicker, aria-hidden on all decorative icons, consistent sizing
+- **Files**: 20+ files changed across client and server
+
+## 2026-03-27 — Fix notifications and insights (PR #44)
+- **Notification panel mobile layout**: Changed from absolute to fixed positioning on mobile (below md breakpoint) so panel shows full-width instead of being cut off
+- **Clickable notifications**: Each notification is now a tappable button that navigates to the Devices page and closes the panel
+- **Device label resolution**: Added sourceType/sourceId/sourceLabel to device_unreachable and device_online notifications in device-health-service. Added fallback DB lookup in insights-engine for existing notifications with null source_label
+- **Device source mapping**: AttentionBar "View device" links now route to correct detail page (kasa vs hub)
+- **Files**: `NotificationPanel.tsx`, `NotificationBell.tsx`, `device-health-service.ts`, `insights-engine.ts`
+
+## 2026-03-27 — Fix card text layout (PR #43)
+- **SensorCard**: Two-row layout — device label + badges on top, room name + sensor readings below with flex-wrap
+- **KasaDeviceCard**: Two-row layout — label + power toggle on top, metadata + pills below with flex-wrap
+- **AttentionBar ItemCard**: Action buttons moved into text column below description instead of beside it
+- **Files**: `client/src/pages/DevicesPage.tsx`, `client/src/components/dashboard/AttentionBar.tsx`
+
+## 2026-03-26 — Sonos Phase 2: Volume control, mute all, content type browser
+- **Live volume + mute**: Interactive volume slider (300ms debounce) and mute toggle on SonosDetailPage. Auto-unmutes when slider moves while muted. Default volume slider retained for follow-me join behaviour.
+- **Mute all speakers**: Full-width toggle button on homepage below quick actions. Uses groupMute/groupUnmute for efficiency. Optimistic UI, only shows when speakers assigned. GET /mute-status endpoint for state.
+- **Content type browser**: FavouriteSelector component replaces flat dropdown with two-step type filter + item selector. Types from URI prefix (Spotify playlists, Radio, Sonos Radio, etc.). Shared across SonosDetailPage, RoomDetailPage, MusicSection.
+- **Backend**: 4 new sonos-client methods (mute, unmute, groupMute, groupUnmute), 4 new routes (PUT volume, PUT mute, PUT mute-all, GET mute-status), expanded SonosFavourite with uri/albumArtURI
+- **Files**: 8 files (1 new, 7 modified)
+
+## 2026-03-26 — Sonos integration: Follow-Me Music and Auto-Play
+- **Backend**: sonos-client.ts (axios wrapper for node-sonos-http-api), sonos-manager.ts (follow-me + auto-play business logic), sonos.ts routes (13 endpoints)
+- **Database**: sonos_speakers and sonos_auto_play tables, sonos_follow_me + sonos_auto_start columns on rooms
+- **Integration**: Fire-and-forget hooks in motion-handler.ts, system.ts (mode change + locked state), sun-mode-scheduler.ts, time-trigger-scheduler.ts
+- **Frontend**: SonosSetupPage (speaker discovery + room assignment), SonosDetailPage (speaker config + now playing), MusicSection settings component (follow-me toggle + auto-play rules), Sonos tab on DevicesPage, per-room Sonos controls on RoomDetailPage
+- **Deployment**: PM2 config for sonos-api process, deploy script with node-sonos-http-api clone/update
+- **Files**: 6 new + 12 modified
+
+## 2026-03-26 — Fix remaining audit issues (PR #38)
+- **Security**: Webhook token read from X-Hubitat-Token header instead of query param; 3 error message leaks fixed in kasa.ts and lifx.ts
+- **Cleanup**: Removed 5 dead migration functions from db/index.ts (already applied to production DB)
+- **Deploy**: Added set -e to local shell in deploy-to-pi.sh
+- **Dev**: Added HMR dispose hook to socket singleton (prevents duplicate connections during hot reload)
+- **Refactor**: Decomposed SettingsPage.tsx from 2173 → 536 lines; extracted 7 components to client/src/components/settings/
+
+## 2026-03-25 — Production readiness: resolve 47 open issues (PR #30)
+- **Infrastructure**: Graceful shutdown (SIGTERM/SIGINT), PM2 compiled JS, server build in deploy, deploy script DB backup + health check, .env validation, PM2 restart backoff
+- **Security**: Webhook auth + rate limiting, body limit 100KB, Hubitat token as header, preferences allowlist, generic production error messages across all routes
+- **Data integrity**: 30-day log auto-pruning, scene cycle detection, atomic room delete + light assignment, weather indicator uses lock state, DELETE /history confirmation + audit, schema table order fix
+- **UX error states**: Error + retry on 5 pages, WatchPage loading skeleton, dashboard targeted refetch, 15s client fetch timeout
+- **Accessibility**: Notification panel focus return, aria-hidden on emojis, 44px walk-time targets, logs expand label, native button in SceneEditor, HomeSummaryStrip fix
+- **UX consistency**: Remove all truncate, standardize empty states, fix ScenesPage accordion, hide duplicate mode badge, LIFX room exclusions during All Off/Nighttime
+- **Code quality**: Energy rate debounce, dimmer init from device, Zod validation, /lights route, dead code cleanup, chart.js dedup, N+1 query fix, debug-gated logging, sync POST, 503 on LIFX test
+- Files: 40 files (745 insertions, 405 deletions)
+
+## 2026-03-25 — Simplify scene model: remove auto_activate, add default scene UX
+- Removed `auto_activate` column from scenes table entirely — every scene is equal
+- Renamed `room_auto_scenes` → `room_default_scenes` (table + API + UI)
+- All "auto" terminology replaced with "default" throughout
+- Scene Editor: new "Default scene" section with per-room+mode radio controls and warnings when replacing existing defaults
+- Room Detail: all scenes show radio buttons (no eligibility gating), badge says "Default"
+- Homepage: all scenes shown, Activity icon marks default scene
+- Motion handler: direct room_default_scenes lookup, no auto_activate filter
+- Migration: FK constraints disabled during scenes table recreation; table rename; priority migration picks all scenes
+- API renamed: /rooms/default-scenes, /rooms/:name/default-scene
+- Files: 10 files (4 server, 6 client)
+
+## 2026-03-24 — Direct Kasa integration via python-kasa sidecar
+- Python FastAPI sidecar with python-kasa for direct local-network Kasa device control
+- Device discovery (UDP broadcast), 10-second polling, 5-minute DHCP rediscovery
+- New kasa_devices SQLite table (MAC-based IDs, emeter data, RSSI, firmware)
+- Express HTTP client + poller syncs sidecar state to DB with Socket.io real-time events
+- Kasa API routes: device listing, control, discovery, energy stats (daily/monthly from device memory)
+- History collector extended for Kasa energy snapshots (power, energy, voltage, current)
+- Scene executor supports new `kasa_device` command type with on/off/brightness
+- All Off / Nighttime includes Kasa devices via device_rooms kasa_* types
+- Hubitat webhook handler skips events for Kasa-managed devices (prevents duplicate data)
+- Kasa Setup page at /settings/kasa: device discovery, rename, signal strength, strip outlet view
+- DevicesPage shows Kasa devices alongside LIFX lights and hub devices with power/energy data
+- DeviceDetailPage supports Kasa devices: voltage, current, runtime, device info, signal strength
+- HS300 power strip per-outlet display and control
+- PM2 ecosystem config updated for kasa-sidecar process
+- Deploy script updated with Python venv setup
+- Files: 8 new (4 Python, 4 TypeScript), 14 modified — server/kasa/*, server/src/lib/kasa-client.ts, kasa-poller.ts, server/src/routes/kasa.ts, db/index.ts, index.ts, scene-executor.ts, scenes.ts, system.ts, history-collector.ts, client/src/lib/api.ts, DevicesPage.tsx, DeviceDetailPage.tsx, KasaSetupPage.tsx, SettingsPage.tsx, App.tsx, Badge.tsx, ecosystem.config.cjs, deploy-to-pi.sh, .gitignore
+
+## 2026-03-24 — Standardize UI components for consistency across all pages
+- Created 6 shared UI primitives: Accordion, BackLink, Badge (TypeBadge/CountBadge), SearchInput, EmptyState, FilterChip
+- Replaced 5 inconsistent accordion/collapsible implementations with one shared Accordion component (consistent ChevronDown, CSS grid animation, card wrapper)
+- Made all RoomDetailPage sections collapsible (Settings, Scenes, Room Overview, Devices)
+- Created LightDetailPage at /lights/:id for LIFX lights (previously had no detail page)
+- Made LIFX light names on DevicesPage link to /lights/:id (was expand-inline; now consistent with hub devices)
+- Standardized page headers to text-heading text-sm font-semibold across all listing pages
+- Standardized all back navigation to shared BackLink (surface pill style)
+- Standardized filter chips to rounded-full pills everywhere
+- Standardized search inputs to shared SearchInput with X icon clear button
+- Removed uppercase from all badge classes (DevicesPage, RoomDetailPage, LogsPage)
+- Fixed LogsPage empty state (added icon and dashed border to match other pages)
+- Fixed FilterChip touch target to 44px minimum (WCAG AA)
+- Fixed LogsPage back link destination (/settings instead of /)
+- Deleted orphaned CollapsibleDeviceGroup component
+- Files: 18 files (7 new, 1 deleted, 10 modified) — Accordion.tsx, BackLink.tsx, Badge.tsx, EmptyState.tsx, FilterChip.tsx, SearchInput.tsx, LightDetailPage.tsx, CollapsibleDeviceGroup.tsx (deleted), App.tsx, RoomIntelligence.tsx, DashboardPage.tsx, DeviceDetailPage.tsx, DevicesPage.tsx, HomePage.tsx, LogsPage.tsx, RoomDetailPage.tsx, RoomsPage.tsx, ScenesPage.tsx
+
+## 2026-03-24 — Remove all legacy migration code and dead code
+- Removed ~320 lines of try-catch migration blocks from db/index.ts, replaced with clean seedDefaults()
+- Fixed scenes CREATE TABLE: added auto_activate, active_from, active_to, last_activated_at (were missing from schema, only added by migrations)
+- Deleted server/scripts/ directory (5 legacy migration scripts: seed-from-legacy, migrate-lifx-scenes, assign-lights-to-rooms, fix-light-names, fix-priorities)
+- Replaced overloaded SceneCommand.id field with proper typed fields: device_id for hubitat, brightness (number) for fairy devices
+- Removed HubDevice.room_name from client type (column was already dropped from DB)
+- Removed stale comments referencing old schema in scene-executor, motion-handler, insights-engine, utils
+- Updated PROJECT_SPEC.md: document schema-first approach instead of try-catch ALTER TABLE pattern
+- Files: 14 files (9 modified, 5 deleted) — db/index.ts, scene-executor.ts, scenes.ts, motion-handler.ts, insights-engine.ts, api.ts, utils.ts, SceneEditorPage.tsx, PROJECT_SPEC.md, plus 5 deleted scripts
+
+## 2026-03-24 — Scenes UX redesign with room+mode organization
+- Scenes page rewritten: room-first accordion view with mode pills, Radix Tabs view switcher (By room/Active/Recent/Stale), persistent search across all views
+- Default scene detection: highest-priority auto_activate scene for room+mode, marked with filled star
+- Room Detail page: new collapsible Scenes section between Settings and Intelligence, collapsed by default
+- Homepage: scene buttons sort alphabetically, default star indicator, 44px WCAG touch targets
+- New `last_activated_at` column on scenes table, backfilled from logs, updated on every activation
+- Shared `scene-utils.ts`: isSceneInSeason, getDefaultScene, isStaleScene, sortScenesByPriority, getScenesForRoom, getModesForRoom
+- Stale detection: scenes not activated in 90 days, excluding seasonal scenes
+- Files: 8 files (3 server, 5 client) — db/index.ts, scene-executor.ts, scenes.ts, api.ts, scene-utils.ts (new), ScenesPage.tsx, RoomDetailPage.tsx, HomePage.tsx
+
+## 2026-03-24 — Configurable modes with triggers and scheduling
+- Modes are now fully configurable: add, rename (cascades to scenes/preferences), delete (cascade with dependency warnings)
+- New `mode_triggers` table supports sun-based and time-based triggers per mode
+- Sun mode scheduler rewritten from hardcoded map to data-driven (reads triggers from DB)
+- New `time-trigger-scheduler` for clock-based mode transitions with day-of-week filtering
+- Configurable sleep mode name (replaces hardcoded "Sleep Time" check)
+- Settings restructured: new "Modes and schedule" accordion with two-level drill-down
+- ModesList shows trigger summaries and next scheduled time at a glance
+- ModeDetail: inline rename, trigger toggle/add/delete, dependency-aware delete confirmation
+- AddTriggerForm: solar event picker (with "used by" labels) and time picker with day-of-week buttons
+- SunScheduleSection removed (trigger info now lives in per-mode ModeDetail)
+- Files: 10 files (5 server, 5 client) — db/index.ts, system.ts, sun-mode-scheduler.ts, time-trigger-scheduler.ts (new), index.ts, api.ts, ModesList.tsx (new), ModeDetail.tsx (new), modeUtils.ts (new), SettingsPage.tsx
+
+## 2026-03-24 — LIFX light retry mechanism and notification system
+- LIFX `setStates` response now inspected for per-light results (ok/timed_out/offline)
+- Failed lights retried individually via `setState` — up to 2 retries, 2s delay, rate limit guard
+- New `notifications` table with deduplication via `dedup_key` — repeated failures show as single notification with occurrence count
+- Notification service: create with dedup, list, unread count, mark read, dismiss
+- 6 API routes for notification CRUD under `/api/system/notifications`
+- Socket.io `notification:new` and `notification:update` events for real-time client push
+- NotificationBell component in header with unread badge count
+- NotificationPanel: slide-out dialog with severity indicators, occurrence counts, mark read/dismiss
+- Battery critical (<5%) and low (<15%) events create persistent notifications
+- Device errors from notifications surface in Insights AttentionBar
+- `device_error` category added to LogsPage filter
+- Files: 14 files (7 server, 7 client)
+
 ## 2026-03-23 — UX overhaul: layered drill-down, activity tracking, room intelligence
 - Energy/battery data surfaced on device cards (power watts, energy kWh, battery %) with sort-by-power/battery options
 - Room activity tracking: new room_activity table, motion events recorded, activity insights (room ranking, hourly patterns, daily trends)

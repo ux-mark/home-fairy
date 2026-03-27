@@ -1,36 +1,45 @@
 # Project Spec
 
 ## Overview
-The Fairies v3 — a home automation control system with a React frontend and Express backend. Controls LIFX lights, Hubitat switches/sensors, Twinkly decorative lights, and fairy (ESP8266) devices. Includes MTA subway tracking, weather indicators, and motion-based scene automation.
+The Fairies v3 — a home automation control system with a React frontend and Express backend. Controls LIFX lights, Kasa smart plugs/strips (via python-kasa sidecar), Hubitat sensors, Twinkly decorative lights, fairy (ESP8266) devices, and Sonos speakers (via node-sonos-http-api). Includes MTA subway tracking, weather indicators, energy monitoring, motion-based scene automation, and follow-me music.
 
 ## Tech Stack
 - **Language**: TypeScript (frontend and backend)
 - **Frontend**: React 19, Vite, Tailwind CSS v4, Radix UI, react-colorful (HSV picker), TanStack Query, Socket.io client, PWA
 - **Backend**: Express 5, better-sqlite3, Socket.io, axios, Zod validation, SunCalc, gtfs-realtime-bindings
-- **Database**: SQLite with WAL mode. Tables: rooms, scenes, light_rooms, device_rooms, hub_devices, current_state, logs, device_history
+- **Database**: SQLite with WAL mode. Tables: rooms, scenes, scene_rooms, scene_modes, room_auto_scenes, modes, mode_triggers, light_rooms, device_rooms, hub_devices, kasa_devices, sonos_speakers, sonos_auto_play, current_state, logs, device_history, room_activity, notifications
 - **Package manager**: npm
 - **Process manager (production)**: PM2
+- **External services (managed by PM2)**:
+  - `kasa-sidecar` — Python FastAPI sidecar for Kasa device control (port 3002, source: `server/kasa/`)
+  - `sonos-http-api` — [node-sonos-http-api](https://github.com/jishi/node-sonos-http-api) for Sonos speaker control (port 3003, installed at `~/node-sonos-http-api/`)
 
 ## Project Structure
 ```
 thefairies-app/
 ├── client/          React + Vite + TypeScript + Tailwind CSS v4
 │   ├── src/
-│   │   ├── pages/          Home, Dashboard, Rooms, RoomDetail, Scenes, SceneEditor, Devices, DeviceDetail, Settings, Watch, Logs
+│   │   ├── pages/          Home, Dashboard, Rooms, RoomDetail, Scenes, SceneEditor, Devices, DeviceDetail, Settings, Watch, Logs, SonosSetup, SonosDetail
 │   │   ├── components/     Layout (AppLayout, WatchLayout) + UI + dashboard cards
 │   │   ├── hooks/          useToast, useTheme
 │   │   └── lib/            api.ts (API client + types), utils.ts
 │   └── vite.config.ts      Vite config with PWA + proxy to :3001
 ├── server/          Express 5 + TypeScript + SQLite (better-sqlite3)
 │   ├── src/
-│   │   ├── routes/         lifx, rooms, scenes, lights, hubitat, motion, system, dashboard
-│   │   ├── lib/            lifx-client, hubitat-client, twinkly-client, fairy-device-client,
+│   │   ├── routes/         lifx, rooms, scenes, lights, hubitat, kasa, sonos, motion, system, dashboard
+│   │   ├── lib/            lifx-client, hubitat-client, kasa-client, kasa-poller,
+│   │   │                   twinkly-client, fairy-device-client,
+│   │   │                   sonos-client, sonos-manager,
 │   │   │                   scene-executor, motion-handler, timer-manager, sun-mode-scheduler,
 │   │   │                   weather-client, weather-indicator, mta-client, mta-stops,
 │   │   │                   history-collector
 │   │   ├── db/             SQLite setup + migrations
 │   │   └── index.ts        Express server entry point
-│   ├── scripts/            Migration and seed scripts
+│   ├── kasa/               Python FastAPI sidecar for Kasa device management
+│   │   ├── main.py         FastAPI app entry point
+│   │   ├── device_manager.py  Discovery, connections, polling
+│   │   ├── models.py       Pydantic response models
+│   │   └── requirements.txt Python dependencies
 │   ├── data/               SQLite database (gitignored)
 │   └── .env                Environment variables (gitignored)
 ├── .testing/        Playwright E2E tests (see E2E Tests section below)
@@ -118,13 +127,15 @@ LATITUDE=                 # For weather + sun calculations
 LONGITUDE=
 OPENWEATHER_API=          # OpenWeather API key
 API_TIMEOUT=10000
+KASA_SIDECAR_URL=         # Kasa sidecar URL (default: http://127.0.0.1:3002)
+SONOS_API_URL=            # node-sonos-http-api URL (default: http://localhost:3003)
 ```
 
 ## Key Concepts
 
 ### Scenes
 Scenes contain commands that control multiple devices. Each scene has:
-- **rooms**: which rooms it applies to, with priority (higher = wins in motion activation)
+- **rooms**: which rooms it applies to
 - **modes**: which time-of-day modes it's available in
 - **commands**: array of typed commands (lifx_light, hubitat_device, twinkly, fairy_device, all_off, mode_update, scene_timer, fairy_scene, lifx_effect)
 - **auto_activate**: if true, motion sensors can trigger this scene. If false, manual only.
@@ -132,9 +143,9 @@ Scenes contain commands that control multiple devices. Each scene has:
 
 ### Motion Handling
 Hubitat sends webhook events to POST /hubitat. The motion handler:
-1. Finds which room the sensor belongs to (from rooms.sensors JSON)
+1. Finds which room the sensor belongs to (from device_rooms table)
 2. Checks: room.auto enabled, lux threshold (default 500), night lockout, auto_activate
-3. Finds the highest-priority scene for the room in the current mode
+3. Looks up the designated auto scene for the room+mode from room_auto_scenes table
 4. Activates the scene via batch LIFX API calls
 5. Starts an inactivity timer (room.timer minutes) when all sensors go inactive
 6. One timer per room, not per sensor event

@@ -1,14 +1,48 @@
 module.exports = {
-  apps: [{
-    name: 'thefairies',
-    cwd: './server',
-    script: 'node_modules/.bin/tsx',
-    args: 'src/index.ts',
-    env: {
-      NODE_ENV: 'production',
-      PORT: 3001,
+  apps: [
+    {
+      name: 'thefairies',
+      cwd: './server',
+      script: 'dist/index.js',
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3001,
+      },
+      watch: false,
+      max_memory_restart: '256M',
+      exp_backoff_restart_delay: 1000,
+      max_restarts: 10,
+      error_file: './logs/error.log',
+      out_file: './logs/out.log',
+      merge_logs: true,
     },
-    watch: false,
-    max_memory_restart: '256M',
-  }]
+    {
+      name: 'kasa-sidecar',
+      cwd: './server/kasa',
+      script: 'venv/bin/uvicorn',
+      args: 'main:app --host 127.0.0.1 --port 3002',
+      interpreter: 'none',
+      max_memory_restart: '100M',
+      exp_backoff_restart_delay: 1000,
+      max_restarts: 10,
+      env: {
+        PYTHONUNBUFFERED: '1',
+      },
+      error_file: './logs/kasa-error.log',
+      out_file: './logs/kasa-out.log',
+      merge_logs: true,
+    },
+    {
+      name: 'sonos-api',
+      cwd: '/home/queen/node-sonos-http-api',
+      script: 'server.js',
+      watch: false,
+      max_memory_restart: '128M',
+      exp_backoff_restart_delay: 1000,
+      max_restarts: 10,
+      error_file: './logs/sonos-error.log',
+      out_file: './logs/sonos-out.log',
+      merge_logs: true,
+    },
+  ],
 }

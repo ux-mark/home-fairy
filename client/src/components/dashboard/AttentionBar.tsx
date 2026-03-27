@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { AlertTriangle, AlertCircle, Info } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
+import { api } from '@/lib/api'
+import { useToast } from '@/hooks/useToast'
 import type { AttentionItem } from '@/lib/api'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -28,9 +31,11 @@ function sortBySeverity(items: AttentionItem[]): AttentionItem[] {
 
 interface ItemCardProps {
   item: AttentionItem
+  onDeactivate: (itemId: string, type: string, id: string, label?: string) => void
+  onReactivate: (itemId: string, type: string, id: string, label?: string) => void
 }
 
-function ItemCard({ item }: ItemCardProps) {
+function ItemCard({ item, onDeactivate, onReactivate }: ItemCardProps) {
   const isCritical = item.severity === 'critical'
 
   // Border colour by severity — always paired with icon so colour is not sole indicator
@@ -77,7 +82,7 @@ function ItemCard({ item }: ItemCardProps) {
         aria-hidden="true"
       />
 
-      {/* Message */}
+      {/* Message + actions in the text column */}
       <div className="min-w-0 flex-1">
         <p className="text-heading text-sm font-medium leading-snug">
           {item.title}
@@ -85,23 +90,59 @@ function ItemCard({ item }: ItemCardProps) {
         <p className="text-caption mt-0.5 text-xs leading-snug">
           {item.description}
         </p>
-      </div>
 
-      {/* Device link — only when a deviceId is present */}
-      {item.deviceId !== null && (
-        <Link
-          to={`/devices/${item.deviceId}`}
-          aria-label={`View device: ${item.deviceLabel ?? 'device'}`}
-          className={cn(
-            'shrink-0 text-sm text-fairy-400',
-            'hover:bg-fairy-500/10 rounded-lg px-3 py-2',
-            'min-h-[44px] flex items-center transition-colors',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
-        >
-          View device
-        </Link>
-      )}
+        {/* Action buttons below description — stay in the text column so the label never gets squeezed */}
+        {item.deviceId !== null && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Link
+              to={item.deviceSource === 'kasa'
+                ? `/devices/kasa/${item.deviceId}`
+                : item.deviceSource === 'lifx'
+                  ? `/lights/${item.deviceId}`
+                  : `/devices/${item.deviceId}`}
+              aria-label={`View device: ${item.deviceLabel ?? 'device'}`}
+              className={cn(
+                'text-sm text-fairy-400',
+                'hover:bg-fairy-500/10 rounded-lg px-3 py-2',
+                'min-h-[44px] flex items-center transition-colors',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              )}
+            >
+              View device
+            </Link>
+
+            {/* Deactivate action for unreachable devices */}
+            {item.action === 'deactivate' && item.deviceType && item.deviceId && (
+              <button
+                onClick={() => onDeactivate(item.id, String(item.deviceType), String(item.deviceId), item.deviceLabel ?? undefined)}
+                className={cn(
+                  'text-sm text-amber-400',
+                  'hover:bg-amber-500/10 rounded-lg px-3 py-2',
+                  'min-h-[44px] flex items-center transition-colors',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500',
+                )}
+              >
+                Deactivate
+              </button>
+            )}
+
+            {/* Reactivate action for devices that came back online */}
+            {item.action === 'reactivate' && item.deviceType && item.deviceId && (
+              <button
+                onClick={() => onReactivate(item.id, String(item.deviceType), String(item.deviceId), item.deviceLabel ?? undefined)}
+                className={cn(
+                  'text-sm text-emerald-400',
+                  'hover:bg-emerald-500/10 rounded-lg px-3 py-2',
+                  'min-h-[44px] flex items-center transition-colors',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500',
+                )}
+              >
+                Reactivate
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </li>
   )
 }
@@ -116,11 +157,57 @@ const INITIAL_VISIBLE = 5
  */
 export default function AttentionBar({ items }: AttentionBarProps) {
   const [expanded, setExpanded] = useState(false)
+  const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set())
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const invalidateAll = () => {
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+    queryClient.invalidateQueries({ queryKey: ['devices'] })
+    queryClient.invalidateQueries({ queryKey: ['notifications'] })
+  }
+
+  const deactivateMutation = useMutation({
+    mutationFn: ({ itemId, type, id, label }: { itemId: string; type: string; id: string; label?: string }) => {
+      setDismissedIds(prev => new Set(prev).add(itemId))
+      return api.devices.deactivate(type, id).then(() => label)
+    },
+    onSuccess: (label) => {
+      toast({ message: `${label ?? 'Device'} deactivated` })
+      invalidateAll()
+    },
+    onError: (_err, { itemId }) => {
+      setDismissedIds(prev => { const next = new Set(prev); next.delete(itemId); return next })
+      toast({ message: 'Failed to deactivate device', type: 'error' })
+    },
+  })
+
+  const reactivateMutation = useMutation({
+    mutationFn: ({ itemId, type, id, label }: { itemId: string; type: string; id: string; label?: string }) => {
+      setDismissedIds(prev => new Set(prev).add(itemId))
+      return api.devices.reactivate(type, id).then(() => label)
+    },
+    onSuccess: (label) => {
+      toast({ message: `${label ?? 'Device'} reactivated` })
+      invalidateAll()
+    },
+    onError: (_err, { itemId }) => {
+      setDismissedIds(prev => { const next = new Set(prev); next.delete(itemId); return next })
+      toast({ message: 'Failed to reactivate device', type: 'error' })
+    },
+  })
+
+  const handleDeactivate = (itemId: string, type: string, id: string, label?: string) =>
+    deactivateMutation.mutate({ itemId, type, id, label })
+  const handleReactivate = (itemId: string, type: string, id: string, label?: string) =>
+    reactivateMutation.mutate({ itemId, type, id, label })
+
+  const visibleItems = items.filter(item => !dismissedIds.has(item.id))
 
   // Nothing to show — silence is the success state here
-  if (items.length === 0) return null
+  if (visibleItems.length === 0) return null
 
-  const sorted = sortBySeverity(items)
+  const sorted = sortBySeverity(visibleItems)
   const hasMore = sorted.length > INITIAL_VISIBLE
   const visible = expanded ? sorted : sorted.slice(0, INITIAL_VISIBLE)
   const hiddenCount = sorted.length - INITIAL_VISIBLE
@@ -129,7 +216,7 @@ export default function AttentionBar({ items }: AttentionBarProps) {
     <section aria-label="Items requiring attention">
       <ul role="list" className="space-y-2">
         {visible.map(item => (
-          <ItemCard key={item.id} item={item} />
+          <ItemCard key={item.id} item={item} onDeactivate={handleDeactivate} onReactivate={handleReactivate} />
         ))}
       </ul>
 

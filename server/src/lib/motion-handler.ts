@@ -2,6 +2,7 @@ import { getAll, getOne, run } from '../db/index.js'
 import { activateScene, deactivateScene } from './scene-executor.js'
 import { mtaIndicator } from './mta-indicator.js'
 import { weatherIndicator } from './weather-indicator.js'
+import { sonosManager } from './sonos-manager.js'
 
 interface RoomTimer {
   timeout: NodeJS.Timeout
@@ -28,12 +29,10 @@ interface RoomRow {
   scene_manual: number
 }
 
-interface SceneRow {
-  name: string
-  auto_activate: number
+interface DefaultSceneRow {
+  scene_name: string
   active_from: string | null
   active_to: string | null
-  priority: number
 }
 
 function log(message: string, category = 'motion'): void {
@@ -160,58 +159,62 @@ export class MotionHandler {
     return false
   }
 
-  // Find which room a sensor belongs to by its label
-  // Checks device_rooms table for sensor-to-room mapping
-  private findRoomForSensor(sensorName: string): DeviceRoomRow | undefined {
+  // Find which room a sensor belongs to by device ID or label
+  private findRoomForSensor(deviceId: string | null, sensorName: string): DeviceRoomRow | undefined {
+    // Prefer lookup by device_id (stable across renames)
+    if (deviceId) {
+      const byId = getOne<DeviceRoomRow>(
+        "SELECT * FROM device_rooms WHERE device_id = ? AND device_type IN ('motion', 'sensor')",
+        [deviceId],
+      )
+      if (byId) return byId
+    }
+    // Fallback to label match
     return getOne<DeviceRoomRow>(
       "SELECT * FROM device_rooms WHERE device_label = ? AND device_type IN ('motion', 'sensor')",
       [sensorName],
     )
   }
 
-  // Find the highest-priority scene for a room in the current mode
-  // Only considers scenes with auto_activate = true
+  // Find the default scene for a room in the current mode via room_default_scenes lookup
   private findSceneForRoom(roomName: string): string | null {
     const mode = getCurrentMode()
 
-    // Query for best matching scene: auto_activate, matches room and mode, highest priority
-    const candidates = getAll<{ name: string; priority: number; active_from: string | null; active_to: string | null }>(
-      `SELECT s.name, sr.priority, s.active_from, s.active_to
-       FROM scenes s
-       JOIN scene_rooms sr ON s.name = sr.scene_name
-       JOIN scene_modes sm ON s.name = sm.scene_name
-       WHERE s.auto_activate = 1 AND sr.room_name = ? AND sm.mode_name = ?
-       ORDER BY sr.priority DESC`,
+    // Direct lookup: what is the designated default scene for this room+mode?
+    const row = getOne<DefaultSceneRow>(
+      `SELECT rds.scene_name, s.active_from, s.active_to
+       FROM room_default_scenes rds
+       JOIN scenes s ON rds.scene_name = s.name
+       WHERE rds.room_name = ? AND rds.mode_name = ?`,
       [roomName, mode],
     )
 
-    // Filter by seasonal date range (can't easily do this in SQL with wraparound logic)
-    for (const candidate of candidates) {
-      if (candidate.active_from && candidate.active_to) {
-        const now = new Date()
-        const month = now.getMonth() + 1
-        const day = now.getDate()
-        const today = month * 100 + day
+    if (!row) return null
 
-        const [fromM, fromD] = candidate.active_from.split('-').map(Number)
-        const [toM, toD] = candidate.active_to.split('-').map(Number)
-        const from = fromM * 100 + fromD
-        const to = toM * 100 + toD
+    // Check seasonal date range
+    if (row.active_from && row.active_to) {
+      const now = new Date()
+      const month = now.getMonth() + 1
+      const day = now.getDate()
+      const today = month * 100 + day
 
-        const inRange = from <= to
-          ? (today >= from && today <= to)
-          : (today >= from || today <= to)
+      const [fromM, fromD] = row.active_from.split('-').map(Number)
+      const [toM, toD] = row.active_to.split('-').map(Number)
+      const from = fromM * 100 + fromD
+      const to = toM * 100 + toD
 
-        if (!inRange) continue
-      }
+      const inRange = from <= to
+        ? (today >= from && today <= to)
+        : (today >= from || today <= to)
 
-      return candidate.name
+      if (!inRange) return null
     }
 
-    return null
+    return row.scene_name
   }
 
   async handleMotionEvent(
+    deviceId: string | null,
     sensorName: string,
     value: 'active' | 'inactive',
   ): Promise<void> {
@@ -246,7 +249,7 @@ export class MotionHandler {
     } catch { /* ignore weather indicator errors */ }
 
     // Find which room this sensor belongs to
-    const deviceRoom = this.findRoomForSensor(sensorName)
+    const deviceRoom = this.findRoomForSensor(deviceId, sensorName)
     if (!deviceRoom) {
       log(`Motion sensor "${sensorName}" not assigned to any room`)
       return
@@ -267,6 +270,9 @@ export class MotionHandler {
 
       // Cancel any existing timer for this room
       this.cancelRoomTimer(roomName)
+
+      // Notify Sonos manager of room activity (non-blocking, has its own guards)
+      sonosManager.onRoomMotionActive(roomName).catch(() => {})
 
       // Update room.last_active
       run(
@@ -316,12 +322,18 @@ export class MotionHandler {
       }
 
       // Check for manual scene override — user explicitly activated a scene, skip auto
+      // If scene_manual is set but current_scene is empty, the flag is stale (e.g. server restart) — clear it
       if (room.scene_manual) {
-        log(`Room ${roomName} has manual scene override (${room.current_scene}), skipping auto activation`)
-        return
+        if (!room.current_scene) {
+          run('UPDATE rooms SET scene_manual = 0 WHERE name = ?', [roomName])
+          log(`Cleared stale scene_manual flag for ${roomName} (no active scene)`)
+        } else {
+          log(`Room ${roomName} has manual scene override (${room.current_scene}), skipping auto activation`)
+          return
+        }
       }
 
-      // Find highest-priority scene for room + current mode
+      // Find auto scene for room + current mode
       const sceneName = this.findSceneForRoom(roomName)
       if (!sceneName) {
         log(`No scene found for room ${roomName} in current mode`)
@@ -350,7 +362,7 @@ export class MotionHandler {
 
       const allInactive = roomSensors.every((sensor) => {
         const state = this.sensorStates.get(sensor.device_label)
-        return state === 'inactive'
+        return state !== 'active'
       })
 
       if (!allInactive) {
@@ -359,6 +371,9 @@ export class MotionHandler {
         )
         return
       }
+
+      // Notify Sonos manager of full room inactivity (non-blocking)
+      sonosManager.onRoomMotionAllInactive(roomName).catch(() => {})
 
       // Only start timer if there isn't one already running
       if (this.roomTimers.has(roomName)) {

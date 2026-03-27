@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { ArrowLeft, ChevronDown, ChevronRight, RefreshCw } from 'lucide-react'
+import { ChevronDown, ChevronRight, RefreshCw, ScrollText } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn, formatDateTime } from '@/lib/utils'
+import { BackLink } from '@/components/ui/BackLink'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { FilterChip } from '@/components/ui/FilterChip'
 
 const CATEGORIES = ['hubitat', 'scene', 'motion', 'lifx', 'system', 'battery', 'weather', 'timer', 'device_error'] as const
 
@@ -27,25 +29,28 @@ function LogEntry({
   return (
     <div className="border-b border-[var(--border-primary)] py-3 last:border-0">
       <div className="flex items-start gap-3">
-        <button
-          onClick={() => log.debug && setExpanded(!expanded)}
-          className={cn(
-            'mt-0.5 shrink-0',
-            log.debug ? 'text-caption hover:text-[var(--text-primary)]' : 'text-transparent',
-          )}
-          disabled={!log.debug}
-        >
-          {expanded ? (
-            <ChevronDown className="h-4 w-4" />
-          ) : (
+        {log.debug ? (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            aria-label={expanded ? 'Hide details' : 'Show details'}
+            className="mt-0.5 shrink-0 text-caption hover:text-[var(--text-primary)]"
+          >
+            {expanded ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </button>
+        ) : (
+          <span aria-hidden="true" className="mt-0.5 shrink-0 text-transparent">
             <ChevronRight className="h-4 w-4" />
-          )}
-        </button>
+          </span>
+        )}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             {log.category && (
-              <span className="inline-flex rounded surface px-1.5 py-0.5 text-[10px] font-medium uppercase text-body">
+              <span className="inline-flex rounded surface px-1.5 py-0.5 text-[10px] font-medium text-body">
                 {log.category}
               </span>
             )}
@@ -84,19 +89,18 @@ export default function LogsPage() {
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
-        <Link
-          to="/settings"
-          className="rounded-lg p-1.5 text-body transition-colors hover:surface hover:text-heading"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <h1 className="flex-1 text-lg font-semibold text-heading">
-          System Logs
-        </h1>
+        <BackLink to="/settings" label="Settings" className="mb-0" />
+        <div className="flex flex-1 items-center gap-2">
+          <ScrollText className="h-5 w-5 text-fairy-400" aria-hidden="true" />
+          <h1 className="text-lg font-semibold text-heading">
+            System Logs
+          </h1>
+        </div>
         <button
           onClick={() => refetch()}
           disabled={isFetching}
           className="rounded-lg p-2 text-body transition-colors hover:surface hover:text-heading"
+          aria-label="Refresh logs"
         >
           <RefreshCw
             className={cn('h-4 w-4', isFetching && 'animate-spin')}
@@ -106,30 +110,18 @@ export default function LogsPage() {
 
       {/* Category filter chips */}
       <div className="mb-4 flex flex-wrap gap-2">
-        <button
+        <FilterChip
+          label="All"
+          active={!category}
           onClick={() => setCategory(undefined)}
-          className={cn(
-            'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-            !category
-              ? 'bg-fairy-500 text-white'
-              : 'surface text-body hover:text-heading',
-          )}
-        >
-          All
-        </button>
+        />
         {CATEGORIES.map(cat => (
-          <button
+          <FilterChip
             key={cat}
+            label={cat}
+            active={category === cat}
             onClick={() => setCategory(category === cat ? undefined : cat)}
-            className={cn(
-              'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-              category === cat
-                ? 'bg-fairy-500 text-white'
-                : 'surface text-body hover:text-heading',
-            )}
-          >
-            {cat}
-          </button>
+          />
         ))}
       </div>
 
@@ -151,9 +143,11 @@ export default function LogsPage() {
             ))}
           </div>
         ) : (
-          <div className="py-12 text-center text-sm text-caption">
-            No logs found.
-          </div>
+          <EmptyState
+            icon={ScrollText}
+            message="No log entries found."
+            sub="Logs will appear as the system processes events."
+          />
         )}
       </div>
     </div>

@@ -1,8 +1,7 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowLeft,
   Plus,
   X,
   Zap,
@@ -11,26 +10,37 @@ import {
   WifiOff,
   Lightbulb,
   Trash2,
-  Search,
+  Pencil,
   ToggleLeft,
   Activity,
   CheckSquare,
   Square,
   Shield,
-  Star,
-  ChevronDown,
   ChevronRight,
   Sparkles,
+  Check,
+  ExternalLink,
+  CirclePause,
+  CircleSlash,
 } from 'lucide-react'
 import * as Switch from '@radix-ui/react-switch'
 import * as Tabs from '@radix-ui/react-tabs'
+import { io as socketIo } from 'socket.io-client'
 import { api } from '@/lib/api'
-import type { Light, LightAssignment, Sensor, HubDevice, DeviceRoomAssignment } from '@/lib/api'
+import type { Light, LightAssignment, Sensor, HubDevice, DeviceRoomAssignment, DeactivatedDevice, SonosZone, AutoPlayRule } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
-import { CollapsibleDeviceGroup } from '@/components/ui/CollapsibleDeviceGroup'
+import { Accordion } from '@/components/ui/Accordion'
+import { BackLink } from '@/components/ui/BackLink'
+import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
+import { SearchInput } from '@/components/ui/SearchInput'
 import RoomIntelligence from '@/components/room/RoomIntelligence'
-import { getScenesForRoom, getModesForRoom, sortScenesByPriority, getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
+import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
+import { PillSelect } from '@/components/ui/PillSelect'
+import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
+import { getScenesForRoom, getModesForRoom, getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
+import { LucideIcon } from '@/components/ui/LucideIcon'
+import { IconPicker } from '@/components/ui/IconPicker'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -42,48 +52,6 @@ function toAssignment(light: Light): LightAssignment {
     min_kelvin: light.product.capabilities.min_kelvin,
     max_kelvin: light.product.capabilities.max_kelvin,
   }
-}
-
-// ── Sticky search input ─────────────────────────────────────────────────────
-
-function StickySearch({
-  value,
-  onChange,
-  placeholder,
-  matchSummary,
-}: {
-  value: string
-  onChange: (val: string) => void
-  placeholder: string
-  matchSummary?: string
-}) {
-  return (
-    <div className="sticky top-0 z-10 pb-3 pt-1 chrome">
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-caption" />
-        <input
-          type="search"
-          placeholder={placeholder}
-          value={value}
-          onChange={e => onChange(e.target.value)}
-          className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface pl-10 pr-10 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-        />
-        {value && (
-          <button
-            type="button"
-            onClick={() => onChange('')}
-            className="absolute right-2 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-md text-caption hover:text-heading transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-            aria-label="Clear search"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-      {matchSummary && value.trim() && (
-        <p className="mt-1.5 text-[11px] text-caption">{matchSummary}</p>
-      )}
-    </div>
-  )
 }
 
 // ── Compact available light row ─────────────────────────────────────────────
@@ -138,11 +106,11 @@ function AvailableLightRow({
         style={{ backgroundColor: isOn ? colorHex : '#475569' }}
         aria-hidden="true"
       />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-heading">
+      <span className="min-w-0 flex-1 break-words text-sm font-medium text-heading">
         {light.label}
       </span>
       {isAssignedElsewhere ? (
-        <span className="shrink-0 truncate text-[10px] text-caption">
+        <span className="shrink-0 break-words text-[10px] text-caption">
           In {assignedToRoom}
         </span>
       ) : (
@@ -185,11 +153,13 @@ function AssignedLightRow({
   light,
   onRemove,
   onIdentify,
+  deactivated,
 }: {
   assignment: LightAssignment
   light?: Light
   onRemove: () => void
   onIdentify: () => void
+  deactivated?: boolean
 }) {
   const isOn = light?.power === 'on'
   const colorHex = light ? getLightColorHex(light) : '#475569'
@@ -202,8 +172,9 @@ function AssignedLightRow({
         aria-hidden="true"
       />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">
+        <p className={cn('break-words text-sm font-medium', deactivated ? 'text-slate-500' : 'text-heading')}>
           {assignment.label}
+          {deactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
         </p>
         <p className="text-xs text-caption">
           {isOn ? (
@@ -234,46 +205,30 @@ function AssignedLightRow({
   )
 }
 
-// ── Device type badge ────────────────────────────────────────────────────────
-
-const deviceTypeBadgeClasses: Record<string, string> = {
-  switch: 'bg-blue-500/15 text-blue-400',
-  dimmer: 'bg-purple-500/15 text-purple-400',
-  contact: 'bg-amber-500/15 text-amber-400',
-  twinkly: 'bg-pink-500/15 text-pink-400',
-  fairy: 'bg-cyan-500/15 text-cyan-400',
-}
-
-function DeviceTypeBadge({ type }: { type: string }) {
-  const cls = deviceTypeBadgeClasses[type] ?? 'surface text-body'
-  return (
-    <span className={cn('inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide', cls)}>
-      {type}
-    </span>
-  )
-}
-
 // ── Assigned device row ─────────────────────────────────────────────────────
 
 function AssignedDeviceRow({
   assignment,
   onRemove,
   onToggleExclude,
+  deactivated,
 }: {
   assignment: DeviceRoomAssignment
   onRemove: () => void
   onToggleExclude: () => void
+  deactivated?: boolean
 }) {
   const isExcluded = !!assignment.config?.exclude_from_all_off
 
   return (
     <div className="flex items-center gap-3 rounded-lg border border-fairy-500/20 bg-fairy-500/5 px-3 py-2.5 transition-colors">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">
+        <p className={cn('break-words text-sm font-medium', deactivated ? 'text-slate-500' : 'text-heading')}>
           {assignment.device_label}
+          {deactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
         </p>
       </div>
-      <DeviceTypeBadge type={assignment.device_type} />
+      <TypeBadge type={assignment.device_type} />
       <button
         onClick={onToggleExclude}
         className={cn(
@@ -335,10 +290,10 @@ function AvailableDeviceRow({
           )}
         </button>
       )}
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-heading">
+      <span className="min-w-0 flex-1 break-words text-sm font-medium text-heading">
         {device.label}
       </span>
-      <DeviceTypeBadge type={device.device_type} />
+      <TypeBadge type={device.device_type} />
       {!multiSelectMode && (
         <button
           onClick={onAdd}
@@ -373,9 +328,41 @@ export default function RoomDetailPage() {
   const [deviceMultiSelect, setDeviceMultiSelect] = useState(false)
   const [selectedDeviceIds, setSelectedDeviceIds] = useState<Set<string>>(new Set())
 
-  // Scenes section state
+  // Section accordion state
+  const [settingsOpen, setSettingsOpen] = useState(true)
   const [scenesOpen, setScenesOpen] = useState(false)
-  const [selectedMode, setSelectedMode] = useState<string | null>(null)
+  const [devicesOpen, setDevicesOpen] = useState(false)
+
+  // Inline add/edit auto-play rule form state
+  const [showAddRuleForm, setShowAddRuleForm] = useState(false)
+  const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
+  const [newRuleFavourite, setNewRuleFavourite] = useState('')
+  const [newRuleMode, setNewRuleMode] = useState('')
+  const [newRuleTriggerType, setNewRuleTriggerType] = useState<'mode_change' | 'if_not_playing' | 'if_source_not'>('if_not_playing')
+  const [newRuleSourceValue, setNewRuleSourceValue] = useState('')
+  const [newRuleMaxPlays, setNewRuleMaxPlays] = useState<string>('')
+
+  // Open groups state for available lights and devices
+  const [openLightGroups, setOpenLightGroups] = useState<Set<string>>(new Set())
+  const [openDeviceGroups, setOpenDeviceGroups] = useState<Set<string>>(new Set())
+
+  const toggleLightGroup = (name: string) => {
+    setOpenLightGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
+
+  const toggleDeviceGroup = (name: string) => {
+    setOpenDeviceGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
 
   // Fetch room detail
   const { data: room, isLoading: roomLoading } = useQuery({
@@ -408,6 +395,12 @@ export default function RoomDetailPage() {
     queryFn: api.hubitat.getDevices,
   })
 
+  // Fetch all Kasa devices
+  const { data: allKasaDevices } = useQuery({
+    queryKey: ['kasa', 'devices'],
+    queryFn: api.kasa.getDevices,
+  })
+
   // Fetch all Hubitat device-room assignments
   const { data: allDeviceRoomAssignments } = useQuery({
     queryKey: ['hubitat', 'device-rooms'],
@@ -420,10 +413,124 @@ export default function RoomDetailPage() {
     queryFn: api.scenes.getAll,
   })
 
-  // Fetch system current (for current mode)
-  const { data: system } = useQuery({
+  const { data: systemCurrent } = useQuery({
     queryKey: ['system', 'current'],
     queryFn: api.system.getCurrent,
+  })
+
+  // Fetch deactivated devices for dimmed treatment
+  const { data: deactivatedDevices } = useQuery({
+    queryKey: ['devices', 'deactivated'],
+    queryFn: api.devices.getDeactivated,
+  })
+
+  // Sonos queries
+  const { data: sonosSpeakers } = useQuery({
+    queryKey: ['sonos', 'speakers'],
+    queryFn: api.sonos.getSpeakers,
+    enabled: !!name,
+  })
+
+  const { data: sonosFavourites } = useQuery({
+    queryKey: ['sonos', 'favourites'],
+    queryFn: api.sonos.getFavourites,
+    enabled: !!name,
+  })
+
+  const { data: sonosFollowMeStatus } = useQuery({
+    queryKey: ['sonos', 'follow-me-status'],
+    queryFn: api.sonos.getFollowMeStatus,
+    enabled: !!name,
+  })
+
+  const { data: autoPlayRules } = useQuery({
+    queryKey: ['sonos', 'auto-play'],
+    queryFn: api.sonos.getAutoPlayRules,
+    enabled: !!name,
+    staleTime: 30_000,
+  })
+
+  const { data: sonosModes } = useQuery({
+    queryKey: ['system', 'modes'],
+    queryFn: api.system.getModes,
+    staleTime: 60_000,
+  })
+
+  // Find the speaker mapped to this room
+  const roomSpeaker = useMemo(
+    () => sonosSpeakers?.find(s => s.room_name === name) ?? null,
+    [sonosSpeakers, name],
+  )
+
+  // Live Sonos zone data for the now-playing indicator
+  const [liveZones, setLiveZones] = useState<SonosZone[] | null>(null)
+
+  useEffect(() => {
+    if (!roomSpeaker) return
+    const url = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin
+    const s = socketIo(url, { transports: ['websocket', 'polling'] })
+
+    function handleZonesUpdate(zones: SonosZone[]) {
+      setLiveZones(zones)
+    }
+    function handleFollowMeUpdate() {
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'follow-me-status'] })
+    }
+
+    s.on('sonos:zones-update', handleZonesUpdate)
+    s.on('sonos:playback-update', handleZonesUpdate)
+    s.on('sonos:follow-me-update', handleFollowMeUpdate)
+
+    return () => {
+      s.off('sonos:zones-update', handleZonesUpdate)
+      s.off('sonos:playback-update', handleZonesUpdate)
+      s.off('sonos:follow-me-update', handleFollowMeUpdate)
+      s.disconnect()
+    }
+  }, [roomSpeaker, queryClient])
+
+  // Find the live zone for this room's speaker
+  const roomZone = useMemo(() => {
+    if (!roomSpeaker || !liveZones) return null
+    return liveZones.find(z =>
+      z.coordinator.roomName === roomSpeaker.speaker_name ||
+      z.members.some(m => m.roomName === roomSpeaker.speaker_name),
+    ) ?? null
+  }, [roomSpeaker, liveZones])
+
+  // Determine if this speaker is in the follow-me group
+  const isInFollowMeGroup = useMemo(() => {
+    if (!roomSpeaker || !sonosFollowMeStatus) return false
+    return sonosFollowMeStatus.activeRooms.includes(roomSpeaker.room_name)
+  }, [roomSpeaker, sonosFollowMeStatus])
+
+  // Auto-play rules for this room
+  const roomAutoPlayRules = useMemo(
+    () => autoPlayRules?.filter(r => r.room_name === name) ?? [],
+    [autoPlayRules, name],
+  )
+
+  const { data: availableSources } = useQuery({
+    queryKey: ['sonos', 'services'],
+    queryFn: api.sonos.getServices,
+    staleTime: 60_000,
+  })
+
+  // Fetch default scene assignments for this room
+  const { data: roomDefaultScenes } = useQuery({
+    queryKey: ['room-default-scenes', name],
+    queryFn: () => api.roomDefaultScenes.getForRoom(name!),
+    enabled: !!name,
+  })
+
+  // Mutation to set/clear default scene for a room+mode
+  const setDefaultSceneMutation = useMutation({
+    mutationFn: ({ mode, scene }: { mode: string; scene: string | null }) =>
+      api.roomDefaultScenes.set(name!, mode, scene),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['room-default-scenes', name], data)
+      queryClient.invalidateQueries({ queryKey: ['room-default-scenes'] })
+    },
   })
 
   // Room settings state
@@ -433,13 +540,23 @@ export default function RoomDetailPage() {
   const [parentRoom, setParentRoom] = useState<string | null>(null)
   const [sensors, setSensors] = useState<Sensor[] | null>(null)
   const [_roomNameEdit, _setRoomNameEdit] = useState<string | null>(null)
+  const [iconPickerOpen, setIconPickerOpen] = useState(false)
 
   // Compute effective values (from state or room data)
   const effectiveOrder = displayOrder ?? room?.display_order ?? 0
   const effectiveTimer = timer ?? room?.timer ?? 0
   const effectiveAuto = autoEnabled ?? room?.auto ?? false
   const effectiveParent = parentRoom ?? room?.parent_room ?? ''
-  const effectiveSensors = sensors ?? room?.sensors ?? []
+  const effectiveSensors = (sensors ?? room?.sensors ?? []).map(s => {
+    // Resolve current name from hub devices (handles renamed sensors)
+    if (s.id && allHubDevices) {
+      const hubDevice = allHubDevices.find(d => String(d.id) === s.id)
+      if (hubDevice && hubDevice.label !== s.name) {
+        return { ...s, name: hubDevice.label }
+      }
+    }
+    return s
+  })
 
   // Light assignment state
   const [assigned, setAssigned] = useState<LightAssignment[] | null>(null)
@@ -562,9 +679,22 @@ export default function RoomDetailPage() {
     return new Map(allLights.map(l => [l.id, l]))
   }, [allLights])
 
-  // ── Device (switches/dimmers/twinkly/fairy) assignment state ──────────
+  // Build a lookup of deactivated device IDs keyed as "type:id"
+  const deactivatedSet = useMemo(() => {
+    if (!deactivatedDevices) return new Set<string>()
+    return new Set(
+      (deactivatedDevices as DeactivatedDevice[]).map(d => `${d.deviceType}:${d.deviceId}`),
+    )
+  }, [deactivatedDevices])
+
+  const isLightDeactivated = (lightId: string) => deactivatedSet.has(`lifx:${lightId}`)
+  const isHubDeviceDeactivated = (deviceId: string) => deactivatedSet.has(`hub:${deviceId}`)
+  const isKasaDeviceDeactivated = (deviceId: string) => deactivatedSet.has(`kasa:${deviceId}`)
+
+  // ── Device (switches/dimmers/twinkly/fairy/kasa) assignment state ─────
   const SWITCH_TYPES = ['switch', 'dimmer']
   const OTHER_TYPES = ['twinkly', 'fairy']
+  const KASA_TYPES = ['kasa_plug', 'kasa_strip', 'kasa_outlet', 'kasa_switch', 'kasa_dimmer']
 
   // Devices assigned to THIS room (from API or local pending state)
   const [pendingDeviceAssigns, setPendingDeviceAssigns] = useState<
@@ -601,7 +731,7 @@ export default function RoomDetailPage() {
   }, [apiDevicesForRoom, pendingDeviceAssigns, pendingDeviceUnassigns, pendingDeviceConfigs, name])
 
   // Filter to only device types that belong in the Switches tab (not sensors)
-  const DEVICE_TYPES = [...SWITCH_TYPES, ...OTHER_TYPES]
+  const DEVICE_TYPES = [...SWITCH_TYPES, ...OTHER_TYPES, ...KASA_TYPES]
   const filteredDeviceAssignments = useMemo(
     () => effectiveDeviceAssignments.filter(d => DEVICE_TYPES.includes(d.device_type)),
     [effectiveDeviceAssignments],
@@ -613,22 +743,45 @@ export default function RoomDetailPage() {
     return new Set(allDeviceRoomAssignments.map(a => a.device_id))
   }, [allDeviceRoomAssignments])
 
-  // Available devices by type for switches tab
+  // Available devices by type for switches tab (Hub + Kasa)
   const availableDevicesByType = useMemo(() => {
-    if (!allHubDevices) return new Map<string, HubDevice[]>()
     const assignedIds = new Set(effectiveDeviceAssignments.map(d => d.device_id))
-    const allTypes = [...SWITCH_TYPES, ...OTHER_TYPES]
+    const allTypes = [...SWITCH_TYPES, ...OTHER_TYPES, ...KASA_TYPES]
     const groups = new Map<string, HubDevice[]>()
-    for (const device of allHubDevices) {
-      if (!allTypes.includes(device.device_type)) continue
-      if (assignedIds.has(String(device.id))) continue
-      if (deviceIdsAssignedToAnyRoom.has(String(device.id))) continue
-      const type = device.device_type
-      if (!groups.has(type)) groups.set(type, [])
-      groups.get(type)!.push(device)
+
+    // Hub devices
+    if (allHubDevices) {
+      for (const device of allHubDevices) {
+        if (!allTypes.includes(device.device_type)) continue
+        if (assignedIds.has(String(device.id))) continue
+        if (deviceIdsAssignedToAnyRoom.has(String(device.id))) continue
+        const type = device.device_type
+        if (!groups.has(type)) groups.set(type, [])
+        groups.get(type)!.push(device)
+      }
     }
+
+    // Kasa devices — all grouped under a single "Kasa plugs" category
+    if (allKasaDevices) {
+      const kasaGroup = 'kasa_plug'
+      for (const kd of allKasaDevices) {
+        const kasaType = kd.parent_id ? 'kasa_outlet' : ('kasa_' + kd.device_type)
+        if (assignedIds.has(kd.id)) continue
+        if (deviceIdsAssignedToAnyRoom.has(kd.id)) continue
+        if (!groups.has(kasaGroup)) groups.set(kasaGroup, [])
+        groups.get(kasaGroup)!.push({
+          id: kd.id as unknown as number,
+          label: kd.label,
+          device_name: kd.model ?? '',
+          device_type: kasaType,
+          capabilities: [],
+          attributes: kd.attributes as Record<string, unknown>,
+        })
+      }
+    }
+
     return groups
-  }, [allHubDevices, effectiveDeviceAssignments, deviceIdsAssignedToAnyRoom])
+  }, [allHubDevices, allKasaDevices, effectiveDeviceAssignments, deviceIdsAssignedToAnyRoom])
 
   // Filter assigned devices by search
   const filteredAssignedDevices = useMemo(() => {
@@ -668,6 +821,76 @@ export default function RoomDetailPage() {
   const parentRoomOptions = useMemo(() => {
     return (allRooms ?? []).filter(r => r.name !== name)
   }, [allRooms, name])
+
+  // Sonos setting mutations — these save immediately (not batched with room save)
+  const updateFollowMeMutation = useMutation({
+    mutationFn: (value: boolean) => api.rooms.update(name!, { sonos_follow_me: value }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms', name] })
+      toast({ message: 'Follow-me music setting saved' })
+    },
+    onError: () => toast({ message: 'Failed to save follow-me setting', type: 'error' }),
+  })
+
+  function resetRuleForm() {
+    setShowAddRuleForm(false)
+    setEditingRuleId(null)
+    setNewRuleFavourite('')
+    setNewRuleMode('')
+    setNewRuleTriggerType('if_not_playing')
+    setNewRuleSourceValue('')
+    setNewRuleMaxPlays('')
+  }
+
+  function openEditRule(rule: AutoPlayRule) {
+    setShowAddRuleForm(false)
+    setEditingRuleId(rule.id)
+    setNewRuleFavourite(rule.favourite_name)
+    setNewRuleMode(rule.mode_name)
+    setNewRuleTriggerType(rule.trigger_type)
+    setNewRuleSourceValue(rule.trigger_value ?? '')
+    setNewRuleMaxPlays(rule.max_plays !== null ? String(rule.max_plays) : '')
+  }
+
+  const createAutoPlayRuleMutation = useMutation({
+    mutationFn: api.sonos.createAutoPlayRule,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'auto-play'] })
+      toast({ message: 'Auto-play rule added' })
+      resetRuleForm()
+    },
+    onError: () => toast({ message: 'Failed to add rule', type: 'error' }),
+  })
+
+  const deleteAutoPlayRuleMutation = useMutation({
+    mutationFn: (id: number) => api.sonos.deleteAutoPlayRule(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'auto-play'] })
+      toast({ message: 'Auto-play rule deleted' })
+      setEditingRuleId(null)
+    },
+    onError: () => toast({ message: 'Failed to delete rule', type: 'error' }),
+  })
+
+  const toggleAutoPlayRuleMutation = useMutation({
+    mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) =>
+      api.sonos.updateAutoPlayRule(id, { enabled: enabled ? 1 : 0 }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'auto-play'] })
+    },
+    onError: () => toast({ message: 'Failed to update rule', type: 'error' }),
+  })
+
+  const editAutoPlayRuleMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Partial<AutoPlayRule> }) =>
+      api.sonos.updateAutoPlayRule(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'auto-play'] })
+      toast({ message: 'Auto-play rule updated' })
+      resetRuleForm()
+    },
+    onError: () => toast({ message: 'Failed to update rule', type: 'error' }),
+  })
 
   // Mutations
   const identifyMutation = useMutation({
@@ -716,21 +939,33 @@ export default function RoomDetailPage() {
         }
       }
       // Save sensor assignments via device_rooms
-      const currentSensorNames = new Set((room?.sensors ?? []).map(s => s.name))
-      const newSensorNames = new Set(effectiveSensors.map(s => s.name))
+      const currentSensorIds = new Set((room?.sensors ?? []).map(s => s.id))
+      const newSensorIds = new Set(effectiveSensors
+        .filter(s => s.name)
+        .map(s => {
+          // Use existing sensor ID if available, otherwise look up by label
+          if (s.id) return s.id
+          const hubDevice = allHubDevices!.find(d => d.label === s.name)
+          return hubDevice ? String(hubDevice.id) : null
+        })
+        .filter((id): id is string => id != null))
 
       // Unassign removed sensors
       for (const sensor of room?.sensors ?? []) {
-        if (!newSensorNames.has(sensor.name)) {
-          await api.hubitat.unassignDevice(sensor.name, name!)
+        if (sensor.id && !newSensorIds.has(sensor.id)) {
+          await api.hubitat.unassignDevice(sensor.id, name!)
         }
       }
 
       // Assign new sensors
       for (const sensor of effectiveSensors) {
-        if (sensor.name && !currentSensorNames.has(sensor.name)) {
+        if (!sensor.name) continue
+        const hubDevice = allHubDevices!.find(d => d.label === sensor.name)
+        if (!hubDevice) continue
+        const sensorId = String(hubDevice.id)
+        if (!currentSensorIds.has(sensorId)) {
           await api.hubitat.assignDevice({
-            device_id: sensor.name,
+            device_id: sensorId,
             device_label: sensor.name,
             device_type: 'motion',
             room_name: name!,
@@ -762,6 +997,17 @@ export default function RoomDetailPage() {
     },
     onError: () =>
       toast({ message: 'Failed to delete room', type: 'error' }),
+  })
+
+  const updateIconMutation = useMutation({
+    mutationFn: (icon: string) => api.rooms.update(name!, { icon }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms', name] })
+      queryClient.invalidateQueries({ queryKey: ['rooms'] })
+      toast({ message: 'Room icon updated' })
+    },
+    onError: () =>
+      toast({ message: 'Failed to update room icon', type: 'error' }),
   })
 
   // Handlers
@@ -879,13 +1125,28 @@ export default function RoomDetailPage() {
     if (selectedDeviceIds.size === 0) return
     const newAssigns = [...pendingDeviceAssigns]
     for (const id of selectedDeviceIds) {
-      const device = allHubDevices?.find(d => String(d.id) === id)
-      if (device && !newAssigns.find(p => p.device_id === id)) {
+      if (newAssigns.find(p => p.device_id === id)) continue
+      // Check hub devices first, then look in available groups (includes Kasa)
+      const hubDevice = allHubDevices?.find(d => String(d.id) === id)
+      if (hubDevice) {
         newAssigns.push({
           device_id: id,
-          device_label: device.label,
-          device_type: device.device_type,
+          device_label: hubDevice.label,
+          device_type: hubDevice.device_type,
         })
+      } else {
+        // Check available groups (includes Kasa devices mapped to HubDevice shape)
+        for (const devices of availableDevicesByType.values()) {
+          const found = devices.find(d => String(d.id) === id)
+          if (found) {
+            newAssigns.push({
+              device_id: id,
+              device_label: found.label,
+              device_type: found.device_type,
+            })
+            break
+          }
+        }
       }
     }
     setPendingDeviceAssigns(newAssigns)
@@ -964,21 +1225,50 @@ export default function RoomDetailPage() {
     dimmer: 'Dimmers',
     twinkly: 'Twinkly',
     fairy: 'Fairy',
+    kasa_plug: 'Kasa plugs',
   }
 
   return (
     <div className="pb-40">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="mb-6">
-        <Link
-          to="/rooms"
-          className="mb-3 inline-flex items-center gap-1.5 text-sm text-body transition-colors hover:text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          All Rooms
-        </Link>
+        <BackLink to="/rooms" label="All Rooms" className="mb-3" />
 
         <div className="flex items-center gap-3">
+          {/* Room icon — click to change, or show add-icon button if none set */}
+          <div className="relative">
+            {room.icon ? (
+              <button
+                type="button"
+                onClick={() => setIconPickerOpen(v => !v)}
+                aria-label="Change room icon"
+                title="Change room icon"
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-fairy-400 transition-colors hover:bg-fairy-500/15 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-fairy-500"
+              >
+                <LucideIcon name={room.icon} className="h-5 w-5" aria-hidden="true" />
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIconPickerOpen(v => !v)}
+                aria-label="Add room icon"
+                title="Add room icon"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-dashed border-[var(--border-secondary)] text-caption transition-colors hover:border-fairy-500/50 hover:text-fairy-400 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-fairy-500"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+              </button>
+            )}
+            {iconPickerOpen && (
+              <div className="absolute left-0 top-full z-50 mt-1">
+                <IconPicker
+                  value={room.icon}
+                  onChange={(iconName) => updateIconMutation.mutate(iconName)}
+                  onClose={() => setIconPickerOpen(false)}
+                />
+              </div>
+            )}
+          </div>
+
           <h2 className="text-xl font-semibold text-heading">
             {room.name}
           </h2>
@@ -1010,249 +1300,625 @@ export default function RoomDetailPage() {
         )}
       </div>
 
+      <div className="space-y-4">
       {/* ── Settings card ───────────────────────────────────────────────────── */}
-      <section className="mb-8">
-        <h3 className="mb-3 text-sm font-medium text-body">
-          Room Settings
-        </h3>
-        <div className="space-y-4 rounded-xl card border p-4">
-          {/* Auto toggle */}
-          <div className="flex items-center justify-between">
-            <label
-              htmlFor="auto-toggle"
-              className="text-sm font-medium text-heading"
-            >
-              Automation
-            </label>
-            <Switch.Root
-              id="auto-toggle"
-              checked={effectiveAuto}
-              onCheckedChange={c => {
-                setAutoEnabled(c)
-                markDirty()
-              }}
-              className={cn(
-                'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
-                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                effectiveAuto ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
-              )}
-            >
-              <Switch.Thumb
-                className={cn(
-                  'block h-5 w-5 rounded-full bg-white shadow transition-transform',
-                  effectiveAuto ? 'translate-x-6' : 'translate-x-1',
-                )}
-              />
-            </Switch.Root>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-body">
-                Auto-off after inactivity (min)
+      <section>
+        <Accordion
+          id="room-settings"
+          title="Room Settings"
+          open={settingsOpen}
+          onToggle={() => setSettingsOpen(prev => !prev)}
+        >
+          <div className="space-y-4">
+            {/* Auto toggle */}
+            <div className="flex items-center justify-between">
+              <label
+                htmlFor="auto-toggle"
+                className="text-sm font-medium text-heading"
+              >
+                Automation
               </label>
-              <input
-                type="number"
-                min={0}
-                value={effectiveTimer}
-                onChange={e => {
-                  setTimer(Number(e.target.value))
+              <Switch.Root
+                id="auto-toggle"
+                checked={effectiveAuto}
+                onCheckedChange={c => {
+                  setAutoEnabled(c)
                   markDirty()
                 }}
-                className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-body">
-                Display Order
-              </label>
-              <input
-                type="number"
-                min={0}
-                value={effectiveOrder}
-                onChange={e => {
-                  setDisplayOrder(Number(e.target.value))
-                  markDirty()
-                }}
-                className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* ── Scenes ──────────────────────────────────────────────────────────── */}
-      {(() => {
-        const roomScenes = allScenes && name ? getScenesForRoom(allScenes, name) : []
-        const modesForRoom = allScenes && name ? getModesForRoom(allScenes, name) : []
-        const filteredScenes = selectedMode
-          ? roomScenes.filter(s => (Array.isArray(s.modes) ? s.modes : []).some(m => (m ?? '').toLowerCase() === selectedMode.toLowerCase()))
-          : roomScenes
-        const sortedScenes = sortScenesByPriority(filteredScenes, name ?? '')
-        const currentMode = system?.mode ?? ''
-        const headingId = 'scenes-section-heading'
-        const panelId = 'scenes-section-panel'
-
-        return (
-          <section className="mb-8">
-            <button
-              id={headingId}
-              aria-expanded={scenesOpen}
-              aria-controls={panelId}
-              onClick={() => setScenesOpen(prev => !prev)}
-              className={cn(
-                'flex w-full items-center justify-between py-3 text-left transition-colors',
-                'min-h-[44px]',
-                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                !scenesOpen && 'border-b border-[var(--border-secondary)]',
-              )}
-            >
-              <span className="flex items-center gap-2">
-                <span className="text-heading text-base font-semibold">Scenes</span>
-                {roomScenes.length > 0 && (
-                  <span className="rounded-full bg-fairy-500/15 px-2 py-0.5 text-[10px] font-bold text-fairy-400">
-                    {roomScenes.length}
-                  </span>
-                )}
-              </span>
-              <ChevronDown
                 className={cn(
-                  'h-5 w-5 text-[var(--text-secondary)] transition-transform duration-300',
-                  scenesOpen && 'rotate-180',
+                  'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                  effectiveAuto ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
                 )}
-                aria-hidden="true"
-              />
-            </button>
-
-            <div
-              id={panelId}
-              role="region"
-              aria-labelledby={headingId}
-              className="grid transition-all duration-300"
-              style={{ gridTemplateRows: scenesOpen ? '1fr' : '0fr' }}
-            >
-              <div className="overflow-hidden">
-                <div className="pt-3 pb-2">
-                  {/* Mode pills */}
-                  {modesForRoom.length > 0 && (
-                    <div className="mb-3 flex flex-wrap gap-2" role="group" aria-label="Filter scenes by mode">
-                      <button
-                        type="button"
-                        aria-pressed={selectedMode === null}
-                        onClick={() => setSelectedMode(null)}
-                        className={cn(
-                          'min-h-[44px] rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
-                          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                          selectedMode === null
-                            ? 'bg-fairy-500 text-white'
-                            : 'surface text-body hover:text-heading',
-                        )}
-                      >
-                        All
-                      </button>
-                      {modesForRoom.map(mode => (
-                        <button
-                          key={mode}
-                          type="button"
-                          aria-pressed={selectedMode === mode}
-                          onClick={() => setSelectedMode(prev => (prev === mode ? null : mode))}
-                          className={cn(
-                            'min-h-[44px] rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
-                            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                            selectedMode === mode
-                              ? 'bg-fairy-500 text-white'
-                              : 'surface text-body hover:text-heading',
-                          )}
-                        >
-                          {mode}
-                        </button>
-                      ))}
-                    </div>
+              >
+                <Switch.Thumb
+                  className={cn(
+                    'block h-5 w-5 rounded-full bg-white shadow transition-transform',
+                    effectiveAuto ? 'translate-x-6' : 'translate-x-1',
                   )}
+                />
+              </Switch.Root>
+            </div>
 
-                  {/* Scene rows */}
-                  {sortedScenes.length === 0 ? (
-                    <div className="rounded-xl card border p-6 text-center">
-                      <Sparkles className="mx-auto mb-3 h-8 w-8 text-[var(--text-caption)]" aria-hidden="true" />
-                      <p className="text-sm text-body">No scenes are assigned to this room yet.</p>
-                      <p className="mt-1 text-xs text-[var(--text-caption)]">
-                        Visit the{' '}
-                        <Link to="/scenes" className="text-fairy-400 underline hover:text-fairy-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
-                          Scenes page
-                        </Link>
-                        {' '}to create or assign scenes.
-                      </p>
-                    </div>
-                  ) : (
-                    <ul className="divide-y divide-[var(--border-secondary)]">
-                      {sortedScenes.map(scene => {
-                        const isActive = room?.current_scene === scene.name
-                        const season = isSceneInSeason(scene)
-                        const isDefault = currentMode
-                          ? getDefaultScene(allScenes ?? [], name ?? '', currentMode)?.name === scene.name
-                          : false
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-body">
+                  Auto-off after inactivity (min)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={effectiveTimer}
+                  onChange={e => {
+                    setTimer(Number(e.target.value))
+                    markDirty()
+                  }}
+                  className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-body">
+                  Display Order
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={effectiveOrder}
+                  onChange={e => {
+                    setDisplayOrder(Number(e.target.value))
+                    markDirty()
+                  }}
+                  className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                />
+              </div>
+            </div>
 
-                        return (
-                          <li key={scene.name}>
-                            <Link
-                              to={`/scenes/${encodeURIComponent(scene.name)}`}
-                              className={cn(
-                                'group flex min-h-[44px] items-center gap-3 py-3 transition-colors',
-                                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded-lg',
-                              )}
-                            >
-                              {/* Scene icon */}
-                              <div
-                                className="surface flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-base"
-                                aria-hidden="true"
-                              >
-                                {scene.icon || <Sparkles className="h-4 w-4 text-[var(--text-caption)]" />}
+            {/* ── Sonos controls (only shown when a speaker is mapped to this room) ── */}
+            {roomSpeaker && (
+              <div className="space-y-4 border-t border-[var(--border-secondary)] pt-4">
+                <p className="text-xs font-semibold text-caption">Music</p>
+
+                {/* Follow-me music toggle */}
+                <div>
+                  <div className="flex items-center justify-between">
+                    <label
+                      htmlFor="sonos-follow-me-toggle"
+                      className="text-sm font-medium text-heading"
+                    >
+                      Follow-me music
+                    </label>
+                    <Switch.Root
+                      id="sonos-follow-me-toggle"
+                      checked={room.sonos_follow_me}
+                      disabled={updateFollowMeMutation.isPending || sonosFollowMeStatus?.enabled === false}
+                      onCheckedChange={(c) => updateFollowMeMutation.mutate(c)}
+                      className={cn(
+                        'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
+                        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                        'disabled:cursor-not-allowed disabled:opacity-50',
+                        room.sonos_follow_me && sonosFollowMeStatus?.enabled !== false
+                          ? 'bg-fairy-500'
+                          : 'bg-[var(--border-secondary)]',
+                      )}
+                      aria-describedby="sonos-follow-me-desc"
+                    >
+                      <Switch.Thumb
+                        className={cn(
+                          'block h-5 w-5 rounded-full bg-white shadow transition-transform',
+                          room.sonos_follow_me ? 'translate-x-6' : 'translate-x-1',
+                        )}
+                      />
+                    </Switch.Root>
+                  </div>
+                  <p
+                    id="sonos-follow-me-desc"
+                    className={cn(
+                      'mt-1 text-xs',
+                      sonosFollowMeStatus?.enabled === false ? 'text-amber-400' : 'text-caption',
+                    )}
+                  >
+                    {sonosFollowMeStatus?.enabled === false
+                      ? 'Enable follow-me music in Settings to use this.'
+                      : 'Music follows you when you enter this room.'}
+                  </p>
+                </div>
+
+                {/* Auto-play rules */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-heading">Auto-play rules</p>
+                    {roomAutoPlayRules.length > 0 && (
+                      <span className="rounded-full bg-[var(--bg-tertiary)] px-2 py-0.5 text-xs text-caption">
+                        {roomAutoPlayRules.length}
+                      </span>
+                    )}
+                  </div>
+
+                  {roomAutoPlayRules.length > 0 && (
+                    <ul className="space-y-2" role="list">
+                      {roomAutoPlayRules.map(rule => {
+                        const isEditing = editingRuleId === rule.id
+                        const mainText = rule.favourite_name === '__continue__'
+                          ? `Continue what's already playing when mode changes to "${rule.mode_name}".`
+                          : `Play "${rule.favourite_name}" when mode changes to "${rule.mode_name}".`
+                        let conditionText: string | undefined
+                        if (rule.trigger_type === 'if_not_playing') conditionText = 'Only if nothing is playing.'
+                        else if (rule.trigger_type === 'if_source_not' && rule.trigger_value) conditionText = `Only if "${rule.trigger_value}" is not active.`
+                        if (rule.max_plays !== null) {
+                          const limitText = rule.max_plays === 1 ? 'Plays once per mode change.' : `Plays ${rule.max_plays} times per mode change.`
+                          conditionText = conditionText ? `${conditionText} ${limitText}` : limitText
+                        }
+
+                        if (isEditing) {
+                          return (
+                            <li key={rule.id} className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-tertiary)] p-4 space-y-4">
+                              <p className="text-heading text-sm font-medium">Edit auto-play rule</p>
+
+                              <div>
+                                <p className="text-heading text-sm mb-1.5">Room</p>
+                                <span className="inline-flex items-center rounded-full bg-fairy-500/10 px-3 py-1.5 text-sm font-medium text-fairy-400">{name}</span>
                               </div>
 
-                              {/* Name and badges */}
-                              <div className="min-w-0 flex-1">
-                                <span className="text-sm font-medium text-heading">{scene.name}</span>
-                                <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                                  {isDefault && (
-                                    <span className="flex items-center gap-1 rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400">
-                                      <Star className="h-3 w-3" fill="currentColor" aria-hidden="true" />
-                                      Default
-                                    </span>
-                                  )}
-                                  {season.hasSeason && (
-                                    <span className={cn(
-                                      'rounded-full px-2 py-0.5 text-[10px] font-medium',
-                                      season.inSeason
-                                        ? 'bg-emerald-500/10 text-emerald-400'
-                                        : 'bg-[var(--surface)] text-[var(--text-caption)]',
-                                    )}>
-                                      {season.label}
-                                    </span>
+                              <div>
+                                <label htmlFor="room-edit-rule-favourite" className="text-heading text-sm mb-1.5 block">Favourite</label>
+                                <FavouriteSelector favourites={sonosFavourites ?? []} value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-edit-rule-favourite" />
+                              </div>
+
+                              <div>
+                                <p className="text-heading text-sm mb-1.5">Mode</p>
+                                <PillSelect
+                                  id="room-edit-rule-mode"
+                                  options={sonosModes?.map(m => ({ value: m.name, label: m.name })) ?? []}
+                                  value={newRuleMode}
+                                  onChange={setNewRuleMode}
+                                  placeholder="Select a mode"
+                                  aria-label="Select a mode"
+                                />
+                              </div>
+
+                              {newRuleFavourite !== '__continue__' && (
+                                <div>
+                                  <p className="text-heading text-sm mb-2">Condition</p>
+                                  <CardRadioGroup
+                                    name="room-edit-trigger-type"
+                                    options={[
+                                      { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
+                                      { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
+                                      { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
+                                    ]}
+                                    value={newRuleTriggerType}
+                                    onChange={(v) => setNewRuleTriggerType(v as AutoPlayRule['trigger_type'])}
+                                    aria-label="Trigger condition"
+                                  />
+                                  {newRuleTriggerType === 'if_source_not' && (
+                                    <div className="mt-3">
+                                      <label htmlFor="room-edit-rule-source" className="text-caption text-xs mb-1.5 block">Source</label>
+                                      <PillSelect
+                                        id="room-edit-rule-source"
+                                        options={(availableSources ?? []).map(s => ({ value: s, label: s }))}
+                                        value={newRuleSourceValue}
+                                        onChange={setNewRuleSourceValue}
+                                        aria-label="Select a source"
+                                      />
+                                    </div>
                                   )}
                                 </div>
-                              </div>
-
-                              {/* Active indicator */}
-                              {isActive && (
-                                <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-fairy-400" aria-label="Currently active">
-                                  <span className="h-2 w-2 rounded-full bg-fairy-400" aria-hidden="true" />
-                                  Active
-                                </span>
                               )}
 
-                              <ChevronRight
-                                className="h-4 w-4 shrink-0 text-[var(--text-caption)] transition-colors group-hover:text-[var(--text-secondary)]"
-                                aria-hidden="true"
-                              />
-                            </Link>
+                              {/* Repeat limit */}
+                              <div>
+                                <p className="text-heading text-sm mb-1.5">Repeat limit</p>
+                                <p className="text-caption text-xs mb-2">
+                                  How many times this rule fires per mode change
+                                </p>
+                                <PillSelect
+                                  id="room-edit-rule-max-plays"
+                                  options={[
+                                    { value: '', label: 'Unlimited' },
+                                    { value: '1', label: 'Once' },
+                                    { value: '2', label: '2 times' },
+                                    { value: '3', label: '3 times' },
+                                    { value: '5', label: '5 times' },
+                                  ]}
+                                  value={newRuleMaxPlays}
+                                  onChange={setNewRuleMaxPlays}
+                                />
+                              </div>
+
+                              <div className="flex items-center gap-2 pt-1">
+                                <button
+                                  onClick={() => {
+                                    if (!newRuleFavourite || !newRuleMode) return
+                                    const effectiveTrigger = newRuleFavourite === '__continue__' ? 'mode_change' : newRuleTriggerType
+                                    editAutoPlayRuleMutation.mutate({
+                                      id: rule.id,
+                                      data: {
+                                        mode_name: newRuleMode,
+                                        favourite_name: newRuleFavourite,
+                                        trigger_type: effectiveTrigger,
+                                        trigger_value: effectiveTrigger === 'if_source_not' ? newRuleSourceValue : null,
+                                        max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
+                                      },
+                                    })
+                                  }}
+                                  disabled={!newRuleFavourite || !newRuleMode || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || editAutoPlayRuleMutation.isPending}
+                                  className="rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                                >
+                                  {editAutoPlayRuleMutation.isPending ? 'Saving...' : 'Save changes'}
+                                </button>
+                                <button onClick={resetRuleForm} className="rounded-lg px-4 py-2 min-h-[44px] border border-[var(--border-secondary)] bg-[var(--bg-secondary)] text-heading text-sm hover:bg-[var(--bg-tertiary)] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
+                                  Cancel
+                                </button>
+                              </div>
+
+                              <div className="border-t border-red-500/20 pt-4 mt-4">
+                                <p className="text-sm font-medium text-red-400 mb-2">Danger zone</p>
+                                <button
+                                  onClick={() => deleteAutoPlayRuleMutation.mutate(rule.id)}
+                                  disabled={deleteAutoPlayRuleMutation.isPending}
+                                  className={cn(
+                                    'rounded-lg px-4 py-2 min-h-[44px] text-sm font-medium transition-colors',
+                                    'border border-red-500/30 text-red-400 hover:bg-red-500/10',
+                                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500',
+                                    'disabled:cursor-not-allowed disabled:opacity-40',
+                                  )}
+                                >
+                                  {deleteAutoPlayRuleMutation.isPending ? 'Deleting...' : 'Delete this rule'}
+                                </button>
+                              </div>
+                            </li>
+                          )
+                        }
+
+                        return (
+                          <li
+                            key={rule.id}
+                            className="flex items-center justify-between gap-3 rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-tertiary)] px-3 py-2.5"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className={cn('text-xs', rule.enabled ? 'text-body' : 'text-caption line-through')}>
+                                {mainText}
+                              </p>
+                              {conditionText && (
+                                <p className={cn('text-xs mt-0.5', rule.enabled ? 'text-caption' : 'text-caption line-through')}>
+                                  {conditionText}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <Switch.Root
+                                checked={!!rule.enabled}
+                                onCheckedChange={checked =>
+                                  toggleAutoPlayRuleMutation.mutate({ id: rule.id, enabled: checked })
+                                }
+                                disabled={toggleAutoPlayRuleMutation.isPending}
+                                aria-label={`${rule.enabled ? 'Disable' : 'Enable'} rule for ${rule.mode_name}`}
+                                className={cn(
+                                  'relative h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors',
+                                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                                  'disabled:cursor-not-allowed disabled:opacity-40',
+                                  rule.enabled ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
+                                )}
+                              >
+                                <Switch.Thumb
+                                  className={cn(
+                                    'block h-4 w-4 rounded-full bg-white shadow transition-transform',
+                                    rule.enabled ? 'translate-x-5' : 'translate-x-1',
+                                  )}
+                                />
+                              </Switch.Root>
+                              <button
+                                onClick={() => openEditRule(rule)}
+                                aria-label={`Edit rule for ${rule.mode_name}`}
+                                className={cn(
+                                  'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg',
+                                  'text-caption transition-colors hover:bg-fairy-500/10 hover:text-fairy-400',
+                                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                                )}
+                              >
+                                <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                                <span className="sr-only">Edit rule</span>
+                              </button>
+                            </div>
                           </li>
                         )
                       })}
                     </ul>
                   )}
+
+                  {showAddRuleForm ? (
+                    <div className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-tertiary)] p-4 space-y-4">
+                      <p className="text-heading text-sm font-medium">New auto-play rule</p>
+
+                      <div>
+                        <p className="text-heading text-sm mb-1.5">Room</p>
+                        <span className="inline-flex items-center rounded-full bg-fairy-500/10 px-3 py-1.5 text-sm font-medium text-fairy-400">{name}</span>
+                      </div>
+
+                      <div>
+                        <label htmlFor="room-detail-rule-favourite" className="text-heading text-sm mb-1.5 block">Favourite</label>
+                        <FavouriteSelector favourites={sonosFavourites ?? []} value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-detail-rule-favourite" />
+                      </div>
+
+                      <div>
+                        <p className="text-heading text-sm mb-1.5">Mode</p>
+                        <PillSelect
+                          id="room-detail-rule-mode"
+                          options={sonosModes?.map(m => ({ value: m.name, label: m.name })) ?? []}
+                          value={newRuleMode}
+                          onChange={setNewRuleMode}
+                          placeholder="Select a mode"
+                          aria-label="Select a mode"
+                        />
+                      </div>
+
+                      {newRuleFavourite !== '__continue__' && (
+                        <div>
+                          <p className="text-heading text-sm mb-2">Condition</p>
+                          <CardRadioGroup
+                            name="room-detail-trigger-type"
+                            options={[
+                              { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
+                              { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
+                              { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
+                            ]}
+                            value={newRuleTriggerType}
+                            onChange={(v) => setNewRuleTriggerType(v as AutoPlayRule['trigger_type'])}
+                            aria-label="Trigger condition"
+                          />
+                          {newRuleTriggerType === 'if_source_not' && (
+                            <div className="mt-3">
+                              <label htmlFor="room-detail-rule-source" className="text-caption text-xs mb-1.5 block">Source</label>
+                              <PillSelect
+                                id="room-detail-rule-source"
+                                options={(availableSources ?? []).map(s => ({ value: s, label: s }))}
+                                value={newRuleSourceValue}
+                                onChange={setNewRuleSourceValue}
+                                aria-label="Select a source"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Repeat limit */}
+                      <div>
+                        <p className="text-heading text-sm mb-1.5">Repeat limit</p>
+                        <p className="text-caption text-xs mb-2">
+                          How many times this rule fires per mode change
+                        </p>
+                        <PillSelect
+                          id="room-add-rule-max-plays"
+                          options={[
+                            { value: '', label: 'Unlimited' },
+                            { value: '1', label: 'Once' },
+                            { value: '2', label: '2 times' },
+                            { value: '3', label: '3 times' },
+                            { value: '5', label: '5 times' },
+                          ]}
+                          value={newRuleMaxPlays}
+                          onChange={setNewRuleMaxPlays}
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-1">
+                        <button
+                          onClick={() => {
+                            if (!newRuleFavourite || !newRuleMode) return
+                            const effectiveTrigger = newRuleFavourite === '__continue__' ? 'mode_change' : newRuleTriggerType
+                            createAutoPlayRuleMutation.mutate({
+                              room_name: name ?? null,
+                              mode_name: newRuleMode,
+                              favourite_name: newRuleFavourite,
+                              trigger_type: effectiveTrigger,
+                              trigger_value: effectiveTrigger === 'if_source_not' ? newRuleSourceValue : null,
+                              enabled: 1,
+                              max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
+                            })
+                          }}
+                          disabled={!newRuleFavourite || !newRuleMode || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || createAutoPlayRuleMutation.isPending}
+                          className="rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                        >
+                          {createAutoPlayRuleMutation.isPending ? 'Saving...' : 'Save rule'}
+                        </button>
+                        <button onClick={resetRuleForm} className="rounded-lg px-4 py-2 min-h-[44px] border border-[var(--border-secondary)] bg-[var(--bg-secondary)] text-heading text-sm hover:bg-[var(--bg-tertiary)] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : !editingRuleId && (
+                    <button
+                      onClick={() => { resetRuleForm(); setShowAddRuleForm(true) }}
+                      className="rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                    >
+                      Add auto-play rule
+                    </button>
+                  )}
+
+                  {roomAutoPlayRules.length === 0 && !showAddRuleForm && (
+                    <p className="text-xs text-caption">
+                      No auto-play rules for this room yet. Add a rule to automatically start music when a mode activates.
+                    </p>
+                  )}
                 </div>
+
+                {/* Now playing indicator — shown when speaker is in follow-me group */}
+                {isInFollowMeGroup && roomZone && (
+                  <div className={cn(
+                    'rounded-lg border border-fairy-500/20 bg-fairy-500/5 px-3 py-2.5',
+                  )}>
+                    <p className="mb-1 text-xs font-medium text-caption">Now playing</p>
+                    {roomZone.coordinator.state.currentTrack.type === 'line_in' ? (
+                      <p className="text-sm text-fairy-400">External audio source active</p>
+                    ) : roomZone.coordinator.state.playbackState === 'PLAYING' ? (
+                      <div>
+                        <p className="break-words text-sm font-medium text-fairy-400">
+                          {roomZone.coordinator.state.currentTrack.title || roomZone.coordinator.state.currentTrack.stationName || 'Unknown track'}
+                        </p>
+                        {roomZone.coordinator.state.currentTrack.artist && (
+                          <p className="mt-0.5 break-words text-xs text-caption">
+                            {roomZone.coordinator.state.currentTrack.artist}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-caption">Paused</p>
+                    )}
+                  </div>
+                )}
+
+                {/* Speaker detail link */}
+                <Link
+                  to={`/sonos/${encodeURIComponent(roomSpeaker.speaker_name)}`}
+                  className="inline-flex items-center gap-1.5 text-xs text-fairy-400 hover:text-fairy-300 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                  View speaker details
+                </Link>
               </div>
-            </div>
+            )}
+          </div>
+        </Accordion>
+      </section>
+
+      {/* ── Scenes (mode-grouped) ────────────────────────────────────────────── */}
+      {(() => {
+        const roomScenes = allScenes && name ? getScenesForRoom(allScenes, name) : []
+        const modesForRoom = allScenes && name ? getModesForRoom(allScenes, name, systemCurrent?.all_modes) : []
+        const modeIcons = systemCurrent?.mode_icons ?? {}
+
+        return (
+          <section>
+            <Accordion
+              id="room-scenes"
+              title="Scenes"
+              open={scenesOpen}
+              onToggle={() => setScenesOpen(prev => !prev)}
+              count={roomScenes.length}
+            >
+              <div className="pt-1 pb-2">
+                {roomScenes.length === 0 ? (
+                  <div className="rounded-xl card border p-6 text-center">
+                    <Sparkles className="mx-auto mb-3 h-8 w-8 text-[var(--text-caption)]" aria-hidden="true" />
+                    <p className="text-sm text-body">No scenes are assigned to this room yet.</p>
+                    <p className="mt-1 text-xs text-[var(--text-caption)]">
+                      Visit the{' '}
+                      <Link to="/scenes" className="text-fairy-400 underline hover:text-fairy-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
+                        Scenes page
+                      </Link>
+                      {' '}to create or assign scenes.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {modesForRoom.map(mode => {
+                      const scenesInMode = roomScenes
+                        .filter(s => (Array.isArray(s.modes) ? s.modes : []).some(m => (m ?? '').toLowerCase() === mode.toLowerCase()))
+                        .sort((a, b) => a.name.localeCompare(b.name))
+                      if (scenesInMode.length === 0) return null
+                      const defaultSceneName = getDefaultScene(roomDefaultScenes ? { [name ?? '']: roomDefaultScenes } : undefined, name ?? '', mode)
+
+                      return (
+                        <div key={mode}>
+                          <h4 className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-caption">
+                            <LucideIcon name={modeIcons[mode] ?? null} className="h-4 w-4 text-fairy-400" aria-hidden="true" />
+                            {mode}
+                          </h4>
+                          <ul className="divide-y divide-[var(--border-secondary)] rounded-xl card border overflow-hidden">
+                            {scenesInMode.map(scene => {
+                              const isActive = room?.current_scene === scene.name
+                              const season = isSceneInSeason(scene)
+                              const isDefault = scene.name === defaultSceneName
+
+                              return (
+                                <li key={scene.name} className={cn(
+                                  'flex items-center gap-3 px-3 py-2.5',
+                                  isDefault && 'bg-fairy-500/5',
+                                )}>
+                                  {/* Default scene radio control */}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      setDefaultSceneMutation.mutate({
+                                        mode,
+                                        scene: isDefault ? null : scene.name,
+                                      })
+                                    }}
+                                    aria-label={isDefault ? `Clear ${scene.name} as default scene for ${mode}` : `Set ${scene.name} as default scene for ${mode}`}
+                                    className={cn(
+                                      'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+                                      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                                      isDefault
+                                        ? 'border-fairy-500 bg-fairy-500'
+                                        : 'border-[var(--border-secondary)] hover:border-fairy-400',
+                                    )}
+                                  >
+                                    {isDefault && (
+                                      <Activity className="h-3 w-3 text-white" aria-hidden="true" />
+                                    )}
+                                  </button>
+
+                                  {/* Link to scene editor */}
+                                  <Link
+                                    to={`/scenes/${encodeURIComponent(scene.name)}`}
+                                    className={cn(
+                                      'group flex min-h-[44px] flex-1 items-center gap-3 transition-colors',
+                                      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded-lg',
+                                    )}
+                                  >
+                                    <div
+                                      className="surface flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-base"
+                                      aria-hidden="true"
+                                    >
+                                      {scene.icon || <Sparkles className="h-4 w-4 text-[var(--text-caption)]" />}
+                                    </div>
+
+                                    <div className="min-w-0 flex-1">
+                                      <span className="text-sm font-medium text-heading">{scene.name}</span>
+                                      <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+                                        {isDefault && (
+                                          <span className="flex items-center gap-1 rounded-full bg-fairy-500/10 px-2 py-0.5 text-[10px] font-medium text-fairy-400">
+                                            <Activity className="h-3 w-3" aria-hidden="true" />
+                                            Default
+                                          </span>
+                                        )}
+                                        {season.hasSeason && (
+                                          <span className={cn(
+                                            'rounded-full px-2 py-0.5 text-[10px] font-medium',
+                                            season.inSeason
+                                              ? 'bg-emerald-500/10 text-emerald-400'
+                                              : 'bg-[var(--surface)] text-[var(--text-caption)]',
+                                          )}>
+                                            {season.label}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+
+                                    {isActive && (
+                                      <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-fairy-400" aria-label="Currently active">
+                                        <span className="h-2 w-2 rounded-full bg-fairy-400" aria-hidden="true" />
+                                        Active
+                                      </span>
+                                    )}
+
+                                    <ChevronRight
+                                      className="h-4 w-4 shrink-0 text-[var(--text-caption)] transition-colors group-hover:text-[var(--text-secondary)]"
+                                      aria-hidden="true"
+                                    />
+                                  </Link>
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </Accordion>
           </section>
         )
       })()}
@@ -1261,9 +1927,14 @@ export default function RoomDetailPage() {
       <RoomIntelligence roomName={name!} />
 
       {/* ── Devices section with tabs ───────────────────────────────────────── */}
-      <section className="mb-8">
-        <h3 className="mb-3 text-sm font-medium text-body">Devices</h3>
-
+      <section>
+        <Accordion
+          id="room-devices"
+          title="Devices"
+          open={devicesOpen}
+          onToggle={() => setDevicesOpen(prev => !prev)}
+          count={effectiveAssigned.length + filteredDeviceAssignments.length}
+        >
         <Tabs.Root value={activeTab} onValueChange={setActiveTab}>
           <Tabs.List className="mb-4 flex gap-1 overflow-x-auto rounded-xl card p-1">
             <Tabs.Trigger
@@ -1331,11 +2002,12 @@ export default function RoomDetailPage() {
           {/* ── Lights tab ───────────────────────────────────────────────────── */}
           <Tabs.Content value="lights" className="space-y-4">
             {/* Sticky search */}
-            <StickySearch
+            <SearchInput
               value={lightSearch}
               onChange={setLightSearch}
               placeholder="Search lights by name..."
               matchSummary={lightMatchSummary}
+              sticky
             />
 
             {/* Multi-select toolbar */}
@@ -1401,6 +2073,7 @@ export default function RoomDetailPage() {
                       onIdentify={() =>
                         identifyMutation.mutate(`id:${a.id}`)
                       }
+                      deactivated={isLightDeactivated(a.id)}
                     />
                   ))}
                 </div>
@@ -1423,33 +2096,51 @@ export default function RoomDetailPage() {
               {filteredAvailableByGroup.size > 0 ? (
                 <div className="space-y-2">
                   {Array.from(filteredAvailableByGroup.entries()).map(
-                    ([groupName, lights]) => (
-                      <CollapsibleDeviceGroup
-                        key={groupName}
-                        title={groupName}
-                        count={lights.length}
-                        totalInGroup={allLightsByGroup.get(groupName)?.length ?? lights.length}
-                        defaultOpen={isSearchingLights}
-                        onAssignAll={() => handleAssignAllInGroup(lights)}
-                        fullyAssigned={isGroupFullyAssigned(groupName)}
-                      >
-                        <div className="space-y-1">
-                          {lights.map(light => (
-                            <AvailableLightRow
-                              key={light.id}
-                              light={light}
-                              onAdd={() => handleAssign(light)}
-                              onIdentify={() =>
-                                identifyMutation.mutate(`id:${light.id}`)
-                              }
-                              multiSelectMode={lightMultiSelect}
-                              selected={selectedLightIds.has(light.id)}
-                              onToggleSelect={() => toggleLightSelect(light.id)}
-                            />
-                          ))}
-                        </div>
-                      </CollapsibleDeviceGroup>
-                    ),
+                    ([groupName, lights]) => {
+                      const fullyAssigned = isGroupFullyAssigned(groupName)
+                      const isOpen = isSearchingLights || openLightGroups.has(groupName)
+                      return (
+                        <Accordion
+                          key={groupName}
+                          id={`light-group-${groupName}`}
+                          title={groupName}
+                          open={isOpen}
+                          onToggle={() => toggleLightGroup(groupName)}
+                          count={lights.length}
+                          trailing={
+                            fullyAssigned ? (
+                              <Check className="h-3.5 w-3.5 text-fairy-400" aria-label="All assigned" />
+                            ) : lights.length > 0 ? (
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); handleAssignAllInGroup(lights) }}
+                                className="flex items-center gap-1 rounded-lg px-2.5 min-h-[36px] text-[11px] font-medium text-fairy-400 transition-colors hover:bg-fairy-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                                aria-label={`Assign all ${lights.length} from ${groupName}`}
+                              >
+                                <Plus className="h-3 w-3" />
+                                Assign all
+                              </button>
+                            ) : null
+                          }
+                        >
+                          <div className="space-y-1">
+                            {lights.map(light => (
+                              <AvailableLightRow
+                                key={light.id}
+                                light={light}
+                                onAdd={() => handleAssign(light)}
+                                onIdentify={() =>
+                                  identifyMutation.mutate(`id:${light.id}`)
+                                }
+                                multiSelectMode={lightMultiSelect}
+                                selected={selectedLightIds.has(light.id)}
+                                onToggleSelect={() => toggleLightSelect(light.id)}
+                              />
+                            ))}
+                          </div>
+                        </Accordion>
+                      )
+                    },
                   )}
                 </div>
               ) : availableByGroup.size > 0 && lightSearch.trim() ? (
@@ -1493,11 +2184,12 @@ export default function RoomDetailPage() {
           {/* ── Switches tab ─────────────────────────────────────────────────── */}
           <Tabs.Content value="switches" className="space-y-4">
             {/* Sticky search */}
-            <StickySearch
+            <SearchInput
               value={deviceSearch}
               onChange={setDeviceSearch}
               placeholder="Search devices by name..."
               matchSummary={deviceMatchSummary}
+              sticky
             />
 
             {/* Multi-select toolbar */}
@@ -1560,6 +2252,11 @@ export default function RoomDetailPage() {
                       assignment={d}
                       onRemove={() => handleUnassignDevice(d.device_id)}
                       onToggleExclude={() => handleToggleDeviceExclude(d.device_id)}
+                      deactivated={
+                        d.device_type.startsWith('kasa')
+                          ? isKasaDeviceDeactivated(d.device_id)
+                          : isHubDeviceDeactivated(d.device_id)
+                      }
                     />
                   ))}
                 </div>
@@ -1582,29 +2279,46 @@ export default function RoomDetailPage() {
               {filteredAvailableDevicesByType.size > 0 ? (
                 <div className="space-y-2">
                   {Array.from(filteredAvailableDevicesByType.entries()).map(
-                    ([typeName, devices]) => (
-                      <CollapsibleDeviceGroup
-                        key={typeName}
-                        title={deviceTypeLabels[typeName] ?? typeName}
-                        count={devices.length}
-                        totalInGroup={availableDevicesByType.get(typeName)?.length ?? devices.length}
-                        defaultOpen={isSearchingDevices}
-                        onAssignAll={() => handleAssignAllDevicesInType(devices)}
-                      >
-                        <div className="space-y-1">
-                          {devices.map(device => (
-                            <AvailableDeviceRow
-                              key={device.id}
-                              device={device}
-                              onAdd={() => handleAssignDevice(device)}
-                              multiSelectMode={deviceMultiSelect}
-                              selected={selectedDeviceIds.has(String(device.id))}
-                              onToggleSelect={() => toggleDeviceSelect(String(device.id))}
-                            />
-                          ))}
-                        </div>
-                      </CollapsibleDeviceGroup>
-                    ),
+                    ([typeName, devices]) => {
+                      const groupLabel = deviceTypeLabels[typeName] ?? typeName
+                      const isOpen = isSearchingDevices || openDeviceGroups.has(typeName)
+                      return (
+                        <Accordion
+                          key={typeName}
+                          id={`device-group-${typeName}`}
+                          title={groupLabel}
+                          open={isOpen}
+                          onToggle={() => toggleDeviceGroup(typeName)}
+                          count={devices.length}
+                          trailing={
+                            devices.length > 0 ? (
+                              <button
+                                type="button"
+                                onClick={e => { e.stopPropagation(); handleAssignAllDevicesInType(devices) }}
+                                className="flex items-center gap-1 rounded-lg px-2.5 min-h-[36px] text-[11px] font-medium text-fairy-400 transition-colors hover:bg-fairy-500/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                                aria-label={`Assign all ${devices.length} from ${groupLabel}`}
+                              >
+                                <Plus className="h-3 w-3" />
+                                Assign all
+                              </button>
+                            ) : null
+                          }
+                        >
+                          <div className="space-y-1">
+                            {devices.map(device => (
+                              <AvailableDeviceRow
+                                key={device.id}
+                                device={device}
+                                onAdd={() => handleAssignDevice(device)}
+                                multiSelectMode={deviceMultiSelect}
+                                selected={selectedDeviceIds.has(String(device.id))}
+                                onToggleSelect={() => toggleDeviceSelect(String(device.id))}
+                              />
+                            ))}
+                          </div>
+                        </Accordion>
+                      )
+                    },
                   )}
                 </div>
               ) : availableDevicesByType.size > 0 && deviceSearch.trim() ? (
@@ -1615,9 +2329,9 @@ export default function RoomDetailPage() {
                 <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
                   All devices have been assigned to rooms.
                 </p>
-              ) : !allHubDevices ? (
+              ) : !allHubDevices && !allKasaDevices ? (
                 <p className="rounded-xl border border-dashed border-[var(--border-secondary)] py-6 text-center text-xs text-caption">
-                  No Hubitat devices found. Check your hub connection.
+                  No devices found. Check your hub and Kasa sidecar connections.
                 </p>
               ) : null}
             </div>
@@ -1663,9 +2377,6 @@ export default function RoomDetailPage() {
                             className="h-11 min-w-0 flex-1 rounded-lg border border-[var(--border-secondary)] surface px-2.5 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                           >
                             <option value="" disabled>Select a sensor</option>
-                            {sensor.name && !hubSensors.some(d => d.label === sensor.name) && (
-                              <option value={sensor.name}>{sensor.name}</option>
-                            )}
                             {hubSensors
                               .filter(d => d.label === sensor.name || !assignedNames.has(d.label))
                               .map(d => (
@@ -1698,10 +2409,12 @@ export default function RoomDetailPage() {
             })()}
           </Tabs.Content>
         </Tabs.Root>
+        </Accordion>
       </section>
+      </div>
 
       {/* ── Danger zone ────────────────────────────────────────────────────── */}
-      <section className="mb-8">
+      <section className="mt-8">
         <h3 className="mb-3 text-sm font-medium text-red-400">Danger Zone</h3>
         <button
           onClick={() => {

@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ChevronRight, Plus, Moon } from 'lucide-react'
+import { ChevronRight, Plus } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { ModeWithTriggers, ModeTrigger, SunScheduleEntry } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { SUN_EVENT_LABELS } from './modeUtils'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 
 export { SUN_EVENT_LABELS } from './modeUtils'
 
@@ -151,12 +152,11 @@ function ModeCard({ mode, isActive, nextTime, onClick }: ModeCardProps) {
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            {mode.isSleepMode && (
-              <Moon
-                className="h-3.5 w-3.5 shrink-0 text-[var(--text-muted)]"
-                aria-label="Sleep mode"
-              />
-            )}
+            <LucideIcon
+              name={mode.icon}
+              className="h-4 w-4 shrink-0 text-fairy-400"
+              aria-hidden="true"
+            />
             <span className="text-heading text-sm font-semibold">
               {mode.name}
             </span>

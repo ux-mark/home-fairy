@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Power, Moon } from 'lucide-react'
+import { ArrowLeft, Power, Moon, AlertTriangle, Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { Room, Scene } from '@/lib/api'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 
 // ── Room scene list ──────────────────────────────────────────────────────────
 
@@ -53,7 +54,8 @@ function WatchRoomView({
         <ArrowLeft className="h-5 w-5" />
       </button>
 
-      <h2 className="mb-3 text-center text-lg font-bold text-heading">
+      <h2 className="mb-3 flex items-center justify-center gap-2 text-center text-lg font-bold text-heading">
+        <LucideIcon name={room.icon} className="h-5 w-5 text-fairy-400" aria-hidden="true" />
         {room.name}
       </h2>
 
@@ -86,7 +88,7 @@ function WatchRoomView({
                 : 'surface text-heading active:brightness-90 dark:active:brightness-110',
             )}
           >
-            {scene.icon && <span className="mr-2 text-lg">{scene.icon}</span>}
+            {scene.icon && <span className="mr-2 text-lg" aria-hidden="true">{scene.icon}</span>}
             {scene.name}
           </button>
         ))}
@@ -101,7 +103,7 @@ export default function WatchPage() {
   const queryClient = useQueryClient()
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null)
 
-  const { data: rooms } = useQuery({
+  const { data: rooms, isLoading, isError, refetch } = useQuery({
     queryKey: ['rooms'],
     queryFn: api.rooms.getAll,
     refetchInterval: 10_000,
@@ -137,6 +139,33 @@ export default function WatchPage() {
 
   const currentMode = system?.mode ?? 'Evening'
   const currentRoom = rooms?.find(r => r.name === selectedRoom)
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16">
+        <div className="h-4 w-32 animate-pulse rounded bg-zinc-700" />
+        <div className="h-4 w-24 animate-pulse rounded bg-zinc-700" />
+        <div className="h-4 w-28 animate-pulse rounded bg-zinc-700" />
+      </div>
+    )
+  }
+
+  // Error state
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+        <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
+        <p className="text-zinc-400">Unable to load data. Check your connection and try again.</p>
+        <button
+          onClick={() => refetch()}
+          className="rounded-lg bg-fairy-600 px-4 py-2 text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        >
+          Try again
+        </button>
+      </div>
+    )
+  }
 
   // Show room detail view
   if (selectedRoom && currentRoom) {
@@ -176,7 +205,8 @@ export default function WatchPage() {
                   : 'surface',
               )}
             >
-              <span className="text-base font-semibold text-heading">
+              <span className="flex items-center gap-2 text-base font-semibold text-heading">
+                <LucideIcon name={room.icon} className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
                 {room.name}
               </span>
               {room.current_scene && (
@@ -195,16 +225,20 @@ export default function WatchPage() {
           disabled={nighttimeMutation.isPending || allOffMutation.isPending}
           className="flex flex-1 min-h-[52px] items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-base font-bold text-white transition-colors active:bg-indigo-700 disabled:opacity-50"
         >
-          <Moon className="h-5 w-5" />
-          Nighttime
+          {nighttimeMutation.isPending
+            ? <Loader2 className="h-5 w-5 animate-spin" />
+            : <Moon className="h-5 w-5" />}
+          {nighttimeMutation.isPending ? 'Activating...' : 'Nighttime'}
         </button>
         <button
           onClick={() => allOffMutation.mutate()}
           disabled={allOffMutation.isPending || nighttimeMutation.isPending}
           className="flex flex-1 min-h-[52px] items-center justify-center gap-2 rounded-xl bg-red-600 px-4 py-3 text-base font-bold text-white transition-colors active:bg-red-700 disabled:opacity-50"
         >
-          <Power className="h-5 w-5" />
-          All Off
+          {allOffMutation.isPending
+            ? <Loader2 className="h-5 w-5 animate-spin" />
+            : <Power className="h-5 w-5" />}
+          {allOffMutation.isPending ? 'Turning off...' : 'All Off'}
         </button>
       </div>
     </div>

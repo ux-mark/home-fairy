@@ -1,7 +1,10 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { lifxClient, getRateLimitStatus } from '../lib/lifx-client.js'
+import { deviceHealthService } from '../lib/device-health-service.js'
 import { getAll, getOne } from '../db/index.js'
+
+const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
 const router = Router()
 
@@ -58,7 +61,7 @@ router.get('/lights', async (_req: Request, res: Response) => {
     res.json(cleaned)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -79,7 +82,7 @@ router.put('/lights/states', async (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -130,7 +133,7 @@ router.get('/lights/:lightId/usage', (req: Request, res: Response) => {
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -142,16 +145,20 @@ router.get('/lights/:selector', async (req: Request, res: Response) => {
     res.json(data)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
 // PUT /lights/:selector/state — set light state
 router.put('/lights/:selector/state', async (req: Request, res: Response) => {
+  const selector = req.params.selector as string
   try {
-    const selector = req.params.selector as string
     const body = stateSchema.parse(req.body)
     const data = await lifxClient.setState(selector, body)
+    // Record success when selector is a specific light ID
+    if (selector.startsWith('id:')) {
+      deviceHealthService.recordSuccess('lifx', selector.replace('id:', ''))
+    }
     res.json(data)
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -159,19 +166,28 @@ router.put('/lights/:selector/state', async (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    if (selector.startsWith('id:')) {
+      deviceHealthService.recordFailure('lifx', selector.replace('id:', ''), msg)
+    }
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
 // POST /lights/:selector/toggle — toggle power
 router.post('/lights/:selector/toggle', async (req: Request, res: Response) => {
+  const selector = req.params.selector as string
   try {
-    const selector = req.params.selector as string
     const data = await lifxClient.toggle(selector)
+    if (selector.startsWith('id:')) {
+      deviceHealthService.recordSuccess('lifx', selector.replace('id:', ''))
+    }
     res.json(data)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    if (selector.startsWith('id:')) {
+      deviceHealthService.recordFailure('lifx', selector.replace('id:', ''), msg)
+    }
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -183,7 +199,7 @@ router.post('/lights/:selector/identify', async (req: Request, res: Response) =>
     res.json(data)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -195,7 +211,7 @@ router.post('/lights/:selector/effects/off', async (req: Request, res: Response)
     res.json(data)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -230,7 +246,7 @@ router.post('/lights/:selector/effects/:effect', async (req: Request, res: Respo
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
@@ -240,7 +256,7 @@ router.post('/test', async (_req: Request, res: Response) => {
     const lights = await lifxClient.listAll()
     const connected = lights.filter((l: Record<string, unknown>) => l.connected)
     if (connected.length === 0) {
-      res.json({ success: false, message: 'No connected lights found' })
+      res.status(503).json({ success: false, message: 'No connected lights found' })
       return
     }
     // Pick a random connected light and identify it
@@ -249,7 +265,7 @@ router.post('/test', async (_req: Request, res: Response) => {
     res.json({ success: true, message: `Identified ${light.label}`, light: light.label })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.json({ success: false, message: msg })
+    res.status(503).json({ success: false, message: IS_PRODUCTION ? 'Service unavailable' : msg })
   }
 })
 
@@ -260,7 +276,7 @@ router.get('/scenes', async (_req: Request, res: Response) => {
     res.json(data)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(500).json({ error: msg })
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 

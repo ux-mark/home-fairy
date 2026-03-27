@@ -5,25 +5,29 @@ import * as Tabs from '@radix-ui/react-tabs'
 import {
   Plus,
   ChevronRight,
-  ChevronDown,
   Sparkles,
   Search,
   CalendarDays,
-  Star,
+  Activity,
   Clock,
+  AlertTriangle,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Scene } from '@/lib/api'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import {
   isSceneInSeason,
   getDefaultScene,
   isStaleScene,
-  sortScenesByPriority,
   getModesForRoom,
   formatRelativeTime,
 } from '@/lib/scene-utils'
+import { SearchInput } from '@/components/ui/SearchInput'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { Accordion } from '@/components/ui/Accordion'
+import { FilterChip } from '@/components/ui/FilterChip'
 
 // ---------------------------------------------------------------------------
 // Skeleton
@@ -47,7 +51,7 @@ function SkeletonAccordion() {
 function SceneIcon({ icon }: { icon: string }) {
   if (icon && icon.trim()) {
     return (
-      <div className="surface flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-lg">
+      <div className="surface flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-lg" aria-hidden="true">
         {icon}
       </div>
     )
@@ -68,9 +72,10 @@ interface SceneRowProps {
   isActive: boolean
   isDefault: boolean
   showRoomBadges?: boolean
+  roomIconMap?: Record<string, string | null>
 }
 
-function SceneRow({ scene, isActive, isDefault, showRoomBadges }: SceneRowProps) {
+function SceneRow({ scene, isDefault, isActive, showRoomBadges, roomIconMap }: SceneRowProps) {
   const season = isSceneInSeason(scene)
   const roomList = Array.isArray(scene.rooms) ? scene.rooms : []
 
@@ -90,8 +95,8 @@ function SceneRow({ scene, isActive, isDefault, showRoomBadges }: SceneRowProps)
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="text-heading text-sm font-medium">{scene.name}</span>
           {isDefault && (
-            <span className="flex items-center gap-0.5 text-xs font-medium text-amber-400">
-              <Star className="h-3 w-3" fill="currentColor" aria-hidden="true" />
+            <span className="flex items-center gap-0.5 text-xs font-medium text-fairy-400">
+              <Activity className="h-3 w-3" aria-hidden="true" />
               Default
             </span>
           )}
@@ -110,8 +115,9 @@ function SceneRow({ scene, isActive, isDefault, showRoomBadges }: SceneRowProps)
           {showRoomBadges && roomList.filter(r => r?.name).map(r => (
             <span
               key={r.name}
-              className="surface text-caption rounded-full px-2 py-0.5 text-[10px] font-medium"
+              className="surface text-caption inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
             >
+              <LucideIcon name={roomIconMap?.[r.name] ?? null} className="h-3 w-3 shrink-0" aria-hidden="true" />
               {r.name}
             </span>
           ))}
@@ -143,27 +149,38 @@ function SceneRow({ scene, isActive, isDefault, showRoomBadges }: SceneRowProps)
 
 interface RoomAccordionProps {
   roomName: string
+  roomIcon: string | null | undefined
   allScenes: Scene[]
   filteredScenes: Scene[]
   activeSceneNames: Set<string>
+  defaultScenes: Record<string, Record<string, string>> | undefined
+  systemModes: string[] | undefined
+  modeIcons: Record<string, string | null> | undefined
+  roomIconMap: Record<string, string | null>
   isOpen: boolean
   onToggle: () => void
 }
 
 function RoomAccordion({
   roomName,
+  roomIcon,
   allScenes,
   filteredScenes,
   activeSceneNames,
+  defaultScenes,
+  systemModes,
+  modeIcons,
+  roomIconMap,
   isOpen,
   onToggle,
 }: RoomAccordionProps) {
   const [activeMode, setActiveMode] = useState<string>('All')
 
   // All modes that have scenes in this room (from full data, not filtered)
+  // Ordered by display_order from the backend when systemModes is available
   const allModes = useMemo(
-    () => getModesForRoom(allScenes, roomName),
-    [allScenes, roomName],
+    () => getModesForRoom(allScenes, roomName, systemModes),
+    [allScenes, roomName, systemModes],
   )
 
   // Scenes to display: filtered by search, then by mode pill
@@ -179,124 +196,88 @@ function RoomAccordion({
               m => (m ?? '').toLowerCase() === activeMode.toLowerCase(),
             ),
           )
-    return sortScenesByPriority(byMode, roomName)
+    return [...byMode].sort((a, b) => a.name.localeCompare(b.name))
   }, [filteredScenes, roomName, activeMode])
 
   const hasActiveScene = displayScenes.some(s => activeSceneNames.has(s.name))
 
-  const headingId = `room-heading-${roomName.replace(/\s+/g, '-').toLowerCase()}`
-  const panelId = `room-panel-${roomName.replace(/\s+/g, '-').toLowerCase()}`
+  const sceneCount = filteredScenes.filter(s =>
+    (Array.isArray(s.rooms) ? s.rooms : []).some(r => r?.name === roomName),
+  ).length
+
+  const accordionId = `room-${roomName.replace(/\s+/g, '-').toLowerCase()}`
+
+  const accordionTitle = (
+    <span className="flex items-center gap-1.5">
+      <LucideIcon name={roomIcon} className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+      {roomName}
+    </span>
+  )
 
   return (
-    <div className="card rounded-xl border">
-      <button
-        id={headingId}
-        aria-expanded={isOpen}
-        aria-controls={panelId}
-        onClick={onToggle}
-        className={cn(
-          'flex w-full min-h-[44px] items-center justify-between gap-3 px-4 py-3 text-left transition-colors',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded-xl',
-          'hover:bg-white/5',
-        )}
-      >
-        <div className="flex items-center gap-2">
-          <span className="text-heading text-sm font-semibold">{roomName}</span>
-          <span className="surface text-caption rounded-full px-2 py-0.5 text-[10px] font-medium">
-            {filteredScenes.filter(s =>
-              (Array.isArray(s.rooms) ? s.rooms : []).some(r => r?.name === roomName),
-            ).length}
-          </span>
-          {hasActiveScene && (
-            <span
-              className="inline-block h-2 w-2 rounded-full bg-emerald-400"
-              aria-label="Scene active in this room"
+    <Accordion
+      id={accordionId}
+      title={accordionTitle}
+      open={isOpen}
+      onToggle={onToggle}
+      count={sceneCount}
+      trailing={
+        hasActiveScene ? (
+          <span
+            className="inline-block h-2 w-2 rounded-full bg-emerald-400"
+            aria-label="Scene active in this room"
+          />
+        ) : undefined
+      }
+    >
+      {/* Mode pills */}
+      {allModes.length > 0 && (
+        <div
+          className="flex flex-wrap gap-1.5 mb-2"
+          role="group"
+          aria-label="Filter by mode"
+        >
+          <FilterChip
+            label="All"
+            active={activeMode === 'All'}
+            onClick={() => setActiveMode('All')}
+          />
+          {allModes.map(mode => (
+            <FilterChip
+              key={mode}
+              label={mode}
+              active={activeMode === mode}
+              onClick={() => setActiveMode(mode)}
+              icon={modeIcons?.[mode] ?? null}
             />
-          )}
+          ))}
         </div>
-        <ChevronDown
-          className={cn(
-            'h-4 w-4 text-[var(--text-secondary)] transition-transform duration-300 flex-shrink-0',
-            isOpen && 'rotate-180',
-          )}
-          aria-hidden="true"
-        />
-      </button>
+      )}
 
-      <div
-        id={panelId}
-        role="region"
-        aria-labelledby={headingId}
-        className="grid transition-all duration-300"
-        style={{ gridTemplateRows: isOpen ? '1fr' : '0fr' }}
-      >
-        <div className="overflow-hidden">
-          <div className="px-2 pb-2">
-            {/* Mode pills */}
-            {allModes.length > 0 && (
-              <div
-                className="flex flex-wrap gap-1.5 px-2 pb-2 pt-1"
-                role="group"
-                aria-label="Filter by mode"
-              >
-                <button
-                  aria-pressed={activeMode === 'All'}
-                  onClick={() => setActiveMode('All')}
-                  className={cn(
-                    'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                    activeMode === 'All'
-                      ? 'bg-fairy-500 text-white'
-                      : 'surface text-body hover:text-heading',
-                  )}
-                >
-                  All
-                </button>
-                {allModes.map(mode => (
-                  <button
-                    key={mode}
-                    aria-pressed={activeMode === mode}
-                    onClick={() => setActiveMode(mode)}
-                    className={cn(
-                      'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-                      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                      activeMode === mode
-                        ? 'bg-fairy-500 text-white'
-                        : 'surface text-body hover:text-heading',
-                    )}
-                  >
-                    {mode}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Scene rows */}
-            {displayScenes.length > 0 ? (
-              displayScenes.map(scene => {
-                const defaultScene =
-                  activeMode !== 'All'
-                    ? getDefaultScene(allScenes, roomName, activeMode)
-                    : null
-                const isDefault = defaultScene?.name === scene.name
-                return (
-                  <SceneRow
-                    key={scene.name}
-                    scene={scene}
-                    isActive={activeSceneNames.has(scene.name)}
-                    isDefault={isDefault}
-                  />
-                )
-              })
-            ) : (
-              <p className="text-caption px-3 py-4 text-sm">
-                No scenes match the selected filter.
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+      {/* Scene rows */}
+      {displayScenes.length > 0 ? (
+        displayScenes.map(scene => {
+          const defaultSceneName =
+            activeMode !== 'All'
+              ? getDefaultScene(defaultScenes, roomName, activeMode)
+              : null
+          const isDefault = defaultSceneName === scene.name
+          return (
+            <SceneRow
+              key={scene.name}
+              scene={scene}
+              isActive={activeSceneNames.has(scene.name)}
+              isDefault={isDefault}
+              roomIconMap={roomIconMap}
+            />
+          )
+        })
+      ) : (
+        <p className="text-caption py-4 text-sm">
+          No scenes match the selected filter.
+        </p>
+      )}
+    </Accordion>
   )
 }
 
@@ -308,9 +289,10 @@ interface FlatSceneRowProps {
   scene: Scene
   isActive: boolean
   label?: React.ReactNode
+  roomIconMap?: Record<string, string | null>
 }
 
-function FlatSceneRow({ scene, isActive, label }: FlatSceneRowProps) {
+function FlatSceneRow({ scene, isActive, label, roomIconMap }: FlatSceneRowProps) {
   const season = isSceneInSeason(scene)
   const roomList = Array.isArray(scene.rooms) ? scene.rooms : []
 
@@ -344,8 +326,9 @@ function FlatSceneRow({ scene, isActive, label }: FlatSceneRowProps) {
           {roomList.filter(r => r?.name).map(r => (
             <span
               key={r.name}
-              className="surface text-caption rounded-full px-2 py-0.5 text-[10px] font-medium"
+              className="surface text-caption inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
             >
+              <LucideIcon name={roomIconMap?.[r.name] ?? null} className="h-3 w-3 shrink-0" aria-hidden="true" />
               {r.name}
             </span>
           ))}
@@ -362,24 +345,6 @@ function FlatSceneRow({ scene, isActive, label }: FlatSceneRowProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Empty state
-// ---------------------------------------------------------------------------
-
-function EmptyState({ icon: Icon, message, sub }: {
-  icon: React.ElementType
-  message: string
-  sub?: string
-}) {
-  return (
-    <div className="rounded-xl border border-dashed py-12 text-center" style={{ borderColor: 'var(--border-secondary)' }}>
-      <Icon className="text-caption mx-auto mb-3 h-8 w-8" aria-hidden="true" />
-      <p className="text-body text-sm">{message}</p>
-      {sub && <p className="text-caption mt-1 text-xs">{sub}</p>}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -391,8 +356,9 @@ export default function ScenesPage() {
   const [search, setSearch] = useState('')
   const [activeTab, setActiveTab] = useState('by-room')
   const [openRooms, setOpenRooms] = useState<Set<string>>(new Set())
+  const [orphanAccordionOpen, setOrphanAccordionOpen] = useState(true)
 
-  const { data: scenes, isLoading } = useQuery({
+  const { data: scenes, isLoading, isError, refetch } = useQuery({
     queryKey: ['scenes'],
     queryFn: api.scenes.getAll,
   })
@@ -401,6 +367,22 @@ export default function ScenesPage() {
     queryKey: ['rooms'],
     queryFn: api.rooms.getAll,
   })
+
+  const { data: defaultScenes } = useQuery({
+    queryKey: ['room-default-scenes'],
+    queryFn: api.roomDefaultScenes.getAll,
+  })
+
+  const { data: systemCurrent } = useQuery({
+    queryKey: ['system', 'current'],
+    queryFn: api.system.getCurrent,
+  })
+
+  // Room icon lookup: room name → icon
+  const roomIconMap = useMemo<Record<string, string | null>>(
+    () => Object.fromEntries((rooms ?? []).map(r => [r.name, r.icon])),
+    [rooms],
+  )
 
   // Active scene names from room data
   const activeSceneNames = useMemo(
@@ -531,8 +513,12 @@ export default function ScenesPage() {
   return (
     <div>
       {/* Header */}
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-heading text-base font-semibold">Scenes</h2>
+      <div className="mb-6 flex items-center gap-2">
+        <Sparkles className="h-5 w-5 text-fairy-400" aria-hidden="true" />
+        <h1 className="text-heading text-lg font-semibold">Scenes</h1>
+      </div>
+
+      <div className="mb-4 flex items-center justify-end">
         <button
           onClick={() => createMutation.mutate()}
           disabled={createMutation.isPending}
@@ -544,29 +530,13 @@ export default function ScenesPage() {
       </div>
 
       {/* Search — always visible */}
-      <div className="relative mb-4">
-        <Search
-          className="text-caption absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2"
-          aria-hidden="true"
-        />
-        <input
-          type="search"
-          placeholder="Search by name, tag, room, or mode..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          aria-label="Search scenes"
-          className="input-field h-11 w-full rounded-lg border pl-10 pr-3 text-sm placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-        />
-        {search && (
-          <button
-            onClick={() => setSearch('')}
-            aria-label="Clear search"
-            className="text-caption absolute right-3 top-1/2 -translate-y-1/2 rounded p-0.5 transition-colors hover:text-[var(--text-secondary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-          >
-            ×
-          </button>
-        )}
-      </div>
+      <SearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Search by name, tag, room, or mode..."
+        label="Search scenes"
+        className="mb-4"
+      />
 
       {/* Loading skeleton */}
       {isLoading ? (
@@ -574,6 +544,17 @@ export default function ScenesPage() {
           {Array.from({ length: 4 }).map((_, i) => (
             <SkeletonAccordion key={i} />
           ))}
+        </div>
+      ) : isError ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+          <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
+          <p className="text-zinc-400">Unable to load scenes. Check your connection and try again.</p>
+          <button
+            onClick={() => refetch()}
+            className="rounded-lg bg-fairy-600 px-4 py-2 text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          >
+            Try again
+          </button>
         </div>
       ) : !scenes || scenes.length === 0 ? (
         <EmptyState
@@ -687,9 +668,14 @@ export default function ScenesPage() {
                     <RoomAccordion
                       key={roomName}
                       roomName={roomName}
+                      roomIcon={roomIconMap[roomName]}
                       allScenes={scenes}
                       filteredScenes={filteredScenes}
                       activeSceneNames={activeSceneNames}
+                      defaultScenes={defaultScenes}
+                      systemModes={systemCurrent?.all_modes}
+                      modeIcons={systemCurrent?.mode_icons}
+                      roomIconMap={roomIconMap}
                       isOpen={computedOpenRooms.has(roomName)}
                       onToggle={() => toggleRoom(roomName)}
                     />
@@ -698,28 +684,22 @@ export default function ScenesPage() {
 
                 {/* Orphan scenes */}
                 {orphanScenes.length > 0 && (
-                  <div className="card rounded-xl border">
-                    <div className="border-b border-[var(--border-secondary)] px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span className="text-heading text-sm font-semibold">
-                          Not assigned to a room
-                        </span>
-                        <span className="surface text-caption rounded-full px-2 py-0.5 text-[10px] font-medium">
-                          {orphanScenes.length}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="px-2 py-2">
-                      {orphanScenes.map(scene => (
-                        <SceneRow
-                          key={scene.name}
-                          scene={scene}
-                          isActive={activeSceneNames.has(scene.name)}
-                          isDefault={false}
-                        />
-                      ))}
-                    </div>
-                  </div>
+                  <Accordion
+                    id="orphan-scenes"
+                    title="Not assigned to a room"
+                    open={orphanAccordionOpen}
+                    onToggle={() => setOrphanAccordionOpen(prev => !prev)}
+                    count={orphanScenes.length}
+                  >
+                    {orphanScenes.map(scene => (
+                      <SceneRow
+                        key={scene.name}
+                        scene={scene}
+                        isActive={activeSceneNames.has(scene.name)}
+                        isDefault={false}
+                      />
+                    ))}
+                  </Accordion>
                 )}
               </>
             )}
@@ -734,7 +714,7 @@ export default function ScenesPage() {
               />
             ) : (
               <div className="card rounded-xl border">
-                <div className="px-2 py-2">
+                <div className="px-4 py-2">
                   {activeScenes.map(scene => {
                     const activeInRooms = rooms
                       ?.filter(r => r.current_scene === scene.name)
@@ -744,6 +724,7 @@ export default function ScenesPage() {
                         key={scene.name}
                         scene={scene}
                         isActive
+                        roomIconMap={roomIconMap}
                         label={
                           activeInRooms.length > 0
                             ? (
@@ -751,8 +732,9 @@ export default function ScenesPage() {
                                   {activeInRooms.map(rn => (
                                     <span
                                       key={rn}
-                                      className="surface text-caption rounded-full px-2 py-0.5 text-[10px] font-medium"
+                                      className="surface text-caption inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium"
                                     >
+                                      <LucideIcon name={roomIconMap[rn] ?? null} className="h-3 w-3 shrink-0" aria-hidden="true" />
                                       {rn}
                                     </span>
                                   ))}
@@ -778,12 +760,13 @@ export default function ScenesPage() {
               />
             ) : (
               <div className="card rounded-xl border">
-                <div className="px-2 py-2">
+                <div className="px-4 py-2">
                   {recentScenes.map(scene => (
                     <FlatSceneRow
                       key={scene.name}
                       scene={scene}
                       isActive={activeSceneNames.has(scene.name)}
+                      roomIconMap={roomIconMap}
                       label={
                         scene.last_activated_at
                           ? formatRelativeTime(scene.last_activated_at)
@@ -806,12 +789,13 @@ export default function ScenesPage() {
               />
             ) : (
               <div className="card rounded-xl border">
-                <div className="px-2 py-2">
+                <div className="px-4 py-2">
                   {staleScenes.map(scene => (
                     <FlatSceneRow
                       key={scene.name}
                       scene={scene}
                       isActive={activeSceneNames.has(scene.name)}
+                      roomIconMap={roomIconMap}
                       label={
                         scene.last_activated_at
                           ? formatRelativeTime(scene.last_activated_at)
