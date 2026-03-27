@@ -1,10 +1,8 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Home, DoorOpen, Sparkles, LayoutGrid, Settings, Sun, Moon, Monitor, BarChart3 } from 'lucide-react'
+import { Home, DoorOpen, Sparkles, LayoutGrid, Settings, BarChart3 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { useTheme } from '@/hooks/useTheme'
-import type { Theme } from '@/hooks/useTheme'
 import { useDashboardSocket } from '@/hooks/useSocket'
 import { useScrollRestoration } from '@/hooks/useScrollRestoration'
 import ToastContainer from '@/components/ui/Toast'
@@ -25,36 +23,7 @@ const NAV_ITEMS = [
   { to: '/settings', icon: Settings, label: 'Settings' },
 ] as const
 
-const THEME_CYCLE: Theme[] = ['system', 'light', 'dark']
-const THEME_ICON = { system: Monitor, light: Sun, dark: Moon } as const
-const THEME_LABEL = { system: 'System theme', light: 'Light mode', dark: 'Dark mode' } as const
-
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme()
-  const Icon = THEME_ICON[theme]
-
-  const cycleTheme = () => {
-    const idx = THEME_CYCLE.indexOf(theme)
-    const next = THEME_CYCLE[(idx + 1) % THEME_CYCLE.length]
-    setTheme(next)
-  }
-
-  return (
-    <button
-      onClick={cycleTheme}
-      aria-label={THEME_LABEL[theme]}
-      title={THEME_LABEL[theme]}
-      className={cn(
-        'rounded-lg p-2 transition-colors',
-        'text-[var(--text-muted)] hover:text-[var(--text-primary)]',
-        'hover:bg-[var(--bg-tertiary)]',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-      )}
-    >
-      <Icon className="h-4.5 w-4.5" />
-    </button>
-  )
-}
+const BOTTOM_NAV_ITEMS = NAV_ITEMS.filter(item => item.to !== '/settings')
 
 export default function AppLayout() {
   const location = useLocation()
@@ -105,7 +74,7 @@ export default function AppLayout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 pb-20 md:pb-0">
+      <main className="flex-1 pb-22 md:pb-0">
         {/* Header */}
         <header className="chrome sticky top-0 z-30 flex items-center justify-between border-b px-4 py-3 md:px-6 md:py-4">
           <div className="flex items-center gap-2">
@@ -123,7 +92,21 @@ export default function AppLayout() {
           </div>
           <div className="flex items-center gap-2">
             <NotificationBell />
-            <ThemeToggle />
+            <NavLink
+              to="/settings"
+              aria-label="Settings"
+              className={({ isActive }) =>
+                cn(
+                  'rounded-lg p-2 transition-colors md:hidden',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                  isActive
+                    ? 'text-fairy-400'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]',
+                )
+              }
+            >
+              <Settings className="h-5 w-5" />
+            </NavLink>
             {system?.mode && (
               <span className="inline-flex items-center rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400 md:hidden">
                 {system.mode}
@@ -138,16 +121,16 @@ export default function AppLayout() {
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="chrome fixed inset-x-0 bottom-0 z-40 border-t md:hidden">
-        <div className="flex items-center justify-around">
-          {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
+      <nav className="chrome fixed inset-x-0 bottom-0 z-40 border-t pb-[env(safe-area-inset-bottom)] md:hidden">
+        <div className="flex items-stretch justify-evenly">
+          {BOTTOM_NAV_ITEMS.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
               end={to === '/'}
               className={({ isActive }) =>
                 cn(
-                  'flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 text-[10px] font-medium transition-colors',
+                  'flex min-h-[60px] flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors',
                   'focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-fairy-500',
                   isActive
                     ? 'text-fairy-400'
@@ -156,7 +139,7 @@ export default function AppLayout() {
               }
             >
               <Icon className="h-5 w-5" />
-              <span>{label}</span>
+              <span className="leading-normal">{label}</span>
             </NavLink>
           ))}
         </div>
