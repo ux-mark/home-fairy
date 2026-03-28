@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Thermometer, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, Lock, AlertTriangle, ChevronRight, Activity, Loader2, Volume2, VolumeX, Footprints } from 'lucide-react'
+import { Thermometer, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, Lock, AlertTriangle, ChevronRight, ArrowUp, ArrowDown, Activity, Loader2, Volume2, VolumeX, Footprints } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { useState, useRef, useEffect } from 'react'
 import { api } from '@/lib/api'
@@ -511,7 +511,7 @@ function MtaCard() {
         trailing={<Train className="h-4 w-4 text-caption" aria-hidden="true" />}
       >
         {/* Per-stop rows */}
-        <div className="space-y-1">
+        <div className="space-y-1 px-4">
           {combinedStatus.stops.map((stop, i) => {
             const dotColor = STATUS_DOT_COLORS[stop.status]
             const next = stop.nextArrival
@@ -533,25 +533,28 @@ function MtaCard() {
               message = `in ${displayTrain.minutesAway} min — Leave now, tight!`
             }
 
+            const dirLabel = stop.config.direction === 'N' ? 'Uptown' : 'Downtown'
+            const DirArrow = stop.config.direction === 'N' ? ArrowUp : ArrowDown
+
             return (
               <div
                 key={`${stop.config.stopId}-${stop.config.direction}-${i}`}
-                className="flex items-start gap-2 py-1.5 text-sm"
+                className="flex items-center gap-2 py-1.5 text-sm"
               >
-                {/* Fixed-width leading column: dot + badge */}
-                <span className="flex shrink-0 items-center gap-1.5 pt-0.5">
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: dotColor }}
-                    aria-label={`Status: ${stop.status}`}
-                  />
-                  {displayTrain && <MtaLineBadge line={displayTrain.routeId} />}
-                </span>
-                {/* Station name + message */}
-                <div className="min-w-0 flex-1">
-                  <p className="text-heading font-medium">{stop.config.name}</p>
-                  <p className="text-caption text-xs">{message}</p>
-                </div>
+                <span
+                  className="h-3 w-3 shrink-0 rounded-full"
+                  style={{ backgroundColor: dotColor }}
+                  aria-label={`Status: ${stop.status}`}
+                />
+                {displayTrain
+                  ? <MtaLineBadge line={displayTrain.routeId} />
+                  : <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#808183]/40 text-[10px] text-caption" aria-hidden="true">—</span>
+                }
+                <DirArrow className="h-3.5 w-3.5 shrink-0 text-caption" aria-label={dirLabel} />
+                {/* Station name + message inline, wrapping */}
+                <p className="min-w-0 flex-1 text-heading font-medium leading-snug">
+                  {stop.config.name} {message && <span className="font-normal text-caption text-xs">{message}</span>}
+                </p>
               </div>
             )
           })}
