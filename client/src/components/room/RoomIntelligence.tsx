@@ -6,6 +6,7 @@ import type { RoomIntelligenceData } from '@/lib/api'
 import { cn, formatCost, formatMonthlyCost, deviceDetailPath } from '@/lib/utils'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
 import { Accordion } from '@/components/ui/Accordion'
+import { Skeleton } from '@/components/ui/Skeleton'
 import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -26,23 +27,6 @@ function batteryBgClass(battery: number): string {
   if (battery > 50) return 'bg-emerald-400'
   if (battery >= 15) return 'bg-amber-400'
   return 'bg-red-400'
-}
-
-// ── Loading skeleton ──────────────────────────────────────────────────────────
-
-function IntelligenceSkeleton() {
-  return (
-    <div className="card rounded-xl border mb-4 p-4" role="status" aria-label="Loading room overview">
-      <div className="space-y-4">
-        {[...Array(4)].map((_, i) => (
-          <div key={i} className="space-y-2">
-            <div className="h-4 w-24 animate-pulse rounded bg-[var(--bg-tertiary)]" />
-            <div className="h-10 w-full animate-pulse rounded bg-[var(--bg-tertiary)]" />
-          </div>
-        ))}
-      </div>
-    </div>
-  )
 }
 
 // ── Hourly activity bar chart ─────────────────────────────────────────────────
@@ -311,7 +295,18 @@ export default function RoomIntelligence({ roomName }: RoomIntelligenceProps) {
   const currencySymbol = summaryData?.currencySymbol ?? '€'
 
   if (isLoading) {
-    return <IntelligenceSkeleton />
+    return (
+      <div className="card rounded-xl border mb-4 p-4" role="status" aria-label="Loading room overview">
+        <div className="grid grid-cols-2 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="space-y-2">
+              <Skeleton className="h-4 w-24" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+    )
   }
 
   if (isError || !data) {

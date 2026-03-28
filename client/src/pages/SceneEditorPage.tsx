@@ -33,6 +33,7 @@ import type {
 } from '@/lib/api'
 import { cn, hsbToHex, kelvinToHex, debounce, DEFAULT_MODES } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/Badge'
+import { Skeleton, SkeletonCard } from '@/components/ui/Skeleton'
 import { useToast } from '@/hooks/useToast'
 import ColorBrightnessPicker from '@/components/ui/ColorBrightnessPicker'
 import { LucideIcon } from '@/components/ui/LucideIcon'
@@ -1115,9 +1116,9 @@ export default function SceneEditorPage() {
   if (sceneLoading) {
     return (
       <div className="space-y-4">
-        <div className="h-6 w-32 animate-pulse rounded surface" />
-        <div className="h-12 animate-pulse rounded-xl surface" />
-        <div className="h-64 animate-pulse rounded-xl surface" />
+        <Skeleton className="h-6 w-32 rounded" />
+        <SkeletonCard className="h-12" />
+        <SkeletonCard className="h-64" />
       </div>
     )
   }

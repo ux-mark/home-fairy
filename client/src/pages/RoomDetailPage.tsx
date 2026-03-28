@@ -32,6 +32,7 @@ import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { Accordion } from '@/components/ui/Accordion'
 import { BackLink } from '@/components/ui/BackLink'
+import { DetailPageSkeleton } from '@/components/ui/Skeleton'
 import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
 import RoomIntelligence from '@/components/room/RoomIntelligence'
@@ -1230,13 +1231,7 @@ export default function RoomDetailPage() {
   }
 
   if (roomLoading) {
-    return (
-      <div className="space-y-4">
-        <div className="h-6 w-32 animate-pulse rounded surface" />
-        <div className="h-40 animate-pulse rounded-xl surface" />
-        <div className="h-60 animate-pulse rounded-xl surface" />
-      </div>
-    )
+    return <DetailPageSkeleton sections={2} label="Loading room details" />
   }
 
   if (!room) {

@@ -7,6 +7,7 @@ import { io, Socket } from 'socket.io-client'
 import { api, type Room, type AutoPlayRule, type KasaDevice, type DeviceLink } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { BackLink } from '@/components/ui/BackLink'
+import { DetailPageSkeleton, Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
 import { PillSelect } from '@/components/ui/PillSelect'
 import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
@@ -67,26 +68,6 @@ function formatRuleSentence(rule: AutoPlayRule): { main: string; condition?: str
 function formatRuleAccessible(rule: AutoPlayRule): string {
   const { main, condition } = formatRuleSentence(rule)
   return condition ? `${main} ${condition}` : main
-}
-
-// ── Loading skeleton ──────────────────────────────────────────────────────────
-
-function PageSkeleton() {
-  return (
-    <div className="space-y-6" role="status" aria-label="Loading speaker details">
-      <div className="space-y-3">
-        <div className="h-8 w-24 animate-pulse rounded-lg bg-[var(--bg-tertiary)]" />
-        <div className="h-7 w-48 animate-pulse rounded-lg bg-[var(--bg-tertiary)]" />
-      </div>
-      {[1, 2, 3].map(i => (
-        <div key={i} className="card rounded-xl border p-5 space-y-3">
-          <div className="h-5 w-32 animate-pulse rounded bg-[var(--bg-tertiary)]" />
-          <div className="h-4 w-full animate-pulse rounded bg-[var(--bg-tertiary)]" />
-          <div className="h-4 w-3/4 animate-pulse rounded bg-[var(--bg-tertiary)]" />
-        </div>
-      ))}
-    </div>
-  )
 }
 
 // ── SwitchRow subcomponent ────────────────────────────────────────────────────
@@ -186,9 +167,7 @@ function PowerSourceSection({
   return (
     <section aria-labelledby={`power-source-heading-${roomName}`}>
       {linksLoading ? (
-        <div className="space-y-2">
-          <div className="h-14 animate-pulse rounded-lg bg-[var(--bg-tertiary)]" />
-        </div>
+        <Skeleton className="h-14 w-full rounded-lg" />
       ) : powerLinks.length === 0 && !showPlugPicker ? (
         <div className="rounded-lg border border-dashed border-[var(--border-secondary)] p-4">
           <p className="text-sm text-caption">
@@ -705,7 +684,7 @@ export default function SonosDetailPage() {
   // ── Loading ──────────────────────────────────────────────────────────────────
 
   if (speakersLoading) {
-    return <PageSkeleton />
+    return <DetailPageSkeleton label="Loading speaker details" />
   }
 
   // ── Not found ────────────────────────────────────────────────────────────────
@@ -750,11 +729,11 @@ export default function SonosDetailPage() {
         {playbackLoading ? (
           <div className="space-y-3" role="status" aria-label="Loading playback state">
             <div className="flex gap-4">
-              <div className="h-[120px] w-[120px] shrink-0 animate-pulse rounded-lg bg-[var(--bg-tertiary)]" />
+              <Skeleton className="h-[120px] w-[120px] shrink-0 rounded-lg" />
               <div className="flex-1 space-y-2 pt-1">
-                <div className="h-4 w-3/4 animate-pulse rounded bg-[var(--bg-tertiary)]" />
-                <div className="h-3 w-1/2 animate-pulse rounded bg-[var(--bg-tertiary)]" />
-                <div className="h-3 w-1/3 animate-pulse rounded bg-[var(--bg-tertiary)]" />
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+                <Skeleton className="h-3 w-1/3" />
               </div>
             </div>
           </div>
