@@ -31,24 +31,25 @@ export function getRateLimitStatus(): RateLimitStatus {
 
 // ── Retry-on-429 wrapper ──────────────────────────────────────────────────────
 
-async function withRetry<T>(fn: () => Promise<AxiosResponse<T>>): Promise<AxiosResponse<T>> {
-  try {
-    const res = await fn()
-    trackRateLimit(res)
-    return res
-  } catch (err) {
-    if (axios.isAxiosError(err) && err.response?.status === 429) {
-      trackRateLimit(err.response)
-      const resetAt = Number(err.response.headers['x-ratelimit-reset'] ?? 0)
-      const now = Math.floor(Date.now() / 1000)
-      const waitMs = Math.max((resetAt - now) * 1000, 1000)
-      await new Promise((resolve) => setTimeout(resolve, waitMs))
-      const retryRes = await fn()
-      trackRateLimit(retryRes)
-      return retryRes
+async function withRetry<T>(fn: () => Promise<AxiosResponse<T>>, maxAttempts = 3): Promise<AxiosResponse<T>> {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await fn()
+      trackRateLimit(res)
+      return res
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 429 && attempt < maxAttempts) {
+        trackRateLimit(err.response)
+        const resetAt = Number(err.response.headers['x-ratelimit-reset'] ?? 0)
+        const now = Math.floor(Date.now() / 1000)
+        const waitMs = Math.max((resetAt - now) * 1000, 2000)
+        await new Promise((resolve) => setTimeout(resolve, waitMs))
+        continue
+      }
+      throw err
     }
-    throw err
   }
+  throw new Error('withRetry: exhausted all attempts')
 }
 
 // ── State types ───────────────────────────────────────────────────────────────

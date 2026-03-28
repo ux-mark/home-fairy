@@ -55,7 +55,13 @@ router.get('/devices', (_req: Request, res: Response) => {
 })
 
 // POST /devices/sync — pull from Hubitat API and upsert into hub_devices
+let syncInProgress = false
 router.post('/devices/sync', async (_req: Request, res: Response) => {
+  if (syncInProgress) {
+    res.status(409).json({ error: 'Device sync already in progress' })
+    return
+  }
+  syncInProgress = true
   try {
     let devices: HubitatDevice[]
     try {
@@ -188,6 +194,8 @@ router.post('/devices/sync', async (_req: Request, res: Response) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  } finally {
+    syncInProgress = false
   }
 })
 

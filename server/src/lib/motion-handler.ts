@@ -445,6 +445,13 @@ export class MotionHandler {
   getSensorStates(): Map<string, 'active' | 'inactive'> {
     return new Map(this.sensorStates)
   }
+
+  shutdown(): void {
+    for (const [, timer] of this.roomTimers) {
+      clearTimeout(timer.timeout)
+    }
+    this.roomTimers.clear()
+  }
 }
 
 export const motionHandler = new MotionHandler()

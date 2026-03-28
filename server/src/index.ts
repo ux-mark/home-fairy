@@ -50,6 +50,16 @@ function isWebhookRateLimited(ip: string): boolean {
   return recent.length > WEBHOOK_RATE_LIMIT
 }
 
+// Periodically clean up stale rate-limit entries to prevent unbounded map growth
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, hits] of webhookHits) {
+    const recent = hits.filter(t => now - t < WEBHOOK_RATE_WINDOW)
+    if (recent.length === 0) webhookHits.delete(ip)
+    else webhookHits.set(ip, recent)
+  }
+}, 5 * 60_000).unref()
+
 // Validate required environment variables
 const REQUIRED_ENV = ['LIFX_TOKEN', 'HUBITAT_TOKEN', 'HUB_BASE_URL', 'LATITUDE', 'LONGITUDE', 'OPENWEATHER_API'] as const
 const missing = REQUIRED_ENV.filter(key => !process.env[key])
@@ -329,6 +339,7 @@ function shutdown(signal: string): void {
   stopHistoryCollector()
   stopKasaPoller()
   sonosManager.shutdown()
+  motionHandler.shutdown()
   weatherIndicator.stop()
   sunModeScheduler.clearTimers()
   timeTriggerScheduler.clearTimers()
