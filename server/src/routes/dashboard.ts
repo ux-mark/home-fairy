@@ -219,6 +219,9 @@ router.get('/history/:source/:sourceId', (req: Request, res: Response) => {
     let cutoff: string
     let aggregate = false
 
+    // SAFETY: cutoff is interpolated into SQL but is always a hardcoded datetime literal
+    // from the switch below — never from user input. Parameterised binding is not possible
+    // here because SQLite doesn't support parameter substitution inside datetime() calls.
     switch (period) {
       case '24h':
         cutoff = "datetime('now', '-1 day')"
@@ -386,8 +389,12 @@ router.get('/device/:id/context', (req: Request, res: Response) => {
     )
     const scenesUsing = allScenes
       .filter((s) => {
-        const cmds = JSON.parse(s.commands) as Array<{ device_id?: string | number }>
-        return cmds.some((c) => String(c.device_id) === String(deviceId))
+        try {
+          const cmds = JSON.parse(s.commands) as Array<{ device_id?: string | number }>
+          return cmds.some((c) => String(c.device_id) === String(deviceId))
+        } catch {
+          return false
+        }
       })
       .map((s) => s.name)
 

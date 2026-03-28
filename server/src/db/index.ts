@@ -52,6 +52,7 @@ export function initDb(): void {
       has_color INTEGER DEFAULT 1,
       min_kelvin INTEGER DEFAULT 2500,
       max_kelvin INTEGER DEFAULT 9000,
+      active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),
       UNIQUE(light_id, room_name)
     );
@@ -79,6 +80,7 @@ export function initDb(): void {
       device_type TEXT DEFAULT 'switch',
       capabilities TEXT DEFAULT '[]',
       attributes TEXT DEFAULT '{}',
+      active INTEGER DEFAULT 1,
       config TEXT DEFAULT '{}',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
@@ -107,6 +109,7 @@ export function initDb(): void {
       hardware TEXT,
       rssi INTEGER,
       is_online INTEGER DEFAULT 1,
+      active INTEGER DEFAULT 1,
       attributes TEXT DEFAULT '{}',
       config TEXT DEFAULT '{}',
       created_at TEXT DEFAULT (datetime('now')),
@@ -269,6 +272,20 @@ export function initDb(): void {
   }
   if (!colNames.includes('icon')) {
     db.exec('ALTER TABLE rooms ADD COLUMN icon TEXT DEFAULT NULL')
+  }
+
+  // Add active column to tables that need device deactivation support (existing DBs)
+  const hubCols = db.prepare("PRAGMA table_info('hub_devices')").all() as { name: string }[]
+  if (!hubCols.map(c => c.name).includes('active')) {
+    db.exec("ALTER TABLE hub_devices ADD COLUMN active INTEGER DEFAULT 1")
+  }
+  const kasaCols = db.prepare("PRAGMA table_info('kasa_devices')").all() as { name: string }[]
+  if (!kasaCols.map(c => c.name).includes('active')) {
+    db.exec("ALTER TABLE kasa_devices ADD COLUMN active INTEGER DEFAULT 1")
+  }
+  const lightCols = db.prepare("PRAGMA table_info('light_rooms')").all() as { name: string }[]
+  if (!lightCols.map(c => c.name).includes('active')) {
+    db.exec("ALTER TABLE light_rooms ADD COLUMN active INTEGER DEFAULT 1")
   }
 
   // Add icon column to modes table if it doesn't exist
