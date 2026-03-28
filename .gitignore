@@ -119,6 +119,7 @@ ecosystem.config.js
 .vercel
 .netlify
 *.env.old
+*.sqlite.backup-*
 
 # Coding Fairy (centralized -- managed by CAI-Pi Fairy)
 /CLAUDE.md
