@@ -3,7 +3,13 @@ import { getAll, getOne, run } from '../db/index.js'
 import { emit } from './socket.js'
 import { getLatestEpisodeUrl } from './podcast-resolver.js'
 
-const log = (msg: string) => console.log(`[sonos] ${msg}`)
+function log(msg: string): void {
+  try {
+    run('INSERT INTO logs (message, category) VALUES (?, ?)', [msg, 'sonos'])
+  } catch {
+    console.log(`[sonos] ${msg}`)
+  }
+}
 
 interface SonosSpeakerRow {
   id: number

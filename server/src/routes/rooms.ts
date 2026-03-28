@@ -143,7 +143,7 @@ router.get('/:name', (req: Request, res: Response) => {
 // POST / — create room
 router.post('/', (req: Request, res: Response) => {
   try {
-    console.log('[rooms POST] body:', JSON.stringify(req.body))
+    if (process.env.DEBUG) console.log('[rooms POST] body:', JSON.stringify(req.body))
     const body = createRoomSchema.parse(req.body)
     run(
       `INSERT INTO rooms (name, display_order, parent_room, auto, timer, tags, icon)
@@ -175,7 +175,7 @@ router.post('/', (req: Request, res: Response) => {
 // PUT /:name — update room
 router.put('/:name', (req: Request, res: Response) => {
   try {
-    console.log(`[rooms PUT /${req.params.name}] body:`, JSON.stringify(req.body))
+    if (process.env.DEBUG) console.log(`[rooms PUT /${req.params.name}] body:`, JSON.stringify(req.body))
     const existing = getOne<RoomRow>('SELECT * FROM rooms WHERE name = ?', [req.params.name])
     if (!existing) {
       res.status(404).json({ error: 'Room not found' })

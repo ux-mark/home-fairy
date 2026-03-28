@@ -279,9 +279,9 @@ app.get('{*path}', (_req, res) => {
 
 // Socket.io connection handling
 io.on('connection', (socket) => {
-  console.log(`Client connected: ${socket.id}`)
+  if (process.env.DEBUG) console.log(`Client connected: ${socket.id}`)
   socket.on('disconnect', () => {
-    console.log(`Client disconnected: ${socket.id}`)
+    if (process.env.DEBUG) console.log(`Client disconnected: ${socket.id}`)
   })
 })
 
@@ -296,7 +296,7 @@ timerManager.setOnExpire(async (targetScene, sceneName) => {
       'INSERT INTO logs (message, category) VALUES (?, ?)',
       [`Scene timer expired (${sceneName}): activating "${targetScene}"`, 'timer'],
     )
-    await activateScene(targetScene)
+    await activateScene(targetScene, new Set(), 'timer')
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`Failed to activate scene from timer: ${msg}`)

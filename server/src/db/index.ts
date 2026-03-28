@@ -137,6 +137,9 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_room_activity_lookup
       ON room_activity (room_name, recorded_at);
 
+    CREATE INDEX IF NOT EXISTS idx_logs_category
+      ON logs (category, created_at DESC);
+
     CREATE TABLE IF NOT EXISTS notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       severity TEXT NOT NULL CHECK(severity IN ('info', 'warning', 'critical')),
