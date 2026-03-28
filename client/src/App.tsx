@@ -2,8 +2,9 @@ import React, { Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import AppLayout from '@/components/layout/AppLayout'
 import WatchLayout from '@/components/layout/WatchLayout'
+import HomePage from '@/pages/HomePage'
+import { Skeleton, SkeletonList } from '@/components/ui/Skeleton'
 
-const HomePage = React.lazy(() => import('@/pages/HomePage'))
 const RoomsPage = React.lazy(() => import('@/pages/RoomsPage'))
 const RoomDetailPage = React.lazy(() => import('@/pages/RoomDetailPage'))
 const ScenesPage = React.lazy(() => import('@/pages/ScenesPage'))
@@ -22,11 +23,9 @@ const SonosDetailPage = React.lazy(() => import('@/pages/SonosDetailPage'))
 
 function PageLoader() {
   return (
-    <div className="flex items-center justify-center min-h-[50vh]">
-      <div className="flex flex-col items-center gap-3">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-fairy-500 border-t-transparent" />
-        <p className="text-sm text-caption">Loading...</p>
-      </div>
+    <div className="space-y-4" role="status" aria-label="Loading">
+      <Skeleton className="h-7 w-40 rounded-lg" />
+      <SkeletonList count={4} height="h-20" />
     </div>
   )
 }

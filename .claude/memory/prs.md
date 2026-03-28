@@ -465,6 +465,13 @@
 - **Summary**: All 41 audit issues fixed: schema DDL active column, backend reliability (mutex, leaks, shutdown, retries), frontend socket dedup and timer cleanup, frontend correctness (preferences query, chart centralisation, cache keys), 14 accessibility fixes, logging/observability (DB logging for sonos/kasa/lifx/weather/mta, DEBUG gating, scene source context), deploy script hardening (opt-in DB copy, timestamped backups), log viewer category filters for new categories.
 - **Files**: 36 files changed (+244/-139)
 
+## PR #77 — Unified loading skeletons across the entire app
+- **Branch**: feature/unified-loading-skeletons → dev
+- **Created**: 2026-03-28
+- **Status**: open
+- **Summary**: Created shared Skeleton.tsx component library (8 primitives). Replaced 60+ ad-hoc skeleton implementations across 22 files with consistent, layout-matched loading states. Eliminates layout jumps on page load.
+- **Files**: 23 files changed (1 new, 22 modified) — Skeleton.tsx (new), 15 pages, 7 components
+
 ## Reconciliation — Sync main and dev (2026-03-27)
 - **Action**: Merged main into dev (fast-forward) to reconcile divergence
 - **Context**: PRs #60 and #61 had been merged directly to main (bypassing dev). PR #62 was merged to dev without #61's changes. This caused progressive disclosure work from PR #61 to be missing on dev. After merging PR #63 into main, merged main into dev — both branches now at commit 18cca7a, fully in sync.
