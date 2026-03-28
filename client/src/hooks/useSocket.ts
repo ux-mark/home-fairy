@@ -59,6 +59,7 @@ export function useDashboardSocket(): void {
     function handleModeChange() {
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] })
       queryClient.invalidateQueries({ queryKey: ['system', 'current'] })
+      queryClient.invalidateQueries({ queryKey: ['system', 'night-status'] })
       queryClient.invalidateQueries({ queryKey: ['rooms'] })
       queryClient.invalidateQueries({ queryKey: ['scenes'] })
     }
