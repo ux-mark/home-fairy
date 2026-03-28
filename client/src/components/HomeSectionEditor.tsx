@@ -21,7 +21,8 @@ import { CSS } from '@dnd-kit/utilities'
 import { Eye, EyeOff, GripVertical, Lock } from 'lucide-react'
 import { api } from '@/lib/api'
 import { LucideIcon } from '@/components/ui/LucideIcon'
-import { SortableOverlay, useOverlaySessionKey } from '@/components/ui/SortableOverlay'
+import { SortableOverlay } from '@/components/ui/SortableOverlay'
+import { useOverlaySessionKey } from '@/hooks/useOverlaySessionKey'
 import { useToast } from '@/hooks/useToast'
 
 // ── Section definitions ───────────────────────────────────────────────────────
@@ -37,19 +38,7 @@ const HOMEPAGE_SECTIONS = [
 
 type SectionId = (typeof HOMEPAGE_SECTIONS)[number]['id']
 
-export interface SectionOrderItem {
-  id: string
-  visible: boolean
-}
-
-export const DEFAULT_SECTION_ORDER: SectionOrderItem[] = [
-  { id: 'mta', visible: true },
-  { id: 'quick-actions', visible: true },
-  { id: 'music', visible: true },
-  { id: 'weather', visible: true },
-  { id: 'mode-selector', visible: true },
-  { id: 'rooms', visible: true },
-]
+import { DEFAULT_SECTION_ORDER, type SectionOrderItem } from '@/lib/homepage-sections'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

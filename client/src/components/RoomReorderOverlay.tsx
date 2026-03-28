@@ -21,7 +21,8 @@ import { CSS } from '@dnd-kit/utilities'
 import { GripVertical } from 'lucide-react'
 import { api, type Room } from '@/lib/api'
 import { LucideIcon } from '@/components/ui/LucideIcon'
-import { SortableOverlay, useOverlaySessionKey } from '@/components/ui/SortableOverlay'
+import { SortableOverlay } from '@/components/ui/SortableOverlay'
+import { useOverlaySessionKey } from '@/hooks/useOverlaySessionKey'
 import { useToast } from '@/hooks/useToast'
 
 // ── Types ─────────────────────────────────────────────────────────────────────

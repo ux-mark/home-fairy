@@ -13,7 +13,8 @@ import { LucideIcon } from '@/components/ui/LucideIcon'
 import { Accordion } from '@/components/ui/Accordion'
 import { Skeleton, SkeletonGrid } from '@/components/ui/Skeleton'
 import RoomReorderOverlay from '@/components/RoomReorderOverlay'
-import HomeSectionEditor, { DEFAULT_SECTION_ORDER, type SectionOrderItem } from '@/components/HomeSectionEditor'
+import HomeSectionEditor from '@/components/HomeSectionEditor'
+import { DEFAULT_SECTION_ORDER, type SectionOrderItem } from '@/lib/homepage-sections'
 
 // ── Visual state helpers ──────────────────────────────────────────────────────
 
