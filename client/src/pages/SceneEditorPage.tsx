@@ -766,20 +766,14 @@ export default function SceneEditorPage() {
   const deactivatedCount = useMemo(() => {
     if (deactivatedSet.size === 0) return 0
     let count = 0
-    // LIFX light commands
     for (const [lightId] of lightStates) {
-      if (isLightDeactivated(lightId)) count++
+      if (deactivatedSet.has(`lifx:${lightId}`)) count++
     }
-    // Hub/twinkly/fairy device commands
     for (const cmd of deviceCommands) {
-      if (cmd.type === 'hubitat_device' && cmd.device_id && isHubDeviceDeactivated(String(cmd.device_id))) count++
-      if (cmd.type === 'twinkly' || cmd.type === 'fairy_device') {
-        // these are identified by label, not id — skip for now (no reliable id mapping)
-      }
-      if (cmd.type === 'kasa_device' && cmd.device_id && isKasaDeviceDeactivated(String(cmd.device_id))) count++
+      if (cmd.type === 'hubitat_device' && cmd.device_id && deactivatedSet.has(`hub:${String(cmd.device_id)}`)) count++
+      if (cmd.type === 'kasa_device' && cmd.device_id && deactivatedSet.has(`kasa:${String(cmd.device_id)}`)) count++
     }
     return count
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deactivatedSet, lightStates, deviceCommands])
 
   // ── Mutations ──────────────────────────────────────────────────────────

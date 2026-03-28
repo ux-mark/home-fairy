@@ -25,7 +25,7 @@ import {
 } from 'lucide-react'
 import * as Switch from '@radix-ui/react-switch'
 import * as Tabs from '@radix-ui/react-tabs'
-import { io as socketIo } from 'socket.io-client'
+import { getSocket } from '@/hooks/useSocket'
 import { api } from '@/lib/api'
 import type { Light, LightAssignment, Sensor, HubDevice, DeviceRoomAssignment, DeactivatedDevice, SonosZone, AutoPlayRule } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
@@ -500,8 +500,7 @@ export default function RoomDetailPage() {
 
   useEffect(() => {
     if (!roomSpeaker) return
-    const url = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin
-    const s = socketIo(url, { transports: ['websocket', 'polling'] })
+    const s = getSocket()
 
     function handleZonesUpdate(zones: SonosZone[]) {
       setLiveZones(zones)
@@ -518,7 +517,6 @@ export default function RoomDetailPage() {
       s.off('sonos:zones-update', handleZonesUpdate)
       s.off('sonos:playback-update', handleZonesUpdate)
       s.off('sonos:follow-me-update', handleFollowMeUpdate)
-      s.disconnect()
     }
   }, [roomSpeaker, queryClient])
 
