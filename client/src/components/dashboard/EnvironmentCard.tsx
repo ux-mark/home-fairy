@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Thermometer, Cloud, Droplets, Wind, ArrowUp, ArrowDown, Minus, ChevronDown } from 'lucide-react'
 import { useQueries } from '@tanstack/react-query'
+import { PeriodSelector } from '@/components/ui/PeriodSelector'
+import type { Period } from '@/components/ui/PeriodSelector'
 import {
   Chart,
   CategoryScale,
@@ -422,6 +424,13 @@ function formatChartTime(raw: string): string {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+/** Parse a server timestamp into MM/DD for multi-day data. Returns raw string on failure. */
+function formatChartDate(raw: string): string {
+  const d = parseServerDate(raw)
+  if (isNaN(d.getTime())) return raw
+  return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`
+}
+
 /** Format a full readable timestamp for tooltips (local time). */
 function formatChartTooltipTime(raw: string): string {
   const d = parseServerDate(raw)
@@ -434,6 +443,15 @@ function formatChartTooltipTime(raw: string): string {
     minute: '2-digit',
     hour12: false,
   })
+}
+
+/** Return the span in hours across a set of timestamps. */
+function spanHours(timestamps: string[]): number {
+  const times = timestamps
+    .map(raw => parseServerDate(raw).getTime())
+    .filter(t => !isNaN(t))
+  if (times.length < 2) return 0
+  return (Math.max(...times) - Math.min(...times)) / (1000 * 60 * 60)
 }
 
 function MultiLineChartSkeleton() {
@@ -460,7 +478,9 @@ function MultiLineChart({ series, unit, ariaLabel }: MultiLineChartProps) {
     new Set(series.flatMap(s => s.points.map(p => p.recorded_at))),
   ).sort()
 
-  const labels = allTimestamps.map(formatChartTime)
+  // Use MM/DD date format for periods spanning more than 36 hours
+  const useMultiDay = spanHours(allTimestamps) > 36
+  const labels = allTimestamps.map(useMultiDay ? formatChartDate : formatChartTime)
 
   const datasets: ChartData<'line'>['datasets'] = series.map((s, i) => {
     const color = ROOM_PALETTE[i % ROOM_PALETTE.length]
@@ -570,7 +590,18 @@ interface EnvironmentChartsProps {
   rooms: DashboardSummary['rooms']
 }
 
+const PERIOD_LABELS: Record<Period, string> = {
+  '24h': '24 hours',
+  '7d': '7 days',
+  '30d': '30 days',
+  '90d': '90 days',
+  '1y': '1 year',
+}
+
 function EnvironmentCharts({ rooms }: EnvironmentChartsProps) {
+  const [period, setPeriod] = useState<Period>('24h')
+  const periodLabel = PERIOD_LABELS[period]
+
   const roomsWithTemp = rooms.filter(r => r.temperature !== null)
 
   // Limit to top 6 rooms; since we have no prior point count, use order from the rooms list.
@@ -581,8 +612,8 @@ function EnvironmentCharts({ rooms }: EnvironmentChartsProps) {
   // Fetch temperature history for all candidate rooms in parallel
   const tempQueries = useQueries({
     queries: candidateRooms.map(room => ({
-      queryKey: ['dashboard', 'history', 'temperature', room.name, '24h'],
-      queryFn: () => api.dashboard.getHistory('temperature', room.name, '24h'),
+      queryKey: ['dashboard', 'history', 'temperature', room.name, period],
+      queryFn: () => api.dashboard.getHistory('temperature', room.name, period),
       staleTime: 5 * 60 * 1000,
     })),
   })
@@ -590,8 +621,8 @@ function EnvironmentCharts({ rooms }: EnvironmentChartsProps) {
   // Fetch lux history for all candidate rooms in parallel
   const luxQueries = useQueries({
     queries: candidateRooms.map(room => ({
-      queryKey: ['dashboard', 'history', 'lux', room.name, '24h'],
-      queryFn: () => api.dashboard.getHistory('lux', room.name, '24h'),
+      queryKey: ['dashboard', 'history', 'lux', room.name, period],
+      queryFn: () => api.dashboard.getHistory('lux', room.name, period),
       staleTime: 5 * 60 * 1000,
     })),
   })
@@ -626,9 +657,12 @@ function EnvironmentCharts({ rooms }: EnvironmentChartsProps) {
 
   return (
     <div className="border-t pt-4 space-y-5" style={{ borderColor: 'var(--border-primary)' }}>
+      {/* Period selector — controls both temp and lux charts */}
+      <PeriodSelector value={period} onChange={setPeriod} />
+
       {/* Temperature overlay chart */}
       <div>
-        <p className="text-caption mb-3 text-xs font-medium">Temperature — 24 hours</p>
+        <p className="text-caption mb-3 text-xs font-medium">Temperature — {periodLabel}</p>
         {tempLoading ? (
           <MultiLineChartSkeleton />
         ) : !hasEnoughTempData ? (
@@ -645,7 +679,7 @@ function EnvironmentCharts({ rooms }: EnvironmentChartsProps) {
           <MultiLineChart
             series={rankedTempSeries}
             unit="°"
-            ariaLabel="Temperature over 24 hours by room"
+            ariaLabel={`Temperature over ${periodLabel} by room`}
           />
         )}
       </div>
@@ -653,14 +687,14 @@ function EnvironmentCharts({ rooms }: EnvironmentChartsProps) {
       {/* Lux overlay chart — only rendered when lux data exists */}
       {(luxLoading || hasAnyLuxData) && (
         <div className="border-t pt-4" style={{ borderColor: 'var(--border-primary)' }}>
-          <p className="text-caption mb-3 text-xs font-medium">Brightness — 24 hours</p>
+          <p className="text-caption mb-3 text-xs font-medium">Brightness — {periodLabel}</p>
           {luxLoading ? (
             <MultiLineChartSkeleton />
           ) : !hasAnyLuxData ? null : (
             <MultiLineChart
               series={rankedLuxSeries}
               unit="lux"
-              ariaLabel="Brightness over 24 hours by room"
+              ariaLabel={`Brightness over ${periodLabel} by room`}
             />
           )}
         </div>

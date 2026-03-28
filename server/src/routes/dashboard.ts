@@ -231,6 +231,10 @@ router.get('/history/:source/:sourceId', (req: Request, res: Response) => {
         cutoff = "datetime('now', '-30 days')"
         aggregate = true
         break
+      case '90d':
+        cutoff = "datetime('now', '-90 days')"
+        aggregate = true
+        break
       case '1y':
         cutoff = "datetime('now', '-1 year')"
         aggregate = true

@@ -9,12 +9,9 @@ import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
 import { BackLink } from '@/components/ui/BackLink'
 import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { Accordion } from '@/components/ui/Accordion'
-import { FilterChip } from '@/components/ui/FilterChip'
+import { PeriodSelector } from '@/components/ui/PeriodSelector'
+import type { Period } from '@/components/ui/PeriodSelector'
 import { useToast } from '@/hooks/useToast'
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-type Period = '24h' | '7d' | '30d'
 
 // ── Source metadata ────────────────────────────────────────────────────────────
 
@@ -487,7 +484,7 @@ function HistoryChart({
   period: Period
 }) {
   const meta = getSourceMeta(source)
-  const showRange = period === '7d' || period === '30d'
+  const showRange = period === '7d' || period === '30d' || period === '90d' || period === '1y'
 
   const { data, isLoading } = useQuery({
     queryKey: ['dashboard', 'history', source, deviceLabel, period],
@@ -508,29 +505,6 @@ function HistoryChart({
         showRange={showRange}
         emptyMessage="No data recorded for this period."
       />
-    </div>
-  )
-}
-
-// ── Period selector tabs ───────────────────────────────────────────────────────
-
-const PERIODS: { value: Period; label: string }[] = [
-  { value: '24h', label: '24 hours' },
-  { value: '7d', label: '7 days' },
-  { value: '30d', label: '30 days' },
-]
-
-function PeriodTabs({ value, onChange }: { value: Period; onChange: (period: Period) => void }) {
-  return (
-    <div className="flex gap-1" role="tablist" aria-label="Select history time period">
-      {PERIODS.map(p => (
-        <FilterChip
-          key={p.value}
-          label={p.label}
-          active={value === p.value}
-          onClick={() => onChange(p.value)}
-        />
-      ))}
     </div>
   )
 }
@@ -1008,7 +982,7 @@ function KasaDeviceDetail({ id }: { id: string }) {
               <h2 id="history-heading" className="text-sm font-semibold text-heading">
                 History
               </h2>
-              <PeriodTabs value={period} onChange={setPeriod} />
+              <PeriodSelector value={period} onChange={setPeriod} />
             </div>
             <div className="space-y-8">
               {historySources.map(s => (
@@ -1467,7 +1441,7 @@ function HubDeviceDetail({ id }: { id: string }) {
             </h2>
 
             {historySources.length > 0 && (
-              <PeriodTabs value={period} onChange={setPeriod} />
+              <PeriodSelector value={period} onChange={setPeriod} />
             )}
           </div>
 
