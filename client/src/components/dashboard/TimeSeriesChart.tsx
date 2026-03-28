@@ -1,17 +1,6 @@
-import {
-  Chart,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Filler,
-  Tooltip,
-} from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import type { ChartOptions, ChartData } from 'chart.js'
 import { parseServerDate } from '@/lib/utils'
-
-Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip)
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

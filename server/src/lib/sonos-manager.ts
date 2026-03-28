@@ -3,7 +3,13 @@ import { getAll, getOne, run } from '../db/index.js'
 import { emit } from './socket.js'
 import { getLatestEpisodeUrl } from './podcast-resolver.js'
 
-const log = (msg: string) => console.log(`[sonos] ${msg}`)
+function log(msg: string): void {
+  try {
+    run('INSERT INTO logs (message, category) VALUES (?, ?)', [msg, 'sonos'])
+  } catch {
+    console.log(`[sonos] ${msg}`)
+  }
+}
 
 interface SonosSpeakerRow {
   id: number
@@ -47,6 +53,7 @@ class SonosManager {
   private anchorRoom: string | null = null
   private zoneRefreshTimer: NodeJS.Timeout | null = null
   private consecutiveFailures = 0
+  private shuttingDown = false
   private isRoomLockedFn: ((roomName: string) => boolean) | null = null
   private rulePlayCounts: Map<number, number> = new Map()
   private currentMode: string | null = null
@@ -91,6 +98,7 @@ class SonosManager {
         }
       }
 
+      if (this.shuttingDown) return
       const interval = this.consecutiveFailures >= 5 ? 120_000 : 30_000
       this.zoneRefreshTimer = setTimeout(poll, interval)
       this.zoneRefreshTimer.unref()
@@ -424,6 +432,7 @@ class SonosManager {
   }
 
   shutdown(): void {
+    this.shuttingDown = true
     if (this.zoneRefreshTimer) {
       clearTimeout(this.zoneRefreshTimer)
       this.zoneRefreshTimer = null

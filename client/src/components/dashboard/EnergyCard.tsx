@@ -28,11 +28,13 @@ function powerIntensityClass(watts: number, maxWatts: number): string {
 
 // ── Inline device trend chart ─────────────────────────────────────────────────
 
-function DeviceTrendChart({ deviceLabel }: { deviceLabel: string }) {
+function DeviceTrendChart({ deviceId, deviceLabel }: { deviceId: string | number; deviceLabel: string }) {
   const [period, setPeriod] = useState<Period>('24h')
 
+  // Use stable device ID in query key so renames don't orphan cache entries.
+  // The API still uses label as source_id (matching how history-collector stores data).
   const { data: historyData, isLoading } = useQuery({
-    queryKey: ['dashboard', 'history', 'power', deviceLabel, period],
+    queryKey: ['dashboard', 'history', 'power', String(deviceId), deviceLabel, period],
     queryFn: () => api.dashboard.getHistory('power', deviceLabel, period),
     staleTime: 5 * 60 * 1000,
   })
@@ -158,7 +160,7 @@ function DeviceRow({ device, maxWatts, anomaly }: DeviceRowProps) {
         }}
       >
         <div style={{ minHeight: 0 }}>
-          {expanded && <DeviceTrendChart deviceLabel={device.label} />}
+          {expanded && <DeviceTrendChart deviceId={device.id} deviceLabel={device.label} />}
         </div>
       </div>
     </li>

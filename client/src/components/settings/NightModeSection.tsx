@@ -168,7 +168,7 @@ export function NightModeSection() {
           <div className="border-t border-[var(--border-secondary)] pt-5">
             <div className="rounded-xl border border-indigo-500/30 bg-indigo-500/5 px-4 py-3">
               <div className="flex items-center gap-3 mb-2">
-                <Lock className="h-4 w-4 text-indigo-400" />
+                <Lock className="h-4 w-4 text-indigo-400" aria-hidden="true" />
                 <p className="text-heading text-sm font-medium">
                   {nightStatus.lockedRooms.length} room{nightStatus.lockedRooms.length !== 1 ? 's' : ''} locked
                 </p>
@@ -186,7 +186,7 @@ export function NightModeSection() {
                   'disabled:opacity-50',
                 )}
               >
-                <Unlock className="h-4 w-4" />
+                <Unlock className="h-4 w-4" aria-hidden="true" />
                 Unlock now
               </button>
             </div>

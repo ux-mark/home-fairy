@@ -232,7 +232,7 @@ function RoomCard({
 // ── Weather card ────────────────────────────────────────────────────────────
 
 function WeatherCard() {
-  const { data: weather } = useQuery({
+  const { data: weather, isError } = useQuery({
     queryKey: ['system', 'weather'],
     queryFn: api.system.getWeather,
     retry: false,
@@ -243,6 +243,14 @@ function WeatherCard() {
     queryKey: ['system', 'preferences'],
     queryFn: api.system.getPreferences,
   })
+
+  if (isError) {
+    return (
+      <div className="card mb-6 rounded-xl border px-4 py-3">
+        <p className="text-caption text-sm">Weather unavailable</p>
+      </div>
+    )
+  }
 
   if (!weather) return null
 
@@ -459,13 +467,21 @@ function MtaLineBadge({ line }: { line: string }) {
 function MtaCard() {
   const [open, setOpen] = useState(false)
 
-  const { data: combinedStatus } = useQuery({
+  const { data: combinedStatus, isError } = useQuery({
     queryKey: ['mta', 'combined-status'],
     queryFn: api.system.getCombinedMtaStatus,
     retry: false,
     staleTime: 30_000,
     refetchInterval: 30_000,
   })
+
+  if (isError) {
+    return (
+      <div className="card mb-6 rounded-xl border px-4 py-3">
+        <p className="text-caption text-sm">Train times unavailable</p>
+      </div>
+    )
+  }
 
   if (!combinedStatus || combinedStatus.overallStatus === 'none') return null
 
@@ -491,7 +507,7 @@ function MtaCard() {
       {soonestStop?.catchableTrain ? (
         <span className="flex items-center gap-1.5 min-w-0">
           <MtaLineBadge line={soonestStop.catchableTrain.routeId} />
-          <span className="truncate">at {soonestStop.config.name} in {soonestStop.catchableTrain.minutesAway} min</span>
+          <span>at {soonestStop.config.name} in {soonestStop.catchableTrain.minutesAway} min</span>
         </span>
       ) : combinedStatus.overallStatus === 'red'
         ? 'Nothing catchable right now'
@@ -860,7 +876,7 @@ export default function HomePage() {
             <p className="text-zinc-400">Unable to load home data. Check your connection and try again.</p>
             <button
               onClick={() => refetchRooms()}
-              className="rounded-lg bg-fairy-600 px-4 py-2 text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+              className="rounded-lg bg-fairy-600 px-4 py-2 min-h-[44px] text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
             >
               Try again
             </button>

@@ -7,7 +7,7 @@ import { BackLink } from '@/components/ui/BackLink'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { FilterChip } from '@/components/ui/FilterChip'
 
-const CATEGORIES = ['hubitat', 'scene', 'motion', 'lifx', 'system', 'battery', 'weather', 'timer', 'device_error'] as const
+const CATEGORIES = ['hubitat', 'scene', 'motion', 'lifx', 'system', 'battery', 'weather', 'timer', 'device_error', 'sonos', 'kasa', 'mta-indicator'] as const
 
 function formatTimestamp(dateStr: string) {
   return formatDateTime(dateStr, { second: '2-digit' })

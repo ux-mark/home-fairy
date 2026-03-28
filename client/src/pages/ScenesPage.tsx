@@ -551,7 +551,7 @@ export default function ScenesPage() {
           <p className="text-zinc-400">Unable to load scenes. Check your connection and try again.</p>
           <button
             onClick={() => refetch()}
-            className="rounded-lg bg-fairy-600 px-4 py-2 text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            className="rounded-lg bg-fairy-600 px-4 py-2 min-h-[44px] text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           >
             Try again
           </button>

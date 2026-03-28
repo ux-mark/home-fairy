@@ -209,7 +209,7 @@ async function retryFailedLights(
   }
 }
 
-export async function activateScene(sceneName: string, visitedScenes: Set<string> = new Set()): Promise<void> {
+export async function activateScene(sceneName: string, visitedScenes: Set<string> = new Set(), source: 'manual' | 'auto' | 'timer' | 'chain' = 'auto'): Promise<void> {
   if (visitedScenes.has(sceneName)) {
     log(`Scene cycle detected: ${sceneName} already in chain [${[...visitedScenes].join(' -> ')}]. Skipping.`)
     return
@@ -230,7 +230,7 @@ export async function activateScene(sceneName: string, visitedScenes: Set<string
     [sceneName],
   ).map(r => ({ name: r.room_name }))
 
-  log(`Activating scene: ${sceneName}`)
+  log(`[${source}] Activating scene: ${sceneName}`)
 
   // Collect lifx_light commands for batching
   const lightCommands: LightCommand[] = []
@@ -477,7 +477,7 @@ export async function activateScene(sceneName: string, visitedScenes: Set<string
                 break
               }
             }
-            await activateScene(cmd.name, visitedScenes)
+            await activateScene(cmd.name, visitedScenes, 'chain')
             log(`Chained scene activation: ${cmd.name}`)
           } catch (chainErr) {
             const chainMsg = chainErr instanceof Error ? chainErr.message : String(chainErr)

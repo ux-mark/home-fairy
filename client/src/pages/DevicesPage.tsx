@@ -17,7 +17,7 @@ import {
   Music2,
   Volume2,
 } from 'lucide-react'
-import { io as socketIo } from 'socket.io-client'
+import { getSocket } from '@/hooks/useSocket'
 import { api } from '@/lib/api'
 import type { Light, Room, DeviceRoomAssignment, HubDevice, KasaDevice, SonosSpeakerMapping, SonosZone } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
@@ -331,7 +331,7 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
           <button
             onClick={() => setExpanded(!expanded)}
             className="text-caption flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors hover:text-[var(--text-secondary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-            aria-label={expanded ? 'Collapse' : 'Expand'}
+            aria-label={expanded ? `Collapse ${device.label} controls` : `Expand ${device.label} controls`}
           >
             {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
@@ -802,13 +802,11 @@ export default function DevicesPage() {
   // Invalidate zones cache on real-time Sonos updates
   useEffect(() => {
     if (filter !== 'sonos' && filter !== 'all') return
-    const url = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin
-    const s = socketIo(url, { transports: ['websocket', 'polling'] })
+    const s = getSocket()
     const handler = () => queryClient.invalidateQueries({ queryKey: ['sonos', 'zones'] })
     s.on('sonos:zones-update', handler)
     return () => {
       s.off('sonos:zones-update', handler)
-      s.disconnect()
     }
   }, [queryClient, filter])
 

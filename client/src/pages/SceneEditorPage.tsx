@@ -432,6 +432,7 @@ function OptionToggle({
           <p className="text-xs text-caption">{description}</p>
         </div>
         <Switch.Root
+          aria-label={label}
           checked={enabled}
           onCheckedChange={onToggle}
           className={cn(
@@ -766,20 +767,14 @@ export default function SceneEditorPage() {
   const deactivatedCount = useMemo(() => {
     if (deactivatedSet.size === 0) return 0
     let count = 0
-    // LIFX light commands
     for (const [lightId] of lightStates) {
-      if (isLightDeactivated(lightId)) count++
+      if (deactivatedSet.has(`lifx:${lightId}`)) count++
     }
-    // Hub/twinkly/fairy device commands
     for (const cmd of deviceCommands) {
-      if (cmd.type === 'hubitat_device' && cmd.device_id && isHubDeviceDeactivated(String(cmd.device_id))) count++
-      if (cmd.type === 'twinkly' || cmd.type === 'fairy_device') {
-        // these are identified by label, not id — skip for now (no reliable id mapping)
-      }
-      if (cmd.type === 'kasa_device' && cmd.device_id && isKasaDeviceDeactivated(String(cmd.device_id))) count++
+      if (cmd.type === 'hubitat_device' && cmd.device_id && deactivatedSet.has(`hub:${String(cmd.device_id)}`)) count++
+      if (cmd.type === 'kasa_device' && cmd.device_id && deactivatedSet.has(`kasa:${String(cmd.device_id)}`)) count++
     }
     return count
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deactivatedSet, lightStates, deviceCommands])
 
   // ── Mutations ──────────────────────────────────────────────────────────
@@ -1225,6 +1220,7 @@ export default function SceneEditorPage() {
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-caption" />
                 <input
                   type="search"
+                  aria-label="Search lights by name"
                   placeholder="Search lights by name..."
                   value={lightSearch}
                   onChange={e => setLightSearch(e.target.value)}

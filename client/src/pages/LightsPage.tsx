@@ -81,7 +81,7 @@ function LightRow({ light }: { light: Light }) {
         </button>
 
         {/* Connection */}
-        <span title={light.connected ? 'Connected' : 'Disconnected'}>
+        <span title={light.connected ? 'Connected' : 'Disconnected'} aria-label={light.connected ? 'Connected' : 'Disconnected'} role="img">
           {light.connected ? (
             <Wifi className="h-3.5 w-3.5 text-fairy-500" />
           ) : (
@@ -118,7 +118,7 @@ function LightRow({ light }: { light: Light }) {
         <button
           onClick={() => setExpanded(!expanded)}
           className="text-caption flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors hover:text-[var(--text-secondary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-          aria-label={expanded ? 'Collapse' : 'Expand'}
+          aria-label={expanded ? `Collapse ${light.label} controls` : `Expand ${light.label} controls`}
         >
           {expanded ? (
             <ChevronUp className="h-4 w-4" />
@@ -277,6 +277,7 @@ export default function LightsPage() {
         <Search className="text-caption absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
         <input
           type="search"
+          aria-label="Search lights by name or group"
           placeholder="Search by light name or group..."
           value={search}
           onChange={e => setSearch(e.target.value)}

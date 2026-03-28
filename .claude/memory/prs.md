@@ -449,9 +449,58 @@
 - **Created**: 2026-03-28
 - **Status**: merged
 - **Merge date**: 2026-03-28
-- **Branch cleanup**: pending
+- **Branch cleanup**: done
 - **Summary**: fairy_scene commands now check target scene's active_from/active_to seasonal range before activating. Prevents out-of-season scenes (e.g. Xmas in March) from being chain-activated. Logs skip with human-readable dates (e.g. "1 Dec to 7 Jan").
 - **Files**: `server/src/lib/scene-executor.ts`
+
+## PR #69 — Fix: Schema DDL active column and dashboard data integrity
+- **Branch**: fix/schema-ddl-and-data-integrity → dev
+- **Created**: 2026-03-28
+- **Status**: open
+- **Summary**: Add `active INTEGER DEFAULT 1` to CREATE TABLE for hub_devices, kasa_devices, light_rooms. Add ALTER TABLE migration guards. Wrap JSON.parse in dashboard with try/catch. Add safety comment to cutoff SQL.
+- **Files**: `server/src/db/index.ts`, `server/src/routes/dashboard.ts`
+
+## PR #70 — Fix: Backend reliability — mutex, leaks, shutdown, retries
+- **Branch**: fix/backend-reliability → dev
+- **Created**: 2026-03-28
+- **Status**: open
+- **Summary**: Sync mutex (409), webhookHits cleanup, MotionHandler shutdown(), Sonos shuttingDown flag, deferred pruneOldLogs, LIFX 3-attempt withRetry, PM2 restart_delay.
+- **Files**: `server/src/routes/hubitat.ts`, `server/src/index.ts`, `server/src/lib/motion-handler.ts`, `server/src/lib/sonos-manager.ts`, `server/src/lib/history-collector.ts`, `server/src/lib/lifx-client.ts`, `ecosystem.config.cjs`
+
+## PR #71 — Fix: Frontend socket duplication and timer leaks
+- **Branch**: fix/frontend-socket-and-timers → dev
+- **Created**: 2026-03-28
+- **Status**: open
+- **Summary**: Replace direct socketIo() with getSocket() singleton on DevicesPage and RoomDetailPage. Add cleanup for Sonos volume debounce timers. Remove eslint-disable on SceneEditorPage deactivatedCount.
+- **Files**: `client/src/hooks/useSocket.ts`, `client/src/pages/DevicesPage.tsx`, `client/src/pages/RoomDetailPage.tsx`, `client/src/pages/SonosDetailPage.tsx`, `client/src/pages/SceneEditorPage.tsx`
+
+## PR #72 — Fix: Frontend correctness — preferences, chart setup, cache keys
+- **Branch**: fix/frontend-correctness → dev
+- **Created**: 2026-03-28
+- **Status**: open
+- **Summary**: EnvironmentCard uses useQuery for temp unit. Night-status invalidation on mode change. Centralised Chart.js registration. Stable device ID in EnergyCard query key.
+- **Files**: `client/src/components/dashboard/EnvironmentCard.tsx`, `client/src/hooks/useSocket.ts`, `client/src/lib/chartSetup.ts`, `client/src/main.tsx`, `client/src/components/dashboard/TimeSeriesChart.tsx`, `client/src/components/dashboard/ActivityCard.tsx`, `client/src/components/dashboard/EnergyCard.tsx`
+
+## PR #73 — Fix: Accessibility — labels, touch targets, error states
+- **Branch**: fix/accessibility-audit → dev
+- **Created**: 2026-03-28
+- **Status**: open
+- **Summary**: 14 accessibility fixes: aria-labels on switches/inputs/buttons, contextual expand/collapse labels, connection status icons, min-h-[44px] touch targets, aria-hidden on decorative icons, truncate removal, WeatherCard/MtaCard error states.
+- **Files**: 9 client files
+
+## PR #74 — Feature: Logging and observability improvements
+- **Branch**: feature/logging-observability → dev
+- **Created**: 2026-03-28
+- **Status**: open
+- **Summary**: Logs category index, DEBUG-gated motion messages, Sonos DB logging, Kasa poll failure logging, LIFX 429 logging, weather/MTA error logging, scene source context ([manual]/[auto]/[timer]/[chain]), DEBUG-gated request body and socket logging.
+- **Files**: 12 server files
+
+## PR #75 — Fix: Deploy script — opt-in DB copy, timestamped backups
+- **Branch**: fix/deploy-script-hardening → dev
+- **Created**: 2026-03-28
+- **Status**: open
+- **Summary**: Database copy now opt-in via --include-db flag. Timestamped backups (keeps last 5). Default deploy skips DB copy to prevent accidental production data loss.
+- **Files**: `deploy-to-pi.sh`
 
 ## Reconciliation — Sync main and dev (2026-03-27)
 - **Action**: Merged main into dev (fast-forward) to reconcile divergence

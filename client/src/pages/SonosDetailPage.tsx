@@ -648,6 +648,14 @@ export default function SonosDetailPage() {
   const [liveVolume, setLiveVolume] = useState<number | null>(null)
   const liveVolumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Clean up debounce timers on unmount to prevent stale mutations
+  useEffect(() => {
+    return () => {
+      if (volumeSaveTimer.current) clearTimeout(volumeSaveTimer.current)
+      if (liveVolumeTimer.current) clearTimeout(liveVolumeTimer.current)
+    }
+  }, [])
+
   const setLiveVolumeMutation = useMutation({
     mutationFn: (level: number) => api.sonos.setVolume(speaker!, level),
     onSuccess: () => {

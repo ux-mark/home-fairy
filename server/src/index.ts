@@ -50,6 +50,16 @@ function isWebhookRateLimited(ip: string): boolean {
   return recent.length > WEBHOOK_RATE_LIMIT
 }
 
+// Periodically clean up stale rate-limit entries to prevent unbounded map growth
+setInterval(() => {
+  const now = Date.now()
+  for (const [ip, hits] of webhookHits) {
+    const recent = hits.filter(t => now - t < WEBHOOK_RATE_WINDOW)
+    if (recent.length === 0) webhookHits.delete(ip)
+    else webhookHits.set(ip, recent)
+  }
+}, 5 * 60_000).unref()
+
 // Validate required environment variables
 const REQUIRED_ENV = ['LIFX_TOKEN', 'HUBITAT_TOKEN', 'HUB_BASE_URL', 'LATITUDE', 'LONGITUDE', 'OPENWEATHER_API'] as const
 const missing = REQUIRED_ENV.filter(key => !process.env[key])
@@ -279,9 +289,9 @@ app.get('{*path}', (_req, res) => {
 
 // Socket.io connection handling
 io.on('connection', (socket) => {
-  console.log(`Client connected: ${socket.id}`)
+  if (process.env.DEBUG) console.log(`Client connected: ${socket.id}`)
   socket.on('disconnect', () => {
-    console.log(`Client disconnected: ${socket.id}`)
+    if (process.env.DEBUG) console.log(`Client disconnected: ${socket.id}`)
   })
 })
 
@@ -296,7 +306,7 @@ timerManager.setOnExpire(async (targetScene, sceneName) => {
       'INSERT INTO logs (message, category) VALUES (?, ?)',
       [`Scene timer expired (${sceneName}): activating "${targetScene}"`, 'timer'],
     )
-    await activateScene(targetScene)
+    await activateScene(targetScene, new Set(), 'timer')
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`Failed to activate scene from timer: ${msg}`)
@@ -329,6 +339,7 @@ function shutdown(signal: string): void {
   stopHistoryCollector()
   stopKasaPoller()
   sonosManager.shutdown()
+  motionHandler.shutdown()
   weatherIndicator.stop()
   sunModeScheduler.clearTimers()
   timeTriggerScheduler.clearTimers()

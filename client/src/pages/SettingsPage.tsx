@@ -325,7 +325,8 @@ function TimersSection() {
               <button
                 onClick={() => cancelMutation.mutate(timer.id)}
                 disabled={cancelMutation.isPending}
-                className="rounded-lg p-2 text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-red-400"
+                aria-label={`Cancel timer: ${timer.sceneName}`}
+                className="rounded-lg p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-[var(--text-secondary)] transition-colors hover:bg-[var(--bg-tertiary)] hover:text-red-400"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -487,7 +488,7 @@ export default function SettingsPage() {
   return (
     <div>
       <div className="mb-6 flex items-center gap-2">
-        <Settings className="h-5 w-5 text-fairy-400" />
+        <Settings className="h-5 w-5 text-fairy-400" aria-hidden="true" />
         <h1 className="text-heading text-lg font-semibold">Settings</h1>
       </div>
 

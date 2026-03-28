@@ -1,25 +1,46 @@
 #!/bin/bash
 set -e
-# Deploy The Fairies v3 to Raspberry Pi
+# Deploy Home Fairy to Raspberry Pi
 # Run this from your Mac: bash deploy-to-pi.sh
+#
+# Database behaviour:
+#   By default, the local database is NOT copied to the Pi.
+#   Pass --include-db to copy the local database (overwrites Pi database).
+#   Up to 5 timestamped backups are kept automatically.
 
 PI_HOST="queen@192.168.10.201"
 PI_DIR="/home/queen/thefairies-app"
 LOCAL_DB="server/data/thefairies.sqlite"
+INCLUDE_DB=false
 
-echo "Deploying The Fairies v3 to Pi"
+# Parse flags
+for arg in "$@"; do
+  case "$arg" in
+    --include-db) INCLUDE_DB=true ;;
+    *) echo "Unknown flag: $arg"; exit 1 ;;
+  esac
+done
+
+echo "Deploying Home Fairy to Pi"
 echo "You'll be asked for your Pi password a few times."
+if [ "$INCLUDE_DB" = true ]; then
+  echo "Database copy: ENABLED (--include-db)"
+else
+  echo "Database copy: SKIPPED (pass --include-db to copy)"
+fi
 echo ""
 
-# Step 0: Back up database on Pi before overwriting
-echo "Step 0: Backing up database on Pi..."
-ssh "$PI_HOST" "cp $PI_DIR/server/data/thefairies.sqlite $PI_DIR/server/data/thefairies.sqlite.pre-deploy-backup 2>/dev/null || true"
+if [ "$INCLUDE_DB" = true ]; then
+  # Back up database on Pi with timestamp, keep last 5
+  echo "Step 0: Backing up database on Pi..."
+  ssh "$PI_HOST" "cd $PI_DIR/server/data && cp thefairies.sqlite thefairies.sqlite.backup-\$(date +%Y%m%d-%H%M%S) 2>/dev/null || true && ls -1t thefairies.sqlite.backup-* 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null || true"
 
-# Step 1: Copy database
-echo "Step 1: Copying database to Pi..."
-scp -O "$LOCAL_DB" "$PI_HOST:$PI_DIR/server/data/thefairies.sqlite"
+  # Copy database
+  echo "Step 1: Copying database to Pi..."
+  scp -O "$LOCAL_DB" "$PI_HOST:$PI_DIR/server/data/thefairies.sqlite"
+fi
 
-# Step 2: Run install + build + start on Pi
+# Run install + build + start on Pi
 echo ""
 echo "Step 2: Installing, building, and starting on Pi..."
 ssh -t "$PI_HOST" bash -s << 'REMOTE'

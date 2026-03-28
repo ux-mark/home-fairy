@@ -4,7 +4,7 @@ import { io, Socket } from 'socket.io-client'
 
 let socket: Socket | null = null
 
-function getSocket(): Socket {
+export function getSocket(): Socket {
   if (!socket) {
     const url = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin
     socket = io(url, {
@@ -59,6 +59,7 @@ export function useDashboardSocket(): void {
     function handleModeChange() {
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] })
       queryClient.invalidateQueries({ queryKey: ['system', 'current'] })
+      queryClient.invalidateQueries({ queryKey: ['system', 'night-status'] })
       queryClient.invalidateQueries({ queryKey: ['rooms'] })
       queryClient.invalidateQueries({ queryKey: ['scenes'] })
     }
