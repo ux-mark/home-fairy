@@ -453,8 +453,30 @@ export async function activateScene(sceneName: string, visitedScenes: Set<string
         }
 
         case 'fairy_scene': {
-          // Chain: activate another scene
+          // Chain: activate another scene (respecting seasonal ranges)
           try {
+            const targetScene = getOne<{ active_from: string | null; active_to: string | null }>(
+              'SELECT active_from, active_to FROM scenes WHERE name = ?',
+              [cmd.name],
+            )
+            if (targetScene?.active_from && targetScene?.active_to) {
+              const now = new Date()
+              const month = now.getMonth() + 1
+              const day = now.getDate()
+              const today = month * 100 + day
+              const [fromM, fromD] = targetScene.active_from.split('-').map(Number)
+              const [toM, toD] = targetScene.active_to.split('-').map(Number)
+              const from = fromM * 100 + fromD
+              const to = toM * 100 + toD
+              const inRange = from <= to
+                ? (today >= from && today <= to)
+                : (today >= from || today <= to)
+              if (!inRange) {
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                log(`Skipping chained scene "${cmd.name}": out of season (${fromD} ${monthNames[fromM - 1]} to ${toD} ${monthNames[toM - 1]})`)
+                break
+              }
+            }
             await activateScene(cmd.name, visitedScenes)
             log(`Chained scene activation: ${cmd.name}`)
           } catch (chainErr) {
