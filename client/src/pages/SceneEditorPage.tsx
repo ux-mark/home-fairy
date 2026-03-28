@@ -271,36 +271,33 @@ function DeviceToggleCard({
   deactivated?: boolean
 }) {
   return (
-    <div className="card rounded-xl border p-4">
-      <div className="flex items-center gap-3">
+    <div className="card rounded-xl border transition-colors">
+      <div className="flex items-center gap-3 p-4">
         <div className="min-w-0 flex-1">
           <p className={cn('break-words text-sm font-medium', deactivated ? 'text-slate-500' : 'text-heading')}>
             {label}
             {deactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
           </p>
           <p className="text-xs text-caption">
-            {isOn ? (isDimmer && level !== undefined ? `On at ${level}%` : 'On') : 'Off'}
+            {isOn ? (isDimmer && level !== undefined ? `On at ${level}%` : 'Included') : 'Off'}
           </p>
         </div>
-        <Switch.Root
-          checked={isOn}
-          onCheckedChange={onToggle}
+        <button
+          type="button"
+          onClick={() => onToggle(!isOn)}
           className={cn(
-            'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            isOn ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
+            'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            isOn
+              ? 'bg-fairy-500/15 text-fairy-400'
+              : 'text-caption hover:bg-[var(--bg-tertiary)]',
           )}
+          aria-label={`${isOn ? 'Remove' : 'Add'} ${label}`}
         >
-          <Switch.Thumb
-            className={cn(
-              'block h-5 w-5 rounded-full bg-white shadow transition-transform',
-              isOn ? 'translate-x-6' : 'translate-x-1',
-            )}
-          />
-        </Switch.Root>
+          <Power className="h-5 w-5" />
+        </button>
       </div>
       {isOn && isDimmer && onLevelChange && (
-        <div className="mt-3 pt-3 border-t">
+        <div className="border-t p-4">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs text-body">Level</span>
             <span className="text-xs font-medium text-heading">{level ?? 100}%</span>
@@ -342,8 +339,8 @@ function FairyDeviceCard({
   deactivated?: boolean
 }) {
   return (
-    <div className="card rounded-xl border p-4">
-      <div className="flex items-center gap-3">
+    <div className="card rounded-xl border transition-colors">
+      <div className="flex items-center gap-3 p-4">
         <div className="min-w-0 flex-1">
           <p className={cn('break-words text-sm font-medium', deactivated ? 'text-slate-500' : 'text-heading')}>
             {label}
@@ -353,25 +350,22 @@ function FairyDeviceCard({
             {isOn ? `${pattern} at ${brightness}%` : 'Off'}
           </p>
         </div>
-        <Switch.Root
-          checked={isOn}
-          onCheckedChange={onToggle}
+        <button
+          type="button"
+          onClick={() => onToggle(!isOn)}
           className={cn(
-            'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            isOn ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
+            'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            isOn
+              ? 'bg-fairy-500/15 text-fairy-400'
+              : 'text-caption hover:bg-[var(--bg-tertiary)]',
           )}
+          aria-label={`${isOn ? 'Remove' : 'Add'} ${label}`}
         >
-          <Switch.Thumb
-            className={cn(
-              'block h-5 w-5 rounded-full bg-white shadow transition-transform',
-              isOn ? 'translate-x-6' : 'translate-x-1',
-            )}
-          />
-        </Switch.Root>
+          <Power className="h-5 w-5" />
+        </button>
       </div>
       {isOn && (
-        <div className="mt-3 space-y-3 pt-3 border-t">
+        <div className="space-y-3 border-t p-4">
           <div>
             <label className="mb-1.5 block text-xs text-body">Pattern</label>
             <select
