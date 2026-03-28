@@ -185,6 +185,21 @@ Automatically transitions modes based on sun position (SunCalc). On server start
 - Real-time updates via Socket.io
 - No user auth — relies on local network trust and CORS origin whitelisting
 
+### Device Routing Convention
+
+Every device type has a dedicated detail route. Links to devices must use the correct route based on device source/type — never a generic `/devices/:id`.
+
+| Device source | Route pattern | ID format | Example |
+|---|---|---|---|
+| LIFX light | `/lights/:id` | string (UUID) | `/lights/d073d5abcdef` |
+| Kasa device | `/devices/kasa/:id` | string (must `encodeURIComponent`) | `/devices/kasa/ABC123...` |
+| Hubitat device | `/devices/:id` | number | `/devices/42` |
+| Sonos speaker | `/sonos/:speaker` | string (speaker name, must `encodeURIComponent`) | `/sonos/Living%20Room` |
+
+**Rule**: Any API response that includes device IDs intended for linking must also include a `source` field (`'hub'`, `'kasa'`, `'lifx'`, or `'sonos'`) so the frontend can build the correct route. Use the shared `deviceDetailPath(id, source)` helper in `client/src/lib/utils.ts` to generate the link.
+
+**Affected API types**: `PowerDevice`, `BatteryDevice`, `RoomIntelligenceData.devices`, `RoomIntelligenceData.batteryDevices`, `DeviceInsightsData.roomDevices`, `EnergyInsights.deviceCostRanking`.
+
 ## Pi Deployment
 - Repo location: ~/thefairies-app
 - Process manager: PM2 (ecosystem.config.cjs)

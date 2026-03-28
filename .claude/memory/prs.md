@@ -408,6 +408,51 @@
 - **Summary**: Fix parent strip all-off bypassing per-outlet exclude_from_all_off flags (Sonos Bedroom, WFH WiFi turned off despite exclusions). Migrate WFH scene from stale Hubitat device IDs to Kasa outlet IDs.
 - **Files**: `server/src/routes/system.ts`, `server/src/db/index.ts`
 
+## PR #64 — Fix MTA card alignment and add direction arrows
+- **Branch**: fix/mta-card-alignment → dev
+- **Created**: 2026-03-27
+- **Status**: merged
+- **Merge date**: 2026-03-27
+- **Branch cleanup**: done
+- **Summary**: Aligned status dots with accordion header, added ArrowUp/ArrowDown for uptown/downtown, placeholder badge for no-train stations, inline message text with station name
+- **Files**: `client/src/pages/HomePage.tsx`
+
+## PR #65 — Fix device link routing across dashboard and insights
+- **Branch**: fix/device-link-routing → dev
+- **Created**: 2026-03-28
+- **Status**: merged
+- **Merge date**: 2026-03-28
+- **Branch cleanup**: done
+- **Summary**: Add `source` field to mixed-type device API responses, add `deviceDetailPath()` helper, fix 4 link sites that used generic `/devices/:id` for Kasa devices. Document device routing convention in PROJECT_SPEC.md.
+- **Files**: `client/src/lib/utils.ts`, `client/src/lib/api.ts`, `client/src/components/dashboard/EnergyCard.tsx`, `client/src/components/room/RoomIntelligence.tsx`, `client/src/pages/DeviceDetailPage.tsx`, `server/src/routes/dashboard.ts`, `.specs/PROJECT_SPEC.md`
+
+## PR #66 — Fix device label fallback showing raw IDs in notifications
+- **Branch**: fix/device-label-fallback → dev
+- **Created**: 2026-03-28
+- **Status**: merged
+- **Merge date**: 2026-03-28
+- **Branch cleanup**: done
+- **Summary**: getDeviceLabel() now falls back across all device tables when primary lookup fails. Fixed existing broken notifications (Kasa MACs recorded as hub type, stale notifications for removed hub devices dismissed, orphan device_health entries cleaned up). Also migrated all 18 hubitat_device scene commands to kasa_device across 14 scenes (Focus, Bed Lamp, Playbulb, Plant Life), removed 3 duplicates.
+- **Files**: `server/src/lib/device-health-service.ts`
+
+## PR #67 — Fix scene editor: filter devices by room, exclude Always Keep On
+- **Branch**: fix/scene-editor-device-filtering → dev
+- **Created**: 2026-03-28
+- **Status**: merged
+- **Merge date**: 2026-03-28
+- **Branch cleanup**: done
+- **Summary**: Scene editor now only shows devices assigned to the scene's rooms (removed global Kasa fetch). Filters out "Always Keep On" devices and sensors. Unified device on/off controls to use power button pattern matching lights.
+- **Files**: `client/src/pages/SceneEditorPage.tsx`
+
+## PR #68 — Skip out-of-season scenes in fairy_scene chaining
+- **Branch**: fix/seasonal-scene-chaining → dev
+- **Created**: 2026-03-28
+- **Status**: merged
+- **Merge date**: 2026-03-28
+- **Branch cleanup**: pending
+- **Summary**: fairy_scene commands now check target scene's active_from/active_to seasonal range before activating. Prevents out-of-season scenes (e.g. Xmas in March) from being chain-activated. Logs skip with human-readable dates (e.g. "1 Dec to 7 Jan").
+- **Files**: `server/src/lib/scene-executor.ts`
+
 ## Reconciliation — Sync main and dev (2026-03-27)
 - **Action**: Merged main into dev (fast-forward) to reconcile divergence
 - **Context**: PRs #60 and #61 had been merged directly to main (bypassing dev). PR #62 was merged to dev without #61's changes. This caused progressive disclosure work from PR #61 to be missing on dev. After merging PR #63 into main, merged main into dev — both branches now at commit 18cca7a, fully in sync.
