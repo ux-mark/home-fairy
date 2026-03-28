@@ -285,6 +285,26 @@ export function initDb(): void {
     db.exec(`UPDATE modes SET icon = 'bed' WHERE LOWER(name) = 'sleep time'`)
   }
 
+  // Migrate WFH scene from old Hubitat device IDs to Kasa outlet IDs
+  // The WFH scene still references Hubitat device IDs that no longer exist (devices migrated to Kasa sidecar)
+  const wfhScene = db.prepare("SELECT commands FROM scenes WHERE name = 'WFH'").get() as { commands: string } | undefined
+  if (wfhScene?.commands) {
+    try {
+      const cmds = JSON.parse(wfhScene.commands)
+      const hasHubitatCmds = cmds.some((c: { type: string }) => c.type === 'hubitat_device')
+      if (hasHubitatCmds) {
+        const kasaCmds = [
+          { type: 'kasa_device', name: 'WFH-Power-Computer', command: 'on', device_id: '98DAC4B32BE3_0' },
+          { type: 'kasa_device', name: 'WFH-Monitor', command: 'on', device_id: '98DAC4B32BE3_1' },
+          { type: 'kasa_device', name: 'WFH-Power-USB-C', command: 'on', device_id: '98DAC4B32BE3_2' },
+          { type: 'kasa_device', name: 'WFH-Desk', command: 'on', device_id: '98DAC4B32BE3_4' },
+        ]
+        db.prepare("UPDATE scenes SET commands = ? WHERE name = 'WFH'").run(JSON.stringify(kasaCmds))
+        console.log('[db] Migrated WFH scene from Hubitat to Kasa device IDs')
+      }
+    } catch { /* WFH scene doesn't exist or has invalid JSON — skip */ }
+  }
+
   // Sync device_rooms labels with current hub_devices labels (fixes stale names after Hubitat renames)
   const staleLabels = db.prepare(
     `SELECT dr.device_id, dr.device_label AS old_label, hd.label AS new_label

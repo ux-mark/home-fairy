@@ -5,6 +5,8 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
+import { PeriodSelector } from '@/components/ui/PeriodSelector'
+import type { Period } from '@/components/ui/PeriodSelector'
 import type { BatteryDevice, BatteryInsights } from '@/lib/api'
 import { Accordion } from '@/components/ui/Accordion'
 
@@ -298,6 +300,7 @@ export default function BatteryCard({ battery, insights, open, onToggle }: Batte
   )
   const [listExpanded, setListExpanded] = useState(false)
   const [chartExpanded, setChartExpanded] = useState(false)
+  const [period, setPeriod] = useState<Period>('30d')
 
   const allHealthy = battery.length > 0 && battery.every(d => (d.battery ?? 0) > 50)
 
@@ -305,8 +308,8 @@ export default function BatteryCard({ battery, insights, open, onToggle }: Batte
     data: historyData,
     isLoading: historyLoading,
   } = useQuery({
-    queryKey: ['dashboard', 'history', 'battery', selectedDeviceLabel, '30d'],
-    queryFn: () => api.dashboard.getHistory('battery', selectedDeviceLabel, '30d'),
+    queryKey: ['dashboard', 'history', 'battery', selectedDeviceLabel, period],
+    queryFn: () => api.dashboard.getHistory('battery', selectedDeviceLabel, period),
     enabled: !!selectedDeviceLabel && chartExpanded,
     staleTime: 5 * 60 * 1000,
   })
@@ -464,7 +467,7 @@ export default function BatteryCard({ battery, insights, open, onToggle }: Batte
             'min-h-[44px]',
           )}
         >
-          <span>30-day battery trend</span>
+          <span>Battery trend</span>
           <span className="text-caption text-xs">
             {chartExpanded ? 'Hide' : 'Show'}
           </span>
@@ -497,6 +500,9 @@ export default function BatteryCard({ battery, insights, open, onToggle }: Batte
                 ))}
               </select>
             </div>
+
+            {/* Period selector */}
+            <PeriodSelector value={period} onChange={setPeriod} />
 
             <TimeSeriesChart
               data={historyData?.data ?? []}

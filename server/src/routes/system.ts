@@ -1301,7 +1301,10 @@ async function runAllOff(excludeRooms: string[] = []): Promise<string[]> {
   )
 
   // 3. For each switch/dimmer NOT excluded, send 'off' command — run concurrently
+  //    Skip parent strips (kasa_strip) — turning off a parent strip kills ALL outlets,
+  //    bypassing per-outlet exclude_from_all_off flags. Only control child outlets individually.
   const eligibleDevices = deviceRows.filter((row) => {
+    if (row.device_type === 'kasa_strip') return false
     if (excludeRooms.includes(row.room_name)) return false
     let config: Record<string, unknown> = {}
     try { config = JSON.parse(row.config) } catch { config = {} }

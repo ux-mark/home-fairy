@@ -7,6 +7,8 @@ import { cn, formatCost } from '@/lib/utils'
 import { Accordion } from '@/components/ui/Accordion'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
 import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
+import { PeriodSelector } from '@/components/ui/PeriodSelector'
+import type { Period } from '@/components/ui/PeriodSelector'
 import type { PowerDevice, EnergyInsights } from '@/lib/api'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -27,14 +29,19 @@ function powerIntensityClass(watts: number, maxWatts: number): string {
 // ── Inline device trend chart ─────────────────────────────────────────────────
 
 function DeviceTrendChart({ deviceLabel }: { deviceLabel: string }) {
+  const [period, setPeriod] = useState<Period>('24h')
+
   const { data: historyData, isLoading } = useQuery({
-    queryKey: ['dashboard', 'history', 'power', deviceLabel, '24h'],
-    queryFn: () => api.dashboard.getHistory('power', deviceLabel, '24h'),
+    queryKey: ['dashboard', 'history', 'power', deviceLabel, period],
+    queryFn: () => api.dashboard.getHistory('power', deviceLabel, period),
     staleTime: 5 * 60 * 1000,
   })
 
   return (
     <div className="mt-2 pb-2">
+      <div className="mb-2">
+        <PeriodSelector value={period} onChange={setPeriod} />
+      </div>
       <TimeSeriesChart
         data={historyData?.data ?? []}
         label={deviceLabel}
@@ -43,6 +50,7 @@ function DeviceTrendChart({ deviceLabel }: { deviceLabel: string }) {
         height={100}
         loading={isLoading}
         emptyMessage="Power trends will appear as data is collected."
+        aria-label={`Power trend for ${deviceLabel} over ${period}`}
       />
     </div>
   )
@@ -141,7 +149,7 @@ function DeviceRow({ device, maxWatts, anomaly }: DeviceRowProps) {
       <div
         id={rowId}
         role="region"
-        aria-label={`24-hour power trend for ${device.label}`}
+        aria-label={`Power trend for ${device.label}`}
         style={{
           display: 'grid',
           gridTemplateRows: expanded ? '1fr' : '0fr',
