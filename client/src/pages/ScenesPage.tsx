@@ -28,21 +28,7 @@ import { SearchInput } from '@/components/ui/SearchInput'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Accordion } from '@/components/ui/Accordion'
 import { FilterChip } from '@/components/ui/FilterChip'
-
-// ---------------------------------------------------------------------------
-// Skeleton
-// ---------------------------------------------------------------------------
-
-function SkeletonAccordion() {
-  return (
-    <div className="card rounded-xl border">
-      <div className="flex animate-pulse items-center gap-3 px-4 py-3">
-        <div className="surface h-5 w-32 rounded" />
-        <div className="surface ml-auto h-4 w-4 rounded" />
-      </div>
-    </div>
-  )
-}
+import { SkeletonAccordion } from '@/components/ui/Skeleton'
 
 // ---------------------------------------------------------------------------
 // SceneIcon helper
@@ -540,11 +526,7 @@ export default function ScenesPage() {
 
       {/* Loading skeleton */}
       {isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <SkeletonAccordion key={i} />
-          ))}
-        </div>
+        <SkeletonAccordion count={4} />
       ) : isError ? (
         <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
           <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />

@@ -1,6 +1,7 @@
 import { Line } from 'react-chartjs-2'
 import type { ChartOptions, ChartData } from 'chart.js'
 import { parseServerDate } from '@/lib/utils'
+import { Skeleton } from '@/components/ui/Skeleton'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -120,19 +121,6 @@ function withAlpha(color: string, alpha: number): string {
 const GRID_COLOR = 'rgba(148, 163, 184, 0.15)'
 const TICK_COLOR = 'rgb(148, 163, 184)'
 
-// ── Loading skeleton ─────────────────────────────────────────────────────────
-
-function ChartSkeleton({ height }: { height: number }) {
-  return (
-    <div
-      className="animate-pulse rounded bg-[var(--bg-tertiary)]"
-      style={{ height }}
-      role="status"
-      aria-label="Loading chart data"
-    />
-  )
-}
-
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function ChartEmpty({ message, height }: { message: string; height: number }) {
@@ -167,7 +155,11 @@ export default function TimeSeriesChart({
   // ── Loading state ────────────────────────────────────────────────────────
 
   if (loading) {
-    return <ChartSkeleton height={height} />
+    return (
+      <div role="status" aria-label="Loading chart data" style={{ height }}>
+        <Skeleton className="h-full w-full rounded" />
+      </div>
+    )
   }
 
   // ── Empty state ──────────────────────────────────────────────────────────

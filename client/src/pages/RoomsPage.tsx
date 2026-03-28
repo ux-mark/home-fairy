@@ -13,17 +13,7 @@ import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LucideIcon } from '@/components/ui/LucideIcon'
-
-function RoomCardSkeleton() {
-  return (
-    <div className="card rounded-xl border p-4">
-      <div className="animate-pulse space-y-2">
-        <div className="surface h-5 w-32 rounded" />
-        <div className="surface h-4 w-24 rounded" />
-      </div>
-    </div>
-  )
-}
+import { SkeletonList } from '@/components/ui/Skeleton'
 
 export default function RoomsPage() {
   const queryClient = useQueryClient()
@@ -132,11 +122,7 @@ export default function RoomsPage() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <RoomCardSkeleton key={i} />
-          ))}
-        </div>
+        <SkeletonList count={4} height="h-16" />
       ) : isError ? (
         <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
           <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />

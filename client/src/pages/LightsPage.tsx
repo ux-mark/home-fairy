@@ -18,6 +18,7 @@ import { cn, getLightColorHex } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { BackLink } from '@/components/ui/BackLink'
+import { SkeletonList } from '@/components/ui/Skeleton'
 
 // ── Expandable light card ────────────────────────────────────────────────────
 
@@ -286,14 +287,7 @@ export default function LightsPage() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div
-              key={i}
-              className="surface h-16 animate-pulse rounded-xl"
-            />
-          ))}
-        </div>
+        <SkeletonList count={6} />
       ) : filteredLights.length > 0 ? (
         <>
           {(search.trim() || groupFilter !== 'all') && lights && (

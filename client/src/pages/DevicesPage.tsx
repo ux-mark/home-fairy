@@ -26,6 +26,7 @@ import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { FilterChip } from '@/components/ui/FilterChip'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { SkeletonList } from '@/components/ui/Skeleton'
 
 // ── Room assignment pill ──────────────────────────────────────────────────────
 
@@ -1098,11 +1099,7 @@ export default function DevicesPage() {
       {/* Content */}
       {filter === 'sonos' ? (
         sonosSpeakersLoading || sonosZonesLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="surface h-20 animate-pulse rounded-xl" />
-            ))}
-          </div>
+          <SkeletonList count={4} height="h-20" />
         ) : (sonosSpeakers?.length ?? 0) === 0 && sonosUnassignedSpeakers.length === 0 ? (
           <EmptyState
             icon={Volume2}
@@ -1134,11 +1131,7 @@ export default function DevicesPage() {
           </div>
         )
       ) : isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="surface h-16 animate-pulse rounded-xl" />
-          ))}
-        </div>
+        <SkeletonList count={6} height="h-16" />
       ) : filtered.length > 0 ? (
         <div className="space-y-6">
           {Array.from(grouped.groups.entries())

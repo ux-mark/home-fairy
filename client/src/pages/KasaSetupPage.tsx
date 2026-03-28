@@ -19,6 +19,7 @@ import { useToast } from '@/hooks/useToast'
 import { BackLink } from '@/components/ui/BackLink'
 import { TypeBadge } from '@/components/ui/Badge'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { SkeletonList } from '@/components/ui/Skeleton'
 
 // ── Signal strength indicator ─────────────────────────────────────────────────
 
@@ -398,10 +399,8 @@ export default function KasaSetupPage() {
 
       {/* Content */}
       {isLoading ? (
-        <div className="space-y-3" aria-label="Loading Kasa devices">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="surface h-20 animate-pulse rounded-xl" />
-          ))}
+        <div role="status" aria-label="Loading Kasa devices">
+          <SkeletonList count={4} height="h-24" />
         </div>
       ) : isError ? (
         <EmptyState

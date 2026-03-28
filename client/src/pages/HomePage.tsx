@@ -11,6 +11,7 @@ import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LucideIcon } from '@/components/ui/LucideIcon'
 import { Accordion } from '@/components/ui/Accordion'
+import { Skeleton, SkeletonGrid } from '@/components/ui/Skeleton'
 
 // ── Visual state helpers ──────────────────────────────────────────────────────
 
@@ -36,23 +37,6 @@ function getActivityColor(lastActive: string | null): string {
   if (minutesAgo < 5) return 'text-slate-700 dark:text-slate-300'
   if (minutesAgo < 30) return 'text-slate-600 dark:text-slate-400'
   return 'text-slate-500 dark:text-slate-400'
-}
-
-// ── Skeleton loader ──────────────────────────────────────────────────────────
-
-function RoomCardSkeleton() {
-  return (
-    <div className="card rounded-xl border p-4">
-      <div className="animate-pulse space-y-3">
-        <div className="surface h-5 w-28 rounded" />
-        <div className="surface h-4 w-20 rounded" />
-        <div className="flex gap-2">
-          <div className="surface h-8 w-16 rounded-lg" />
-          <div className="surface h-8 w-16 rounded-lg" />
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // ── Mode selector ────────────────────────────────────────────────────────────
@@ -232,7 +216,7 @@ function RoomCard({
 // ── Weather card ────────────────────────────────────────────────────────────
 
 function WeatherCard() {
-  const { data: weather, isError } = useQuery({
+  const { data: weather, isError, isLoading } = useQuery({
     queryKey: ['system', 'weather'],
     queryFn: api.system.getWeather,
     retry: false,
@@ -243,6 +227,18 @@ function WeatherCard() {
     queryKey: ['system', 'preferences'],
     queryFn: api.system.getPreferences,
   })
+
+  if (isLoading) {
+    return (
+      <div className="card mb-6 flex items-center gap-4 rounded-xl border px-4 py-3">
+        <Skeleton className="h-12 w-12 rounded-lg" />
+        <div className="flex-1 space-y-2">
+          <Skeleton className="h-7 w-24" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+      </div>
+    )
+  }
 
   if (isError) {
     return (
@@ -467,13 +463,21 @@ function MtaLineBadge({ line }: { line: string }) {
 function MtaCard() {
   const [open, setOpen] = useState(false)
 
-  const { data: combinedStatus, isError } = useQuery({
+  const { data: combinedStatus, isError, isLoading } = useQuery({
     queryKey: ['mta', 'combined-status'],
     queryFn: api.system.getCombinedMtaStatus,
     retry: false,
     staleTime: 30_000,
     refetchInterval: 30_000,
   })
+
+  if (isLoading) {
+    return (
+      <div className="card mb-6 rounded-xl border px-4 py-3">
+        <Skeleton className="h-5 w-48" />
+      </div>
+    )
+  }
 
   if (isError) {
     return (
@@ -586,7 +590,7 @@ function MusicQuickAction() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
-  const { data: muteStatus } = useQuery({
+  const { data: muteStatus, isLoading: muteLoading } = useQuery({
     queryKey: ['sonos', 'mute-status'],
     queryFn: api.sonos.getMuteStatus,
     staleTime: 10_000,
@@ -616,6 +620,14 @@ function MusicQuickAction() {
       toast({ message: 'Failed to update speakers', type: 'error' })
     },
   })
+
+  if (muteLoading) {
+    return (
+      <section className="mb-6" aria-label="Music controls">
+        <Skeleton className="h-12 w-full rounded-xl" />
+      </section>
+    )
+  }
 
   // Don't render if no speakers are configured
   if (!muteStatus || muteStatus.totalSpeakers === 0) return null
@@ -679,7 +691,7 @@ export default function HomePage() {
     queryFn: api.scenes.getAll,
   })
 
-  const { data: system } = useQuery({
+  const { data: system, isLoading: systemLoading } = useQuery({
     queryKey: ['system', 'current'],
     queryFn: api.system.getCurrent,
   })
@@ -833,13 +845,21 @@ export default function HomePage() {
 
       <WeatherCard />
 
-      <ModeSelector
-        currentMode={currentMode}
-        modes={allModes}
-        modeIcons={modeIcons}
-        onSelect={mode => setModeMutation.mutate(mode)}
-        isPending={setModeMutation.isPending}
-      />
+      {systemLoading ? (
+        <div className="mb-6 flex gap-2 overflow-hidden" role="status" aria-label="Loading mode selector">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-10 w-24 shrink-0 rounded-full" />
+          ))}
+        </div>
+      ) : (
+        <ModeSelector
+          currentMode={currentMode}
+          modes={allModes}
+          modeIcons={modeIcons}
+          onSelect={mode => setModeMutation.mutate(mode)}
+          isPending={setModeMutation.isPending}
+        />
+      )}
 
       {dashboardData?.insights?.attention?.some(a => a.severity === 'critical') && (
         <Link
@@ -865,10 +885,8 @@ export default function HomePage() {
         </div>
 
         {roomsLoading ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <RoomCardSkeleton key={i} />
-            ))}
+          <div role="status" aria-label="Loading rooms">
+            <SkeletonGrid count={6} />
           </div>
         ) : roomsError ? (
           <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">

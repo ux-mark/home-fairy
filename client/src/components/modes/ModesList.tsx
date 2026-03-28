@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { SUN_EVENT_LABELS } from './modeUtils'
 import { LucideIcon } from '@/components/ui/LucideIcon'
+import { SkeletonList } from '@/components/ui/Skeleton'
 
 export { SUN_EVENT_LABELS } from './modeUtils'
 
@@ -104,25 +105,6 @@ function getNextScheduledTime(
     hour: '2-digit',
     minute: '2-digit',
   })
-}
-
-// ── Skeleton card ─────────────────────────────────────────────────────────────
-
-function SkeletonCard() {
-  return (
-    <div
-      className="surface rounded-lg px-4 py-3 animate-pulse"
-      aria-hidden="true"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex-1 space-y-2">
-          <div className="h-3.5 w-32 rounded bg-[var(--bg-tertiary)]" />
-          <div className="h-3 w-48 rounded bg-[var(--bg-tertiary)]" />
-        </div>
-        <div className="h-3 w-12 rounded bg-[var(--bg-tertiary)]" />
-      </div>
-    </div>
-  )
 }
 
 // ── Mode card ─────────────────────────────────────────────────────────────────
@@ -261,11 +243,8 @@ export function ModesList({ onSelectMode }: ModesListProps) {
 
   if (modesLoading) {
     return (
-      <div className="space-y-2" aria-label="Loading modes" aria-busy="true">
-        <SkeletonCard />
-        <SkeletonCard />
-        <SkeletonCard />
-        <SkeletonCard />
+      <div aria-label="Loading modes" aria-busy="true">
+        <SkeletonList count={4} height="h-14" />
       </div>
     )
   }
