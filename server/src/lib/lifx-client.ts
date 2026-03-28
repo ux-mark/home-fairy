@@ -1,4 +1,5 @@
 import axios, { AxiosResponse } from 'axios'
+import { run } from '../db/index.js'
 
 const lifxApi = axios.create({
   baseURL: 'https://api.lifx.com/v1',
@@ -43,6 +44,7 @@ async function withRetry<T>(fn: () => Promise<AxiosResponse<T>>, maxAttempts = 3
         const resetAt = Number(err.response.headers['x-ratelimit-reset'] ?? 0)
         const now = Math.floor(Date.now() / 1000)
         const waitMs = Math.max((resetAt - now) * 1000, 2000)
+        try { run('INSERT INTO logs (message, category) VALUES (?, ?)', [`LIFX rate limit 429: waiting ${waitMs}ms (attempt ${attempt}/${maxAttempts})`, 'lifx']) } catch { /* ignore */ }
         await new Promise((resolve) => setTimeout(resolve, waitMs))
         continue
       }
