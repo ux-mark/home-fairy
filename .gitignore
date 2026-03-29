@@ -119,6 +119,7 @@ ecosystem.config.js
 .vercel
 .netlify
 *.env.old
+*.sqlite.backup-*
 
 # Coding Fairy (centralized -- managed by CAI-Pi Fairy)
 /CLAUDE.md
@@ -126,24 +127,3 @@ ecosystem.config.js
 /.claude/agents/reviewer.md
 /.claude/agents/planner.md
 /.claude/settings.json
-
-# Standard entries from Coding Fairy
-# Coding Fairy -- Standard .gitignore
-# Stack-agnostic defaults. Uncomment or extend sections for your project.
-# Next.js
-.next/
-out/
-# Python
-.venv/
-venv/
-*.egg-info/
-.eggs/
-# Build output (uncomment as needed)
-# build/
-# .output/
-# .nuxt/
-# .svelte-kit/
-# Database (uncomment as needed)
-# *.sqlite
-# *.sqlite3
-# supabase/.branches/.temp/

@@ -2,8 +2,12 @@ import React, { Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import AppLayout from '@/components/layout/AppLayout'
 import WatchLayout from '@/components/layout/WatchLayout'
+import HomePage from '@/pages/HomePage'
+import { Skeleton, SkeletonList } from '@/components/ui/Skeleton'
+import { AuthGuard } from '@/components/auth/AuthGuard'
 
-const HomePage = React.lazy(() => import('@/pages/HomePage'))
+const LoginPage = React.lazy(() => import('@/pages/LoginPage'))
+const InvitePage = React.lazy(() => import('@/pages/InvitePage'))
 const RoomsPage = React.lazy(() => import('@/pages/RoomsPage'))
 const RoomDetailPage = React.lazy(() => import('@/pages/RoomDetailPage'))
 const ScenesPage = React.lazy(() => import('@/pages/ScenesPage'))
@@ -19,14 +23,13 @@ const KasaSetupPage = React.lazy(() => import('@/pages/KasaSetupPage'))
 const LightsPage = React.lazy(() => import('@/pages/LightsPage'))
 const SonosSetupPage = React.lazy(() => import('@/pages/SonosSetupPage'))
 const SonosDetailPage = React.lazy(() => import('@/pages/SonosDetailPage'))
+const AccountPage = React.lazy(() => import('@/pages/AccountPage'))
 
 function PageLoader() {
   return (
-    <div className="flex items-center justify-center min-h-[50vh]">
-      <div className="flex flex-col items-center gap-3">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-fairy-500 border-t-transparent" />
-        <p className="text-sm text-caption">Loading...</p>
-      </div>
+    <div className="space-y-4" role="status" aria-label="Loading">
+      <Skeleton className="h-7 w-40 rounded-lg" />
+      <SkeletonList count={4} height="h-20" />
     </div>
   )
 }
@@ -35,7 +38,9 @@ export default function App() {
   return (
     <Suspense fallback={<PageLoader />}>
       <Routes>
-        <Route element={<AppLayout />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/invite/:token" element={<InvitePage />} />
+        <Route element={<AuthGuard><AppLayout /></AuthGuard>}>
           <Route path="/" element={<HomePage />} />
           <Route path="/rooms" element={<RoomsPage />} />
           <Route path="/rooms/:name" element={<RoomDetailPage />} />
@@ -52,8 +57,9 @@ export default function App() {
           <Route path="/settings/kasa" element={<KasaSetupPage />} />
           <Route path="/sonos-setup" element={<SonosSetupPage />} />
           <Route path="/sonos/:speaker" element={<SonosDetailPage />} />
+          <Route path="/account" element={<AccountPage />} />
         </Route>
-        <Route element={<WatchLayout />}>
+        <Route element={<AuthGuard><WatchLayout /></AuthGuard>}>
           <Route path="/watch" element={<WatchPage />} />
         </Route>
       </Routes>

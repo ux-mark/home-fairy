@@ -47,7 +47,7 @@ export function Accordion({
           !card && !open && 'border-b border-[var(--border-secondary)]',
         )}
       >
-        <span className="inline-flex items-center gap-1.5 text-heading text-sm font-semibold shrink-0">
+        <span className="inline-flex items-center gap-1.5 text-heading text-sm font-semibold min-w-0 flex-wrap">
           {title}
           {count !== undefined && count > 0 && (
             <span className="rounded-full bg-fairy-500/15 px-2 py-0.5 text-[10px] font-bold text-fairy-400">

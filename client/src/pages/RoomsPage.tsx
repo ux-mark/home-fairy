@@ -6,6 +6,7 @@ import {
   Sparkles,
   DoorOpen,
   AlertTriangle,
+  Settings2,
 } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { api } from '@/lib/api'
@@ -13,23 +14,15 @@ import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LucideIcon } from '@/components/ui/LucideIcon'
-
-function RoomCardSkeleton() {
-  return (
-    <div className="card rounded-xl border p-4">
-      <div className="animate-pulse space-y-2">
-        <div className="surface h-5 w-32 rounded" />
-        <div className="surface h-4 w-24 rounded" />
-      </div>
-    </div>
-  )
-}
+import { SkeletonList } from '@/components/ui/Skeleton'
+import RoomReorderOverlay from '@/components/RoomReorderOverlay'
 
 export default function RoomsPage() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [newRoomName, setNewRoomName] = useState('')
+  const [reorderOpen, setReorderOpen] = useState(false)
 
   const { data: rooms, isLoading, isError, refetch } = useQuery({
     queryKey: ['rooms'],
@@ -132,18 +125,14 @@ export default function RoomsPage() {
       </div>
 
       {isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <RoomCardSkeleton key={i} />
-          ))}
-        </div>
+        <SkeletonList count={4} height="h-16" />
       ) : isError ? (
         <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
           <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
           <p className="text-zinc-400">Unable to load rooms. Check your connection and try again.</p>
           <button
             onClick={() => refetch()}
-            className="rounded-lg bg-fairy-600 px-4 py-2 text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            className="rounded-lg bg-fairy-600 px-4 py-2 min-h-[44px] text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           >
             Try again
           </button>
@@ -195,6 +184,25 @@ export default function RoomsPage() {
           sub='Tap "Add Room" above to create your first room.'
         />
       )}
+
+      {rooms && rooms.length > 1 && (
+        <div className="mt-6 flex justify-center">
+          <button
+            onClick={() => setReorderOpen(true)}
+            className="flex min-h-[44px] items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-fairy-400 transition-colors hover:text-fairy-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          >
+            <Settings2 className="h-4 w-4" aria-hidden="true" />
+            Reorder rooms
+          </button>
+        </div>
+      )}
+
+      <RoomReorderOverlay
+        rooms={rooms ?? []}
+        open={reorderOpen}
+        onClose={() => setReorderOpen(false)}
+        showAll
+      />
     </div>
   )
 }

@@ -60,7 +60,7 @@ router.get('/rooms/:roomName', (req: Request, res: Response) => {
 // POST /rooms — save assignments for a room (replace all)
 router.post('/rooms', (req: Request, res: Response) => {
   try {
-    console.log('[lights POST /rooms] body:', JSON.stringify(req.body))
+    if (process.env.DEBUG) console.log('[lights POST /rooms] body:', JSON.stringify(req.body))
     const body = saveAssignmentsSchema.parse(req.body)
 
     const saveAssignments = db.transaction(() => {

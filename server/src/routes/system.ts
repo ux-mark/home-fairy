@@ -92,6 +92,7 @@ router.put('/preferences', (req: Request, res: Response) => {
       'mta_stops', 'mta_max_wait', 'mta_indicator',
       'weather_indicator', 'weather_custom_colors',
       'sonos_follow_me', 'sonos_default_favourite', 'temp_unit',
+      'homepage_section_order',
     ] as const
 
     const { key, value } = req.body

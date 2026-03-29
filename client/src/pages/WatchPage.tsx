@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import type { Room, Scene } from '@/lib/api'
 import { LucideIcon } from '@/components/ui/LucideIcon'
+import { Skeleton } from '@/components/ui/Skeleton'
 
 // ── Room scene list ──────────────────────────────────────────────────────────
 
@@ -143,10 +144,10 @@ export default function WatchPage() {
   // Loading state
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-16">
-        <div className="h-4 w-32 animate-pulse rounded bg-zinc-700" />
-        <div className="h-4 w-24 animate-pulse rounded bg-zinc-700" />
-        <div className="h-4 w-28 animate-pulse rounded bg-zinc-700" />
+      <div className="flex flex-col items-center justify-center gap-4 py-16" role="status" aria-label="Loading">
+        <Skeleton className="h-4 w-32" />
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="h-4 w-28" />
       </div>
     )
   }

@@ -532,6 +532,29 @@ The following issues were discovered during a comprehensive technical and UX aud
 - **Description**: Several room/mode selectors use native HTML `<select>` elements which cannot render icons in `<option>` tags. These include: LightDetailPage room dropdown, SonosSetupPage room dropdown, MusicSection room dropdown. A future enhancement could replace these with custom accessible dropdown components (e.g., Radix Select) to support icon rendering. Low priority — the text-only selectors work fine functionally.
 - **Files**: `client/src/pages/LightDetailPage.tsx`, `client/src/pages/SonosSetupPage.tsx`, `client/src/components/settings/MusicSection.tsx`
 
+## 2026-03-27 — Kasa parent strip all-off bypasses per-outlet exclusions
+- **Severity**: high
+- **Status**: resolved (2026-03-27, PR #63)
+- **Category**: reliability
+- **Description**: `runAllOff()` sent 'off' to parent Kasa strips (kasa_strip type), which kills ALL outlets via python-kasa's `SmartStrip.turn_off()` — bypassing per-outlet `exclude_from_all_off` flags. Sonos Bedroom and WFH WiFi had exclusions set but were still turned off by Nighttime/All Off.
+- **Fix**: Skip parent strips in `runAllOff()`, only control child outlets individually.
+- **Files**: `server/src/routes/system.ts`
+
+## 2026-03-27 — WFH scene used stale Hubitat device IDs (404 errors)
+- **Severity**: high
+- **Status**: resolved (2026-03-27, PR #63)
+- **Category**: data-integrity
+- **Description**: WFH scene commands still referenced `hubitat_device` type with old Hubitat device IDs (1288, 1292, etc.) that no longer exist since migration to Kasa sidecar. Scene activation produced 404 errors and failed to turn on any outlets.
+- **Fix**: Idempotent DB migration replaces commands with `kasa_device` type using correct MAC-based outlet IDs.
+- **Files**: `server/src/db/index.ts`
+
+## 2026-03-27 — Bedroom motion sensor intermittently unassigned
+- **Severity**: medium
+- **Status**: monitoring
+- **Category**: reliability
+- **Description**: Bedroom motion sensor was "not assigned to any room" from 05:51 to 13:21 despite the `device_rooms` row existing. Correlated with 55+ server restarts from agent build activity. Likely WAL/locking issue from concurrent database access. Resolved itself once restarts settled. Monitor for recurrence.
+- **Files**: `server/src/lib/motion-handler.ts`, `server/src/db/index.ts`
+
 ## 2026-03-27 — Separate Fairy and Twinkly devices from hub_devices
 - **Severity**: enhancement
 - **Status**: planned
@@ -543,3 +566,402 @@ The following issues were discovered during a comprehensive technical and UX aud
   - Update scene-executor, device-health-service, deactivation API, and all frontend references to handle the new types.
   - Migrate existing fairy/twinkly rows out of hub_devices.
 - **Files**: `server/src/db/index.ts`, `server/src/lib/scene-executor.ts`, `server/src/lib/device-health-service.ts`, `server/src/lib/fairy-device-client.ts`, `server/src/lib/twinkly-client.ts`, `server/src/routes/system.ts`, `client/src/pages/DevicesPage.tsx`, `client/src/pages/DeviceDetailPage.tsx`
+
+---
+
+# Comprehensive Product Audit (2026-03-28)
+
+**Scope**: Full product review across 5 dimensions — backend technical, frontend technical, UX/accessibility, logging/observability, and feature documentation. Conducted by 5 parallel review agents reading the entire codebase.
+
+---
+
+## Backend: Critical
+
+### 2026-03-28 — `active` column missing from schema DDL — breaks fresh deployments
+- **Severity**: critical
+- **Status**: resolved (PR #76)
+- **Category**: data-integrity
+- **Description**: The `active` column is queried and updated in `device-health-service.ts`, `scene-executor.ts`, and `system.ts`, but is never added via `CREATE TABLE` or `ALTER TABLE` in `db/index.ts`. On a fresh database (new Pi, wipe-and-restore), all three tables (`hub_devices`, `kasa_devices`, `light_rooms`) are created without `active`. Every call to `isDeviceActive()`, `deactivateDevice()`, or `reactivateDevice()` fails. Scene execution skips the `active = 1` filter, returning no lights for `all_off`. The `all_off` command in scenes silently does nothing on fresh installs.
+- **Fix**: Add `active INTEGER DEFAULT 1` to all three `CREATE TABLE` statements. Add `ALTER TABLE ... ADD COLUMN active INTEGER DEFAULT 1` guards to `initDb()`.
+- **Files**: `server/src/db/index.ts`, `server/src/lib/scene-executor.ts`, `server/src/lib/device-health-service.ts`
+
+---
+
+## Backend: High
+
+### 2026-03-28 — Hubitat device sync has N+1 queries with no concurrency control
+- **Severity**: high
+- **Status**: resolved (PR #76)
+- **Category**: reliability
+- **Description**: `POST /devices/sync` calls `hubitatClient.getDevice(dev.id)` sequentially for every device — one HTTP request per device with 10s timeout. For 20+ devices this takes 20+ serial requests. No mutex prevents concurrent syncs (double-click). Both would run in parallel, conflicting on upsert.
+- **Fix**: Add a `syncInProgress` mutex to reject concurrent syncs with 409. Consider parallelising with concurrency limiter.
+- **Files**: `server/src/routes/hubitat.ts`
+
+### 2026-03-28 — Deploy script overwrites production database unconditionally
+- **Severity**: high
+- **Status**: resolved (PR #76)
+- **Category**: deployment
+- **Description**: `deploy-to-pi.sh` copies the local database over the Pi's production database on every deploy. Only one `.pre-deploy-backup` is kept (overwritten each time). Accidental deploy from a stale/empty database permanently destroys all production data.
+- **Fix**: Timestamp backup files. Make DB copy opt-in with `--include-db` flag. Keep last N backups.
+- **Files**: `deploy-to-pi.sh`
+
+---
+
+## Backend: Medium
+
+### 2026-03-28 — Memory leak: `webhookHits` rate-limit map grows unboundedly
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: reliability
+- **Description**: `webhookHits` is a `Map<string, number[]>` that never evicts empty entries. Every unique IP accumulates a permanent empty array. On a long-running Pi process with IP changes, this is a slow memory drain.
+- **Fix**: Delete map key when filtered array is empty. Or add periodic sweep.
+- **Files**: `server/src/index.ts`
+
+### 2026-03-28 — Motion handler room timers not cleaned up on shutdown
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: reliability
+- **Description**: `MotionHandler.roomTimers` holds `NodeJS.Timeout` objects that are never cleared on SIGTERM. Node holds the process open past the 5s forced exit deadline since timers are not `.unref()`'d.
+- **Fix**: Add `shutdown()` method to `MotionHandler` that clears all room timers. Call from shutdown handler in `index.ts`.
+- **Files**: `server/src/lib/motion-handler.ts`, `server/src/index.ts`
+
+### 2026-03-28 — `dashboard.ts` JSON.parse in device context has no error handling
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: reliability
+- **Description**: `JSON.parse(s.commands)` in `GET /api/dashboard/device/:id/context` is called inside `.filter()` with no try/catch. Corrupt `commands` JSON crashes the entire request with a 500.
+- **Fix**: Wrap in `try { ... } catch { return false }`.
+- **Files**: `server/src/routes/dashboard.ts`
+
+### 2026-03-28 — LIFX `withRetry` only retries once on 429
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: reliability
+- **Description**: The retry wrapper catches a 429, waits for reset, then calls once more. If the second attempt also gets 429 (clock skew, stale reset timestamp), the error propagates and scene-executor silently swallows it — lights don't change state.
+- **Fix**: Add a second retry cycle or minimum wait floor (2s).
+- **Files**: `server/src/lib/lifx-client.ts`
+
+---
+
+## Backend: Low
+
+### 2026-03-28 — Kasa sidecar has no PM2 startup-order guarantee
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: deployment
+- **Description**: PM2 starts Node and Python processes in parallel. Cold Pi boot where Python venv takes >5s means first Kasa poll fails silently.
+- **Files**: `ecosystem.config.cjs`
+
+### 2026-03-28 — Sonos zone polling timer not cleared on concurrent shutdown
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: reliability
+- **Description**: Edge case where `poll()` completes and reschedules after `shutdown()` runs.
+- **Fix**: Add `shuttingDown` flag.
+- **Files**: `server/src/lib/sonos-manager.ts`
+
+### 2026-03-28 — History collector prune blocks event loop at startup
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: reliability
+- **Description**: `pruneOldLogs()` runs synchronously via better-sqlite3 during startup. Large log tables block all requests.
+- **Fix**: Defer with `setTimeout(..., 60_000)`.
+- **Files**: `server/src/lib/history-collector.ts`
+
+### 2026-03-28 — `dashboard.ts` history endpoint interpolates cutoff into SQL
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: code-quality
+- **Description**: `cutoff` is trusted (from whitelisted switch), but the pattern of string interpolation into SQL is a maintenance risk.
+- **Fix**: Refactor to parameterised values or add safety comment.
+- **Files**: `server/src/routes/dashboard.ts`
+
+---
+
+## Frontend: High
+
+### 2026-03-28 — DevicesPage creates redundant socket connection on every filter change
+- **Severity**: high
+- **Status**: resolved (PR #76)
+- **Category**: performance
+- **Description**: `socketIo(url, ...)` is called directly inside a `useEffect`, creating a new TCP connection alongside the global singleton from `useSocket.ts`. Every tab change between 'all' and 'sonos' creates and destroys a connection.
+- **Fix**: Reuse `getSocket()` singleton. Register/deregister event handlers with `.on()`/`.off()` only.
+- **Files**: `client/src/pages/DevicesPage.tsx`
+
+### 2026-03-28 — RoomDetailPage creates redundant socket connection per room visit
+- **Severity**: high
+- **Status**: resolved (PR #76)
+- **Category**: performance
+- **Description**: Same anti-pattern as DevicesPage — `socketIo()` called directly in useEffect, creating duplicate TCP connections.
+- **Fix**: Use shared `getSocket()` singleton.
+- **Files**: `client/src/pages/RoomDetailPage.tsx`
+
+---
+
+## Frontend: Medium
+
+### 2026-03-28 — SonosDetailPage debounce timers leak on unmount
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: reliability
+- **Description**: `liveVolumeTimer` and `volumeSaveTimer` useRef timeouts are never cleared on unmount. Navigating away while debounce is pending fires stale mutation.
+- **Fix**: Add cleanup useEffect that clears both timers.
+- **Files**: `client/src/pages/SonosDetailPage.tsx`
+
+### 2026-03-28 — Suppressed ESLint rule hides stale-closure risk in SceneEditorPage
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: code-quality
+- **Description**: `deactivatedCount` useMemo has `eslint-disable-next-line react-hooks/exhaustive-deps` suppressing a real dependency warning. Three inline arrow functions close over `deactivatedSet` but aren't listed as deps.
+- **Fix**: Inline the `.has()` checks directly inside the useMemo. Remove suppression comment.
+- **Files**: `client/src/pages/SceneEditorPage.tsx`
+
+### 2026-03-28 — EnvironmentCard reads temp_unit from localStorage, bypassing preferences query
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: correctness
+- **Description**: `EnvironmentCard` reads temperature unit from `localStorage` via `getTempUnit()` instead of the `['system', 'preferences']` TanStack Query. Changing the unit in Settings won't update EnvironmentCard until page reload.
+- **Fix**: Use `useQuery` for preferences, matching the pattern in WeatherCard.
+- **Files**: `client/src/components/dashboard/EnvironmentCard.tsx`
+
+### 2026-03-28 — Scene icon field accepts emoji (violates UX standards)
+- **Severity**: medium
+- **Status**: ignore - this can be reviewed in the future.
+- **Category**: ux-policy
+- **Description**: Scene icon input is labeled "Scene icon (emoji or text)" with `maxLength={4}`, inviting emoji input. Emoji is rendered across HomePage, ScenesPage, WatchPage, RoomDetailPage. CLAUDE.md Section 5 bans emoji in UI. The rest of the app uses LucideIcon exclusively.
+- **Fix**: Replace freeform text field with `IconPicker` component. Migrate existing emoji values to Lucide icon names with fallback default.
+- **Files**: `client/src/pages/SceneEditorPage.tsx`, all pages rendering scene icons
+
+---
+
+## Frontend: Low
+
+### 2026-03-28 — Night status query not invalidated on socket mode change
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: correctness
+- **Description**: `['system', 'night-status']` is not invalidated by the socket `mode:change` handler. Up to 10s delay before night banner appears/disappears.
+- **Fix**: Add invalidation in `useSocket.ts` `handleModeChange`.
+- **Files**: `client/src/hooks/useSocket.ts`
+
+### 2026-03-28 — Chart.register called at module level in 3 separate components
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: code-quality
+- **Description**: Chart.js plugins registered redundantly in `TimeSeriesChart`, `ActivityCard`, and `EnvironmentCard`. Benign but wasteful.
+- **Fix**: Centralise into a single `chartSetup.ts` module.
+- **Files**: `client/src/components/dashboard/TimeSeriesChart.tsx`, `ActivityCard.tsx`, `EnvironmentCard.tsx`
+
+### 2026-03-28 — DeviceTrendChart uses mutable label as cache key
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: code-quality
+- **Description**: TanStack Query key uses `deviceLabel` (human-readable name) instead of stable device ID. Device rename orphans cache.
+- **Files**: `client/src/components/dashboard/EnergyCard.tsx`
+
+---
+
+## UX / Accessibility: High
+
+### 2026-03-28 — OptionToggle switch in SceneEditor has no accessible label
+- **Severity**: high
+- **Status**: resolved (PR #76)
+- **Category**: accessibility
+- **Description**: `<Switch.Root>` inside `OptionToggle` has no `id`, `aria-label`, or `aria-labelledby`. Screen reader users cannot determine what the toggle controls.
+- **Fix**: Add `aria-label={label}` to Switch.Root, or link with `id`/`htmlFor`.
+- **Files**: `client/src/pages/SceneEditorPage.tsx`
+
+---
+
+## UX / Accessibility: Medium
+
+### 2026-03-28 — `truncate` on MTA accordion summary text
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: ux-microcopy
+- **Description**: MTA accordion header uses `className="truncate"` on the train arrival summary. Violates "no truncation" standard. Long station names get clipped.
+- **Fix**: Remove `truncate`. Allow text to wrap.
+- **Files**: `client/src/pages/HomePage.tsx`
+
+### 2026-03-28 — Connection status icons use `title` only — not keyboard/SR accessible
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: accessibility
+- **Description**: Wi-Fi icons in LightsPage/LightCard use `<span title="Connected">` with no `aria-label`. Title is hover-only.
+- **Fix**: Add `aria-label` to the icon or add visually-hidden span.
+- **Files**: `client/src/pages/LightsPage.tsx`, `client/src/components/ui/LightCard.tsx`
+
+### 2026-03-28 — Expand/Collapse buttons have generic labels (no device context)
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: accessibility
+- **Description**: Toggle buttons use `aria-label="Expand"/"Collapse"` without device name context. SR user hears "Expand" without knowing what.
+- **Fix**: Include device name in label: `aria-label={\`Expand ${light.label} controls\`}`.
+- **Files**: `client/src/pages/LightsPage.tsx`, `client/src/pages/DevicesPage.tsx`
+
+### 2026-03-28 — LightCard control buttons below 44px touch target
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: accessibility
+- **Description**: Identify and Power buttons in LightCard use `p-2` (~32px). Below 44px minimum. Used inside RoomDetailPage.
+- **Fix**: Add `min-h-[44px] min-w-[44px]`.
+- **Files**: `client/src/components/ui/LightCard.tsx`
+
+### 2026-03-28 — SceneEditor search input missing aria-label
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: accessibility
+- **Description**: Raw `<input>` without `aria-label` or `<label>`. Placeholder is not a substitute.
+- **Fix**: Add `aria-label="Search lights by name"` or use `SearchInput` component.
+- **Files**: `client/src/pages/SceneEditorPage.tsx`
+
+### 2026-03-28 — LightsPage search input missing aria-label
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: accessibility
+- **Fix**: Add `aria-label="Search lights by name or group"`.
+- **Files**: `client/src/pages/LightsPage.tsx`
+
+### 2026-03-28 — TimersSection cancel button is icon-only with no label and small target
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: accessibility
+- **Description**: Cancel timer X button has no `aria-label` and is only 32px.
+- **Fix**: Add `aria-label={\`Cancel timer: ${timer.sceneName}\`}` and `min-h-[44px]`.
+- **Files**: `client/src/pages/SettingsPage.tsx`
+
+---
+
+## UX / Accessibility: Low
+
+### 2026-03-28 — Retry buttons below 44px touch target on error states
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: accessibility
+- **Description**: "Try again" buttons in error states are ~36px height.
+- **Fix**: Add `min-h-[44px]`.
+- **Files**: Multiple pages (RoomsPage, HomePage, ScenesPage)
+
+### 2026-03-28 — Decorative icons missing aria-hidden across several components
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: accessibility
+- **Description**: Lock/Unlock icons in NightModeSection, Settings page heading icon, NotificationPanel action icons all missing `aria-hidden="true"`.
+- **Files**: `NightModeSection.tsx`, `SettingsPage.tsx`, `NotificationPanel.tsx`
+
+### 2026-03-28 — WeatherCard and MtaCard silently disappear on fetch failure
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: ux-state
+- **Description**: Both cards return `null` when fetch fails. Card disappears with no explanation. User doesn't know data is temporarily unavailable vs removed.
+- **Fix**: Show compact error state: "Weather unavailable" / "Train times unavailable".
+- **Files**: `client/src/pages/HomePage.tsx`
+
+---
+
+## Logging / Observability: High
+
+### 2026-03-28 — No latency tracking for any external service
+- **Severity**: high
+- **Status**: resolved (PR #76)
+- **Category**: observability
+- **Description**: None of the six external API clients (LIFX, Hubitat, Kasa, Sonos, MTA, Weather) track or log response latency. Cannot diagnose "why did that scene take 3s?" from logs.
+- **Fix**: Add wall-clock timing to `lifx-client.ts withRetry`. Log durations over 500ms under a `perf` category. Add timing to `scene-executor.ts` for Hubitat/Kasa calls.
+- **Files**: All client files in `server/src/lib/`
+
+---
+
+## Logging / Observability: Medium
+
+### 2026-03-28 — Motion log volume is extreme production noise (~550 entries/hr)
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: logging
+- **Description**: 44,929 of 77,015 log rows (58%) in 6 days are motion category. High-frequency, low-signal entries (lux threshold skips, automation disabled, sensors still active) bury actionable logs. Log viewer defaults (25 rows DESC) are overwhelmed within seconds.
+- **Fix**: Move intermediate decision-path messages behind `process.env.DEBUG`. Keep only actionable events (activation, timer, error). Would reduce volume ~60-70%.
+- **Files**: `server/src/lib/motion-handler.ts`
+
+### 2026-03-28 — Sonos events go only to console, not DB
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: logging
+- **Description**: All Sonos follow-me, auto-play, zone polling events use `console.log('[sonos]')` only. Not queryable via `/api/system/logs?category=sonos`. Cannot diagnose "why didn't music follow me" from the log viewer.
+- **Fix**: Write to `logs` table under `sonos` category, matching the pattern used everywhere else.
+- **Files**: `server/src/lib/sonos-manager.ts`
+
+### 2026-03-28 — No index on `logs.category` — slow filtered queries at scale
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: performance
+- **Description**: `GET /api/system/logs?category=X` does a full table scan on 77K+ rows. No index on `category` or `(category, created_at)`.
+- **Fix**: Add `CREATE INDEX IF NOT EXISTS idx_logs_category ON logs (category, created_at DESC)`.
+- **Files**: `server/src/db/index.ts`
+
+### 2026-03-28 — Kasa poller failures produce no DB log or notification
+- **Severity**: medium
+- **Status**: resolved (PR #76)
+- **Category**: logging
+- **Description**: When the entire Kasa sidecar poll fails, the error goes only to `console.error`. Sidecar crashes leave no queryable record.
+- **Fix**: Write to `logs` table under `kasa` category on failure. Create warning notification after N consecutive failures.
+- **Files**: `server/src/lib/kasa-poller.ts`
+
+---
+
+## Logging / Observability: Low
+
+### 2026-03-28 — LIFX rate-limit events are silent
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: logging
+- **Description**: 429 throttling and recovery in `lifx-client.ts` produce no DB log. Sustained throttling is invisible.
+- **Files**: `server/src/lib/lifx-client.ts`
+
+### 2026-03-28 — Weather/MTA indicator errors swallowed to console only
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: logging
+- **Description**: Weather indicator errors go to `console.error` only. MTA per-stop failures are silently caught. Neither writes to DB.
+- **Files**: `server/src/lib/weather-indicator.ts`, `server/src/lib/mta-indicator.ts`
+
+### 2026-03-28 — Manual vs auto scene activation not distinguishable in logs
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: logging
+- **Description**: Both manual (user-triggered) and auto (motion-triggered) activations log identical `Activating scene: X` messages.
+- **Fix**: Add source context: `[manual]` vs `[auto]`.
+- **Files**: `server/src/routes/scenes.ts`, `server/src/lib/scene-executor.ts`
+
+### 2026-03-28 — Debug-level request body logs left in production
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: logging
+- **Description**: `lights.ts` and `rooms.ts` routes unconditionally log full request bodies to PM2 stdout.
+- **Fix**: Gate behind `process.env.DEBUG`.
+- **Files**: `server/src/routes/lights.ts`, `server/src/routes/rooms.ts`
+
+### 2026-03-28 — Socket.io connect/disconnect logged at info level permanently
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: logging
+- **Description**: Every browser tab open/close generates console noise. Multiple devices + reconnects on network blips.
+- **Fix**: Gate behind `process.env.DEBUG` or only log unexpected disconnects.
+- **Files**: `server/src/index.ts`
+
+### 2026-03-28 — `logs` table growth unbounded for motion category
+- **Severity**: low
+- **Status**: resolved (PR #76)
+- **Category**: data-integrity
+- **Description**: At 13,000 motion entries/day, steady-state is ~390K rows. Combined with no `(category, created_at)` index, query performance degrades.
+- **Fix**: Either reduce motion verbosity (primary fix) or prune motion category more aggressively (7 days vs 30).
+- **Files**: `server/src/lib/history-collector.ts`
+
+---
+
+## Documentation
+
+### 2026-03-28 — features.md was completely empty
+- **Severity**: high
+- **Status**: resolved (2026-03-28)
+- **Category**: documentation
+- **Description**: `.specs/features.md` contained only an empty template despite 68 PRs and 14+ pages of shipped features. No user-facing feature documentation existed.
+- **Fix**: Populated with complete 14-section feature inventory covering all pages and capabilities.

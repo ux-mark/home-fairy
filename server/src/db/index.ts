@@ -20,6 +20,7 @@ export function initDb(): void {
       name TEXT PRIMARY KEY,
       display_order INTEGER DEFAULT 0,
       parent_room TEXT,
+      promoted INTEGER DEFAULT 0,
       auto INTEGER DEFAULT 1,
       timer INTEGER DEFAULT 15,
       tags TEXT DEFAULT '[]',
@@ -52,6 +53,7 @@ export function initDb(): void {
       has_color INTEGER DEFAULT 1,
       min_kelvin INTEGER DEFAULT 2500,
       max_kelvin INTEGER DEFAULT 9000,
+      active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT (datetime('now')),
       UNIQUE(light_id, room_name)
     );
@@ -79,6 +81,7 @@ export function initDb(): void {
       device_type TEXT DEFAULT 'switch',
       capabilities TEXT DEFAULT '[]',
       attributes TEXT DEFAULT '{}',
+      active INTEGER DEFAULT 1,
       config TEXT DEFAULT '{}',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
@@ -107,6 +110,7 @@ export function initDb(): void {
       hardware TEXT,
       rssi INTEGER,
       is_online INTEGER DEFAULT 1,
+      active INTEGER DEFAULT 1,
       attributes TEXT DEFAULT '{}',
       config TEXT DEFAULT '{}',
       created_at TEXT DEFAULT (datetime('now')),
@@ -136,6 +140,9 @@ export function initDb(): void {
 
     CREATE INDEX IF NOT EXISTS idx_room_activity_lookup
       ON room_activity (room_name, recorded_at);
+
+    CREATE INDEX IF NOT EXISTS idx_logs_category
+      ON logs (category, created_at DESC);
 
     CREATE TABLE IF NOT EXISTS notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -246,6 +253,28 @@ export function initDb(): void {
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS access_links (
+      id TEXT PRIMARY KEY,
+      token TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      mode TEXT NOT NULL CHECK(mode IN ('guest', 'resident')),
+      expires_at TEXT,
+      max_uses INTEGER DEFAULT 1,
+      use_count INTEGER DEFAULT 0,
+      guest_session_duration INTEGER,
+      created_by TEXT NOT NULL,
+      revoked_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS access_link_uses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      link_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      used_at TEXT DEFAULT (datetime('now'))
+    );
   `)
 
   // Add max_plays column to sonos_auto_play table if it doesn't exist
@@ -269,6 +298,23 @@ export function initDb(): void {
   }
   if (!colNames.includes('icon')) {
     db.exec('ALTER TABLE rooms ADD COLUMN icon TEXT DEFAULT NULL')
+  }
+  if (!colNames.includes('promoted')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN promoted INTEGER DEFAULT 0')
+  }
+
+  // Add active column to tables that need device deactivation support (existing DBs)
+  const hubCols = db.prepare("PRAGMA table_info('hub_devices')").all() as { name: string }[]
+  if (!hubCols.map(c => c.name).includes('active')) {
+    db.exec("ALTER TABLE hub_devices ADD COLUMN active INTEGER DEFAULT 1")
+  }
+  const kasaCols = db.prepare("PRAGMA table_info('kasa_devices')").all() as { name: string }[]
+  if (!kasaCols.map(c => c.name).includes('active')) {
+    db.exec("ALTER TABLE kasa_devices ADD COLUMN active INTEGER DEFAULT 1")
+  }
+  const lightCols = db.prepare("PRAGMA table_info('light_rooms')").all() as { name: string }[]
+  if (!lightCols.map(c => c.name).includes('active')) {
+    db.exec("ALTER TABLE light_rooms ADD COLUMN active INTEGER DEFAULT 1")
   }
 
   // Add icon column to modes table if it doesn't exist

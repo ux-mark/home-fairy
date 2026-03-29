@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Thermometer, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, Lock, AlertTriangle, ChevronRight, Activity, Loader2, Volume2, VolumeX, Footprints } from 'lucide-react'
+import { Thermometer, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, Lock, AlertTriangle, ChevronRight, ArrowUp, ArrowDown, Activity, Loader2, Volume2, VolumeX, Footprints, Settings2, Pencil } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo, Fragment } from 'react'
 import { api } from '@/lib/api'
 import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
@@ -11,6 +11,10 @@ import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LucideIcon } from '@/components/ui/LucideIcon'
 import { Accordion } from '@/components/ui/Accordion'
+import { Skeleton, SkeletonGrid } from '@/components/ui/Skeleton'
+import RoomReorderOverlay from '@/components/RoomReorderOverlay'
+import HomeSectionEditor from '@/components/HomeSectionEditor'
+import { DEFAULT_SECTION_ORDER, type SectionOrderItem } from '@/lib/homepage-sections'
 
 // ── Visual state helpers ──────────────────────────────────────────────────────
 
@@ -36,23 +40,6 @@ function getActivityColor(lastActive: string | null): string {
   if (minutesAgo < 5) return 'text-slate-700 dark:text-slate-300'
   if (minutesAgo < 30) return 'text-slate-600 dark:text-slate-400'
   return 'text-slate-500 dark:text-slate-400'
-}
-
-// ── Skeleton loader ──────────────────────────────────────────────────────────
-
-function RoomCardSkeleton() {
-  return (
-    <div className="card rounded-xl border p-4">
-      <div className="animate-pulse space-y-3">
-        <div className="surface h-5 w-28 rounded" />
-        <div className="surface h-4 w-20 rounded" />
-        <div className="flex gap-2">
-          <div className="surface h-8 w-16 rounded-lg" />
-          <div className="surface h-8 w-16 rounded-lg" />
-        </div>
-      </div>
-    </div>
-  )
 }
 
 // ── Mode selector ────────────────────────────────────────────────────────────
@@ -108,21 +95,33 @@ function ModeSelector({
 
 function RoomCard({
   room,
+  allRooms,
   scenes,
   currentMode,
   defaultScenes,
   onToggleScene,
   onToggleAuto,
   isLocked,
+  expandedChildren,
+  onToggleChild,
 }: {
   room: Room
+  allRooms: Room[]
   scenes: Scene[]
   currentMode: string
   defaultScenes: Record<string, Record<string, string>> | undefined
   onToggleScene: (name: string, isActive: boolean) => void
   onToggleAuto: () => void
   isLocked?: boolean
+  expandedChildren: Set<string>
+  onToggleChild: (childName: string) => void
 }) {
+  const childRooms = allRooms
+    .filter(r => r.parent_room === room.name && !r.promoted)
+    .sort((a, b) => a.name.localeCompare(b.name))
+  const parentRoom = room.parent_room
+    ? allRooms.find(r => r.name === room.parent_room) ?? null
+    : null
   // Show ALL scenes for room + mode, in season
   const roomScenes = scenes.filter(s => {
     const rooms = Array.isArray(s.rooms) ? s.rooms : []
@@ -147,10 +146,22 @@ function RoomCard({
   return (
     <div className="card rounded-xl border p-4 transition-colors" style={{ borderColor: 'var(--border-primary)' }}>
       <div className="mb-3 flex items-start justify-between">
-        <div className="flex items-center gap-2">
-          <LucideIcon name={room.icon} className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+        <div className="flex items-start gap-2">
+          <LucideIcon name={room.icon} className="mt-0.5 h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
           <h3 className="text-heading text-base font-semibold">
             {room.name}
+            {room.parent_room && room.promoted && parentRoom && (
+              <>
+                {' '}
+                <Link
+                  to={`/rooms/${encodeURIComponent(room.parent_room)}`}
+                  className="text-xs font-normal text-fairy-400 hover:text-fairy-300 transition-colors"
+                  aria-label={`Part of ${room.parent_room}`}
+                >
+                  in {room.parent_room}
+                </Link>
+              </>
+            )}
           </h3>
         </div>
         <div className="flex items-center gap-1.5">
@@ -225,6 +236,119 @@ function RoomCard({
           })}
         </div>
       )}
+
+      {/* Sub-spaces — each child renders in place as either a pill or expanded content */}
+      {childRooms.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[var(--border-secondary)] pt-3">
+          {childRooms.map(child => {
+            const isExpanded = expandedChildren.has(child.name)
+
+            if (!isExpanded) {
+              return (
+                <button
+                  key={child.name}
+                  onClick={() => onToggleChild(child.name)}
+                  aria-expanded={false}
+                  className={cn(
+                    'flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors min-h-[44px]',
+                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                    'surface text-body hover:text-heading',
+                  )}
+                >
+                  <LucideIcon name={child.icon} className="h-3.5 w-3.5 shrink-0 text-fairy-400" aria-hidden="true" />
+                  {child.name}
+                </button>
+              )
+            }
+
+            const childScenes = scenes.filter(s => {
+              const rooms = Array.isArray(s.rooms) ? s.rooms : []
+              const modes = Array.isArray(s.modes) ? s.modes : []
+              const { inSeason } = isSceneInSeason(s)
+              if (!inSeason) return false
+              return (
+                rooms.some(r => r?.name === child.name) &&
+                modes.some(m => (m ?? '').toLowerCase() === currentMode.toLowerCase())
+              )
+            })
+            const childDefault = getDefaultScene(defaultScenes, child.name, currentMode)
+            const sortedChildScenes = [...childScenes].sort((a, b) => {
+              if (a.name === childDefault) return -1
+              if (b.name === childDefault) return 1
+              return a.name.localeCompare(b.name)
+            })
+
+            return (
+              <div key={child.name} className="w-full rounded-lg bg-[var(--bg-secondary)] p-3">
+                <button
+                  onClick={() => onToggleChild(child.name)}
+                  className="mb-2 flex items-center gap-1.5 min-h-[44px] text-left"
+                  aria-expanded={true}
+                  aria-label={`Collapse ${child.name}`}
+                >
+                  <LucideIcon name={child.icon} className="h-3.5 w-3.5 text-fairy-400" aria-hidden="true" />
+                  <span className="text-xs font-medium text-heading">{child.name}</span>
+                </button>
+
+                {/* Child environmental indicators */}
+                <div className="text-body mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  {child.lux !== null && (() => {
+                    const { icon, className, label } = getLuxIcon(child.lux)
+                    return (
+                      <span className="flex items-center gap-1 text-slate-600 dark:text-slate-400">
+                        <LucideIcon name={icon} className={cn('h-3.5 w-3.5', className)} aria-label={label} />
+                        {child.lux} lux
+                      </span>
+                    )
+                  })()}
+                  {child.temperature !== null && (
+                    <span className={cn('flex items-center gap-1', getTempColor(child.temperature))}>
+                      <Thermometer className="h-3.5 w-3.5" />
+                      {Math.round(child.temperature * 10) / 10}&deg;C
+                    </span>
+                  )}
+                  <span className={cn('flex items-center gap-1', getActivityColor(child.last_active))}>
+                    <Footprints className="h-3 w-3" />
+                    {formatTimeAgo(child.last_active)}
+                  </span>
+                </div>
+
+                {/* Child scene buttons */}
+                {sortedChildScenes.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {sortedChildScenes.map(scene => {
+                      const isActive = child.current_scene === scene.name
+                      const isDefault = scene.name === childDefault
+                      return (
+                        <button
+                          key={scene.name}
+                          onClick={() => onToggleScene(scene.name, isActive)}
+                          aria-pressed={isActive}
+                          className={cn(
+                            'flex min-h-[44px] items-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors',
+                            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                            isActive
+                              ? 'bg-fairy-500/20 text-fairy-700 dark:text-fairy-300'
+                              : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
+                          )}
+                        >
+                          {isDefault && (
+                            <Activity className="h-3 w-3 text-fairy-400" aria-label="Default scene for this mode" />
+                          )}
+                          {scene.icon && <span className="text-sm" aria-hidden="true">{scene.icon}</span>}
+                          {scene.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-caption">No scenes for this mode</p>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -232,7 +356,7 @@ function RoomCard({
 // ── Weather card ────────────────────────────────────────────────────────────
 
 function WeatherCard() {
-  const { data: weather } = useQuery({
+  const { data: weather, isError, isLoading } = useQuery({
     queryKey: ['system', 'weather'],
     queryFn: api.system.getWeather,
     retry: false,
@@ -243,6 +367,26 @@ function WeatherCard() {
     queryKey: ['system', 'preferences'],
     queryFn: api.system.getPreferences,
   })
+
+  if (isLoading) {
+    return (
+      <div className="card mb-6 flex items-center gap-4 rounded-xl border px-4 py-3">
+        <Skeleton className="h-12 w-12 rounded-lg" />
+        <div className="flex-1 space-y-2">
+          <Skeleton className="h-7 w-24" />
+          <Skeleton className="h-4 w-32" />
+        </div>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="card mb-6 rounded-xl border px-4 py-3">
+        <p className="text-caption text-sm">Weather unavailable</p>
+      </div>
+    )
+  }
 
   if (!weather) return null
 
@@ -459,13 +603,29 @@ function MtaLineBadge({ line }: { line: string }) {
 function MtaCard() {
   const [open, setOpen] = useState(false)
 
-  const { data: combinedStatus } = useQuery({
+  const { data: combinedStatus, isError, isLoading } = useQuery({
     queryKey: ['mta', 'combined-status'],
     queryFn: api.system.getCombinedMtaStatus,
     retry: false,
     staleTime: 30_000,
     refetchInterval: 30_000,
   })
+
+  if (isLoading) {
+    return (
+      <div className="card mb-6 rounded-xl border px-4 py-3">
+        <Skeleton className="h-5 w-48" />
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="card mb-6 rounded-xl border px-4 py-3">
+        <p className="text-caption text-sm">Train times unavailable</p>
+      </div>
+    )
+  }
 
   if (!combinedStatus || combinedStatus.overallStatus === 'none') return null
 
@@ -481,19 +641,28 @@ function MtaCard() {
       }, null)
     : null
 
-  const accordionTitle: React.ReactNode = (
-    <span className="flex items-center gap-2 min-w-0">
+  const accordionTitle: React.ReactNode = soonestStop?.catchableTrain ? (
+    <span className="inline-flex items-center gap-1.5 min-w-0 flex-wrap">
       <span
-        className="h-3 w-3 flex-shrink-0 rounded-full"
+        className="h-3 w-3 shrink-0 rounded-full"
         style={{ backgroundColor: overallColor }}
         aria-hidden="true"
       />
-      {soonestStop?.catchableTrain ? (
-        <span className="flex items-center gap-1.5 min-w-0">
-          <MtaLineBadge line={soonestStop.catchableTrain.routeId} />
-          <span className="truncate">at {soonestStop.config.name} in {soonestStop.catchableTrain.minutesAway} min</span>
-        </span>
-      ) : combinedStatus.overallStatus === 'red'
+      <MtaLineBadge line={soonestStop.catchableTrain.routeId} />
+      {soonestStop.config.direction === 'N'
+        ? <ArrowUp className="h-3.5 w-3.5 shrink-0 text-caption" aria-label="Uptown" />
+        : <ArrowDown className="h-3.5 w-3.5 shrink-0 text-caption" aria-label="Downtown" />
+      }
+      <span>at {soonestStop.config.name} in {soonestStop.catchableTrain.minutesAway} min</span>
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1.5 min-w-0">
+      <span
+        className="h-3 w-3 shrink-0 rounded-full"
+        style={{ backgroundColor: overallColor }}
+        aria-hidden="true"
+      />
+      {combinedStatus.overallStatus === 'red'
         ? 'Nothing catchable right now'
         : combinedStatus.overallMessage
       }
@@ -511,7 +680,7 @@ function MtaCard() {
         trailing={<Train className="h-4 w-4 text-caption" aria-hidden="true" />}
       >
         {/* Per-stop rows */}
-        <div className="space-y-1">
+        <div className="space-y-1 px-4">
           {combinedStatus.stops.map((stop, i) => {
             const dotColor = STATUS_DOT_COLORS[stop.status]
             const next = stop.nextArrival
@@ -533,25 +702,28 @@ function MtaCard() {
               message = `in ${displayTrain.minutesAway} min — Leave now, tight!`
             }
 
+            const dirLabel = stop.config.direction === 'N' ? 'Uptown' : 'Downtown'
+            const DirArrow = stop.config.direction === 'N' ? ArrowUp : ArrowDown
+
             return (
               <div
                 key={`${stop.config.stopId}-${stop.config.direction}-${i}`}
-                className="flex items-start gap-2 py-1.5 text-sm"
+                className="flex items-center gap-2 py-1.5 text-sm"
               >
-                {/* Fixed-width leading column: dot + badge */}
-                <span className="flex shrink-0 items-center gap-1.5 pt-0.5">
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: dotColor }}
-                    aria-label={`Status: ${stop.status}`}
-                  />
-                  {displayTrain && <MtaLineBadge line={displayTrain.routeId} />}
-                </span>
-                {/* Station name + message */}
-                <div className="min-w-0 flex-1">
-                  <p className="text-heading font-medium">{stop.config.name}</p>
-                  <p className="text-caption text-xs">{message}</p>
-                </div>
+                <span
+                  className="h-3 w-3 shrink-0 rounded-full"
+                  style={{ backgroundColor: dotColor }}
+                  aria-label={`Status: ${stop.status}`}
+                />
+                {displayTrain
+                  ? <MtaLineBadge line={displayTrain.routeId} />
+                  : <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#808183]/40 text-[10px] text-caption" aria-hidden="true">—</span>
+                }
+                <DirArrow className="h-3.5 w-3.5 shrink-0 text-caption" aria-label={dirLabel} />
+                {/* Station name + message inline, wrapping */}
+                <p className="min-w-0 flex-1 text-heading font-medium leading-snug">
+                  {stop.config.name} {message && <span className="font-normal text-body text-xs">{message}</span>}
+                </p>
               </div>
             )
           })}
@@ -567,7 +739,7 @@ function MusicQuickAction() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
-  const { data: muteStatus } = useQuery({
+  const { data: muteStatus, isLoading: muteLoading } = useQuery({
     queryKey: ['sonos', 'mute-status'],
     queryFn: api.sonos.getMuteStatus,
     staleTime: 10_000,
@@ -597,6 +769,14 @@ function MusicQuickAction() {
       toast({ message: 'Failed to update speakers', type: 'error' })
     },
   })
+
+  if (muteLoading) {
+    return (
+      <section className="mb-6" aria-label="Music controls">
+        <Skeleton className="h-12 w-full rounded-xl" />
+      </section>
+    )
+  }
 
   // Don't render if no speakers are configured
   if (!muteStatus || muteStatus.totalSpeakers === 0) return null
@@ -649,6 +829,18 @@ function MusicQuickAction() {
 export default function HomePage() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const [reorderOpen, setReorderOpen] = useState(false)
+  const [sectionEditorOpen, setSectionEditorOpen] = useState(false)
+  const [expandedChildren, setExpandedChildren] = useState<Set<string>>(new Set())
+
+  function toggleChild(name: string) {
+    setExpandedChildren(prev => {
+      const next = new Set(prev)
+      if (next.has(name)) next.delete(name)
+      else next.add(name)
+      return next
+    })
+  }
 
   const { data: rooms, isLoading: roomsLoading, isError: roomsError, refetch: refetchRooms } = useQuery({
     queryKey: ['rooms'],
@@ -660,7 +852,7 @@ export default function HomePage() {
     queryFn: api.scenes.getAll,
   })
 
-  const { data: system } = useQuery({
+  const { data: system, isLoading: systemLoading } = useQuery({
     queryKey: ['system', 'current'],
     queryFn: api.system.getCurrent,
   })
@@ -682,6 +874,28 @@ export default function HomePage() {
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   })
+
+  const { data: prefs } = useQuery({
+    queryKey: ['system', 'preferences'],
+    queryFn: api.system.getPreferences,
+  })
+
+  // Parse the stored section order, filling in any sections added after the pref was saved
+  const sectionOrder = useMemo<SectionOrderItem[]>(() => {
+    const raw = prefs?.homepage_section_order
+    if (!raw) return DEFAULT_SECTION_ORDER
+    try {
+      const parsed = JSON.parse(raw) as SectionOrderItem[]
+      const knownIds = DEFAULT_SECTION_ORDER.map(s => s.id)
+      const result = parsed.filter(s => knownIds.includes(s.id))
+      for (const def of DEFAULT_SECTION_ORDER) {
+        if (!result.find(s => s.id === def.id)) result.push({ ...def })
+      }
+      return result
+    } catch {
+      return DEFAULT_SECTION_ORDER
+    }
+  }, [prefs?.homepage_section_order])
 
   const unlockMutation = useMutation({
     mutationFn: api.system.unlockNight,
@@ -781,118 +995,192 @@ export default function HomePage() {
   const allModes = system?.all_modes ?? [...DEFAULT_MODES]
   const modeIcons = system?.mode_icons ?? {}
 
-  return (
-    <div>
-      <DeviceOnboarding />
-
-      <MtaCard />
-
-      <QuickActions />
-
-      <MusicQuickAction />
-
-      {nightStatus?.active && (
-        <div className="card mb-6 rounded-xl border border-indigo-500/30 bg-indigo-500/5 px-4 py-3">
-          <div className="flex items-center gap-3">
-            <Moon className="h-5 w-5 text-indigo-400 flex-shrink-0" />
-            <div className="flex-1 min-w-0">
-              <p className="text-heading text-sm font-medium">Night mode active</p>
-              <p className="text-caption text-xs">
-                {nightStatus.lockedRooms.length} room{nightStatus.lockedRooms.length !== 1 ? 's' : ''} locked until {nightStatus.wakeMode}
-              </p>
-            </div>
-            <button
-              onClick={() => unlockMutation.mutate()}
-              disabled={unlockMutation.isPending}
-              className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center disabled:opacity-50"
-            >
-              Unlock
-            </button>
-          </div>
-        </div>
-      )}
-
-      <WeatherCard />
-
-      <ModeSelector
-        currentMode={currentMode}
-        modes={allModes}
-        modeIcons={modeIcons}
-        onSelect={mode => setModeMutation.mutate(mode)}
-        isPending={setModeMutation.isPending}
-      />
-
-      {dashboardData?.insights?.attention?.some(a => a.severity === 'critical') && (
-        <Link
-          to="/dashboard"
-          className="mb-4 flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-3 transition-colors hover:bg-red-500/10 min-h-[44px]"
-        >
-          <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" aria-hidden="true" />
-          <span className="text-sm text-red-400">
-            {dashboardData.insights.attention.filter(a => a.severity === 'critical').length} item{dashboardData.insights.attention.filter(a => a.severity === 'critical').length !== 1 ? 's' : ''} need{dashboardData.insights.attention.filter(a => a.severity === 'critical').length === 1 ? 's' : ''} attention
-          </span>
-          <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-red-400 opacity-50" aria-hidden="true" />
-        </Link>
-      )}
-
-      <section aria-label="Rooms">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-heading text-sm font-semibold">Rooms</h2>
-          {rooms && (
-            <span className="text-caption text-xs">
-              {rooms.length} room{rooms.length !== 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-
-        {roomsLoading ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <RoomCardSkeleton key={i} />
+  // Render a single section by ID
+  function renderSection(id: string): React.ReactNode {
+    switch (id) {
+      case 'mta':
+        return <MtaCard key="mta" />
+      case 'quick-actions':
+        return <QuickActions key="quick-actions" />
+      case 'music':
+        return <MusicQuickAction key="music" />
+      case 'weather':
+        return <WeatherCard key="weather" />
+      case 'mode-selector':
+        return systemLoading ? (
+          <div key="mode-selector" className="mb-6 flex gap-2 overflow-hidden" role="status" aria-label="Loading mode selector">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-10 w-24 shrink-0 rounded-full" />
             ))}
           </div>
-        ) : roomsError ? (
-          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-            <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
-            <p className="text-zinc-400">Unable to load home data. Check your connection and try again.</p>
-            <button
-              onClick={() => refetchRooms()}
-              className="rounded-lg bg-fairy-600 px-4 py-2 text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-            >
-              Try again
-            </button>
-          </div>
-        ) : rooms && rooms.length > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {rooms
-              .sort((a, b) => a.display_order - b.display_order)
-              .map(room => (
-                <RoomCard
-                  key={room.name}
-                  room={room}
-                  scenes={scenes ?? []}
-                  currentMode={currentMode}
-                  defaultScenes={defaultScenes}
-                  onToggleScene={(name, isActive) =>
-                    isActive
-                      ? deactivateSceneMutation.mutate(name)
-                      : activateSceneMutation.mutate(name)
-                  }
-                  onToggleAuto={() =>
-                    toggleAutoMutation.mutate({ name: room.name, auto: !room.auto })
-                  }
-                  isLocked={nightStatus?.lockedRooms.includes(room.name)}
-                />
-              ))}
-          </div>
         ) : (
-          <EmptyState
-            icon={Zap}
-            message="No rooms set up yet."
-            sub="Head to the Rooms tab to get started."
+          <ModeSelector
+            key="mode-selector"
+            currentMode={currentMode}
+            modes={allModes}
+            modeIcons={modeIcons}
+            onSelect={mode => setModeMutation.mutate(mode)}
+            isPending={setModeMutation.isPending}
           />
-        )}
-      </section>
+        )
+      case 'rooms':
+        return (
+          <section key="rooms" aria-label="Rooms">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="text-heading text-sm font-semibold">Rooms</h2>
+              {rooms && (
+                <div className="flex items-center gap-2">
+                  <span className="text-caption text-xs">
+                    {rooms.filter(r => !r.parent_room || r.promoted).length} room{rooms.filter(r => !r.parent_room || r.promoted).length !== 1 ? 's' : ''}
+                  </span>
+                  <button
+                    onClick={() => setReorderOpen(true)}
+                    className="flex items-center gap-1 text-xs text-fairy-400 hover:text-fairy-300 transition-colors min-h-[44px] min-w-[44px] justify-center"
+                    aria-label="Reorder rooms"
+                  >
+                    <Settings2 className="h-3.5 w-3.5" aria-hidden="true" />
+                    Edit
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {roomsLoading ? (
+              <div role="status" aria-label="Loading rooms">
+                <SkeletonGrid count={6} />
+              </div>
+            ) : roomsError ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
+                <p className="text-zinc-400">Unable to load home data. Check your connection and try again.</p>
+                <button
+                  onClick={() => refetchRooms()}
+                  className="rounded-lg bg-fairy-600 px-4 py-2 min-h-[44px] text-sm font-medium text-white hover:bg-fairy-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                >
+                  Try again
+                </button>
+              </div>
+            ) : rooms && rooms.length > 0 ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {rooms
+                  .filter(room => !room.parent_room || room.promoted)
+                  .sort((a, b) => a.display_order - b.display_order)
+                  .map(room => (
+                    <RoomCard
+                      key={room.name}
+                      room={room}
+                      allRooms={rooms}
+                      scenes={scenes ?? []}
+                      currentMode={currentMode}
+                      defaultScenes={defaultScenes}
+                      onToggleScene={(name, isActive) =>
+                        isActive
+                          ? deactivateSceneMutation.mutate(name)
+                          : activateSceneMutation.mutate(name)
+                      }
+                      onToggleAuto={() =>
+                        toggleAutoMutation.mutate({ name: room.name, auto: !room.auto })
+                      }
+                      isLocked={nightStatus?.lockedRooms.includes(room.name)}
+                      expandedChildren={expandedChildren}
+                      onToggleChild={toggleChild}
+                    />
+                  ))}
+              </div>
+            ) : (
+              <EmptyState
+                icon={Zap}
+                message="No rooms set up yet."
+                sub="Head to the Rooms tab to get started."
+              />
+            )}
+          </section>
+        )
+      default:
+        return null
+    }
+  }
+
+  const hasAttention = dashboardData?.insights?.attention?.some(a => a.severity === 'critical') ?? false
+  const criticalCount = dashboardData?.insights?.attention?.filter(a => a.severity === 'critical').length ?? 0
+
+  return (
+    <div>
+      {/* Device onboarding always renders first */}
+      <DeviceOnboarding />
+
+      {/* Sections rendered in user-defined order */}
+      {sectionOrder
+        .filter(s => s.visible || s.id === 'rooms')
+        .map(section => {
+          const elements: React.ReactNode[] = []
+
+          // System alerts always inject before the rooms section
+          if (section.id === 'rooms') {
+            if (nightStatus?.active) {
+              elements.push(
+                <div key="night-alert" className="card mb-6 rounded-xl border border-indigo-500/30 bg-indigo-500/5 px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <Moon className="h-5 w-5 text-indigo-400 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-heading text-sm font-medium">Night mode active</p>
+                      <p className="text-caption text-xs">
+                        {nightStatus.lockedRooms.length} room{nightStatus.lockedRooms.length !== 1 ? 's' : ''} locked until {nightStatus.wakeMode}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => unlockMutation.mutate()}
+                      disabled={unlockMutation.isPending}
+                      className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center disabled:opacity-50"
+                    >
+                      Unlock
+                    </button>
+                  </div>
+                </div>
+              )
+            }
+            if (hasAttention) {
+              elements.push(
+                <Link
+                  key="attention-alert"
+                  to="/dashboard"
+                  className="mb-4 flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/5 px-4 py-3 transition-colors hover:bg-red-500/10 min-h-[44px]"
+                >
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" aria-hidden="true" />
+                  <span className="text-sm text-red-400">
+                    {criticalCount} item{criticalCount !== 1 ? 's' : ''} need{criticalCount === 1 ? 's' : ''} attention
+                  </span>
+                  <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-red-400 opacity-50" aria-hidden="true" />
+                </Link>
+              )
+            }
+          }
+
+          elements.push(renderSection(section.id))
+          return <Fragment key={section.id}>{elements}</Fragment>
+        })}
+
+      {/* Customise button */}
+      <div className="mt-8 mb-2 flex justify-center">
+        <button
+          onClick={() => setSectionEditorOpen(true)}
+          className="flex items-center gap-1.5 text-xs text-caption hover:text-body transition-colors min-h-[44px]"
+        >
+          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+          Customise home screen
+        </button>
+      </div>
+
+      <RoomReorderOverlay
+        rooms={rooms ?? []}
+        open={reorderOpen}
+        onClose={() => setReorderOpen(false)}
+      />
+
+      <HomeSectionEditor
+        open={sectionEditorOpen}
+        onClose={() => setSectionEditorOpen(false)}
+      />
     </div>
   )
 }

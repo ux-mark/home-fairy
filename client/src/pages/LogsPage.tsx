@@ -6,8 +6,9 @@ import { cn, formatDateTime } from '@/lib/utils'
 import { BackLink } from '@/components/ui/BackLink'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { FilterChip } from '@/components/ui/FilterChip'
+import { SkeletonList } from '@/components/ui/Skeleton'
 
-const CATEGORIES = ['hubitat', 'scene', 'motion', 'lifx', 'system', 'battery', 'weather', 'timer', 'device_error'] as const
+const CATEGORIES = ['hubitat', 'scene', 'motion', 'lifx', 'system', 'battery', 'weather', 'timer', 'device_error', 'sonos', 'kasa', 'mta-indicator'] as const
 
 function formatTimestamp(dateStr: string) {
   return formatDateTime(dateStr, { second: '2-digit' })
@@ -128,13 +129,8 @@ export default function LogsPage() {
       {/* Log entries */}
       <div className="rounded-xl border border-[var(--border-primary)] card">
         {isLoading ? (
-          <div className="space-y-3 p-4">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="animate-pulse space-y-2">
-                <div className="h-3 w-24 rounded surface" />
-                <div className="h-4 w-3/4 rounded surface" />
-              </div>
-            ))}
+          <div className="p-4">
+            <SkeletonList count={8} height="h-12" />
           </div>
         ) : logs && logs.length > 0 ? (
           <div className="divide-y divide-[var(--border-primary)] px-4">

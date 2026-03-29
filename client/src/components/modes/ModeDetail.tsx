@@ -7,6 +7,7 @@ import { cn, formatTime } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { SUN_EVENT_LABELS } from './ModesList'
 import { LucideIcon } from '@/components/ui/LucideIcon'
+import { Skeleton } from '@/components/ui/Skeleton'
 import { IconPicker } from '@/components/ui/IconPicker'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -445,12 +446,12 @@ function DeleteConfirm({ modeName, onConfirm, onCancel, isDeleting }: DeleteConf
   if (isLoading) {
     return (
       <div
-        className="surface rounded-lg p-4 space-y-3 animate-pulse"
+        className="surface rounded-lg p-4 space-y-3"
         aria-busy="true"
         aria-label="Loading dependency information"
       >
-        <div className="h-3.5 w-48 rounded bg-[var(--bg-tertiary)]" />
-        <div className="h-3 w-64 rounded bg-[var(--bg-tertiary)]" />
+        <Skeleton className="h-3.5 w-48" />
+        <Skeleton className="h-3 w-64" />
       </div>
     )
   }
@@ -694,20 +695,20 @@ export default function ModeDetail({ modeName, onBack }: ModeDetailProps) {
   if (modesLoading) {
     return (
       <div
-        className="space-y-4 animate-pulse"
+        className="space-y-4"
         aria-busy="true"
         aria-label="Loading mode details"
       >
         <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-lg bg-[var(--bg-tertiary)]" />
-          <div className="h-5 w-40 rounded bg-[var(--bg-tertiary)]" />
+          <Skeleton className="h-9 w-9 rounded-lg" />
+          <Skeleton className="h-5 w-40" />
         </div>
         <div className="surface rounded-lg px-4 py-3 space-y-2">
-          <div className="h-3.5 w-28 rounded bg-[var(--bg-tertiary)]" />
-          <div className="h-3 w-52 rounded bg-[var(--bg-tertiary)]" />
+          <Skeleton className="h-3.5 w-28" />
+          <Skeleton className="h-3 w-52" />
         </div>
         <div className="surface rounded-lg px-4 py-3 space-y-2">
-          <div className="h-3.5 w-28 rounded bg-[var(--bg-tertiary)]" />
+          <Skeleton className="h-3.5 w-28" />
         </div>
       </div>
     )

@@ -43,8 +43,8 @@ Two PM2-managed processes run on the Pi:
 ### 1. Clone and install
 
 ```bash
-git clone https://github.com/ux-mark/thefairies-app.git
-cd thefairies-app
+git clone https://github.com/ux-mark/home-fairy.git
+cd home-fairy
 npm run install:all
 ```
 
@@ -119,7 +119,7 @@ This copies the database, installs dependencies, sets up the Python venv, builds
 ## Project structure
 
 ```
-thefairies-app/
+home-fairy/
   client/              React + Vite + Tailwind CSS v4
     src/
       pages/           Home, Rooms, Scenes, Devices, Insights, Settings, Watch

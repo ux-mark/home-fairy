@@ -10,7 +10,7 @@
 ## PR #N — Title
 - **Branch**: feature/branch-name → dev
 - **Created**: YYYY-MM-DD
-- **Status**: open | merged | closed
+- **Status**: merged\n- **Merge date**: 2026-03-27\n- **Branch cleanup**: done | merged | closed
 - **Merge date**: YYYY-MM-DD (if merged)
 - **Branch cleanup**: done | pending (if merged)
 - **Summary**: What this PR does
@@ -390,18 +390,89 @@
 - **Summary**: WS1-WS4 consolidated. Backend energy cost from Kasa hardware memory. Homepage visual indicators (lux icons, temp colours, footprints). Contextualised cost on room detail and insights. Sonos-Kasa device linking with cost attribution. Kasa device detail cost headline.
 - **Files**: 15 files changed (+1,879 lines) — insights-engine.ts, dashboard.ts, device-links.ts (new), db/index.ts, index.ts, sonos.ts, api.ts, utils.ts, HomePage.tsx, EnergyCard.tsx, RoomIntelligence.tsx, SonosDetailPage.tsx, DeviceDetailPage.tsx, SonosSetupPage.tsx
 
-## PR #60 — Add activity insights to dashboard
-- **Branch**: feature/activity-insights → dev
+## PR #62 — Add period selectors to all charts
+- **Branch**: feature/period-selectors → dev
 - **Created**: 2026-03-27
 - **Status**: merged
 - **Merge date**: 2026-03-27
 - **Branch cleanup**: done
-- **Summary**: Backend computeActivityInsights() in insights-engine.ts. Room ranking horizontal bar chart with per-room colours, multi-room hourly area/line chart, stacked daily trend, interactive room toggle pills with icons. Three distinct chart types for visual variety. Per-room breakdown data (hourlyByRoom, dailyByRoom) enables client-side filtering.
-- **Files**: server/src/lib/insights-engine.ts, client/src/components/dashboard/ActivityCard.tsx, client/src/lib/api.ts, .specs/DATA_JOURNEY_PLAN.md
+- **Summary**: WS5 Item #2. Adds 1d/7d/30d/90d/1y period selectors to all time-series charts. New shared PeriodSelector component. Backend 90d period support. EnergyCard device trends, EnvironmentCard multi-room overlay (temp + lux), BatteryCard trend, DeviceDetailPage all get period selectors.
+- **Files**: 7 files (1 new, 6 modified) — PeriodSelector.tsx (new), EnergyCard.tsx, EnvironmentCard.tsx, BatteryCard.tsx, DeviceDetailPage.tsx, dashboard.ts
 
-## PR #61 — Progressive disclosure, activity charts, WCAG contrast fix
-- **Branch**: feature/insights-progressive-disclosure → dev
+## PR #63 — Fix Kasa strip all-off bypass and migrate WFH scene
+- **Branch**: fix/kasa-strip-alloff-and-wfh-scene → main
 - **Created**: 2026-03-27
+- **Status**: merged
+- **Merge date**: 2026-03-27
+- **Branch cleanup**: done
+- **Summary**: Fix parent strip all-off bypassing per-outlet exclude_from_all_off flags (Sonos Bedroom, WFH WiFi turned off despite exclusions). Migrate WFH scene from stale Hubitat device IDs to Kasa outlet IDs.
+- **Files**: `server/src/routes/system.ts`, `server/src/db/index.ts`
+
+## PR #64 — Fix MTA card alignment and add direction arrows
+- **Branch**: fix/mta-card-alignment → dev
+- **Created**: 2026-03-27
+- **Status**: merged
+- **Merge date**: 2026-03-27
+- **Branch cleanup**: done
+- **Summary**: Aligned status dots with accordion header, added ArrowUp/ArrowDown for uptown/downtown, placeholder badge for no-train stations, inline message text with station name
+- **Files**: `client/src/pages/HomePage.tsx`
+
+## PR #65 — Fix device link routing across dashboard and insights
+- **Branch**: fix/device-link-routing → dev
+- **Created**: 2026-03-28
+- **Status**: merged
+- **Merge date**: 2026-03-28
+- **Branch cleanup**: done
+- **Summary**: Add `source` field to mixed-type device API responses, add `deviceDetailPath()` helper, fix 4 link sites that used generic `/devices/:id` for Kasa devices. Document device routing convention in PROJECT_SPEC.md.
+- **Files**: `client/src/lib/utils.ts`, `client/src/lib/api.ts`, `client/src/components/dashboard/EnergyCard.tsx`, `client/src/components/room/RoomIntelligence.tsx`, `client/src/pages/DeviceDetailPage.tsx`, `server/src/routes/dashboard.ts`, `.specs/PROJECT_SPEC.md`
+
+## PR #66 — Fix device label fallback showing raw IDs in notifications
+- **Branch**: fix/device-label-fallback → dev
+- **Created**: 2026-03-28
+- **Status**: merged
+- **Merge date**: 2026-03-28
+- **Branch cleanup**: done
+- **Summary**: getDeviceLabel() now falls back across all device tables when primary lookup fails. Fixed existing broken notifications (Kasa MACs recorded as hub type, stale notifications for removed hub devices dismissed, orphan device_health entries cleaned up). Also migrated all 18 hubitat_device scene commands to kasa_device across 14 scenes (Focus, Bed Lamp, Playbulb, Plant Life), removed 3 duplicates.
+- **Files**: `server/src/lib/device-health-service.ts`
+
+## PR #67 — Fix scene editor: filter devices by room, exclude Always Keep On
+- **Branch**: fix/scene-editor-device-filtering → dev
+- **Created**: 2026-03-28
+- **Status**: merged
+- **Merge date**: 2026-03-28
+- **Branch cleanup**: done
+- **Summary**: Scene editor now only shows devices assigned to the scene's rooms (removed global Kasa fetch). Filters out "Always Keep On" devices and sensors. Unified device on/off controls to use power button pattern matching lights.
+- **Files**: `client/src/pages/SceneEditorPage.tsx`
+
+## PR #68 — Skip out-of-season scenes in fairy_scene chaining
+- **Branch**: fix/seasonal-scene-chaining → dev
+- **Created**: 2026-03-28
+- **Status**: merged
+- **Merge date**: 2026-03-28
+- **Branch cleanup**: done
+- **Summary**: fairy_scene commands now check target scene's active_from/active_to seasonal range before activating. Prevents out-of-season scenes (e.g. Xmas in March) from being chain-activated. Logs skip with human-readable dates (e.g. "1 Dec to 7 Jan").
+- **Files**: `server/src/lib/scene-executor.ts`
+
+## PRs #69-#75 — Consolidated into PR #76
+- **Status**: closed (consolidated)
+
+## PR #76 — Fix: Comprehensive product audit — 41 issues across 7 work streams
+- **Branch**: fix/product-audit-fixes → dev
+- **Created**: 2026-03-28
+- **Status**: merged
+- **Merge date**: 2026-03-28
+- **Branch cleanup**: done
+- **Summary**: All 41 audit issues fixed: schema DDL active column, backend reliability (mutex, leaks, shutdown, retries), frontend socket dedup and timer cleanup, frontend correctness (preferences query, chart centralisation, cache keys), 14 accessibility fixes, logging/observability (DB logging for sonos/kasa/lifx/weather/mta, DEBUG gating, scene source context), deploy script hardening (opt-in DB copy, timestamped backups), log viewer category filters for new categories.
+- **Files**: 36 files changed (+244/-139)
+
+## PR #77 — Unified loading skeletons across the entire app
+- **Branch**: feature/unified-loading-skeletons → dev
+- **Created**: 2026-03-28
 - **Status**: open
-- **Summary**: All Insights cards wrapped in Accordion (auto-open on anomalies/alerts). Restored chart-first ActivityCard from PR #60 (horizontal bars, area/line hourly, stacked daily, room toggles with icons, footprints badge). WCAG AA contrast fix for fairy accent colours globally (theme-aware CSS vars). Accordion layout fixed (trailing right-aligned, title inline). EnvironmentCard room links. HomeSummaryStrip removed.
-- **Files**: 13 files — insights-engine.ts, api.ts, index.css, Accordion.tsx, DashboardPage.tsx, ActivityCard.tsx, AttentionBar.tsx, BatteryCard.tsx, EnergyCard.tsx, EnvironmentCard.tsx, SunModeCard.tsx, HomeSummaryStrip.tsx, DATA_JOURNEY_PLAN.md
+- **Summary**: Created shared Skeleton.tsx component library (8 primitives). Replaced 60+ ad-hoc skeleton implementations across 22 files with consistent, layout-matched loading states. Eliminates layout jumps on page load.
+- **Files**: 23 files changed (1 new, 22 modified) — Skeleton.tsx (new), 15 pages, 7 components
+
+## Reconciliation — Sync main and dev (2026-03-27)
+- **Action**: Merged main into dev (fast-forward) to reconcile divergence
+- **Context**: PRs #60 and #61 had been merged directly to main (bypassing dev). PR #62 was merged to dev without #61's changes. This caused progressive disclosure work from PR #61 to be missing on dev. After merging PR #63 into main, merged main into dev — both branches now at commit 18cca7a, fully in sync.
+- **Resolved divergence**: dev now has PRs #61 (insights progressive disclosure) + #63 (kasa strip fix) that it was missing

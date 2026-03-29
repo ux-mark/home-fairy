@@ -3,10 +3,11 @@ import { useParams, useMatch, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, Pencil, Check, X, Power, Shield, AlertTriangle, Link2, Volume2 } from 'lucide-react'
 import { api, type DeviceInsightsData, type KasaDevice, type DeviceLink } from '@/lib/api'
-import { cn } from '@/lib/utils'
+import { cn, deviceDetailPath } from '@/lib/utils'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
 import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
 import { BackLink } from '@/components/ui/BackLink'
+import { DetailPageSkeleton } from '@/components/ui/Skeleton'
 import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { Accordion } from '@/components/ui/Accordion'
 import { PeriodSelector } from '@/components/ui/PeriodSelector'
@@ -69,33 +70,6 @@ function attributeUnit(key: string): string {
   if (lower === 'voltage') return 'V'
   if (lower === 'current') return 'A'
   return ''
-}
-
-// ── Loading skeleton ──────────────────────────────────────────────────────────
-
-function PageSkeleton() {
-  return (
-    <div className="space-y-6" role="status" aria-label="Loading device details">
-      {/* Header skeleton */}
-      <div className="space-y-3">
-        <div className="h-8 w-24 animate-pulse rounded-lg bg-[var(--bg-tertiary)]" />
-        <div className="h-7 w-48 animate-pulse rounded-lg bg-[var(--bg-tertiary)]" />
-        <div className="h-5 w-32 animate-pulse rounded-full bg-[var(--bg-tertiary)]" />
-      </div>
-
-      {/* Section skeletons */}
-      {[1, 2, 3].map(i => (
-        <div key={i} className="card rounded-xl border p-5 space-y-3">
-          <div className="h-5 w-32 animate-pulse rounded bg-[var(--bg-tertiary)]" />
-          <div className="space-y-2">
-            <div className="h-4 w-full animate-pulse rounded bg-[var(--bg-tertiary)]" />
-            <div className="h-4 w-3/4 animate-pulse rounded bg-[var(--bg-tertiary)]" />
-            <div className="h-4 w-1/2 animate-pulse rounded bg-[var(--bg-tertiary)]" />
-          </div>
-        </div>
-      ))}
-    </div>
-  )
 }
 
 // ── Battery level bar ─────────────────────────────────────────────────────────
@@ -725,7 +699,7 @@ function KasaDeviceDetail({ id }: { id: string }) {
   })
 
   if (isLoading) {
-    return <PageSkeleton />
+    return <DetailPageSkeleton label="Loading device details" />
   }
 
   if (isError) {
@@ -1266,7 +1240,7 @@ function HubDeviceDetail({ id }: { id: string }) {
   // ── Loading state ───────────────────────────────────────────────────────
 
   if (isLoading) {
-    return <PageSkeleton />
+    return <DetailPageSkeleton label="Loading device details" />
   }
 
   // ── Error state ─────────────────────────────────────────────────────────
@@ -1575,7 +1549,7 @@ function HubDeviceDetail({ id }: { id: string }) {
                     {roomDevices.map(d => (
                       <li key={d.id}>
                         <Link
-                          to={`/devices/${d.id}`}
+                          to={deviceDetailPath(d.id, d.source)}
                           className={cn(
                             'flex min-h-[44px] items-center gap-2 rounded-lg px-2 -mx-2',
                             'text-sm text-fairy-400 transition-colors hover:bg-fairy-500/10',
