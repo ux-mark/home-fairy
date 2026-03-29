@@ -119,7 +119,7 @@ function RoomCard({
 }) {
   const childRooms = allRooms
     .filter(r => r.parent_room === room.name && !r.promoted)
-    .sort((a, b) => a.display_order - b.display_order)
+    .sort((a, b) => a.name.localeCompare(b.name))
   const parentRoom = room.parent_room
     ? allRooms.find(r => r.name === room.parent_room) ?? null
     : null
@@ -147,22 +147,23 @@ function RoomCard({
   return (
     <div className="card rounded-xl border p-4 transition-colors" style={{ borderColor: 'var(--border-primary)' }}>
       <div className="mb-3 flex items-start justify-between">
-        <div className="flex items-center gap-2">
-          <LucideIcon name={room.icon} className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
-          <div>
-            <h3 className="text-heading text-base font-semibold">
-              {room.name}
-            </h3>
+        <div className="flex items-start gap-2">
+          <LucideIcon name={room.icon} className="mt-0.5 h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+          <h3 className="text-heading text-base font-semibold">
+            {room.name}
             {room.parent_room && room.promoted && parentRoom && (
-              <Link
-                to={`/rooms/${encodeURIComponent(room.parent_room)}`}
-                className="text-xs text-fairy-400 hover:text-fairy-300 transition-colors"
-                aria-label={`Part of ${room.parent_room}`}
-              >
-                in {room.parent_room}
-              </Link>
+              <>
+                {' '}
+                <Link
+                  to={`/rooms/${encodeURIComponent(room.parent_room)}`}
+                  className="text-xs font-normal text-fairy-400 hover:text-fairy-300 transition-colors"
+                  aria-label={`Part of ${room.parent_room}`}
+                >
+                  in {room.parent_room}
+                </Link>
+              </>
             )}
-          </div>
+          </h3>
         </div>
         <div className="flex items-center gap-1.5">
           {isLocked && (
@@ -240,28 +241,25 @@ function RoomCard({
       {/* Sub-spaces chip shelf */}
       {childRooms.length > 0 && (
         <div className="mt-3 border-t border-[var(--border-secondary)] pt-3">
-          <div className="flex flex-wrap gap-1.5">
-            {childRooms.map(child => {
-              const isExpanded = expandedChildren.has(child.name)
-              return (
+          {childRooms.some(c => !expandedChildren.has(c.name)) && (
+            <div className="flex flex-wrap gap-1.5">
+              {childRooms.filter(c => !expandedChildren.has(c.name)).map(child => (
                 <button
                   key={child.name}
                   onClick={() => onToggleChild(child.name)}
-                  aria-expanded={isExpanded}
+                  aria-expanded={false}
                   className={cn(
                     'flex items-center gap-1 rounded-full px-2.5 py-1 text-xs transition-colors min-h-[44px]',
                     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                    isExpanded
-                      ? 'bg-fairy-500/15 text-fairy-400'
-                      : 'surface text-body hover:text-heading',
+                    'surface text-body hover:text-heading',
                   )}
                 >
                   <LucideIcon name={child.icon} className="h-3.5 w-3.5 shrink-0 text-fairy-400" aria-hidden="true" />
                   {child.name}
                 </button>
-              )
-            })}
-          </div>
+              ))}
+            </div>
+          )}
 
           {/* Inline expanded child content */}
           {childRooms.filter(c => expandedChildren.has(c.name)).map(child => {
@@ -284,10 +282,15 @@ function RoomCard({
 
             return (
               <div key={child.name} className="mt-3 rounded-lg bg-[var(--bg-secondary)] p-3">
-                <div className="mb-2 flex items-center gap-1.5">
+                <button
+                  onClick={() => onToggleChild(child.name)}
+                  className="mb-2 flex items-center gap-1.5 min-h-[44px] text-left"
+                  aria-expanded={true}
+                  aria-label={`Collapse ${child.name}`}
+                >
                   <LucideIcon name={child.icon} className="h-3.5 w-3.5 text-fairy-400" aria-hidden="true" />
                   <span className="text-xs font-medium text-heading">{child.name}</span>
-                </div>
+                </button>
 
                 {/* Child environmental indicators */}
                 <div className="text-body mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
