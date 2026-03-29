@@ -621,7 +621,6 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
       signal: options?.signal ?? controller.signal,
     })
     if (res.status === 401) {
-      window.location.href = '/login'
       throw new Error('Unauthorized')
     }
     if (!res.ok) {
@@ -701,6 +700,48 @@ export interface FollowMeStatus {
   enabled: boolean
   activeRooms: string[]
   anchorRoom: string | null
+}
+
+// ── Access link types ────────────────────────────────────────────────────────
+
+export interface AccessLink {
+  id: string
+  token: string
+  label: string
+  mode: 'guest' | 'resident'
+  expires_at: string | null
+  max_uses: number
+  use_count: number
+  guest_session_duration: number | null
+  created_at: string
+  revoked_at: string | null
+  status: 'active' | 'expired' | 'revoked' | 'consumed'
+}
+
+interface CreateAccessLinkInput {
+  label: string
+  mode: 'guest' | 'resident'
+  expiresAt?: string
+  maxUses?: number
+  guestSessionDuration?: number
+}
+
+interface AccessLinkCreated extends AccessLink {
+  url: string
+}
+
+interface AccessLinkVerifyResult {
+  valid: boolean
+  mode?: 'guest' | 'resident'
+  label?: string
+  reason?: string
+}
+
+interface AccessLinkRedeemResult {
+  success: boolean
+  mode: 'guest' | 'resident'
+  redirect: string
+  error?: string
 }
 
 export interface DeviceLink {
@@ -1195,5 +1236,23 @@ export const api = {
       }),
     delete: (id: number) =>
       fetchApi<{ deleted: boolean }>(`/device-links/${id}`, { method: 'DELETE' }),
+  },
+
+  accessLinks: {
+    list: () => fetchApi<AccessLink[]>('/access-links'),
+    create: (data: CreateAccessLinkInput) =>
+      fetchApi<AccessLinkCreated>('/access-links', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    revoke: (id: string) =>
+      fetchApi<void>(`/access-links/${id}`, { method: 'DELETE' }),
+    verify: (token: string) =>
+      fetchApi<AccessLinkVerifyResult>(`/invite/${token}/verify`),
+    redeem: (token: string, body?: { name: string; email: string; password: string }) =>
+      fetchApi<AccessLinkRedeemResult>(`/invite/${token}/redeem`, {
+        method: 'POST',
+        body: JSON.stringify(body ?? {}),
+      }),
   },
 }

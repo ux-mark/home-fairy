@@ -7,6 +7,14 @@ const dbPath = process.env.FAIRY_DB_PATH || './data/thefairies.sqlite'
 export const auth = betterAuth({
   database: new Database(dbPath),
   basePath: '/api/auth',
+  baseURL: process.env.BETTER_AUTH_URL,
+  trustedOrigins: [
+    'http://192.168.10.201:3001',
+    'http://home.thefairies.ie',
+    'https://home.thefairies.ie',
+    `http://127.0.0.1:${Number(process.env.PORT) || 3001}`,
+    `http://localhost:${Number(process.env.PORT) || 3001}`,
+  ],
   emailAndPassword: {
     enabled: true,
     disableSignUp: true,
@@ -18,6 +26,16 @@ export const auth = betterAuth({
     cookieCache: {
       enabled: true,
       maxAge: 300, // 5 minutes
+    },
+  },
+  advanced: {
+    crossSubDomainCookies: {
+      enabled: false,
+    },
+    defaultCookieAttributes: {
+      sameSite: 'lax',
+      secure: false,   // served behind nginx on HTTP internally
+      httpOnly: true,
     },
   },
   plugins: [

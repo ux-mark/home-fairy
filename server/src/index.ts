@@ -1,4 +1,5 @@
 import 'dotenv/config'
+import { readFileSync } from 'node:fs'
 import express from 'express'
 import cors from 'cors'
 import { createServer } from 'http'
@@ -17,6 +18,8 @@ import dashboardRoutes from './routes/dashboard.js'
 import kasaRoutes from './routes/kasa.js'
 import sonosRoutes from './routes/sonos.js'
 import deviceLinksRoutes from './routes/device-links.js'
+import accessLinksRoutes from './routes/access-links.js'
+import accessLinksPublicRoutes from './routes/access-links-public.js'
 import { motionHandler } from './lib/motion-handler.js'
 import { sunModeScheduler } from './lib/sun-mode-scheduler.js'
 import { timeTriggerScheduler } from './lib/time-trigger-scheduler.js'
@@ -36,7 +39,9 @@ const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
 const PORT = Number(process.env.PORT) || 3001
-const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:8000'
+const CORS_ORIGINS = (process.env.CORS_ORIGIN || 'http://localhost:8000')
+  .split(',')
+  .map(s => s.trim())
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
 // Simple rate limiter for webhook endpoint
@@ -77,16 +82,26 @@ initDb()
 
 const app = express()
 
-app.use(cors({ origin: CORS_ORIGIN, credentials: true }))
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (same-origin, curl, etc.)
+    if (!origin || CORS_ORIGINS.includes(origin)) return callback(null, true)
+    callback(null, false)
+  },
+  credentials: true,
+}))
 
 // Better Auth handler — must be before express.json() as it parses its own body
 app.all('/api/auth/{*splat}', toNodeHandler(auth))
 
 app.use(express.json({ limit: '100kb' }))
 
+// Public invite routes — no auth required, mounted before protected routes
+app.use('/api/invite', accessLinksPublicRoutes)
+
 const httpServer = createServer(app)
 const io = new SocketServer(httpServer, {
-  cors: { origin: CORS_ORIGIN, credentials: true },
+  cors: { origin: CORS_ORIGINS, credentials: true },
 })
 setSocketServer(io)
 
@@ -102,6 +117,7 @@ app.use('/api/dashboard', requireAuth, dashboardRoutes)
 app.use('/api/kasa', requireAuth, kasaRoutes)
 app.use('/api/sonos', requireAuth, sonosRoutes)
 app.use('/api/device-links', requireAuth, deviceLinksRoutes)
+app.use('/api/access-links', requireAuth, accessLinksRoutes)
 
 // Hubitat webhook handler
 app.post('/hubitat', async (req, res) => {
@@ -288,6 +304,55 @@ app.post('/hubitat', async (req, res) => {
 const clientDist = path.join(__dirname, '../../client/dist')
 app.use(express.static(clientDist))
 
+// Invite link previews — inject Open Graph meta for iMessage/WhatsApp/social sharing
+const indexHtml = (() => {
+  try { return readFileSync(path.join(clientDist, 'index.html'), 'utf-8') }
+  catch { return '' }
+})()
+
+const OG_TITLES = [
+  'The Fairies welcome you',
+  'You are invited to Home Fairy',
+  'A little magic awaits you',
+  'Come on in — the fairies are ready',
+]
+
+app.get('/invite/:token', (req, res) => {
+  if (!indexHtml) { res.sendFile(path.join(clientDist, 'index.html')); return }
+
+  const link = getOne<{ label: string; mode: string }>(
+    'SELECT label, mode FROM access_links WHERE token = ?', [req.params.token]
+  )
+
+  const name = link?.label || 'Friend'
+  const title = OG_TITLES[Math.floor(Math.random() * OG_TITLES.length)]
+  const description = link?.mode === 'resident'
+    ? `${name}, your new home is ready`
+    : `${name}, tap to enter your smart home`
+
+  const protocol = req.headers['x-forwarded-proto'] || 'http'
+  const host = req.headers['x-forwarded-host'] || req.headers.host
+  const url = `${protocol}://${host}${req.originalUrl}`
+  const imageUrl = `${protocol}://${host}/og-invite.svg`
+
+  const ogTags = `
+    <meta property="og:title" content="${title}" />
+    <meta property="og:description" content="${description}" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="${url}" />
+    <meta property="og:image" content="${imageUrl}" />
+    <meta property="og:image:width" content="512" />
+    <meta property="og:image:height" content="512" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="${title}" />
+    <meta name="twitter:description" content="${description}" />`
+
+  const html = indexHtml
+    .replace('<title>Home Fairy</title>', `<title>${title}</title>${ogTags}`)
+
+  res.type('html').send(html)
+})
+
 // SPA fallback — serve index.html for any non-API route so client-side routing works
 // Express 5 requires named wildcard parameter syntax
 app.get('{*path}', (_req, res) => {
@@ -339,7 +404,7 @@ timerManager.setOnExpire(async (targetScene, sceneName) => {
 
 httpServer.listen(PORT, () => {
   console.log(`Home Fairy server running on port ${PORT}`)
-  console.log(`CORS origin: ${CORS_ORIGIN}`)
+  console.log(`CORS origins: ${CORS_ORIGINS.join(', ')}`)
   sunModeScheduler.init(io)
   timeTriggerScheduler.init(io)
   weatherIndicator.start()
