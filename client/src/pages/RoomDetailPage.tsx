@@ -567,7 +567,6 @@ export default function RoomDetailPage() {
   })
 
   // Room settings state
-  const [displayOrder, setDisplayOrder] = useState<number | null>(null)
   const [timer, setTimer] = useState<number | null>(null)
   const [autoEnabled, setAutoEnabled] = useState<boolean | null>(null)
   const [parentRoom, setParentRoom] = useState<string | null>(null)
@@ -577,7 +576,6 @@ export default function RoomDetailPage() {
   const [iconPickerOpen, setIconPickerOpen] = useState(false)
 
   // Compute effective values (from state or room data)
-  const effectiveOrder = displayOrder ?? room?.display_order ?? 0
   const effectiveTimer = timer ?? room?.timer ?? 0
   const effectiveAuto = autoEnabled ?? room?.auto ?? false
   const effectiveParent = parentRoom ?? room?.parent_room ?? ''
@@ -949,7 +947,7 @@ export default function RoomDetailPage() {
     mutationFn: async () => {
       // Save room settings
       await api.rooms.update(name!, {
-        display_order: effectiveOrder,
+        display_order: room?.display_order ?? 0,
         timer: effectiveTimer,
         auto: effectiveAuto,
         parent_room: effectiveParent,
@@ -1409,37 +1407,20 @@ export default function RoomDetailPage() {
               </Switch.Root>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-body">
-                  Auto-off after inactivity (min)
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={effectiveTimer}
-                  onChange={e => {
-                    setTimer(Number(e.target.value))
-                    markDirty()
-                  }}
-                  className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs font-medium text-body">
-                  Display Order
-                </label>
-                <input
-                  type="number"
-                  min={0}
-                  value={effectiveOrder}
-                  onChange={e => {
-                    setDisplayOrder(Number(e.target.value))
-                    markDirty()
-                  }}
-                  className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                />
-              </div>
+            <div>
+              <label className="mb-1 block text-xs font-medium text-body">
+                Auto-off after inactivity (min)
+              </label>
+              <input
+                type="number"
+                min={0}
+                value={effectiveTimer}
+                onChange={e => {
+                  setTimer(Number(e.target.value))
+                  markDirty()
+                }}
+                className="h-11 w-full rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+              />
             </div>
 
             {/* ── Child rooms / parent-room config ── */}
