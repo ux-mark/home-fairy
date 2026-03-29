@@ -864,7 +864,7 @@ export default function ScenesPage() {
 
                       {/* Parent room's own scenes (below children) */}
                       {hasOwnScenes && (
-                        <div className="mt-4 border-t border-[var(--border-secondary)] pt-4">
+                        <div className="mt-2 pt-2">
                         <RoomAccordionContent
                           roomName={roomName}
                           allScenes={scenes}
