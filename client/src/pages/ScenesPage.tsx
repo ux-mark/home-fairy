@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
+import { usePersistedState } from '@/hooks/usePersistedState'
 import * as Tabs from '@radix-ui/react-tabs'
 import {
   Plus,
@@ -339,10 +340,10 @@ export default function ScenesPage() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
-  const [search, setSearch] = useState('')
-  const [activeTab, setActiveTab] = useState('by-room')
-  const [openRooms, setOpenRooms] = useState<Set<string>>(new Set())
-  const [orphanAccordionOpen, setOrphanAccordionOpen] = useState(true)
+  const [search, setSearch] = usePersistedState('scenes:search', '')
+  const [activeTab, setActiveTab] = usePersistedState('scenes:activeTab', 'by-room')
+  const [openRooms, setOpenRooms] = usePersistedState<Set<string>>('scenes:openRooms', new Set())
+  const [orphanAccordionOpen, setOrphanAccordionOpen] = usePersistedState('scenes:orphanOpen', true)
 
   const { data: scenes, isLoading, isError, refetch } = useQuery({
     queryKey: ['scenes'],

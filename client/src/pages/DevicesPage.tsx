@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import { usePersistedState } from '@/hooks/usePersistedState'
 import {
   RefreshCw,
   Power,
@@ -27,6 +28,8 @@ import { FilterChip } from '@/components/ui/FilterChip'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { SkeletonList } from '@/components/ui/Skeleton'
+import { Accordion } from '@/components/ui/Accordion'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 
 // ── Room assignment pill ──────────────────────────────────────────────────────
 
@@ -731,9 +734,10 @@ function SonosUnassignedCard({ speakerName }: { speakerName: string }) {
 
 export default function DevicesPage() {
   const queryClient = useQueryClient()
-  const [filter, setFilter] = useState<DeviceFilter>('all')
-  const [search, setSearch] = useState('')
-  const [groupMode, setGroupMode] = useState<GroupMode>('room')
+  const [filter, setFilter] = usePersistedState<DeviceFilter>('devices:filter', 'all')
+  const [search, setSearch] = usePersistedState('devices:search', '')
+  const [groupMode, setGroupMode] = usePersistedState<GroupMode>('devices:groupMode', 'room')
+  const [openGroups, setOpenGroups] = usePersistedState<Set<string>>('devices:openGroups', new Set())
 
   const {
     data: lights,
@@ -1026,6 +1030,29 @@ export default function DevicesPage() {
     return key
   }
 
+  function toggleGroup(key: string) {
+    setOpenGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const computedOpenGroups = useMemo(() => {
+    if (!search.trim()) return openGroups
+    const expanded = new Set(openGroups)
+    for (const key of grouped.groups.keys()) {
+      expanded.add(key)
+    }
+    return expanded
+  }, [search, openGroups, grouped.groups])
+
+  const roomIconMap = useMemo<Record<string, string | null>>(
+    () => Object.fromEntries((rooms ?? []).map(r => [r.name, r.icon])),
+    [rooms],
+  )
+
   return (
     <div>
       {/* Header */}
@@ -1083,6 +1110,7 @@ export default function DevicesPage() {
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
           )}
           title={groupMode === 'room' ? 'Grouped by room' : 'Grouped by type'}
+          aria-label={groupMode === 'room' ? 'Switch to group by type' : 'Switch to group by room'}
         >
           {groupMode === 'room' ? <LayoutGrid className="h-4 w-4" /> : <List className="h-4 w-4" />}
           {groupMode === 'room' ? 'Room' : 'Type'}
@@ -1107,63 +1135,110 @@ export default function DevicesPage() {
             sub="Make sure Sonos is running and the speakers are on the same network."
           />
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-3">
             {sonosSpeakers && sonosSpeakers.length > 0 && (
-              <div>
-                <h3 className="text-body mb-2 text-sm font-medium">Assigned speakers</h3>
+              <Accordion
+                id="sonos-assigned"
+                title={
+                  <span className="flex items-center gap-1.5">
+                    <Volume2 className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+                    Assigned speakers
+                  </span>
+                }
+                open={computedOpenGroups.has('__sonos-assigned')}
+                onToggle={() => toggleGroup('__sonos-assigned')}
+                count={sonosSpeakers.length}
+              >
                 <div className="space-y-2">
                   {sonosSpeakers.map(s => (
                     <SonosSpeakerCard key={s.id} speaker={s} zones={sonosZones} />
                   ))}
                 </div>
-              </div>
+              </Accordion>
             )}
             {sonosUnassignedSpeakers.length > 0 && (
-              <div>
-                <h3 className="text-caption mb-2 text-sm font-medium">Not assigned to a room</h3>
+              <Accordion
+                id="sonos-unassigned"
+                title="Not assigned to a room"
+                open={computedOpenGroups.has('__sonos-unassigned')}
+                onToggle={() => toggleGroup('__sonos-unassigned')}
+                count={sonosUnassignedSpeakers.length}
+              >
                 <div className="space-y-2">
                   {sonosUnassignedSpeakers.map(name => (
                     <SonosUnassignedCard key={name} speakerName={name} />
                   ))}
                 </div>
-              </div>
+              </Accordion>
             )}
           </div>
         )
       ) : isLoading ? (
         <SkeletonList count={6} height="h-16" />
       ) : filtered.length > 0 ? (
-        <div className="space-y-6">
+        <div className="space-y-3">
           {Array.from(grouped.groups.entries())
             .sort(([a], [b]) => a.localeCompare(b))
-            .map(([group, devices]) => (
-              <div key={group}>
-                <h3 className="text-body mb-2 text-sm font-medium">{groupLabel(group)}</h3>
-                <div className="space-y-2">
-                  {devices.map(d => <DeviceCard key={d.key} device={d} rooms={rooms} />)}
-                </div>
-              </div>
-            ))}
+            .map(([group, devices]) => {
+              const accordionId = `devices-${group.replace(/\s+/g, '-').toLowerCase()}`
+              const accordionTitle = groupMode === 'room' ? (
+                <span className="flex items-center gap-1.5">
+                  <LucideIcon name={roomIconMap[group] ?? null} className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+                  {group}
+                </span>
+              ) : (
+                groupLabel(group)
+              )
+              return (
+                <Accordion
+                  key={group}
+                  id={accordionId}
+                  title={accordionTitle}
+                  open={computedOpenGroups.has(group)}
+                  onToggle={() => toggleGroup(group)}
+                  count={devices.length}
+                >
+                  <div className="space-y-2">
+                    {devices.map(d => <DeviceCard key={d.key} device={d} rooms={rooms} />)}
+                  </div>
+                </Accordion>
+              )
+            })}
 
           {grouped.unassigned.length > 0 && (
-            <div>
-              <h3 className="text-caption mb-2 text-sm font-medium">Unassigned</h3>
+            <Accordion
+              id="devices-unassigned"
+              title="Unassigned"
+              open={computedOpenGroups.has('__unassigned')}
+              onToggle={() => toggleGroup('__unassigned')}
+              count={grouped.unassigned.length}
+            >
               <div className="space-y-2">
                 {grouped.unassigned.map(d => <DeviceCard key={d.key} device={d} rooms={rooms} />)}
               </div>
-            </div>
+            </Accordion>
           )}
 
           {/* Sonos speakers shown at bottom of All view */}
           {filter === 'all' && sonosSpeakers && sonosSpeakers.length > 0 && (
-            <div>
-              <h3 className="text-body mb-2 text-sm font-medium">Sonos speakers</h3>
+            <Accordion
+              id="devices-sonos"
+              title={
+                <span className="flex items-center gap-1.5">
+                  <Volume2 className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+                  Sonos speakers
+                </span>
+              }
+              open={computedOpenGroups.has('__sonos')}
+              onToggle={() => toggleGroup('__sonos')}
+              count={sonosSpeakers.length}
+            >
               <div className="space-y-2">
                 {sonosSpeakers.map(s => (
                   <SonosSpeakerCard key={s.id} speaker={s} zones={sonosZones} />
                 ))}
               </div>
-            </div>
+            </Accordion>
           )}
         </div>
       ) : (
