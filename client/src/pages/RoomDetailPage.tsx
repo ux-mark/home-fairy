@@ -1336,12 +1336,12 @@ export default function RoomDetailPage() {
       </div>
 
       <div className="space-y-4">
-      {/* ── Sub-spaces accordion ──────────────────────────────────────────── */}
+      {/* ── Child rooms accordion ──────────────────────────────────────────── */}
       {childRooms.length > 0 && (
         <section>
           <Accordion
             id="room-sub-spaces"
-            title={`Sub-spaces`}
+            title={`Child rooms`}
             open={subSpacesOpen}
             onToggle={() => setSubSpacesOpen(prev => !prev)}
             count={childRooms.length}
@@ -1442,10 +1442,10 @@ export default function RoomDetailPage() {
               </div>
             </div>
 
-            {/* ── Sub-spaces / parent-room config ── */}
+            {/* ── Child rooms / parent-room config ── */}
             {(parentRoomOptions.length > 0 || childRooms.length > 0) && (
               <div className="space-y-4 border-t border-[var(--border-secondary)] pt-4">
-                <p className="text-xs font-semibold text-caption">Sub-spaces</p>
+                <p className="text-xs font-semibold text-caption">Child rooms</p>
 
                 {/* Parent room selector — always show when there are eligible parents */}
                 {parentRoomOptions.length > 0 && (
@@ -1508,7 +1508,7 @@ export default function RoomDetailPage() {
                           <span className="text-heading">{child.name}</span>
                         </span>
                         <span className="text-caption text-xs">
-                          {child.promoted ? 'On homepage' : 'Sub-space only'}
+                          {child.promoted ? 'On homepage' : 'Child room only'}
                         </span>
                       </Link>
                     ))}
