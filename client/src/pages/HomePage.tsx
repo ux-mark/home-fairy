@@ -238,12 +238,14 @@ function RoomCard({
         </div>
       )}
 
-      {/* Sub-spaces chip shelf */}
+      {/* Sub-spaces — each child renders in place as either a pill or expanded content */}
       {childRooms.length > 0 && (
-        <div className="mt-3 border-t border-[var(--border-secondary)] pt-3">
-          {childRooms.some(c => !expandedChildren.has(c.name)) && (
-            <div className="flex flex-wrap gap-1.5">
-              {childRooms.filter(c => !expandedChildren.has(c.name)).map(child => (
+        <div className="mt-3 space-y-1.5 border-t border-[var(--border-secondary)] pt-3">
+          {childRooms.map(child => {
+            const isExpanded = expandedChildren.has(child.name)
+
+            if (!isExpanded) {
+              return (
                 <button
                   key={child.name}
                   onClick={() => onToggleChild(child.name)}
@@ -257,12 +259,9 @@ function RoomCard({
                   <LucideIcon name={child.icon} className="h-3.5 w-3.5 shrink-0 text-fairy-400" aria-hidden="true" />
                   {child.name}
                 </button>
-              ))}
-            </div>
-          )}
+              )
+            }
 
-          {/* Inline expanded child content */}
-          {childRooms.filter(c => expandedChildren.has(c.name)).map(child => {
             const childScenes = scenes.filter(s => {
               const rooms = Array.isArray(s.rooms) ? s.rooms : []
               const modes = Array.isArray(s.modes) ? s.modes : []
@@ -281,7 +280,7 @@ function RoomCard({
             })
 
             return (
-              <div key={child.name} className="mt-3 rounded-lg bg-[var(--bg-secondary)] p-3">
+              <div key={child.name} className="rounded-lg bg-[var(--bg-secondary)] p-3">
                 <button
                   onClick={() => onToggleChild(child.name)}
                   className="mb-2 flex items-center gap-1.5 min-h-[44px] text-left"
