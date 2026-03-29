@@ -200,6 +200,12 @@ function RoomAccordion({
     <span className="flex items-center gap-1.5">
       <LucideIcon name={roomIcon} className={cn(compact ? 'h-3.5 w-3.5' : 'h-4 w-4', 'shrink-0 text-fairy-400')} aria-hidden="true" />
       {roomName}
+      {hasActiveScene && (
+        <span
+          className="inline-block h-2 w-2 rounded-full bg-emerald-400"
+          aria-label="Scene active in this room"
+        />
+      )}
     </span>
   )
 
@@ -211,14 +217,6 @@ function RoomAccordion({
       onToggle={onToggle}
       card={!compact}
       count={sceneCount}
-      trailing={
-        hasActiveScene ? (
-          <span
-            className="inline-block h-2 w-2 rounded-full bg-emerald-400"
-            aria-label="Scene active in this room"
-          />
-        ) : undefined
-      }
     >
       {/* Mode pills */}
       {allModes.length > 0 && (
