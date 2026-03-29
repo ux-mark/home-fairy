@@ -3,7 +3,7 @@ import { authClient } from '@/lib/auth-client'
 import { Skeleton, SkeletonList } from '@/components/ui/Skeleton'
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { data: session, isPending, error } = authClient.useSession()
+  const { data: session, isPending } = authClient.useSession()
   const location = useLocation()
 
   if (isPending) {

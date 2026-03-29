@@ -7,7 +7,7 @@ Home Fairy is a home automation control system with a React frontend and Express
 - **Language**: TypeScript (frontend and backend)
 - **Frontend**: React 19, Vite, Tailwind CSS v4, Radix UI, react-colorful (HSV picker), TanStack Query, Socket.io client, PWA
 - **Backend**: Express 5, better-sqlite3, Socket.io, axios, Zod validation, SunCalc, gtfs-realtime-bindings
-- **Database**: SQLite with WAL mode. Tables: rooms, scenes, scene_rooms, scene_modes, room_auto_scenes, modes, mode_triggers, light_rooms, device_rooms, hub_devices, kasa_devices, sonos_speakers, sonos_auto_play, current_state, logs, device_history, room_activity, notifications
+- **Database**: SQLite with WAL mode. Tables: rooms, scenes, scene_rooms, scene_modes, room_auto_scenes, modes, mode_triggers, light_rooms, device_rooms, hub_devices, kasa_devices, sonos_speakers, sonos_auto_play, current_state, logs, device_history, room_activity, notifications, user_actions
 - **Package manager**: npm
 - **Process manager (production)**: PM2
 - **External services (managed by PM2)**:

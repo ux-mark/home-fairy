@@ -39,8 +39,11 @@ export function initDb(): void {
       active_from TEXT,
       active_to TEXT,
       last_activated_at TEXT DEFAULT NULL,
+      last_activated_by TEXT DEFAULT 'fairy-queen',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
+      created_by TEXT DEFAULT 'fairy-queen',
+      updated_by TEXT DEFAULT 'fairy-queen',
       sort_order INTEGER DEFAULT 0
     );
 
@@ -275,7 +278,37 @@ export function initDb(): void {
       user_id TEXT NOT NULL,
       used_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS user_actions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      user_name TEXT NOT NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      details TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_actions_entity
+      ON user_actions (entity_type, entity_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_user_actions_user
+      ON user_actions (user_id, created_at DESC);
   `)
+
+  // Migration: add user tracking columns to scenes
+  const sceneCols = db.prepare("PRAGMA table_info('scenes')").all() as { name: string }[]
+  const sceneColNames = sceneCols.map(c => c.name)
+  if (!sceneColNames.includes('created_by')) {
+    db.exec(`ALTER TABLE scenes ADD COLUMN created_by TEXT DEFAULT 'fairy-queen'`)
+  }
+  if (!sceneColNames.includes('updated_by')) {
+    db.exec(`ALTER TABLE scenes ADD COLUMN updated_by TEXT DEFAULT 'fairy-queen'`)
+  }
+  if (!sceneColNames.includes('last_activated_by')) {
+    db.exec(`ALTER TABLE scenes ADD COLUMN last_activated_by TEXT DEFAULT 'fairy-queen'`)
+  }
 
   // Add max_plays column to sonos_auto_play table if it doesn't exist
   const autoPlayCols = db.prepare("PRAGMA table_info('sonos_auto_play')").all() as { name: string }[]

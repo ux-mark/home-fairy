@@ -642,7 +642,7 @@ function AccountSection() {
     const label = newRole === 'admin' ? 'Manager' : 'Resident'
     if (!window.confirm(`${action === 'promote' ? 'Promote' : 'Demote'} ${userName} to ${label}?`)) return
     try {
-      const result = await authClient.admin.setRole({ userId, role: newRole })
+      const result = await authClient.admin.setRole({ userId, role: newRole as 'user' | 'admin' })
       if (result.error) {
         toast({ message: result.error.message || `Failed to ${action} user`, type: 'error' })
       } else {

@@ -65,7 +65,13 @@ export interface Scene {
   active_from?: string | null // "MM-DD" format
   active_to?: string | null   // "MM-DD" format
   last_activated_at?: string | null
+  last_activated_by?: string | null
+  last_activated_by_name?: string | null
   sort_order?: number
+  created_by?: string | null
+  updated_by?: string | null
+  created_by_name?: string | null
+  updated_by_name?: string | null
 }
 
 export interface SceneRoom {
@@ -702,6 +708,19 @@ export interface FollowMeStatus {
   anchorRoom: string | null
 }
 
+// ── User action types ────────────────────────────────────────────────────────
+
+export interface UserAction {
+  id: number
+  user_id: string
+  user_name: string
+  action: string
+  entity_type: string
+  entity_id: string
+  details?: Record<string, unknown> | null
+  created_at: string
+}
+
 // ── Access link types ────────────────────────────────────────────────────────
 
 export interface AccessLink {
@@ -864,6 +883,18 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ scenes }),
       }),
+    getActivity: (name: string, limit = 20) =>
+      fetchApi<UserAction[]>('/scenes/' + encodeURIComponent(name) + '/activity?limit=' + limit),
+  },
+  userActions: {
+    get: (params?: { entity_type?: string; entity_id?: string; user_id?: string; limit?: number }) => {
+      const q = new URLSearchParams()
+      if (params?.entity_type) q.set('entity_type', params.entity_type)
+      if (params?.entity_id) q.set('entity_id', params.entity_id)
+      if (params?.user_id) q.set('user_id', params.user_id)
+      if (params?.limit) q.set('limit', String(params.limit))
+      return fetchApi<UserAction[]>('/user-actions?' + q.toString())
+    },
   },
   lights: {
     getRoomAssignments: () => fetchApi<LightRoom[]>('/lights/rooms'),
@@ -1255,4 +1286,5 @@ export const api = {
         body: JSON.stringify(body ?? {}),
       }),
   },
+
 }

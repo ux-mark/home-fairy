@@ -8,6 +8,8 @@ import { timerManager } from './timer-manager.js'
 import { getAll, getOne, run } from '../db/index.js'
 import { emit } from './socket.js'
 import { deviceHealthService } from './device-health-service.js'
+import { FAIRY_QUEEN } from './constants.js'
+import { logUserAction } from './user-action-logger.js'
 
 interface LightCommand {
   type: 'lifx_light'
@@ -209,7 +211,12 @@ async function retryFailedLights(
   }
 }
 
-export async function activateScene(sceneName: string, visitedScenes: Set<string> = new Set(), source: 'manual' | 'auto' | 'timer' | 'chain' = 'auto'): Promise<void> {
+export async function activateScene(
+  sceneName: string,
+  visitedScenes: Set<string> = new Set(),
+  source: 'manual' | 'auto' | 'timer' | 'chain' = 'auto',
+  user?: { id: string; name: string },
+): Promise<void> {
   if (visitedScenes.has(sceneName)) {
     log(`Scene cycle detected: ${sceneName} already in chain [${[...visitedScenes].join(' -> ')}]. Skipping.`)
     return
@@ -477,7 +484,7 @@ export async function activateScene(sceneName: string, visitedScenes: Set<string
                 break
               }
             }
-            await activateScene(cmd.name, visitedScenes, 'chain')
+            await activateScene(cmd.name, visitedScenes, 'chain', user)
             log(`Chained scene activation: ${cmd.name}`)
           } catch (chainErr) {
             const chainMsg = chainErr instanceof Error ? chainErr.message : String(chainErr)
@@ -535,15 +542,18 @@ export async function activateScene(sceneName: string, visitedScenes: Set<string
   }
 
   // Track when this scene was last activated
+  const actionUser = user ?? FAIRY_QUEEN
   run(
-    `UPDATE scenes SET last_activated_at = datetime('now') WHERE name = ?`,
-    [sceneName],
+    `UPDATE scenes SET last_activated_at = datetime('now'), last_activated_by = ?, updated_by = ? WHERE name = ?`,
+    [actionUser.id, actionUser.id, sceneName],
   )
+
+  logUserAction(actionUser.id, actionUser.name, 'activate', 'scene', sceneName, { source })
 
   emit('scene:change', { scene: sceneName, action: 'activated', rooms: rooms.map(r => r.name) })
 }
 
-export async function deactivateScene(sceneName: string): Promise<void> {
+export async function deactivateScene(sceneName: string, user?: { id: string; name: string }): Promise<void> {
   const scene = getOne<SceneRow>(
     'SELECT * FROM scenes WHERE name = ?',
     [sceneName],
@@ -745,6 +755,9 @@ export async function deactivateScene(sceneName: string): Promise<void> {
       [room.name],
     )
   }
+
+  const actionUser = user ?? FAIRY_QUEEN
+  logUserAction(actionUser.id, actionUser.name, 'deactivate', 'scene', sceneName)
 
   emit('scene:change', { scene: sceneName, action: 'deactivated', rooms: rooms.map(r => r.name) })
 }

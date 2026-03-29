@@ -24,6 +24,7 @@ const LightsPage = React.lazy(() => import('@/pages/LightsPage'))
 const SonosSetupPage = React.lazy(() => import('@/pages/SonosSetupPage'))
 const SonosDetailPage = React.lazy(() => import('@/pages/SonosDetailPage'))
 const AccountPage = React.lazy(() => import('@/pages/AccountPage'))
+const FairyQueenPage = React.lazy(() => import('@/pages/FairyQueenPage'))
 
 function PageLoader() {
   return (
@@ -58,6 +59,7 @@ export default function App() {
           <Route path="/sonos-setup" element={<SonosSetupPage />} />
           <Route path="/sonos/:speaker" element={<SonosDetailPage />} />
           <Route path="/account" element={<AccountPage />} />
+          <Route path="/fairy-queen" element={<FairyQueenPage />} />
         </Route>
         <Route element={<AuthGuard><WatchLayout /></AuthGuard>}>
           <Route path="/watch" element={<WatchPage />} />
