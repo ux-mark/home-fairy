@@ -31,11 +31,13 @@ interface RoomReorderOverlayProps {
   rooms: Room[]
   open: boolean
   onClose: () => void
+  /** Show all rooms including hidden children (for Rooms page). Default: false (homepage mode). */
+  showAll?: boolean
 }
 
 // ── Sortable room card ────────────────────────────────────────────────────────
 
-function SortableRoomCard({ room }: { room: Room }) {
+function SortableRoomCard({ room, isChild }: { room: Room; isChild?: boolean }) {
   const {
     attributes,
     listeners,
@@ -56,6 +58,7 @@ function SortableRoomCard({ room }: { room: Room }) {
       style={{ ...style, background: 'var(--bg-tertiary)', borderColor: 'var(--border-secondary)' }}
       className={[
         'flex items-center gap-3 rounded-lg border px-3 py-2.5 select-none',
+        isChild ? 'ml-4' : '',
         isDragging
           ? 'scale-[1.02] shadow-lg shadow-black/40 opacity-95 z-10 relative'
           : 'shadow-sm',
@@ -147,7 +150,7 @@ function RoomReorderContent({
           >
             <ul className="flex flex-col gap-2" aria-label="Rooms — drag to reorder">
               {orderedRooms.map(room => (
-                <SortableRoomCard key={room.name} room={room} />
+                <SortableRoomCard key={room.name} room={room} isChild={!!room.parent_room} />
               ))}
             </ul>
           </SortableContext>
@@ -159,7 +162,7 @@ function RoomReorderContent({
 
 // ── Main overlay ──────────────────────────────────────────────────────────────
 
-export default function RoomReorderOverlay({ rooms, open, onClose }: RoomReorderOverlayProps) {
+export default function RoomReorderOverlay({ rooms, open, onClose, showAll }: RoomReorderOverlayProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -167,16 +170,25 @@ export default function RoomReorderOverlay({ rooms, open, onClose }: RoomReorder
   // remounts and its useState re-initialises from the latest sorted rooms.
   const sessionKey = useOverlaySessionKey(open)
 
-  const sortedRooms = [...rooms]
-    .filter(r => !r.parent_room || r.promoted)
-    .sort((a, b) => a.display_order - b.display_order)
+  const sortedRooms = showAll
+    ? [...rooms].sort((a, b) => a.display_order - b.display_order)
+    : [...rooms].filter(r => !r.parent_room || r.promoted).sort((a, b) => a.display_order - b.display_order)
+
+  // Hidden children: non-promoted rooms with a parent (excluded from homepage drag list)
+  const hiddenChildren = showAll ? [] : rooms.filter(r => r.parent_room && !r.promoted)
 
   const saveMutation = useMutation({
     mutationFn: (reorderedRooms: Room[]) => {
-      const items = reorderedRooms.map((room, i) => ({
-        name: room.name,
-        display_order: i,
-      }))
+      // Build final order: visible rooms with hidden children slotted after their parent
+      const items: { name: string; display_order: number }[] = []
+      let order = 0
+      for (const room of reorderedRooms) {
+        items.push({ name: room.name, display_order: order++ })
+        // Insert any hidden children right after their parent
+        for (const child of hiddenChildren.filter(c => c.parent_room === room.name)) {
+          items.push({ name: child.name, display_order: order++ })
+        }
+      }
       return api.rooms.reorder(items)
     },
     onSuccess: () => {

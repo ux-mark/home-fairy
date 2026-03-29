@@ -201,6 +201,7 @@ export default function RoomsPage() {
         rooms={rooms ?? []}
         open={reorderOpen}
         onClose={() => setReorderOpen(false)}
+        showAll
       />
     </div>
   )
