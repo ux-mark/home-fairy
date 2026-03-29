@@ -512,8 +512,12 @@ function MtaCard() {
         aria-hidden="true"
       />
       {soonestStop?.catchableTrain ? (
-        <span className="flex items-center gap-1.5 min-w-0">
+        <span className="flex items-center gap-1.5 min-w-0 flex-wrap">
           <MtaLineBadge line={soonestStop.catchableTrain.routeId} />
+          {soonestStop.config.direction === 'N'
+            ? <ArrowUp className="h-3.5 w-3.5 shrink-0 text-caption" aria-label="Uptown" />
+            : <ArrowDown className="h-3.5 w-3.5 shrink-0 text-caption" aria-label="Downtown" />
+          }
           <span>at {soonestStop.config.name} in {soonestStop.catchableTrain.minutesAway} min</span>
         </span>
       ) : combinedStatus.overallStatus === 'red'
