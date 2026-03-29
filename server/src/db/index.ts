@@ -253,6 +253,28 @@ export function initDb(): void {
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS access_links (
+      id TEXT PRIMARY KEY,
+      token TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      mode TEXT NOT NULL CHECK(mode IN ('guest', 'resident')),
+      expires_at TEXT,
+      max_uses INTEGER DEFAULT 1,
+      use_count INTEGER DEFAULT 0,
+      guest_session_duration INTEGER,
+      created_by TEXT NOT NULL,
+      revoked_at TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS access_link_uses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      link_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      used_at TEXT DEFAULT (datetime('now'))
+    );
   `)
 
   // Add max_plays column to sonos_auto_play table if it doesn't exist

@@ -183,7 +183,7 @@ Automatically transitions modes based on sun position (SunCalc). On server start
 - Monorepo: `client/` (React SPA) + `server/` (Express API)
 - Client proxies API requests to `:3001` via Vite dev server config
 - Real-time updates via Socket.io
-- No user auth — relies on local network trust and CORS origin whitelisting
+- Better Auth for user authentication (email/password, cookie-based sessions, admin plugin for user management)
 
 ### Device Routing Convention
 
@@ -213,4 +213,4 @@ Repository: https://github.com/ux-mark/home-fairy
 ## Known Constraints
 - @playwright/test is installed in `client/` (run playwright commands from `client/` or ensure the binary is accessible)
 - SQLite database is local-only — no replication
-- No user authentication
+- Authentication via Better Auth (email/password, admin plugin, 30-day sessions)

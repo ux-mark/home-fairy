@@ -1,7 +1,7 @@
 # Feature Overview
 
 > Written from the user's perspective — what you can do, not how it's built.
-> Updated: 2026-03-28
+> Updated: 2026-03-29
 
 ---
 
@@ -313,7 +313,54 @@ Optimised for Apple Watch and wearables. Large touch targets. See all rooms, tap
 
 ---
 
-## 14. Settings
+## 14. Authentication and Access
+
+### Role-Based Access
+**Status**: available
+
+Three user roles with different permissions:
+- **Manager**: Full access to all features and settings. Can manage users, create access links, promote/demote roles.
+- **Resident**: Full access to home control (rooms, scenes, devices, dashboard). Sees a personal Account page instead of Settings. Can change their own password.
+- **Guest**: Temporary access to home control. No account management or settings access. Session auto-expires based on the duration set by the manager.
+
+### Login
+**Status**: available
+
+Email and password sign-in with session cookies (30-day expiry, daily refresh). Cookie-cached sessions for fast page loads.
+
+### Access Links and QR Codes
+**Status**: available
+
+Managers generate shareable links from Settings > Account > Access Links. Two modes:
+- **Guest link**: Pick a name and session duration (1 hour, 24 hours, weekend, 1 week). Set a device limit. Shows a QR code and copyable URL. Guest scans or taps — instantly logged in, no password needed. Session auto-expires.
+- **Resident link**: Pick a name. Single-use. Recipient opens the link, sets up their own account (name, email, password), becomes a permanent household member.
+
+Personalised invite pages with randomised welcome messages using the person's name. Fun, warm copy that rotates ("The fairies have been expecting you, Sarah"). Gradient sparkle branding on the entry screen.
+
+### Link Previews (iMessage / WhatsApp)
+**Status**: available
+
+Invite links render rich previews when shared via messaging apps. Server-side Open Graph meta injection with personalised titles ("A little magic awaits you") and descriptions ("Sarah, tap to enter your smart home"). Custom share image with fairy branding.
+
+### User Management (Manager only)
+**Status**: available
+
+From Settings > Account:
+- View all household members with role badges (Manager, Resident, Guest)
+- Add new users with name, email, password
+- Reset any user's password
+- Promote a Resident to Manager or demote a Manager to Resident
+- Remove users
+- Create and revoke access links
+
+### Change Password
+**Status**: available
+
+Any logged-in user (Manager or Resident) can change their own password from their account page. Requires current password confirmation. Minimum 8 characters.
+
+---
+
+## 15. Settings
 
 ### Preferences
 **Status**: available

@@ -9,6 +9,7 @@ export function getSocket(): Socket {
     const url = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin
     socket = io(url, {
       transports: ['websocket', 'polling'],
+      withCredentials: true,
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 1000,
