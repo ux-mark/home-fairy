@@ -29,11 +29,11 @@ import type {
   SceneRoom,
   LightRoom,
   DeviceRoomAssignment,
-  KasaDevice,
   DeactivatedDevice,
 } from '@/lib/api'
 import { cn, hsbToHex, kelvinToHex, debounce, DEFAULT_MODES } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/Badge'
+import { Skeleton, SkeletonCard } from '@/components/ui/Skeleton'
 import { useToast } from '@/hooks/useToast'
 import ColorBrightnessPicker from '@/components/ui/ColorBrightnessPicker'
 import { LucideIcon } from '@/components/ui/LucideIcon'
@@ -272,36 +272,33 @@ function DeviceToggleCard({
   deactivated?: boolean
 }) {
   return (
-    <div className="card rounded-xl border p-4">
-      <div className="flex items-center gap-3">
+    <div className="card rounded-xl border transition-colors">
+      <div className="flex items-center gap-3 p-4">
         <div className="min-w-0 flex-1">
           <p className={cn('break-words text-sm font-medium', deactivated ? 'text-slate-500' : 'text-heading')}>
             {label}
             {deactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
           </p>
           <p className="text-xs text-caption">
-            {isOn ? (isDimmer && level !== undefined ? `On at ${level}%` : 'On') : 'Off'}
+            {isOn ? (isDimmer && level !== undefined ? `On at ${level}%` : 'Included') : 'Off'}
           </p>
         </div>
-        <Switch.Root
-          checked={isOn}
-          onCheckedChange={onToggle}
+        <button
+          type="button"
+          onClick={() => onToggle(!isOn)}
           className={cn(
-            'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            isOn ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
+            'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            isOn
+              ? 'bg-fairy-500/15 text-fairy-400'
+              : 'text-caption hover:bg-[var(--bg-tertiary)]',
           )}
+          aria-label={`${isOn ? 'Remove' : 'Add'} ${label}`}
         >
-          <Switch.Thumb
-            className={cn(
-              'block h-5 w-5 rounded-full bg-white shadow transition-transform',
-              isOn ? 'translate-x-6' : 'translate-x-1',
-            )}
-          />
-        </Switch.Root>
+          <Power className="h-5 w-5" />
+        </button>
       </div>
       {isOn && isDimmer && onLevelChange && (
-        <div className="mt-3 pt-3 border-t">
+        <div className="border-t p-4">
           <div className="flex items-center justify-between mb-1.5">
             <span className="text-xs text-body">Level</span>
             <span className="text-xs font-medium text-heading">{level ?? 100}%</span>
@@ -343,8 +340,8 @@ function FairyDeviceCard({
   deactivated?: boolean
 }) {
   return (
-    <div className="card rounded-xl border p-4">
-      <div className="flex items-center gap-3">
+    <div className="card rounded-xl border transition-colors">
+      <div className="flex items-center gap-3 p-4">
         <div className="min-w-0 flex-1">
           <p className={cn('break-words text-sm font-medium', deactivated ? 'text-slate-500' : 'text-heading')}>
             {label}
@@ -354,25 +351,22 @@ function FairyDeviceCard({
             {isOn ? `${pattern} at ${brightness}%` : 'Off'}
           </p>
         </div>
-        <Switch.Root
-          checked={isOn}
-          onCheckedChange={onToggle}
+        <button
+          type="button"
+          onClick={() => onToggle(!isOn)}
           className={cn(
-            'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            isOn ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
+            'min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            isOn
+              ? 'bg-fairy-500/15 text-fairy-400'
+              : 'text-caption hover:bg-[var(--bg-tertiary)]',
           )}
+          aria-label={`${isOn ? 'Remove' : 'Add'} ${label}`}
         >
-          <Switch.Thumb
-            className={cn(
-              'block h-5 w-5 rounded-full bg-white shadow transition-transform',
-              isOn ? 'translate-x-6' : 'translate-x-1',
-            )}
-          />
-        </Switch.Root>
+          <Power className="h-5 w-5" />
+        </button>
       </div>
       {isOn && (
-        <div className="mt-3 space-y-3 pt-3 border-t">
+        <div className="space-y-3 border-t p-4">
           <div>
             <label className="mb-1.5 block text-xs text-body">Pattern</label>
             <select
@@ -439,6 +433,7 @@ function OptionToggle({
           <p className="text-xs text-caption">{description}</p>
         </div>
         <Switch.Root
+          aria-label={label}
           checked={enabled}
           onCheckedChange={onToggle}
           className={cn(
@@ -503,11 +498,6 @@ export default function SceneEditorPage() {
   const { data: allScenes } = useQuery({
     queryKey: ['scenes'],
     queryFn: api.scenes.getAll,
-  })
-
-  const { data: kasaDevices } = useQuery({
-    queryKey: ['kasa'],
-    queryFn: api.kasa.getDevices,
   })
 
   const { data: allDefaultScenes } = useQuery({
@@ -727,16 +717,29 @@ export default function SceneEditorPage() {
     })
   }, [sceneRooms, allAssignments, allLights])
 
-  // Categorize room devices
+  // Categorize room devices (filter out "Always Keep On" devices)
   const categorizedDevices = useMemo(() => {
     const switches: Array<DeviceRoomAssignment & { roomName: string }> = []
     const twinkly: Array<DeviceRoomAssignment & { roomName: string }> = []
     const fairy: Array<DeviceRoomAssignment & { roomName: string }> = []
+    const kasa: Array<DeviceRoomAssignment & { roomName: string }> = []
+
+    // Sensor types are not controllable by scenes
+    const SENSOR_TYPES = new Set(['motion', 'contact', 'temperature', 'sensor', 'thermostat'])
 
     for (const [roomName, devices] of roomDevices) {
       for (const device of devices) {
+        // Skip "Always Keep On" devices — they are excluded from scene control
+        if (device.config?.exclude_from_all_off) continue
+
         const dt = device.device_type.toLowerCase()
-        if (dt.includes('twinkly')) {
+
+        // Skip sensors — not controllable by scenes
+        if (SENSOR_TYPES.has(dt)) continue
+
+        if (dt.startsWith('kasa_')) {
+          kasa.push({ ...device, roomName })
+        } else if (dt.includes('twinkly')) {
           twinkly.push({ ...device, roomName })
         } else if (dt.includes('fairy')) {
           fairy.push({ ...device, roomName })
@@ -746,7 +749,7 @@ export default function SceneEditorPage() {
       }
     }
 
-    return { switches, twinkly, fairy }
+    return { switches, twinkly, fairy, kasa }
   }, [roomDevices])
 
   // Build a set of deactivated device IDs keyed as "type:id"
@@ -765,20 +768,14 @@ export default function SceneEditorPage() {
   const deactivatedCount = useMemo(() => {
     if (deactivatedSet.size === 0) return 0
     let count = 0
-    // LIFX light commands
     for (const [lightId] of lightStates) {
-      if (isLightDeactivated(lightId)) count++
+      if (deactivatedSet.has(`lifx:${lightId}`)) count++
     }
-    // Hub/twinkly/fairy device commands
     for (const cmd of deviceCommands) {
-      if (cmd.type === 'hubitat_device' && cmd.device_id && isHubDeviceDeactivated(String(cmd.device_id))) count++
-      if (cmd.type === 'twinkly' || cmd.type === 'fairy_device') {
-        // these are identified by label, not id — skip for now (no reliable id mapping)
-      }
-      if (cmd.type === 'kasa_device' && cmd.device_id && isKasaDeviceDeactivated(String(cmd.device_id))) count++
+      if (cmd.type === 'hubitat_device' && cmd.device_id && deactivatedSet.has(`hub:${String(cmd.device_id)}`)) count++
+      if (cmd.type === 'kasa_device' && cmd.device_id && deactivatedSet.has(`kasa:${String(cmd.device_id)}`)) count++
     }
     return count
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deactivatedSet, lightStates, deviceCommands])
 
   // ── Mutations ──────────────────────────────────────────────────────────
@@ -830,7 +827,23 @@ export default function SceneEditorPage() {
         optionCommands.push({ type: 'fairy_scene', name: chainSceneTarget })
       }
 
-      const allCommands = [...lightCommands, ...deviceCommands, ...optionCommands]
+      // Filter device commands to only include devices in the scene's rooms
+      // (prunes orphaned commands from room changes or keep-on exclusions)
+      const validIds = new Set<string>()
+      const validLabels = new Set<string>()
+      for (const category of [categorizedDevices.switches, categorizedDevices.twinkly, categorizedDevices.fairy, categorizedDevices.kasa]) {
+        for (const d of category) {
+          validIds.add(String(d.device_id))
+          validLabels.add(d.device_label)
+        }
+      }
+      const filteredDeviceCommands = deviceCommands.filter(cmd => {
+        if (cmd.device_id) return validIds.has(String(cmd.device_id))
+        if (cmd.name) return validLabels.has(cmd.name)
+        return true
+      })
+
+      const allCommands = [...lightCommands, ...filteredDeviceCommands, ...optionCommands]
 
       const data: Partial<Scene> = {
         name: sceneName,
@@ -1056,18 +1069,18 @@ export default function SceneEditorPage() {
   )
 
   const handleKasaToggle = useCallback(
-    (device: KasaDevice, on: boolean) => {
+    (device: DeviceRoomAssignment & { roomName: string }, on: boolean) => {
       setDeviceCommands(prev => {
         const filtered = prev.filter(
-          c => !(c.type === 'kasa_device' && c.device_id === device.id),
+          c => !(c.type === 'kasa_device' && c.device_id === String(device.device_id)),
         )
         if (on) {
           return [
             ...filtered,
             {
               type: 'kasa_device' as const,
-              name: device.label,
-              device_id: device.id,
+              name: device.device_label,
+              device_id: String(device.device_id),
               command: 'on',
             },
           ]
@@ -1103,9 +1116,9 @@ export default function SceneEditorPage() {
   if (sceneLoading) {
     return (
       <div className="space-y-4">
-        <div className="h-6 w-32 animate-pulse rounded surface" />
-        <div className="h-12 animate-pulse rounded-xl surface" />
-        <div className="h-64 animate-pulse rounded-xl surface" />
+        <Skeleton className="h-6 w-32 rounded" />
+        <SkeletonCard className="h-12" />
+        <SkeletonCard className="h-64" />
       </div>
     )
   }
@@ -1126,16 +1139,11 @@ export default function SceneEditorPage() {
 
   // ── Helpers for device tab ──────────────────────────────────────────────
 
-  const KASA_CONTROLLABLE_TYPES: KasaDevice['device_type'][] = ['plug', 'strip', 'outlet', 'switch', 'dimmer']
-  const filteredKasaDevices = (kasaDevices ?? []).filter(
-    d => KASA_CONTROLLABLE_TYPES.includes(d.device_type),
-  )
-
   const totalDevices =
     categorizedDevices.switches.length +
     categorizedDevices.twinkly.length +
     categorizedDevices.fairy.length +
-    filteredKasaDevices.length
+    categorizedDevices.kasa.length
 
   const otherScenes = allScenes?.filter(s => s.name !== name) ?? []
 
@@ -1213,6 +1221,7 @@ export default function SceneEditorPage() {
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-caption" />
                 <input
                   type="search"
+                  aria-label="Search lights by name"
                   placeholder="Search lights by name..."
                   value={lightSearch}
                   onChange={e => setLightSearch(e.target.value)}
@@ -1293,7 +1302,7 @@ export default function SceneEditorPage() {
 
         {/* ── Tab 2: Devices ─────────────────────────────────────────────── */}
         <Tabs.Content value="devices" className="space-y-6">
-          {sceneRooms.length === 0 && filteredKasaDevices.length === 0 ? (
+          {sceneRooms.length === 0 ? (
             <div className="rounded-xl border border-dashed border-[var(--border-secondary)] py-8 text-center">
               <ToggleLeft className="mx-auto mb-2 h-8 w-8 text-caption" />
               <p className="text-sm text-body">
@@ -1405,55 +1414,24 @@ export default function SceneEditorPage() {
               )}
 
               {/* Kasa Devices section */}
-              {filteredKasaDevices.length > 0 && (
+              {categorizedDevices.kasa.length > 0 && (
                 <section>
                   <h3 className="mb-3 text-sm font-medium text-body">
                     Kasa Devices
                   </h3>
                   <div className="space-y-3">
-                    {filteredKasaDevices.map(device => {
+                    {categorizedDevices.kasa.map(device => {
                       const cmd = deviceCommands.find(
-                        c => c.type === 'kasa_device' && c.device_id === device.id,
+                        c => c.type === 'kasa_device' && c.device_id === String(device.device_id),
                       )
-                      const isOn = !!cmd
-                      const kasaDeactivated = isKasaDeviceDeactivated(device.id)
-
                       return (
-                        <div key={`kasa-${device.id}`} className="card rounded-xl border p-4">
-                          <div className="flex items-center gap-3">
-                            <div className="min-w-0 flex-1">
-                              <p className={cn('break-words text-sm font-medium', kasaDeactivated ? 'text-slate-500' : 'text-heading')}>
-                                {device.label}
-                                {kasaDeactivated && <span className="ml-1.5"><StatusBadge status="deactivated" /></span>}
-                              </p>
-                              <p className="text-xs text-caption">
-                                {device.model ? (
-                                  <span className="mr-1.5 inline-block rounded bg-[var(--surface-2)] px-1.5 py-0.5 font-mono text-[10px] text-body">
-                                    {device.model}
-                                  </span>
-                                ) : null}
-                                {isOn ? 'On' : 'Off'}
-                              </p>
-                            </div>
-                            <Switch.Root
-                              checked={isOn}
-                              onCheckedChange={on => handleKasaToggle(device, on)}
-                              aria-label={`${isOn ? 'Remove' : 'Add'} ${device.label}`}
-                              className={cn(
-                                'relative h-7 w-12 shrink-0 cursor-pointer rounded-full transition-colors',
-                                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                                isOn ? 'bg-fairy-500' : 'bg-[var(--border-secondary)]',
-                              )}
-                            >
-                              <Switch.Thumb
-                                className={cn(
-                                  'block h-5 w-5 rounded-full bg-white shadow transition-transform',
-                                  isOn ? 'translate-x-6' : 'translate-x-1',
-                                )}
-                              />
-                            </Switch.Root>
-                          </div>
-                        </div>
+                        <DeviceToggleCard
+                          key={`kasa-${device.device_id}`}
+                          label={device.device_label}
+                          isOn={!!cmd}
+                          onToggle={on => handleKasaToggle(device, on)}
+                          deactivated={isKasaDeviceDeactivated(String(device.device_id))}
+                        />
                       )
                     })}
                   </div>

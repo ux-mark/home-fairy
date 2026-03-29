@@ -46,6 +46,10 @@ function log(message: string, category = 'motion'): void {
   }
 }
 
+function debugLog(message: string): void {
+  if (process.env.DEBUG) log(message)
+}
+
 function getCurrentMode(): string {
   const row = getOne<{ value: string }>(
     "SELECT value FROM current_state WHERE key = 'mode'",
@@ -145,15 +149,15 @@ export class MotionHandler {
     if (!room) return false
 
     if (this.isRoomLocked(lightRoom.room_name)) {
-      log(`${indicatorName} indicator skipped: room "${lightRoom.room_name}" is locked (night mode)`)
+      debugLog(`${indicatorName} indicator skipped: room "${lightRoom.room_name}" is locked (night mode)`)
       return true
     }
     if (!room.auto) {
-      log(`${indicatorName} indicator skipped: room "${lightRoom.room_name}" has automation disabled`)
+      debugLog(`${indicatorName} indicator skipped: room "${lightRoom.room_name}" has automation disabled`)
       return true
     }
     if (room.scene_manual) {
-      log(`${indicatorName} indicator skipped: room "${lightRoom.room_name}" has manual scene override`)
+      debugLog(`${indicatorName} indicator skipped: room "${lightRoom.room_name}" has manual scene override`)
       return true
     }
     return false
@@ -290,7 +294,7 @@ export class MotionHandler {
         return
       }
       if (!room.auto) {
-        log(`Room ${roomName} has automation disabled, skipping`)
+        debugLog(`Room ${roomName} has automation disabled, skipping`)
         return
       }
 
@@ -312,13 +316,13 @@ export class MotionHandler {
       )
       const roomLux = luxReading?.lux ?? null
       if (roomLux !== null && roomLux > luxThreshold) {
-        log(`Room ${roomName} lux ${roomLux} exceeds threshold ${luxThreshold}, skipping activation`)
+        debugLog(`Room ${roomName} lux ${roomLux} exceeds threshold ${luxThreshold}, skipping activation`)
         return
       }
 
       // Check room lockout BEFORE scene activation
       if (this.isRoomLocked(roomName)) {
-        log(`Motion in ${roomName} but room is locked (night mode) — skipping scene activation`)
+        debugLog(`Motion in ${roomName} but room is locked (night mode) — skipping scene activation`)
         return
       }
 
@@ -327,9 +331,9 @@ export class MotionHandler {
       if (room.scene_manual) {
         if (!room.current_scene) {
           run('UPDATE rooms SET scene_manual = 0 WHERE name = ?', [roomName])
-          log(`Cleared stale scene_manual flag for ${roomName} (no active scene)`)
+          debugLog(`Cleared stale scene_manual flag for ${roomName} (no active scene)`)
         } else {
-          log(`Room ${roomName} has manual scene override (${room.current_scene}), skipping auto activation`)
+          debugLog(`Room ${roomName} has manual scene override (${room.current_scene}), skipping auto activation`)
           return
         }
       }
@@ -337,7 +341,7 @@ export class MotionHandler {
       // Find auto scene for room + current mode
       const sceneName = this.findSceneForRoom(roomName)
       if (!sceneName) {
-        log(`No scene found for room ${roomName} in current mode`)
+        debugLog(`No scene found for room ${roomName} in current mode`)
         return
       }
 
@@ -367,7 +371,7 @@ export class MotionHandler {
       })
 
       if (!allInactive) {
-        log(
+        debugLog(
           `Some sensors in ${roomName} still active, not starting timer`,
         )
         return
@@ -378,7 +382,7 @@ export class MotionHandler {
 
       // Only start timer if there isn't one already running
       if (this.roomTimers.has(roomName)) {
-        log(`Timer already running for ${roomName}`)
+        debugLog(`Timer already running for ${roomName}`)
         return
       }
 
@@ -444,6 +448,13 @@ export class MotionHandler {
 
   getSensorStates(): Map<string, 'active' | 'inactive'> {
     return new Map(this.sensorStates)
+  }
+
+  shutdown(): void {
+    for (const [, timer] of this.roomTimers) {
+      clearTimeout(timer.timeout)
+    }
+    this.roomTimers.clear()
   }
 }
 

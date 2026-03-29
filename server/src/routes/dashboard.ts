@@ -219,6 +219,9 @@ router.get('/history/:source/:sourceId', (req: Request, res: Response) => {
     let cutoff: string
     let aggregate = false
 
+    // SAFETY: cutoff is interpolated into SQL but is always a hardcoded datetime literal
+    // from the switch below — never from user input. Parameterised binding is not possible
+    // here because SQLite doesn't support parameter substitution inside datetime() calls.
     switch (period) {
       case '24h':
         cutoff = "datetime('now', '-1 day')"
@@ -386,8 +389,12 @@ router.get('/device/:id/context', (req: Request, res: Response) => {
     )
     const scenesUsing = allScenes
       .filter((s) => {
-        const cmds = JSON.parse(s.commands) as Array<{ device_id?: string | number }>
-        return cmds.some((c) => String(c.device_id) === String(deviceId))
+        try {
+          const cmds = JSON.parse(s.commands) as Array<{ device_id?: string | number }>
+          return cmds.some((c) => String(c.device_id) === String(deviceId))
+        } catch {
+          return false
+        }
       })
       .map((s) => s.name)
 
@@ -495,11 +502,14 @@ router.get('/room/:name', (req: Request, res: Response) => {
        WHERE dr.room_name = ?`,
       [roomName],
     )
-    const roomDevices = [...hubRoomDevices, ...kasaRoomDevices]
+    const roomDevices = [
+      ...hubRoomDevices.map(d => ({ ...d, source: 'hub' as const })),
+      ...kasaRoomDevices.map(d => ({ ...d, source: 'kasa' as const })),
+    ]
 
     const totalWatts = roomDevices.reduce((sum, d) => sum + (d.power ? Number(d.power) : 0), 0)
     const devices = roomDevices.map((d) => ({
-      id: d.id as unknown as number, label: d.label, device_type: d.device_type,
+      id: d.id, label: d.label, device_type: d.device_type, source: d.source,
       power: d.power ? Number(d.power) : 0,
       energy: d.energy ? Number(d.energy) : null,
       battery: d.battery ? Number(d.battery) : null,
@@ -629,12 +639,18 @@ router.get('/device/:id/insights', (req: Request, res: Response) => {
     }
 
     const roomAssn = getOne<{ room_name: string }>('SELECT room_name FROM device_rooms WHERE device_id = ?', [deviceId])
-    const roomDevices = roomAssn
-      ? getAll<{ id: number; label: string; device_type: string }>(
-          `SELECT h.id, h.label, dr.device_type FROM device_rooms dr JOIN hub_devices h ON CAST(h.id AS TEXT) = dr.device_id WHERE dr.room_name = ? AND dr.device_id != ?`,
-          [roomAssn.room_name, deviceId],
-        )
-      : []
+    let roomDevices: Array<{ id: string; label: string; device_type: string; source: 'hub' | 'kasa' }> = []
+    if (roomAssn) {
+      const hubRoomDevices = getAll<{ id: string; label: string; device_type: string }>(
+        `SELECT CAST(h.id AS TEXT) as id, h.label, dr.device_type FROM device_rooms dr JOIN hub_devices h ON CAST(h.id AS TEXT) = dr.device_id WHERE dr.room_name = ? AND dr.device_id != ?`,
+        [roomAssn.room_name, deviceId],
+      ).map(d => ({ ...d, source: 'hub' as const }))
+      const kasaRoomDevices = getAll<{ id: string; label: string; device_type: string }>(
+        `SELECT k.id, k.label, dr.device_type FROM device_rooms dr JOIN kasa_devices k ON k.id = dr.device_id WHERE dr.room_name = ? AND dr.device_id != ?`,
+        [roomAssn.room_name, deviceId],
+      ).map(d => ({ ...d, source: 'kasa' as const }))
+      roomDevices = [...hubRoomDevices, ...kasaRoomDevices]
+    }
 
     res.json({ insights: { power: powerIns, battery: batteryIns, temperature: tempIns }, roomDevices, currencySymbol })
   } catch (err) {

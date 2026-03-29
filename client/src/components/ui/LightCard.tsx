@@ -62,6 +62,8 @@ export default function LightCard({
         <span
           className={cn('shrink-0', compact ? 'hidden' : '')}
           title={light.connected ? 'Connected' : 'Disconnected'}
+          aria-label={light.connected ? 'Connected' : 'Disconnected'}
+          role="img"
         >
           {light.connected ? (
             <Wifi className="h-3.5 w-3.5 text-fairy-500" />
@@ -76,7 +78,7 @@ export default function LightCard({
             {onIdentify && (
               <button
                 onClick={onIdentify}
-                className="text-body rounded-lg p-2 transition-colors hover:bg-[var(--bg-tertiary)] hover:text-fairy-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+                className="text-body rounded-lg p-2 min-h-[44px] min-w-[44px] flex items-center justify-center transition-colors hover:bg-[var(--bg-tertiary)] hover:text-fairy-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                 aria-label={`Identify ${light.label}`}
                 title="Flash this light"
               >
@@ -87,7 +89,7 @@ export default function LightCard({
               <button
                 onClick={onToggle}
                 className={cn(
-                  'rounded-lg p-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                  'rounded-lg p-2 min-h-[44px] min-w-[44px] flex items-center justify-center transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                   isOn
                     ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
                     : 'text-caption hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-secondary)]',

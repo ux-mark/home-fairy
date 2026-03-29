@@ -1,15 +1,4 @@
 import { useState, useMemo } from 'react'
-import {
-  Chart,
-  BarElement,
-  CategoryScale,
-  LinearScale,
-  LineElement,
-  PointElement,
-  Filler,
-  Tooltip,
-  Legend,
-} from 'chart.js'
 import { Bar, Line } from 'react-chartjs-2'
 import type { ChartOptions, ChartData } from 'chart.js'
 import { Activity, Footprints } from 'lucide-react'
@@ -18,8 +7,6 @@ import type { ActivityInsights } from '@/lib/api'
 import { Accordion } from '@/components/ui/Accordion'
 import { LucideIcon } from '@/components/ui/LucideIcon'
 import { cn } from '@/lib/utils'
-
-Chart.register(BarElement, CategoryScale, LinearScale, LineElement, PointElement, Filler, Tooltip, Legend)
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 

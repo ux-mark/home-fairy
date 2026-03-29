@@ -8,30 +8,17 @@ import BatteryCard from '@/components/dashboard/BatteryCard'
 import EnvironmentCard from '@/components/dashboard/EnvironmentCard'
 import SunModeCard from '@/components/dashboard/SunModeCard'
 import ActivityCard from '@/components/dashboard/ActivityCard'
+import { SkeletonSummaryStrip, SkeletonCard } from '@/components/ui/Skeleton'
 
 function DashboardSkeleton() {
   return (
     <div className="space-y-4" role="status" aria-label="Loading dashboard">
-      {/* Summary strip skeleton */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {[1, 2, 3, 4].map((i) => (
-          <div key={i} className="card animate-pulse rounded-xl border p-4">
-            <div className="mb-2 h-3 w-16 rounded bg-[var(--bg-tertiary)]" />
-            <div className="h-6 w-20 rounded bg-[var(--bg-tertiary)]" />
-          </div>
+      <SkeletonSummaryStrip count={4} />
+      <div className="grid gap-4 md:grid-cols-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <SkeletonCard key={i} />
         ))}
       </div>
-      {/* Card skeletons */}
-      {[1, 2, 3, 4].map((i) => (
-        <div key={i} className="card animate-pulse rounded-xl border p-5">
-          <div className="mb-4 h-5 w-32 rounded bg-[var(--bg-tertiary)]" />
-          <div className="space-y-3">
-            <div className="h-4 w-full rounded bg-[var(--bg-tertiary)]" />
-            <div className="h-4 w-3/4 rounded bg-[var(--bg-tertiary)]" />
-            <div className="h-4 w-1/2 rounded bg-[var(--bg-tertiary)]" />
-          </div>
-        </div>
-      ))}
     </div>
   )
 }

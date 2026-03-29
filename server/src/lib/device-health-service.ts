@@ -39,21 +39,34 @@ interface DeviceHealthRow {
 }
 
 function getDeviceLabel(deviceType: string, deviceId: string): string {
+  // Try the expected table first based on deviceType
   if (deviceType === 'hub') {
     const row = getOne<{ label: string }>('SELECT label FROM hub_devices WHERE id = ?', [deviceId])
-    return row?.label ?? deviceId
+    if (row?.label) return row.label
   }
   if (deviceType === 'kasa') {
     const row = getOne<{ label: string }>('SELECT label FROM kasa_devices WHERE id = ?', [deviceId])
-    return row?.label ?? deviceId
+    if (row?.label) return row.label
   }
   if (deviceType === 'lifx') {
     const row = getOne<{ light_label: string }>(
       'SELECT light_label FROM light_rooms WHERE light_id = ? LIMIT 1',
       [deviceId],
     )
-    return row?.light_label ?? deviceId
+    if (row?.light_label) return row.light_label
   }
+
+  // Fallback: device may be recorded under the wrong type, or removed from its
+  // primary table. Check all device tables before giving up.
+  const kasa = getOne<{ label: string }>('SELECT label FROM kasa_devices WHERE id = ?', [deviceId])
+  if (kasa?.label) return kasa.label
+  const hub = getOne<{ label: string }>('SELECT label FROM hub_devices WHERE id = ?', [deviceId])
+  if (hub?.label) return hub.label
+  const lifx = getOne<{ light_label: string }>(
+    'SELECT light_label FROM light_rooms WHERE light_id = ? LIMIT 1',
+    [deviceId],
+  )
+  if (lifx?.light_label) return lifx.light_label
 
   return deviceId
 }

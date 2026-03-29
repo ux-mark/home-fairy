@@ -209,7 +209,7 @@ async function retryFailedLights(
   }
 }
 
-export async function activateScene(sceneName: string, visitedScenes: Set<string> = new Set()): Promise<void> {
+export async function activateScene(sceneName: string, visitedScenes: Set<string> = new Set(), source: 'manual' | 'auto' | 'timer' | 'chain' = 'auto'): Promise<void> {
   if (visitedScenes.has(sceneName)) {
     log(`Scene cycle detected: ${sceneName} already in chain [${[...visitedScenes].join(' -> ')}]. Skipping.`)
     return
@@ -230,7 +230,7 @@ export async function activateScene(sceneName: string, visitedScenes: Set<string
     [sceneName],
   ).map(r => ({ name: r.room_name }))
 
-  log(`Activating scene: ${sceneName}`)
+  log(`[${source}] Activating scene: ${sceneName}`)
 
   // Collect lifx_light commands for batching
   const lightCommands: LightCommand[] = []
@@ -453,9 +453,31 @@ export async function activateScene(sceneName: string, visitedScenes: Set<string
         }
 
         case 'fairy_scene': {
-          // Chain: activate another scene
+          // Chain: activate another scene (respecting seasonal ranges)
           try {
-            await activateScene(cmd.name, visitedScenes)
+            const targetScene = getOne<{ active_from: string | null; active_to: string | null }>(
+              'SELECT active_from, active_to FROM scenes WHERE name = ?',
+              [cmd.name],
+            )
+            if (targetScene?.active_from && targetScene?.active_to) {
+              const now = new Date()
+              const month = now.getMonth() + 1
+              const day = now.getDate()
+              const today = month * 100 + day
+              const [fromM, fromD] = targetScene.active_from.split('-').map(Number)
+              const [toM, toD] = targetScene.active_to.split('-').map(Number)
+              const from = fromM * 100 + fromD
+              const to = toM * 100 + toD
+              const inRange = from <= to
+                ? (today >= from && today <= to)
+                : (today >= from || today <= to)
+              if (!inRange) {
+                const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                log(`Skipping chained scene "${cmd.name}": out of season (${fromD} ${monthNames[fromM - 1]} to ${toD} ${monthNames[toM - 1]})`)
+                break
+              }
+            }
+            await activateScene(cmd.name, visitedScenes, 'chain')
             log(`Chained scene activation: ${cmd.name}`)
           } catch (chainErr) {
             const chainMsg = chainErr instanceof Error ? chainErr.message : String(chainErr)

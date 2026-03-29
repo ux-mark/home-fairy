@@ -46,8 +46,8 @@ export default defineConfig({
     port: 8000,
     allowedHosts: ['home.thefairies.ie'],
     proxy: {
-      '/api': 'http://localhost:3001',
-      '/socket.io': { target: 'http://localhost:3001', ws: true },
+      '/api': { target: 'http://localhost:3001', changeOrigin: true },
+      '/socket.io': { target: 'http://localhost:3001', ws: true, changeOrigin: true },
     },
   },
 })

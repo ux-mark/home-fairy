@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { X, Bell, CheckCheck, Trash2, AlertTriangle, AlertCircle, Info } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Skeleton } from '@/components/ui/Skeleton'
 import { useNotifications, useMarkRead, useMarkAllRead, useDismiss, useDismissAll } from '@/hooks/useNotifications'
 import type { AppNotification } from '@/lib/api'
 
@@ -274,7 +275,7 @@ export default function NotificationPanel({ open, onClose, returnFocusRef, onNav
         {isLoading ? (
           <div className="space-y-2 p-2">
             {[1, 2, 3].map(i => (
-              <div key={i} className="h-16 animate-pulse rounded-lg bg-[var(--bg-secondary)]" />
+              <Skeleton key={i} className="h-16 w-full rounded-lg" />
             ))}
           </div>
         ) : !hasAny ? (

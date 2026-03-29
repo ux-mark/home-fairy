@@ -5,6 +5,7 @@ import { Power, ChevronRight, Wifi, WifiOff, AlertTriangle } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
 import { BackLink } from '@/components/ui/BackLink'
+import { DetailPageSkeleton } from '@/components/ui/Skeleton'
 import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { useToast } from '@/hooks/useToast'
 
@@ -113,20 +114,7 @@ export default function LightDetailPage() {
 
   // Loading state
   if (lightsLoading) {
-    return (
-      <div className="space-y-6" role="status" aria-label="Loading light details">
-        <div className="space-y-3">
-          <div className="h-8 w-24 animate-pulse rounded-lg bg-[var(--bg-tertiary)]" />
-          <div className="h-7 w-48 animate-pulse rounded-lg bg-[var(--bg-tertiary)]" />
-        </div>
-        {[1, 2].map(i => (
-          <div key={i} className="card rounded-xl border p-5 space-y-3">
-            <div className="h-5 w-32 animate-pulse rounded bg-[var(--bg-tertiary)]" />
-            <div className="h-4 w-full animate-pulse rounded bg-[var(--bg-tertiary)]" />
-          </div>
-        ))}
-      </div>
-    )
+    return <DetailPageSkeleton sections={2} label="Loading light details" />
   }
 
   // Not found

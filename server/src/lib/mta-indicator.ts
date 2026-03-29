@@ -123,6 +123,7 @@ class MtaIndicatorManager {
 
     // Fetch status for each stop, find the best
     let bestStatus = 'none'
+    let failedCount = 0
     for (const stop of enabledStops) {
       try {
         const result = await mtaClient.getStatus(
@@ -132,7 +133,12 @@ class MtaIndicatorManager {
         if (STATUS_PRIORITY[result.status] > STATUS_PRIORITY[bestStatus]) {
           bestStatus = result.status
         }
-      } catch { /* skip failed stop */ }
+      } catch (err) {
+        failedCount++
+      }
+    }
+    if (failedCount > 0 && failedCount === enabledStops.length) {
+      log(`All ${failedCount} MTA stops failed to fetch`)
     }
 
     const color = STATUS_COLORS[bestStatus] || STATUS_COLORS.none

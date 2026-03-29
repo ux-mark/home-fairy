@@ -1,27 +1,17 @@
 import { useState } from 'react'
 import { Thermometer, Cloud, Droplets, Wind, ArrowUp, ArrowDown, Minus, ChevronDown } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { useQueries } from '@tanstack/react-query'
+import { useQuery, useQueries } from '@tanstack/react-query'
 import { PeriodSelector } from '@/components/ui/PeriodSelector'
 import type { Period } from '@/components/ui/PeriodSelector'
-import {
-  Chart,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Tooltip,
-  Legend,
-} from 'chart.js'
 import { Line } from 'react-chartjs-2'
 import type { ChartOptions, ChartData } from 'chart.js'
 import { api } from '@/lib/api'
 import { cn, parseServerDate } from '@/lib/utils'
 import { Accordion } from '@/components/ui/Accordion'
+import { Skeleton } from '@/components/ui/Skeleton'
 import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
 import type { DashboardSummary, TemperatureInsights, LuxInsights, HistoryPoint } from '@/lib/api'
-
-Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend)
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -36,18 +26,7 @@ interface EnvironmentCardProps {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/**
- * Read the user's preferred temperature unit from localStorage.
- * Defaults to 'C' if the key is absent or contains an unrecognised value.
- */
-function getTempUnit(): 'C' | 'F' {
-  try {
-    const stored = localStorage.getItem('temp_unit')
-    return stored === 'F' ? 'F' : 'C'
-  } catch {
-    return 'C'
-  }
-}
+// getTempUnit() removed — now read via useQuery(['system', 'preferences']) in the component
 
 function toDisplay(celsius: number, unit: 'C' | 'F'): number {
   return unit === 'F'
@@ -461,16 +440,6 @@ function spanHours(timestamps: string[]): number {
   return (Math.max(...times) - Math.min(...times)) / (1000 * 60 * 60)
 }
 
-function MultiLineChartSkeleton() {
-  return (
-    <div
-      className="animate-pulse rounded bg-[var(--bg-tertiary)]"
-      style={{ height: 160 }}
-      role="status"
-      aria-label="Loading chart data"
-    />
-  )
-}
 
 interface MultiLineChartProps {
   /** One entry per room, in palette order. */
@@ -671,7 +640,9 @@ function EnvironmentCharts({ rooms }: EnvironmentChartsProps) {
       <div>
         <p className="text-caption mb-3 text-xs font-medium">Temperature — {periodLabel}</p>
         {tempLoading ? (
-          <MultiLineChartSkeleton />
+          <div role="status" aria-label="Loading chart data" style={{ height: 160 }}>
+            <Skeleton className="h-full w-full rounded" />
+          </div>
         ) : !hasEnoughTempData ? (
           <div
             className="flex items-center justify-center"
@@ -696,7 +667,9 @@ function EnvironmentCharts({ rooms }: EnvironmentChartsProps) {
         <div className="border-t pt-4" style={{ borderColor: 'var(--border-primary)' }}>
           <p className="text-caption mb-3 text-xs font-medium">Brightness — {periodLabel}</p>
           {luxLoading ? (
-            <MultiLineChartSkeleton />
+            <div role="status" aria-label="Loading chart data" style={{ height: 160 }}>
+            <Skeleton className="h-full w-full rounded" />
+          </div>
           ) : !hasAnyLuxData ? null : (
             <MultiLineChart
               series={rankedLuxSeries}
@@ -720,7 +693,11 @@ export default function EnvironmentCard({
   open,
   onToggle,
 }: EnvironmentCardProps) {
-  const unit = getTempUnit()
+  const { data: prefs } = useQuery({
+    queryKey: ['system', 'preferences'],
+    queryFn: api.system.getPreferences,
+  })
+  const unit: 'C' | 'F' = prefs?.temp_unit === 'F' ? 'F' : 'C'
 
   const roomsWithTemp = rooms.filter(r => r.temperature !== null)
   const hasWeather = weather !== null

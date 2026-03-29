@@ -421,7 +421,7 @@ router.delete('/:name', (req: Request, res: Response) => {
 router.post('/:name/activate', async (req: Request, res: Response) => {
   try {
     const name = req.params.name as string
-    await activateScene(name)
+    await activateScene(name, new Set(), 'manual')
 
     // Mark all rooms in this scene as having a manual override so motion
     // events do not replace the user's chosen scene until the room goes idle.

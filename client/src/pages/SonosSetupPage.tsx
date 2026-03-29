@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { BackLink } from '@/components/ui/BackLink'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { SkeletonList } from '@/components/ui/Skeleton'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -376,10 +377,8 @@ export default function SonosSetupPage() {
 
       {/* Loading skeleton */}
       {isLoading ? (
-        <div className="space-y-3" aria-label="Loading Sonos speakers">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="surface h-24 animate-pulse rounded-xl" />
-          ))}
+        <div role="status" aria-label="Loading Sonos speakers">
+          <SkeletonList count={4} height="h-24" />
         </div>
       ) : (
         <div className="space-y-8">

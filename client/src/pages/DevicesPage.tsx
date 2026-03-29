@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import { usePersistedState } from '@/hooks/usePersistedState'
 import {
   RefreshCw,
   Power,
@@ -17,7 +18,7 @@ import {
   Music2,
   Volume2,
 } from 'lucide-react'
-import { io as socketIo } from 'socket.io-client'
+import { getSocket } from '@/hooks/useSocket'
 import { api } from '@/lib/api'
 import type { Light, Room, DeviceRoomAssignment, HubDevice, KasaDevice, SonosSpeakerMapping, SonosZone } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
@@ -26,6 +27,9 @@ import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { FilterChip } from '@/components/ui/FilterChip'
 import { SearchInput } from '@/components/ui/SearchInput'
 import { EmptyState } from '@/components/ui/EmptyState'
+import { SkeletonList } from '@/components/ui/Skeleton'
+import { Accordion } from '@/components/ui/Accordion'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 
 // ── Room assignment pill ──────────────────────────────────────────────────────
 
@@ -331,7 +335,7 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
           <button
             onClick={() => setExpanded(!expanded)}
             className="text-caption flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors hover:text-[var(--text-secondary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-            aria-label={expanded ? 'Collapse' : 'Expand'}
+            aria-label={expanded ? `Collapse ${device.label} controls` : `Expand ${device.label} controls`}
           >
             {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
@@ -730,9 +734,10 @@ function SonosUnassignedCard({ speakerName }: { speakerName: string }) {
 
 export default function DevicesPage() {
   const queryClient = useQueryClient()
-  const [filter, setFilter] = useState<DeviceFilter>('all')
-  const [search, setSearch] = useState('')
-  const [groupMode, setGroupMode] = useState<GroupMode>('room')
+  const [filter, setFilter] = usePersistedState<DeviceFilter>('devices:filter', 'all')
+  const [search, setSearch] = usePersistedState('devices:search', '')
+  const [groupMode, setGroupMode] = usePersistedState<GroupMode>('devices:groupMode', 'room')
+  const [openGroups, setOpenGroups] = usePersistedState<Set<string>>('devices:openGroups', new Set())
 
   const {
     data: lights,
@@ -802,13 +807,11 @@ export default function DevicesPage() {
   // Invalidate zones cache on real-time Sonos updates
   useEffect(() => {
     if (filter !== 'sonos' && filter !== 'all') return
-    const url = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin
-    const s = socketIo(url, { transports: ['websocket', 'polling'] })
+    const s = getSocket()
     const handler = () => queryClient.invalidateQueries({ queryKey: ['sonos', 'zones'] })
     s.on('sonos:zones-update', handler)
     return () => {
       s.off('sonos:zones-update', handler)
-      s.disconnect()
     }
   }, [queryClient, filter])
 
@@ -1027,6 +1030,40 @@ export default function DevicesPage() {
     return key
   }
 
+  function toggleGroup(key: string) {
+    setOpenGroups(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  const computedOpenGroups = useMemo(() => {
+    if (!search.trim()) return openGroups
+    const expanded = new Set(openGroups)
+    for (const key of grouped.groups.keys()) {
+      expanded.add(key)
+    }
+    return expanded
+  }, [search, openGroups, grouped.groups])
+
+  const roomIconMap = useMemo<Record<string, string | null>>(
+    () => Object.fromEntries((rooms ?? []).map(r => [r.name, r.icon])),
+    [rooms],
+  )
+
+  const roomOrderMap = useMemo(
+    () => new Map((rooms ?? []).map(r => [r.name, r.display_order])),
+    [rooms],
+  )
+
+  const roomMap = useMemo(() => {
+    const map = new Map<string, Room>()
+    for (const r of rooms ?? []) map.set(r.name, r)
+    return map
+  }, [rooms])
+
   return (
     <div>
       {/* Header */}
@@ -1084,6 +1121,7 @@ export default function DevicesPage() {
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
           )}
           title={groupMode === 'room' ? 'Grouped by room' : 'Grouped by type'}
+          aria-label={groupMode === 'room' ? 'Switch to group by type' : 'Switch to group by room'}
         >
           {groupMode === 'room' ? <LayoutGrid className="h-4 w-4" /> : <List className="h-4 w-4" />}
           {groupMode === 'room' ? 'Room' : 'Type'}
@@ -1100,11 +1138,7 @@ export default function DevicesPage() {
       {/* Content */}
       {filter === 'sonos' ? (
         sonosSpeakersLoading || sonosZonesLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="surface h-20 animate-pulse rounded-xl" />
-            ))}
-          </div>
+          <SkeletonList count={4} height="h-20" />
         ) : (sonosSpeakers?.length ?? 0) === 0 && sonosUnassignedSpeakers.length === 0 ? (
           <EmptyState
             icon={Volume2}
@@ -1112,67 +1146,180 @@ export default function DevicesPage() {
             sub="Make sure Sonos is running and the speakers are on the same network."
           />
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-3">
             {sonosSpeakers && sonosSpeakers.length > 0 && (
-              <div>
-                <h3 className="text-body mb-2 text-sm font-medium">Assigned speakers</h3>
+              <Accordion
+                id="sonos-assigned"
+                title={
+                  <span className="flex items-center gap-1.5">
+                    <Volume2 className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+                    Assigned speakers
+                  </span>
+                }
+                open={computedOpenGroups.has('__sonos-assigned')}
+                onToggle={() => toggleGroup('__sonos-assigned')}
+                count={sonosSpeakers.length}
+              >
                 <div className="space-y-2">
                   {sonosSpeakers.map(s => (
                     <SonosSpeakerCard key={s.id} speaker={s} zones={sonosZones} />
                   ))}
                 </div>
-              </div>
+              </Accordion>
             )}
             {sonosUnassignedSpeakers.length > 0 && (
-              <div>
-                <h3 className="text-caption mb-2 text-sm font-medium">Not assigned to a room</h3>
+              <Accordion
+                id="sonos-unassigned"
+                title="Not assigned to a room"
+                open={computedOpenGroups.has('__sonos-unassigned')}
+                onToggle={() => toggleGroup('__sonos-unassigned')}
+                count={sonosUnassignedSpeakers.length}
+              >
                 <div className="space-y-2">
                   {sonosUnassignedSpeakers.map(name => (
                     <SonosUnassignedCard key={name} speakerName={name} />
                   ))}
                 </div>
-              </div>
+              </Accordion>
             )}
           </div>
         )
       ) : isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="surface h-16 animate-pulse rounded-xl" />
-          ))}
-        </div>
+        <SkeletonList count={6} height="h-16" />
       ) : filtered.length > 0 ? (
-        <div className="space-y-6">
-          {Array.from(grouped.groups.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
-            .map(([group, devices]) => (
-              <div key={group}>
-                <h3 className="text-body mb-2 text-sm font-medium">{groupLabel(group)}</h3>
-                <div className="space-y-2">
-                  {devices.map(d => <DeviceCard key={d.key} device={d} rooms={rooms} />)}
-                </div>
-              </div>
-            ))}
+        <div className="space-y-3">
+          {groupMode === 'room' ? (() => {
+            // Build hierarchy: separate parent rooms from child rooms
+            const allEntries = Array.from(grouped.groups.entries())
+            // childrenOf maps parentRoomName -> [childRoomName, devices][]
+            const childrenOf = new Map<string, [string, UnifiedDevice[]][]>()
+            const topLevelEntries: [string, UnifiedDevice[]][] = []
+
+            for (const [group, devices] of allEntries) {
+              const room = roomMap.get(group)
+              const parentName = room?.parent_room
+              if (parentName && !room?.promoted) {
+                // Non-promoted child — nest under parent
+                if (!childrenOf.has(parentName)) childrenOf.set(parentName, [])
+                childrenOf.get(parentName)!.push([group, devices])
+              } else {
+                // Top-level room OR promoted child (gets its own accordion)
+                topLevelEntries.push([group, devices])
+              }
+            }
+
+            // Add parent rooms that have children with devices but no devices of their own
+            const topLevelNames = new Set(topLevelEntries.map(([name]) => name))
+            for (const parentName of childrenOf.keys()) {
+              if (!topLevelNames.has(parentName)) {
+                topLevelEntries.push([parentName, []])
+              }
+            }
+
+            return topLevelEntries
+              .sort(([a], [b]) => (roomOrderMap.get(a) ?? 999) - (roomOrderMap.get(b) ?? 999))
+              .map(([group, ownDevices]) => {
+                const childEntries = (childrenOf.get(group) ?? [])
+                  .sort(([a], [b]) => (roomOrderMap.get(a) ?? 999) - (roomOrderMap.get(b) ?? 999))
+                const totalCount = ownDevices.length + childEntries.reduce((sum, [, d]) => sum + d.length, 0)
+                const accordionId = `devices-${group.replace(/\s+/g, '-').toLowerCase()}`
+                return (
+                  <Accordion
+                    key={group}
+                    id={accordionId}
+                    title={
+                      <span className="flex items-center gap-1.5">
+                        <LucideIcon name={roomIconMap[group] ?? null} className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+                        {group}
+                      </span>
+                    }
+                    open={computedOpenGroups.has(group)}
+                    onToggle={() => toggleGroup(group)}
+                    count={totalCount}
+                  >
+                    {childEntries.map(([childName, childDevices]) => (
+                      <div key={childName} className="ml-2 mt-1">
+                        <Accordion
+                          id={`devices-${childName.replace(/\s+/g, '-').toLowerCase()}`}
+                          card={false}
+                          title={
+                            <span className="flex items-center gap-1.5">
+                              <LucideIcon name={roomIconMap[childName] ?? null} className="h-3.5 w-3.5 shrink-0 text-fairy-400" aria-hidden="true" />
+                              {childName}
+                            </span>
+                          }
+                          open={computedOpenGroups.has(childName)}
+                          onToggle={() => toggleGroup(childName)}
+                          count={childDevices.length}
+                        >
+                          <div className="space-y-2">
+                            {childDevices.map(d => <DeviceCard key={d.key} device={d} rooms={rooms} />)}
+                          </div>
+                        </Accordion>
+                      </div>
+                    ))}
+                    {ownDevices.length > 0 && (
+                      <div className={cn('space-y-2', childEntries.length > 0 && 'mt-2 pt-2')}>
+                        {ownDevices.map(d => <DeviceCard key={d.key} device={d} rooms={rooms} />)}
+                      </div>
+                    )}
+                  </Accordion>
+                )
+              })
+          })() : Array.from(grouped.groups.entries())
+            .sort(([a], [b]) => (roomOrderMap.get(a) ?? 999) - (roomOrderMap.get(b) ?? 999))
+            .map(([group, devices]) => {
+              const accordionId = `devices-${group.replace(/\s+/g, '-').toLowerCase()}`
+              return (
+                <Accordion
+                  key={group}
+                  id={accordionId}
+                  title={groupLabel(group)}
+                  open={computedOpenGroups.has(group)}
+                  onToggle={() => toggleGroup(group)}
+                  count={devices.length}
+                >
+                  <div className="space-y-2">
+                    {devices.map(d => <DeviceCard key={d.key} device={d} rooms={rooms} />)}
+                  </div>
+                </Accordion>
+              )
+            })}
 
           {grouped.unassigned.length > 0 && (
-            <div>
-              <h3 className="text-caption mb-2 text-sm font-medium">Unassigned</h3>
+            <Accordion
+              id="devices-unassigned"
+              title="Unassigned"
+              open={computedOpenGroups.has('__unassigned')}
+              onToggle={() => toggleGroup('__unassigned')}
+              count={grouped.unassigned.length}
+            >
               <div className="space-y-2">
                 {grouped.unassigned.map(d => <DeviceCard key={d.key} device={d} rooms={rooms} />)}
               </div>
-            </div>
+            </Accordion>
           )}
 
           {/* Sonos speakers shown at bottom of All view */}
           {filter === 'all' && sonosSpeakers && sonosSpeakers.length > 0 && (
-            <div>
-              <h3 className="text-body mb-2 text-sm font-medium">Sonos speakers</h3>
+            <Accordion
+              id="devices-sonos"
+              title={
+                <span className="flex items-center gap-1.5">
+                  <Volume2 className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+                  Sonos speakers
+                </span>
+              }
+              open={computedOpenGroups.has('__sonos')}
+              onToggle={() => toggleGroup('__sonos')}
+              count={sonosSpeakers.length}
+            >
               <div className="space-y-2">
                 {sonosSpeakers.map(s => (
                   <SonosSpeakerCard key={s.id} speaker={s} zones={sonosZones} />
                 ))}
               </div>
-            </div>
+            </Accordion>
           )}
         </div>
       ) : (

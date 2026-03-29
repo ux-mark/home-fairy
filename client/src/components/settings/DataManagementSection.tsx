@@ -4,6 +4,7 @@ import { api } from '@/lib/api'
 import type { DashboardStats } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Section } from './Section'
+import { SkeletonText } from '@/components/ui/Skeleton'
 
 type DeleteConfirmState =
   | { type: 'all' }
@@ -82,11 +83,7 @@ export function DataManagementSection() {
       {/* Database info */}
       <div className="mb-5 space-y-2">
         {statsLoading ? (
-          <div className="space-y-2">
-            <div className="h-4 w-3/4 animate-pulse rounded bg-[var(--bg-secondary)]" />
-            <div className="h-4 w-1/2 animate-pulse rounded bg-[var(--bg-secondary)]" />
-            <div className="h-4 w-2/3 animate-pulse rounded bg-[var(--bg-secondary)]" />
-          </div>
+          <SkeletonText lines={3} />
         ) : (
           <>
             <div className="flex items-center justify-between text-sm">

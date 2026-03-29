@@ -136,7 +136,8 @@ export function startHistoryCollector(): void {
 
   // Run log pruning once daily (check every hour, prune if needed)
   pruneIntervalId = setInterval(pruneOldLogs, 60 * 60 * 1000) // hourly check
-  pruneOldLogs() // initial prune on startup
+  // Defer initial prune to avoid blocking event loop on startup with large log tables
+  setTimeout(pruneOldLogs, 60_000)
 }
 
 export function stopHistoryCollector(): void {

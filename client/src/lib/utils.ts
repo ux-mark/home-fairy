@@ -119,6 +119,27 @@ export function debounce<T extends (...args: any[]) => any>(fn: T, ms: number): 
   return debounced as T & { cancel: () => void }
 }
 
+// ── Device routing ──────────────────────────────────────────────────────────
+
+export type DeviceSource = 'hub' | 'kasa' | 'lifx' | 'sonos'
+
+/**
+ * Build the correct detail-page path for a device based on its source.
+ */
+export function deviceDetailPath(id: string | number, source: DeviceSource): string {
+  switch (source) {
+    case 'lifx':
+      return `/lights/${id}`
+    case 'kasa':
+      return `/devices/kasa/${encodeURIComponent(String(id))}`
+    case 'sonos':
+      return `/sonos/${encodeURIComponent(String(id))}`
+    case 'hub':
+    default:
+      return `/devices/${id}`
+  }
+}
+
 // Default modes — overridden by API data from /api/system/current (reads from modes table)
 export const DEFAULT_MODES = [
   'Early Morning',

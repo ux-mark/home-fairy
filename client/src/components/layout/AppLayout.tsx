@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Home, DoorOpen, Sparkles, LayoutGrid, Settings, BarChart3 } from 'lucide-react'
+import { Home, DoorOpen, Sparkles, LayoutGrid, Settings, BarChart3, User } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useDashboardSocket } from '@/hooks/useSocket'
@@ -8,6 +8,7 @@ import { useScrollRestoration } from '@/hooks/useScrollRestoration'
 import ToastContainer from '@/components/ui/Toast'
 import NotificationBell from '@/components/notifications/NotificationBell'
 import { LucideIcon } from '@/components/ui/LucideIcon'
+import { authClient } from '@/lib/auth-client'
 
 function HomeFairyIcon({ className }: { className?: string }) {
   return (
@@ -15,26 +16,42 @@ function HomeFairyIcon({ className }: { className?: string }) {
   )
 }
 
-const NAV_ITEMS = [
+const BASE_NAV_ITEMS = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/rooms', icon: DoorOpen, label: 'Rooms' },
   { to: '/scenes', icon: Sparkles, label: 'Scenes' },
   { to: '/devices', icon: LayoutGrid, label: 'Devices' },
   { to: '/dashboard', icon: BarChart3, label: 'Insights' },
-  { to: '/settings', icon: Settings, label: 'Settings' },
 ] as const
-
-const BOTTOM_NAV_ITEMS = NAV_ITEMS.filter(item => item.to !== '/settings')
 
 export default function AppLayout() {
   const location = useLocation()
   useDashboardSocket()
   useScrollRestoration()
 
+  const { data: session } = authClient.useSession()
+  const role = session?.user?.role
+
   const { data: system } = useQuery({
     queryKey: ['system', 'current'],
     queryFn: api.system.getCurrent,
   })
+
+  // Build nav items based on role
+  const navItems: { to: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement>>; label: string }[] = [
+    ...BASE_NAV_ITEMS,
+    ...(role === 'admin'
+      ? [{ to: '/settings', icon: Settings, label: 'Settings' }]
+      : role === 'user'
+        ? [{ to: '/account', icon: User, label: 'Account' }]
+        : []),
+  ]
+
+  // Bottom nav: for admin, exclude settings (it's in the header icon area on mobile)
+  // For user, include account in bottom nav
+  const bottomNavItems = role === 'admin'
+    ? navItems.filter(item => item.to !== '/settings')
+    : navItems
 
   return (
     <div className="flex min-h-svh flex-col md:flex-row">
@@ -53,7 +70,7 @@ export default function AppLayout() {
           </div>
         )}
         <nav className="flex flex-1 flex-col gap-1 p-3">
-          {NAV_ITEMS.map(({ to, icon: Icon, label }) => (
+          {navItems.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}
@@ -85,7 +102,7 @@ export default function AppLayout() {
               Home Fairy
             </h1>
             <h2 className="text-heading hidden text-lg font-semibold md:block">
-              {NAV_ITEMS.find(
+              {navItems.find(
                 n =>
                   n.to === location.pathname ||
                   (n.to !== '/' && location.pathname.startsWith(n.to)),
@@ -93,27 +110,46 @@ export default function AppLayout() {
             </h2>
           </div>
           <div className="flex items-center gap-2">
-            <NotificationBell />
-            <NavLink
-              to="/settings"
-              aria-label="Settings"
-              className={({ isActive }) =>
-                cn(
-                  'rounded-lg p-2 transition-colors md:hidden',
-                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                  isActive
-                    ? 'text-fairy-400'
-                    : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]',
-                )
-              }
-            >
-              <Settings className="h-5 w-5" />
-            </NavLink>
             {system?.mode && (
               <span className="inline-flex items-center gap-1 rounded-full bg-fairy-500/15 px-2.5 py-0.5 text-xs font-medium text-fairy-400 md:hidden">
                 <LucideIcon name={system.mode_icons?.[system.mode] ?? null} className="h-3.5 w-3.5" aria-hidden="true" />
                 {system.mode}
               </span>
+            )}
+            <NotificationBell />
+            {role === 'admin' && (
+              <NavLink
+                to="/settings"
+                aria-label="Settings"
+                className={({ isActive }) =>
+                  cn(
+                    'rounded-lg p-2 transition-colors md:hidden',
+                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                    isActive
+                      ? 'text-fairy-400'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]',
+                  )
+                }
+              >
+                <Settings className="h-5 w-5" />
+              </NavLink>
+            )}
+            {role === 'user' && (
+              <NavLink
+                to="/account"
+                aria-label="Account"
+                className={({ isActive }) =>
+                  cn(
+                    'rounded-lg p-2 transition-colors md:hidden',
+                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                    isActive
+                      ? 'text-fairy-400'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]',
+                  )
+                }
+              >
+                <User className="h-5 w-5" />
+              </NavLink>
             )}
           </div>
         </header>
@@ -126,7 +162,7 @@ export default function AppLayout() {
       {/* Mobile bottom nav */}
       <nav className="chrome fixed inset-x-0 bottom-0 z-40 border-t pb-[env(safe-area-inset-bottom)] md:hidden">
         <div className="flex items-stretch justify-evenly">
-          {BOTTOM_NAV_ITEMS.map(({ to, icon: Icon, label }) => (
+          {bottomNavItems.map(({ to, icon: Icon, label }) => (
             <NavLink
               key={to}
               to={to}

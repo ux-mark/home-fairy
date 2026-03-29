@@ -241,7 +241,9 @@ class WeatherIndicator {
 
       return { condition: conditionKey, color: colorInfo.hex }
     } catch (err) {
-      console.error('Weather indicator error:', err)
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('Weather indicator error:', msg)
+      try { run('INSERT INTO logs (message, category) VALUES (?, ?)', [`Weather indicator error: ${msg}`, 'weather']) } catch { /* ignore */ }
       return null
     }
   }

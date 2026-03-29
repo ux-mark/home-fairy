@@ -1,7 +1,7 @@
 # Project Spec
 
 ## Overview
-The Fairies v3 — a home automation control system with a React frontend and Express backend. Controls LIFX lights, Kasa smart plugs/strips (via python-kasa sidecar), Hubitat sensors, Twinkly decorative lights, fairy (ESP8266) devices, and Sonos speakers (via node-sonos-http-api). Includes MTA subway tracking, weather indicators, energy monitoring, motion-based scene automation, and follow-me music.
+Home Fairy is a home automation control system with a React frontend and Express backend. Controls LIFX lights, Kasa smart plugs/strips (via python-kasa sidecar), Hubitat sensors, Twinkly decorative lights, fairy (ESP8266) devices, and Sonos speakers (via node-sonos-http-api). Includes MTA subway tracking, weather indicators, energy monitoring, motion-based scene automation, and follow-me music.
 
 ## Tech Stack
 - **Language**: TypeScript (frontend and backend)
@@ -16,7 +16,7 @@ The Fairies v3 — a home automation control system with a React frontend and Ex
 
 ## Project Structure
 ```
-thefairies-app/
+home-fairy/
 ├── client/          React + Vite + TypeScript + Tailwind CSS v4
 │   ├── src/
 │   │   ├── pages/          Home, Dashboard, Rooms, RoomDetail, Scenes, SceneEditor, Devices, DeviceDetail, Settings, Watch, Logs, SonosSetup, SonosDetail
@@ -183,7 +183,22 @@ Automatically transitions modes based on sun position (SunCalc). On server start
 - Monorepo: `client/` (React SPA) + `server/` (Express API)
 - Client proxies API requests to `:3001` via Vite dev server config
 - Real-time updates via Socket.io
-- No user auth — relies on local network trust and CORS origin whitelisting
+- Better Auth for user authentication (email/password, cookie-based sessions, admin plugin for user management)
+
+### Device Routing Convention
+
+Every device type has a dedicated detail route. Links to devices must use the correct route based on device source/type — never a generic `/devices/:id`.
+
+| Device source | Route pattern | ID format | Example |
+|---|---|---|---|
+| LIFX light | `/lights/:id` | string (UUID) | `/lights/d073d5abcdef` |
+| Kasa device | `/devices/kasa/:id` | string (must `encodeURIComponent`) | `/devices/kasa/ABC123...` |
+| Hubitat device | `/devices/:id` | number | `/devices/42` |
+| Sonos speaker | `/sonos/:speaker` | string (speaker name, must `encodeURIComponent`) | `/sonos/Living%20Room` |
+
+**Rule**: Any API response that includes device IDs intended for linking must also include a `source` field (`'hub'`, `'kasa'`, `'lifx'`, or `'sonos'`) so the frontend can build the correct route. Use the shared `deviceDetailPath(id, source)` helper in `client/src/lib/utils.ts` to generate the link.
+
+**Affected API types**: `PowerDevice`, `BatteryDevice`, `RoomIntelligenceData.devices`, `RoomIntelligenceData.batteryDevices`, `DeviceInsightsData.roomDevices`, `EnergyInsights.deviceCostRanking`.
 
 ## Pi Deployment
 - Repo location: ~/thefairies-app
@@ -193,9 +208,9 @@ Automatically transitions modes based on sun position (SunCalc). On server start
 - Hubitat webhook: http://192.168.10.201:3001/hubitat
 
 ## GitHub
-Repository: https://github.com/ux-mark/thefairies-app
+Repository: https://github.com/ux-mark/home-fairy
 
 ## Known Constraints
 - @playwright/test is installed in `client/` (run playwright commands from `client/` or ensure the binary is accessible)
 - SQLite database is local-only — no replication
-- No user authentication
+- Authentication via Better Auth (email/password, admin plugin, 30-day sessions)
