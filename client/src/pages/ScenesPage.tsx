@@ -220,7 +220,7 @@ function RoomAccordion({
       {/* Mode pills */}
       {allModes.length > 0 && (
         <div
-          className="flex flex-wrap gap-1.5 mb-2"
+          className="flex gap-2 overflow-x-auto pb-1 mb-3 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           role="group"
           aria-label="Filter by mode"
         >
@@ -308,7 +308,7 @@ function RoomAccordionContent({
     <div>
       {allModes.length > 0 && (
         <div
-          className="flex flex-wrap gap-1.5 mb-2"
+          className="flex gap-2 overflow-x-auto pb-1 mb-3 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
           role="group"
           aria-label="Filter by mode"
         >
@@ -840,7 +840,7 @@ export default function ScenesPage() {
                         if (search.trim() && !childHasScenes) return null
 
                         return (
-                          <div key={childName} className="ml-4 mt-2 border-l-2 border-fairy-500/20 pl-2">
+                          <div key={childName} className="ml-2 mt-2 border-l-2 border-fairy-500/20 pl-2">
                             <RoomAccordion
                               roomName={childName}
                               roomIcon={roomIconMap[childName]}
@@ -860,6 +860,7 @@ export default function ScenesPage() {
 
                       {/* Parent room's own scenes (below children) */}
                       {hasOwnScenes && (
+                        <div className="mt-4 border-t border-[var(--border-secondary)] pt-4">
                         <RoomAccordionContent
                           roomName={roomName}
                           allScenes={scenes}
@@ -870,6 +871,7 @@ export default function ScenesPage() {
                           modeIcons={systemCurrent?.mode_icons}
                           roomIconMap={roomIconMap}
                         />
+                        </div>
                       )}
                     </Accordion>
                   )

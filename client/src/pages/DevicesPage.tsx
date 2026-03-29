@@ -1238,7 +1238,7 @@ export default function DevicesPage() {
                     count={totalCount}
                   >
                     {childEntries.map(([childName, childDevices]) => (
-                      <div key={childName} className="ml-4 mt-2 border-l-2 border-fairy-500/20 pl-2">
+                      <div key={childName} className="ml-2 mt-2 border-l-2 border-fairy-500/20 pl-2">
                         <Accordion
                           id={`devices-${childName.replace(/\s+/g, '-').toLowerCase()}`}
                           title={
@@ -1258,7 +1258,7 @@ export default function DevicesPage() {
                       </div>
                     ))}
                     {ownDevices.length > 0 && (
-                      <div className="space-y-2">
+                      <div className={cn('space-y-2', childEntries.length > 0 && 'mt-4 border-t border-[var(--border-secondary)] pt-4')}>
                         {ownDevices.map(d => <DeviceCard key={d.key} device={d} rooms={rooms} />)}
                       </div>
                     )}
