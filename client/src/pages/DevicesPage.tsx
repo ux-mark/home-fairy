@@ -1053,6 +1053,11 @@ export default function DevicesPage() {
     [rooms],
   )
 
+  const roomOrderMap = useMemo(
+    () => new Map((rooms ?? []).map(r => [r.name, r.display_order])),
+    [rooms],
+  )
+
   return (
     <div>
       {/* Header */}
@@ -1178,7 +1183,7 @@ export default function DevicesPage() {
       ) : filtered.length > 0 ? (
         <div className="space-y-3">
           {Array.from(grouped.groups.entries())
-            .sort(([a], [b]) => a.localeCompare(b))
+            .sort(([a], [b]) => (roomOrderMap.get(a) ?? 999) - (roomOrderMap.get(b) ?? 999))
             .map(([group, devices]) => {
               const accordionId = `devices-${group.replace(/\s+/g, '-').toLowerCase()}`
               const accordionTitle = groupMode === 'room' ? (
