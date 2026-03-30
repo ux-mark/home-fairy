@@ -37,6 +37,50 @@ class TimeTriggerScheduler {
     const now = new Date()
     const todayDow = (now.getDay() + 6) % 7  // Convert JS Sunday=0 to Monday=0
 
+    // Catch-up: find the latest trigger that should have already fired today
+    let latestPast: TimeTrigger | null = null
+    for (const trigger of triggers) {
+      if (trigger.trigger_days) {
+        try {
+          const days: number[] = JSON.parse(trigger.trigger_days)
+          if (!days.includes(todayDow)) continue
+        } catch { continue }
+      }
+      const [h, m] = trigger.trigger_time.split(':').map(Number)
+      const triggerDate = new Date(now)
+      triggerDate.setHours(h, m, 0, 0)
+      if (triggerDate.getTime() <= now.getTime()) {
+        if (!latestPast || trigger.trigger_time > latestPast.trigger_time) {
+          latestPast = trigger
+        }
+      }
+    }
+
+    if (latestPast) {
+      const currentModeRow = getOne<{ value: string }>(
+        "SELECT value FROM current_state WHERE key = 'mode'",
+      )
+      const sleepRow = getOne<{ value: string }>(
+        "SELECT value FROM current_state WHERE key = 'sleep_mode_name'",
+      )
+      const sleepMode = sleepRow?.value || null
+      const wakeModeRow = getOne<{ value: string }>(
+        "SELECT value FROM current_state WHERE key = 'pref_night_wake_mode'",
+      )
+      const wakeMode = wakeModeRow?.value || 'Morning'
+
+      const shouldTransition = (() => {
+        if (sleepMode && currentModeRow?.value === sleepMode) {
+          return latestPast!.mode_name === wakeMode
+        }
+        return currentModeRow?.value !== latestPast!.mode_name
+      })()
+
+      if (shouldTransition) {
+        this.transitionMode(latestPast.mode_name, `scheduled time (${latestPast.trigger_time}) (catch-up)`)
+      }
+    }
+
     for (const trigger of triggers) {
       // Check day-of-week filter
       if (trigger.trigger_days) {
