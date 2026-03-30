@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { getAll, getOne, run, db } from '../db/index.js'
+import { FAIRY_QUEEN } from '../lib/constants.js'
+import { logUserAction } from '../lib/user-action-logger.js'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
@@ -19,6 +21,8 @@ interface RoomRow {
   sonos_follow_me: number
   sonos_auto_start: number
   icon: string | null
+  created_by: string
+  updated_by: string
   created_at: string
   updated_at: string
 }
@@ -35,7 +39,7 @@ interface LightRoomRow {
   created_at: string
 }
 
-function parseRoom(row: RoomRow) {
+function parseRoom(row: RoomRow, userNameMap?: Map<string, string>) {
   let tags: unknown = []
   try { tags = JSON.parse(row.tags) } catch { tags = [] }
 
@@ -58,6 +62,8 @@ function parseRoom(row: RoomRow) {
     [row.name],
   )
 
+  const nameMap = userNameMap ?? new Map<string, string>([['fairy-queen', 'Fairy Queen']])
+
   return {
     ...row,
     sensors: sensorRows.map(s => ({ name: s.device_label, id: s.device_id })),
@@ -68,7 +74,27 @@ function parseRoom(row: RoomRow) {
     sonos_auto_start: Boolean(row.sonos_auto_start),
     temperature: sensorReading?.temperature ?? null,
     lux: sensorReading?.lux ?? null,
+    created_by_name: nameMap.get(row.created_by ?? 'fairy-queen') ?? FAIRY_QUEEN.name,
+    updated_by_name: nameMap.get(row.updated_by ?? 'fairy-queen') ?? FAIRY_QUEEN.name,
   }
+}
+
+function buildUserNameMap(rows: RoomRow[]): Map<string, string> {
+  const userIds = new Set<string>()
+  for (const room of rows) {
+    if (room.created_by && room.created_by !== 'fairy-queen') userIds.add(room.created_by)
+    if (room.updated_by && room.updated_by !== 'fairy-queen') userIds.add(room.updated_by)
+  }
+  const userNameMap = new Map<string, string>([[FAIRY_QUEEN.id, FAIRY_QUEEN.name]])
+  if (userIds.size > 0) {
+    const placeholders = [...userIds].map(() => '?').join(',')
+    const users = getAll<{ id: string; name: string }>(
+      `SELECT id, name FROM user WHERE id IN (${placeholders})`,
+      [...userIds],
+    )
+    for (const u of users) userNameMap.set(u.id, u.name)
+  }
+  return userNameMap
 }
 
 const createRoomSchema = z.object({
@@ -132,7 +158,8 @@ router.put('/reorder', (req: Request, res: Response) => {
     transaction(items)
 
     const rows = getAll<RoomRow>('SELECT * FROM rooms ORDER BY display_order')
-    res.json(rows.map(parseRoom))
+    const userNameMap = buildUserNameMap(rows)
+    res.json(rows.map(row => parseRoom(row, userNameMap)))
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: 'Validation failed', details: err.errors })
@@ -147,7 +174,8 @@ router.put('/reorder', (req: Request, res: Response) => {
 router.get('/', (_req: Request, res: Response) => {
   try {
     const rows = getAll<RoomRow>('SELECT * FROM rooms ORDER BY display_order')
-    res.json(rows.map(parseRoom))
+    const userNameMap = buildUserNameMap(rows)
+    res.json(rows.map(row => parseRoom(row, userNameMap)))
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
@@ -166,7 +194,8 @@ router.get('/:name', (req: Request, res: Response) => {
       'SELECT * FROM light_rooms WHERE room_name = ?',
       [req.params.name],
     )
-    res.json({ ...parseRoom(row), lights })
+    const userNameMap = buildUserNameMap([row])
+    res.json({ ...parseRoom(row, userNameMap), lights })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
@@ -178,9 +207,10 @@ router.post('/', (req: Request, res: Response) => {
   try {
     if (process.env.DEBUG) console.log('[rooms POST] body:', JSON.stringify(req.body))
     const body = createRoomSchema.parse(req.body)
+    const user = (req as any).user ?? FAIRY_QUEEN
     run(
-      `INSERT INTO rooms (name, display_order, parent_room, promoted, auto, timer, tags, icon)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO rooms (name, display_order, parent_room, promoted, auto, timer, tags, icon, created_by, updated_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         body.name,
         body.display_order ?? 0,
@@ -190,10 +220,14 @@ router.post('/', (req: Request, res: Response) => {
         body.timer ?? 15,
         JSON.stringify(body.tags ?? []),
         body.icon ?? null,
+        user.id,
+        user.id,
       ],
     )
+    logUserAction(user.id, user.name, 'create', 'room', body.name)
     const created = getOne<RoomRow>('SELECT * FROM rooms WHERE name = ?', [body.name])
-    res.status(201).json(parseRoom(created!))
+    const userNameMap = buildUserNameMap([created!])
+    res.status(201).json(parseRoom(created!, userNameMap))
   } catch (err) {
     if (err instanceof z.ZodError) {
       console.error('[rooms POST] validation error:', JSON.stringify(err.errors))
@@ -216,6 +250,7 @@ router.put('/:name', (req: Request, res: Response) => {
       return
     }
     const body = updateRoomSchema.parse(req.body)
+    const user = (req as any).user ?? FAIRY_QUEEN
 
     // Prevent child-of-child: proposed parent must not itself have a parent
     if (body.parent_room) {
@@ -246,13 +281,17 @@ router.put('/:name', (req: Request, res: Response) => {
     if (body.icon !== undefined) { fields.push('icon = ?'); values.push(body.icon) }
 
     if (fields.length > 0) {
+      fields.push('updated_by = ?')
+      values.push(user.id)
       fields.push("updated_at = datetime('now')")
       values.push(req.params.name)
       run(`UPDATE rooms SET ${fields.join(', ')} WHERE name = ?`, values)
     }
 
+    logUserAction(user.id, user.name, 'update', 'room', String(req.params.name))
     const updated = getOne<RoomRow>('SELECT * FROM rooms WHERE name = ?', [req.params.name])
-    res.json(parseRoom(updated!))
+    const userNameMap = buildUserNameMap([updated!])
+    res.json(parseRoom(updated!, userNameMap))
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: 'Validation failed', details: err.errors })
@@ -356,6 +395,8 @@ router.delete('/:name', (req: Request, res: Response) => {
       res.status(404).json({ error: 'Room not found' })
       return
     }
+    const user = (req as any).user ?? FAIRY_QUEEN
+    logUserAction(user.id, user.name, 'delete', 'room', String(req.params.name))
     const deleteRoom = db.transaction(() => {
       run('DELETE FROM light_rooms WHERE room_name = ?', [req.params.name])
       run('DELETE FROM device_rooms WHERE room_name = ?', [req.params.name])

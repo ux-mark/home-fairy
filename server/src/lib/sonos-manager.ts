@@ -2,13 +2,10 @@ import { sonosClient, type SonosZone } from './sonos-client.js'
 import { getAll, getOne, run } from '../db/index.js'
 import { emit } from './socket.js'
 import { getLatestEpisodeUrl } from './podcast-resolver.js'
+import { log as logToDb } from './logger.js'
 
 function log(msg: string): void {
-  try {
-    run('INSERT INTO logs (message, category) VALUES (?, ?)', [msg, 'sonos'])
-  } catch {
-    console.log(`[sonos] ${msg}`)
-  }
+  logToDb(msg, 'sonos')
 }
 
 interface SonosSpeakerRow {

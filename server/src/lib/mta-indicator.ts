@@ -3,6 +3,7 @@
 // for the full decision window (walkTime + maxWaitMinutes), then reverts.
 
 import { getOne, run } from '../db/index.js'
+import { log as logToDb } from './logger.js'
 import { lifxClient } from './lifx-client.js'
 import { mtaClient } from './mta-client.js'
 
@@ -41,11 +42,7 @@ const STATUS_PRIORITY: Record<string, number> = { green: 3, orange: 2, red: 1, n
 const UPDATE_INTERVAL_MS = 30_000 // 30 seconds — matches MTA feed refresh rate
 
 function log(message: string): void {
-  try {
-    run('INSERT INTO logs (message, category) VALUES (?, ?)', [message, 'mta-indicator'])
-  } catch {
-    console.log(`[mta-indicator] ${message}`)
-  }
+  logToDb(message, 'mta-indicator')
 }
 
 class MtaIndicatorManager {

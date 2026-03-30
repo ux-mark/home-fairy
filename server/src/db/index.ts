@@ -27,6 +27,8 @@ export function initDb(): void {
       current_scene TEXT,
       last_active TEXT,
       scene_manual INTEGER DEFAULT 0,
+      created_by TEXT DEFAULT 'fairy-queen',
+      updated_by TEXT DEFAULT 'fairy-queen',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -74,6 +76,8 @@ export function initDb(): void {
       message TEXT NOT NULL,
       debug TEXT,
       category TEXT,
+      user_id TEXT,
+      user_name TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -186,6 +190,8 @@ export function initDb(): void {
     CREATE TABLE IF NOT EXISTS modes (
       name TEXT PRIMARY KEY,
       display_order INTEGER DEFAULT 0,
+      created_by TEXT DEFAULT 'fairy-queen',
+      updated_by TEXT DEFAULT 'fairy-queen',
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -318,6 +324,36 @@ export function initDb(): void {
   }
   if (!autoPlayColNames.includes('podcast_feed_url')) {
     db.exec('ALTER TABLE sonos_auto_play ADD COLUMN podcast_feed_url TEXT DEFAULT NULL')
+  }
+
+  // Migration: add user tracking columns to rooms
+  const roomTrackCols = db.prepare("PRAGMA table_info('rooms')").all() as { name: string }[]
+  const roomTrackColNames = roomTrackCols.map(c => c.name)
+  if (!roomTrackColNames.includes('created_by')) {
+    db.exec(`ALTER TABLE rooms ADD COLUMN created_by TEXT DEFAULT 'fairy-queen'`)
+  }
+  if (!roomTrackColNames.includes('updated_by')) {
+    db.exec(`ALTER TABLE rooms ADD COLUMN updated_by TEXT DEFAULT 'fairy-queen'`)
+  }
+
+  // Migration: add user tracking columns to modes
+  const modeTrackCols = db.prepare("PRAGMA table_info('modes')").all() as { name: string }[]
+  const modeTrackColNames = modeTrackCols.map(c => c.name)
+  if (!modeTrackColNames.includes('created_by')) {
+    db.exec(`ALTER TABLE modes ADD COLUMN created_by TEXT DEFAULT 'fairy-queen'`)
+  }
+  if (!modeTrackColNames.includes('updated_by')) {
+    db.exec(`ALTER TABLE modes ADD COLUMN updated_by TEXT DEFAULT 'fairy-queen'`)
+  }
+
+  // Migration: add user tracking columns to logs
+  const logsCols = db.prepare("PRAGMA table_info('logs')").all() as { name: string }[]
+  const logsColNames = logsCols.map(c => c.name)
+  if (!logsColNames.includes('user_id')) {
+    db.exec(`ALTER TABLE logs ADD COLUMN user_id TEXT`)
+  }
+  if (!logsColNames.includes('user_name')) {
+    db.exec(`ALTER TABLE logs ADD COLUMN user_name TEXT`)
   }
 
   // Add sonos columns to rooms table if they don't exist

@@ -44,6 +44,10 @@ export interface Room {
   sonos_follow_me: boolean
   sonos_auto_start: boolean
   icon: string | null
+  created_by?: string | null
+  updated_by?: string | null
+  created_by_name?: string | null
+  updated_by_name?: string | null
 }
 
 export interface RoomDetail extends Room {
@@ -253,6 +257,10 @@ export interface ModeWithTriggers {
   icon: string | null
   triggers: ModeTrigger[]
   isSleepMode: boolean
+  created_by?: string | null
+  updated_by?: string | null
+  created_by_name?: string | null
+  updated_by_name?: string | null
 }
 
 export interface ModeDependencies {
@@ -1067,6 +1075,8 @@ export const api = {
           message: string
           debug: string | null
           category: string | null
+          user_id: string | null
+          user_name: string | null
           created_at: string
         }[]
       >('/system/logs' + (qs ? '?' + qs : ''))

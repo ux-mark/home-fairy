@@ -1,4 +1,6 @@
 import { getAll, getOne, run } from '../db/index.js'
+import { log } from './logger.js'
+import { FAIRY_QUEEN } from './constants.js'
 import type { Server as SocketServer } from 'socket.io'
 import { motionHandler } from './motion-handler.js'
 import { sonosManager } from './sonos-manager.js'
@@ -87,10 +89,7 @@ class TimeTriggerScheduler {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
         [mode],
       )
-      run(
-        'INSERT INTO logs (message, category) VALUES (?, ?)',
-        [`Auto mode transition: ${mode} (triggered by ${trigger})`, 'system'],
-      )
+      log(`Fairy Queen changed mode to ${mode} (scheduled ${trigger})`, 'system', FAIRY_QUEEN)
 
       // Check if this triggers wake unlock
       const wakeModeRow = getOne<{ value: string }>(
@@ -99,10 +98,7 @@ class TimeTriggerScheduler {
       const wakeMode = wakeModeRow?.value || 'Morning'
       if (mode === wakeMode && motionHandler.getLockedRooms().length > 0) {
         motionHandler.unlockAllRooms()
-        run(
-          'INSERT INTO logs (message, category) VALUES (?, ?)',
-          [`Wake mode reached (${mode}) — all rooms unlocked`, 'system'],
-        )
+        log(`Wake mode reached (${mode}) — all rooms unlocked`, 'system', FAIRY_QUEEN)
       }
 
       if (this.io) {
@@ -147,10 +143,7 @@ class TimeTriggerScheduler {
       .map(t => `${t.trigger_time} -> ${t.mode_name}`)
       .join(', ')
     try {
-      run(
-        'INSERT INTO logs (message, category) VALUES (?, ?)',
-        [`Time trigger schedule: ${schedule}`, 'system'],
-      )
+      log(`Time trigger schedule: ${schedule}`, 'system')
     } catch {
       // ignore logging failures
     }

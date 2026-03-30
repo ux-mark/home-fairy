@@ -42,6 +42,7 @@ import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
 import { getScenesForRoom, getModesForRoom, getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 import { LucideIcon } from '@/components/ui/LucideIcon'
 import { IconPicker } from '@/components/ui/IconPicker'
+import { UserName } from '@/components/ui/UserName'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -1329,6 +1330,18 @@ export default function RoomDetailPage() {
           <h2 className="text-xl font-semibold text-heading">
             {room.name}
           </h2>
+          {room.created_by && (
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-caption">
+              <span className="inline-flex items-center gap-1">
+                Created by <UserName userId={room.created_by} name={room.created_by_name ?? 'Fairy Queen'} />
+              </span>
+              {room.updated_by && room.updated_by !== room.created_by && (
+                <span className="inline-flex items-center gap-1">
+                  Last edited by <UserName userId={room.updated_by} name={room.updated_by_name ?? 'Fairy Queen'} />
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
       </div>

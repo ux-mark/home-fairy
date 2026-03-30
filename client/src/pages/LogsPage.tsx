@@ -7,6 +7,7 @@ import { BackLink } from '@/components/ui/BackLink'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { FilterChip } from '@/components/ui/FilterChip'
 import { SkeletonList } from '@/components/ui/Skeleton'
+import { UserName } from '@/components/ui/UserName'
 
 const CATEGORIES = ['hubitat', 'scene', 'motion', 'lifx', 'system', 'battery', 'weather', 'timer', 'device_error', 'sonos', 'kasa', 'mta-indicator'] as const
 
@@ -22,6 +23,8 @@ function LogEntry({
     message: string
     debug: string | null
     category: string | null
+    user_id?: string | null
+    user_name?: string | null
     created_at: string
   }
 }) {
@@ -58,6 +61,11 @@ function LogEntry({
             <span className="text-xs text-caption">
               {formatTimestamp(log.created_at)}
             </span>
+            {log.user_id && log.user_name && (
+              <span className="text-[10px] text-caption">
+                <UserName userId={log.user_id} name={log.user_name} />
+              </span>
+            )}
           </div>
           <p className="mt-1 text-sm text-heading">{log.message}</p>
 

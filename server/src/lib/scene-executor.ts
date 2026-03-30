@@ -10,6 +10,7 @@ import { emit } from './socket.js'
 import { deviceHealthService } from './device-health-service.js'
 import { FAIRY_QUEEN } from './constants.js'
 import { logUserAction } from './user-action-logger.js'
+import { log } from './logger.js'
 
 interface LightCommand {
   type: 'lifx_light'
@@ -109,17 +110,6 @@ interface SceneRow {
 
 interface RoomInfo {
   name: string
-}
-
-function log(message: string, category = 'scene'): void {
-  try {
-    run(
-      'INSERT INTO logs (message, category) VALUES (?, ?)',
-      [message, category],
-    )
-  } catch {
-    console.error('Failed to write log:', message)
-  }
 }
 
 /**
@@ -223,6 +213,8 @@ export async function activateScene(
   }
   visitedScenes.add(sceneName)
 
+  const actionUser = user ?? FAIRY_QUEEN
+
   const scene = getOne<SceneRow>(
     'SELECT * FROM scenes WHERE name = ?',
     [sceneName],
@@ -237,7 +229,8 @@ export async function activateScene(
     [sceneName],
   ).map(r => ({ name: r.room_name }))
 
-  log(`[${source}] Activating scene: ${sceneName}`)
+  const sourceLabel = source === 'manual' ? '' : ` (${source})`
+  log(`${actionUser.name} activated ${sceneName}${sourceLabel}`, 'scene', actionUser)
 
   // Collect lifx_light commands for batching
   const lightCommands: LightCommand[] = []
@@ -269,7 +262,7 @@ export async function activateScene(
       }
       if (states.length > 0) {
         const response = await lifxClient.setStates(states)
-        log(`Batch set ${states.length} light(s) via setStates`)
+        log(`Batch set ${states.length} light(s) via setStates`, 'scene', actionUser)
         // Record success for lights that responded ok in the batch
         for (const opResult of response.results) {
           if (!opResult.results) continue
@@ -542,7 +535,6 @@ export async function activateScene(
   }
 
   // Track when this scene was last activated
-  const actionUser = user ?? FAIRY_QUEEN
   run(
     `UPDATE scenes SET last_activated_at = datetime('now'), last_activated_by = ?, updated_by = ? WHERE name = ?`,
     [actionUser.id, actionUser.id, sceneName],
@@ -562,13 +554,15 @@ export async function deactivateScene(sceneName: string, user?: { id: string; na
     throw new Error(`Scene not found: ${sceneName}`)
   }
 
+  const actionUser = user ?? FAIRY_QUEEN
+
   const rooms = getAll<{ room_name: string }>(
     'SELECT room_name FROM scene_rooms WHERE scene_name = ?',
     [sceneName],
   ).map(r => ({ name: r.room_name }))
   const commands: Command[] = JSON.parse(scene.commands)
 
-  log(`Deactivating scene: ${sceneName}`)
+  log(`${actionUser.name} deactivated ${sceneName}`, 'scene', actionUser)
 
   // Batch turn off all lifx_light commands
   const lightCommands = commands.filter(
@@ -756,7 +750,6 @@ export async function deactivateScene(sceneName: string, user?: { id: string; na
     )
   }
 
-  const actionUser = user ?? FAIRY_QUEEN
   logUserAction(actionUser.id, actionUser.name, 'deactivate', 'scene', sceneName)
 
   emit('scene:change', { scene: sceneName, action: 'deactivated', rooms: rooms.map(r => r.name) })

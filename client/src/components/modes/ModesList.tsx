@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, Plus } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { ModeWithTriggers, ModeTrigger, SunScheduleEntry } from '@/lib/api'
+import { UserName } from '@/components/ui/UserName'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { SUN_EVENT_LABELS } from './modeUtils'
@@ -144,6 +145,13 @@ function ModeCard({ mode, isActive, nextTime, onClick }: ModeCardProps) {
             </span>
           </div>
           <p className="text-caption mt-0.5 text-xs">{summary}</p>
+          {mode.created_by && (
+            <p className="mt-0.5 text-[10px] text-caption">
+              <span className="inline-flex items-center gap-1">
+                Created by <UserName userId={mode.created_by} name={mode.created_by_name ?? 'Fairy Queen'} />
+              </span>
+            </p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           {nextTime && (

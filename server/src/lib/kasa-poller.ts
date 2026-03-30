@@ -1,5 +1,6 @@
 import { kasaClient, type KasaSidecarDevice } from './kasa-client.js'
 import { db, run } from '../db/index.js'
+import { log } from './logger.js'
 import { deviceHealthService } from './device-health-service.js'
 import type { Server as SocketServer } from 'socket.io'
 
@@ -139,7 +140,7 @@ async function pollKasaDevices(): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error('[kasa-poller] Poll failed:', msg)
-    try { run('INSERT INTO logs (message, category) VALUES (?, ?)', [`Kasa poll failed: ${msg}`, 'kasa']) } catch { /* ignore */ }
+    try { log(`Kasa poll failed: ${msg}`, 'kasa') } catch { /* ignore */ }
     // Online/offline state is authoritative from the sidecar — devices that
     // drop off the network will stop appearing in the sidecar response.
     // The upsert only touches devices present in the response, so stale

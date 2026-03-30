@@ -4,6 +4,7 @@ import { getAll, getOne, run, db } from '../db/index.js'
 import { activateScene, deactivateScene } from '../lib/scene-executor.js'
 import { FAIRY_QUEEN } from '../lib/constants.js'
 import { logUserAction } from '../lib/user-action-logger.js'
+import { log } from '../lib/logger.js'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
@@ -368,6 +369,7 @@ router.post('/', (req: Request, res: Response) => {
     })
 
     createTransaction()
+    log(`${userName} created scene ${body.name}`, 'scene', { id: userId, name: userName })
     logUserAction(userId, userName, 'create', 'scene', body.name)
 
     const created = getOne<SceneRow>('SELECT * FROM scenes WHERE name = ?', [body.name])
@@ -464,6 +466,7 @@ router.put('/:name', (req: Request, res: Response) => {
     updateTransaction()
 
     const lookupName = body.name ?? req.params.name
+    log(`${userName} updated scene ${lookupName}`, 'scene', { id: userId, name: userName })
     logUserAction(userId, userName, 'update', 'scene', String(lookupName))
 
     const updated = getOne<SceneRow>('SELECT * FROM scenes WHERE name = ?', [lookupName])
@@ -489,6 +492,7 @@ router.delete('/:name', (req: Request, res: Response) => {
       res.status(404).json({ error: 'Scene not found' })
       return
     }
+    log(`${userName} deleted scene ${req.params.name}`, 'scene', { id: userId, name: userName })
     logUserAction(userId, userName, 'delete', 'scene', String(req.params.name))
     run('DELETE FROM scenes WHERE name = ?', [req.params.name])
     res.json({ success: true })
