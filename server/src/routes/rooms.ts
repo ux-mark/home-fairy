@@ -109,6 +109,7 @@ const createRoomSchema = z.object({
 })
 
 const updateRoomSchema = z.object({
+  name: z.string().min(1).optional(),
   display_order: z.number().optional(),
   parent_room: z.string().nullable().optional(),
   promoted: z.boolean().optional(),
@@ -268,6 +269,7 @@ router.put('/:name', (req: Request, res: Response) => {
     const fields: string[] = []
     const values: unknown[] = []
 
+    if (body.name !== undefined) { fields.push('name = ?'); values.push(body.name) }
     if (body.display_order !== undefined) { fields.push('display_order = ?'); values.push(body.display_order) }
     if (body.parent_room !== undefined) { fields.push('parent_room = ?'); values.push(body.parent_room) }
     if (body.promoted !== undefined) { fields.push('promoted = ?'); values.push(Number(body.promoted)) }
@@ -288,8 +290,17 @@ router.put('/:name', (req: Request, res: Response) => {
       run(`UPDATE rooms SET ${fields.join(', ')} WHERE name = ?`, values)
     }
 
-    logUserAction(user.id, user.name, 'update', 'room', String(req.params.name))
-    const updated = getOne<RoomRow>('SELECT * FROM rooms WHERE name = ?', [req.params.name])
+    // If renamed, update tables that lack ON UPDATE CASCADE
+    const lookupName = body.name ?? req.params.name
+    if (body.name && body.name !== req.params.name) {
+      run('UPDATE light_rooms SET room_name = ? WHERE room_name = ?', [body.name, req.params.name])
+      run('UPDATE device_rooms SET room_name = ? WHERE room_name = ?', [body.name, req.params.name])
+      // Also update parent_room references in other rooms
+      run('UPDATE rooms SET parent_room = ? WHERE parent_room = ?', [body.name, req.params.name])
+    }
+
+    logUserAction(user.id, user.name, 'update', 'room', String(lookupName))
+    const updated = getOne<RoomRow>('SELECT * FROM rooms WHERE name = ?', [lookupName])
     const userNameMap = buildUserNameMap([updated!])
     res.json(parseRoom(updated!, userNameMap))
   } catch (err) {

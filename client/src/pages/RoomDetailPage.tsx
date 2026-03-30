@@ -573,7 +573,8 @@ export default function RoomDetailPage() {
   const [parentRoom, setParentRoom] = useState<string | null>(null)
   const [promoted, setPromoted] = useState<boolean | null>(null)
   const [sensors, setSensors] = useState<Sensor[] | null>(null)
-  const [_roomNameEdit, _setRoomNameEdit] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState(false)
+  const [nameInput, setNameInput] = useState('')
   const [iconPickerOpen, setIconPickerOpen] = useState(false)
 
   // Compute effective values (from state or room data)
@@ -1049,6 +1050,17 @@ export default function RoomDetailPage() {
       toast({ message: 'Failed to delete room', type: 'error' }),
   })
 
+  const renameMutation = useMutation({
+    mutationFn: (newName: string) => api.rooms.update(name!, { name: newName }),
+    onSuccess: (_data, newName) => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] })
+      toast({ message: 'Room renamed' })
+      navigate(`/rooms/${encodeURIComponent(newName)}`, { replace: true })
+    },
+    onError: () =>
+      toast({ message: 'Failed to rename room', type: 'error' }),
+  })
+
   const updateIconMutation = useMutation({
     mutationFn: (icon: string) => api.rooms.update(name!, { icon }),
     onSuccess: () => {
@@ -1327,21 +1339,53 @@ export default function RoomDetailPage() {
             )}
           </div>
 
-          <h2 className="text-xl font-semibold text-heading">
-            {room.name}
-          </h2>
-          {room.created_by && (
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-caption">
-              <span className="inline-flex items-center gap-1">
-                Created by <UserName userId={room.created_by} name={room.created_by_name ?? 'Fairy Queen'} />
-              </span>
-              {room.updated_by && room.updated_by !== room.created_by && (
+          <div>
+            {editingName ? (
+              <form
+                className="flex items-center gap-2"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const trimmed = nameInput.trim()
+                  if (trimmed && trimmed !== room.name) {
+                    renameMutation.mutate(trimmed)
+                  }
+                  setEditingName(false)
+                }}
+              >
+                <input
+                  autoFocus
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  onBlur={() => setEditingName(false)}
+                  onKeyDown={(e) => { if (e.key === 'Escape') setEditingName(false) }}
+                  className="min-w-0 flex-1 rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-2 py-1 text-xl font-semibold text-heading focus:border-fairy-500 focus:outline-none"
+                  aria-label="Room name"
+                />
+              </form>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { setNameInput(room.name); setEditingName(true) }}
+                className="group flex items-center gap-2 rounded-lg text-left transition-colors hover:bg-white/5 -ml-1 px-1 py-0.5"
+                aria-label="Edit room name"
+              >
+                <h2 className="text-xl font-semibold text-heading">{room.name}</h2>
+                <Pencil className="h-3.5 w-3.5 text-caption opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
+              </button>
+            )}
+            {room.created_by && (
+              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-caption">
                 <span className="inline-flex items-center gap-1">
-                  Last edited by <UserName userId={room.updated_by} name={room.updated_by_name ?? 'Fairy Queen'} />
+                  Created by <UserName userId={room.created_by} name={room.created_by_name ?? 'Fairy Queen'} />
                 </span>
-              )}
-            </div>
-          )}
+                {room.updated_by && room.updated_by !== room.created_by && (
+                  <span className="inline-flex items-center gap-1">
+                    Last edited by <UserName userId={room.updated_by} name={room.updated_by_name ?? 'Fairy Queen'} />
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
       </div>
