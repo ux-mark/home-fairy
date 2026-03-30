@@ -20,6 +20,7 @@ import sonosRoutes from './routes/sonos.js'
 import deviceLinksRoutes from './routes/device-links.js'
 import accessLinksRoutes from './routes/access-links.js'
 import accessLinksPublicRoutes from './routes/access-links-public.js'
+import userActionsRouter from './routes/user-actions.js'
 import { motionHandler } from './lib/motion-handler.js'
 import { sunModeScheduler } from './lib/sun-mode-scheduler.js'
 import { timeTriggerScheduler } from './lib/time-trigger-scheduler.js'
@@ -30,6 +31,7 @@ import { startHistoryCollector, stopHistoryCollector } from './lib/history-colle
 import { notificationService } from './lib/notification-service.js'
 import { startKasaPoller, stopKasaPoller } from './lib/kasa-poller.js'
 import { sonosManager } from './lib/sonos-manager.js'
+import { log } from './lib/logger.js'
 import { setSocketServer } from './lib/socket.js'
 import { auth } from './lib/auth.js'
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node'
@@ -118,6 +120,7 @@ app.use('/api/kasa', requireAuth, kasaRoutes)
 app.use('/api/sonos', requireAuth, sonosRoutes)
 app.use('/api/device-links', requireAuth, deviceLinksRoutes)
 app.use('/api/access-links', requireAuth, accessLinksRoutes)
+app.use('/api/user-actions', requireAuth, userActionsRouter)
 
 // Hubitat webhook handler
 app.post('/hubitat', async (req, res) => {
@@ -174,10 +177,7 @@ app.post('/hubitat', async (req, res) => {
     }
 
     // Log the event
-    run(
-      'INSERT INTO logs (message, debug, category) VALUES (?, ?, ?)',
-      [`Hubitat: ${displayName} ${eventName} = ${eventValue}`, JSON.stringify(event), 'hubitat'],
-    )
+    log(`Hubitat: ${displayName} ${eventName} = ${eventValue}`, 'hubitat', null, JSON.stringify(event))
 
     // Use device ID for hub_devices lookups when available (more robust than label which can change)
     const hubWhereClause = deviceId ? 'id = ?' : 'label = ?'
@@ -219,10 +219,7 @@ app.post('/hubitat', async (req, res) => {
         const batteryLevel = Number(eventValue)
         if (batteryLevel < 5) {
           console.error(`Critical battery: ${displayName} at ${batteryLevel}%`)
-          run(
-            'INSERT INTO logs (message, category) VALUES (?, ?)',
-            [`Critical battery: ${displayName} at ${batteryLevel}%`, 'battery'],
-          )
+          log(`Critical battery: ${displayName} at ${batteryLevel}%`, 'battery')
           notificationService.create({
             severity: 'critical',
             category: 'battery',
@@ -235,10 +232,7 @@ app.post('/hubitat', async (req, res) => {
           })
         } else if (batteryLevel < 15) {
           console.warn(`Low battery: ${displayName} at ${batteryLevel}%`)
-          run(
-            'INSERT INTO logs (message, category) VALUES (?, ?)',
-            [`Low battery: ${displayName} at ${batteryLevel}%`, 'battery'],
-          )
+          log(`Low battery: ${displayName} at ${batteryLevel}%`, 'battery')
           notificationService.create({
             severity: 'warning',
             category: 'battery',
@@ -391,10 +385,7 @@ notificationService.setEmitter((event, data) => io.emit(event, data))
 timerManager.setOnExpire(async (targetScene, sceneName) => {
   try {
     console.log(`Scene timer expired: ${sceneName} -> activating ${targetScene}`)
-    run(
-      'INSERT INTO logs (message, category) VALUES (?, ?)',
-      [`Scene timer expired (${sceneName}): activating "${targetScene}"`, 'timer'],
-    )
+    log(`Scene timer expired (${sceneName}): activating "${targetScene}"`, 'timer')
     await activateScene(targetScene, new Set(), 'timer')
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

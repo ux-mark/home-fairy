@@ -1,6 +1,7 @@
 import { lifxClient } from './lifx-client.js'
 import { getCurrentWeather } from './weather-client.js'
 import { getOne, run } from '../db/index.js'
+import { log } from './logger.js'
 
 /**
  * Weather condition → light colour mapping
@@ -173,13 +174,11 @@ class WeatherIndicator {
     if (!room) return false
 
     if (!room.auto) {
-      run('INSERT INTO logs (message, category) VALUES (?, ?)',
-        [`Weather indicator skipped: room "${lightRoom.room_name}" has automation disabled`, 'weather'])
+      log(`Weather indicator skipped: room "${lightRoom.room_name}" has automation disabled`, 'weather')
       return true
     }
     if (room.scene_manual) {
-      run('INSERT INTO logs (message, category) VALUES (?, ?)',
-        [`Weather indicator skipped: room "${lightRoom.room_name}" has manual scene override`, 'weather'])
+      log(`Weather indicator skipped: room "${lightRoom.room_name}" has manual scene override`, 'weather')
       return true
     }
 
@@ -188,8 +187,7 @@ class WeatherIndicator {
     let lockedRooms: string[] = []
     try { lockedRooms = lockedRow?.value ? JSON.parse(lockedRow.value) : [] } catch { /* ignore */ }
     if (lockedRooms.includes(lightRoom.room_name)) {
-      run('INSERT INTO logs (message, category) VALUES (?, ?)',
-        [`Weather indicator skipped: room "${lightRoom.room_name}" is locked`, 'weather'])
+      log(`Weather indicator skipped: room "${lightRoom.room_name}" is locked`, 'weather')
       return true
     }
 
@@ -233,17 +231,14 @@ class WeatherIndicator {
           duration: 2,  // slow transition
         })
 
-        run(
-          'INSERT INTO logs (message, category) VALUES (?, ?)',
-          [`Weather indicator: ${colorInfo.name} (${conditionKey})`, 'weather'],
-        )
+        log(`Weather indicator: ${colorInfo.name} (${conditionKey})`, 'weather')
       }
 
       return { condition: conditionKey, color: colorInfo.hex }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       console.error('Weather indicator error:', msg)
-      try { run('INSERT INTO logs (message, category) VALUES (?, ?)', [`Weather indicator error: ${msg}`, 'weather']) } catch { /* ignore */ }
+      try { log(`Weather indicator error: ${msg}`, 'weather') } catch { /* ignore */ }
       return null
     }
   }

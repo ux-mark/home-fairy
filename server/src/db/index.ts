@@ -27,6 +27,8 @@ export function initDb(): void {
       current_scene TEXT,
       last_active TEXT,
       scene_manual INTEGER DEFAULT 0,
+      created_by TEXT DEFAULT 'fairy-queen',
+      updated_by TEXT DEFAULT 'fairy-queen',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -39,8 +41,11 @@ export function initDb(): void {
       active_from TEXT,
       active_to TEXT,
       last_activated_at TEXT DEFAULT NULL,
+      last_activated_by TEXT DEFAULT 'fairy-queen',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
+      created_by TEXT DEFAULT 'fairy-queen',
+      updated_by TEXT DEFAULT 'fairy-queen',
       sort_order INTEGER DEFAULT 0
     );
 
@@ -71,6 +76,8 @@ export function initDb(): void {
       message TEXT NOT NULL,
       debug TEXT,
       category TEXT,
+      user_id TEXT,
+      user_name TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -183,6 +190,8 @@ export function initDb(): void {
     CREATE TABLE IF NOT EXISTS modes (
       name TEXT PRIMARY KEY,
       display_order INTEGER DEFAULT 0,
+      created_by TEXT DEFAULT 'fairy-queen',
+      updated_by TEXT DEFAULT 'fairy-queen',
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -275,7 +284,37 @@ export function initDb(): void {
       user_id TEXT NOT NULL,
       used_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS user_actions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      user_name TEXT NOT NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      details TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_actions_entity
+      ON user_actions (entity_type, entity_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_user_actions_user
+      ON user_actions (user_id, created_at DESC);
   `)
+
+  // Migration: add user tracking columns to scenes
+  const sceneCols = db.prepare("PRAGMA table_info('scenes')").all() as { name: string }[]
+  const sceneColNames = sceneCols.map(c => c.name)
+  if (!sceneColNames.includes('created_by')) {
+    db.exec(`ALTER TABLE scenes ADD COLUMN created_by TEXT DEFAULT 'fairy-queen'`)
+  }
+  if (!sceneColNames.includes('updated_by')) {
+    db.exec(`ALTER TABLE scenes ADD COLUMN updated_by TEXT DEFAULT 'fairy-queen'`)
+  }
+  if (!sceneColNames.includes('last_activated_by')) {
+    db.exec(`ALTER TABLE scenes ADD COLUMN last_activated_by TEXT DEFAULT 'fairy-queen'`)
+  }
 
   // Add max_plays column to sonos_auto_play table if it doesn't exist
   const autoPlayCols = db.prepare("PRAGMA table_info('sonos_auto_play')").all() as { name: string }[]
@@ -285,6 +324,36 @@ export function initDb(): void {
   }
   if (!autoPlayColNames.includes('podcast_feed_url')) {
     db.exec('ALTER TABLE sonos_auto_play ADD COLUMN podcast_feed_url TEXT DEFAULT NULL')
+  }
+
+  // Migration: add user tracking columns to rooms
+  const roomTrackCols = db.prepare("PRAGMA table_info('rooms')").all() as { name: string }[]
+  const roomTrackColNames = roomTrackCols.map(c => c.name)
+  if (!roomTrackColNames.includes('created_by')) {
+    db.exec(`ALTER TABLE rooms ADD COLUMN created_by TEXT DEFAULT 'fairy-queen'`)
+  }
+  if (!roomTrackColNames.includes('updated_by')) {
+    db.exec(`ALTER TABLE rooms ADD COLUMN updated_by TEXT DEFAULT 'fairy-queen'`)
+  }
+
+  // Migration: add user tracking columns to modes
+  const modeTrackCols = db.prepare("PRAGMA table_info('modes')").all() as { name: string }[]
+  const modeTrackColNames = modeTrackCols.map(c => c.name)
+  if (!modeTrackColNames.includes('created_by')) {
+    db.exec(`ALTER TABLE modes ADD COLUMN created_by TEXT DEFAULT 'fairy-queen'`)
+  }
+  if (!modeTrackColNames.includes('updated_by')) {
+    db.exec(`ALTER TABLE modes ADD COLUMN updated_by TEXT DEFAULT 'fairy-queen'`)
+  }
+
+  // Migration: add user tracking columns to logs
+  const logsCols = db.prepare("PRAGMA table_info('logs')").all() as { name: string }[]
+  const logsColNames = logsCols.map(c => c.name)
+  if (!logsColNames.includes('user_id')) {
+    db.exec(`ALTER TABLE logs ADD COLUMN user_id TEXT`)
+  }
+  if (!logsColNames.includes('user_name')) {
+    db.exec(`ALTER TABLE logs ADD COLUMN user_name TEXT`)
   }
 
   // Add sonos columns to rooms table if they don't exist

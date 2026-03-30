@@ -31,6 +31,8 @@ import type {
   DeviceRoomAssignment,
   DeactivatedDevice,
 } from '@/lib/api'
+import { UserName } from '@/components/ui/UserName'
+import { formatRelativeTime } from '@/lib/scene-utils'
 import { cn, hsbToHex, kelvinToHex, debounce, DEFAULT_MODES } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Skeleton, SkeletonCard } from '@/components/ui/Skeleton'
@@ -508,6 +510,12 @@ export default function SceneEditorPage() {
   const { data: deactivatedDevices } = useQuery({
     queryKey: ['devices', 'deactivated'],
     queryFn: api.devices.getDeactivated,
+  })
+
+  const { data: activity } = useQuery({
+    queryKey: ['scene-activity', name],
+    queryFn: () => api.scenes.getActivity(name!),
+    enabled: !!name,
   })
 
   const availableModes = systemCurrent?.all_modes ?? [...DEFAULT_MODES]
@@ -1174,6 +1182,22 @@ export default function SceneEditorPage() {
             className="input-field h-12 min-w-0 flex-1 rounded-xl border px-4 text-lg font-semibold placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           />
         </div>
+
+        {/* Attribution metadata */}
+        {!!name && scene && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-caption">
+            {scene.created_by && (
+              <span className="inline-flex items-center gap-1">
+                Created by <UserName userId={scene.created_by} name={scene.created_by_name ?? 'Fairy Queen'} />
+              </span>
+            )}
+            {scene.updated_by && scene.updated_by !== scene.created_by && (
+              <span className="inline-flex items-center gap-1">
+                Last edited by <UserName userId={scene.updated_by} name={scene.updated_by_name ?? 'Fairy Queen'} />
+              </span>
+            )}
+          </div>
+        )}
       </section>
 
       {/* ── Deactivated devices warning ───────────────────────────────────── */}
@@ -1814,6 +1838,33 @@ export default function SceneEditorPage() {
               </button>
             </form>
           </section>
+
+          {/* Activity log */}
+          {!!name && activity && activity.length > 0 && (
+            <section>
+              <h3 className="mb-3 text-sm font-semibold text-heading">Recent Activity</h3>
+              <div className="space-y-2">
+                {activity.slice(0, 10).map(a => (
+                  <div key={a.id} className="flex items-baseline justify-between gap-2 text-xs">
+                    <span className="text-body">
+                      <UserName userId={a.user_id} name={a.user_name} />
+                      {' '}
+                      <span className="text-caption">
+                        {a.action === 'activate' ? 'activated' :
+                         a.action === 'deactivate' ? 'deactivated' :
+                         a.action === 'update' ? 'edited' :
+                         a.action === 'create' ? 'created' : a.action}
+                        {a.details?.source ? ` (${a.details.source})` : ''}
+                      </span>
+                    </span>
+                    <span className="whitespace-nowrap text-caption">
+                      {formatRelativeTime(a.created_at)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* Danger zone */}
           <section>

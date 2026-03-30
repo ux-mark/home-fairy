@@ -28,6 +28,7 @@ import {
 import { SearchInput } from '@/components/ui/SearchInput'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Accordion } from '@/components/ui/Accordion'
+import { UserName } from '@/components/ui/UserName'
 import { FilterChip } from '@/components/ui/FilterChip'
 import { SkeletonAccordion } from '@/components/ui/Skeleton'
 
@@ -966,7 +967,13 @@ export default function ScenesPage() {
                       roomIconMap={roomIconMap}
                       label={
                         scene.last_activated_at
-                          ? formatRelativeTime(scene.last_activated_at)
+                          ? (
+                              <span className="inline-flex items-center gap-1">
+                                <UserName userId={scene.last_activated_by ?? 'fairy-queen'} name={scene.last_activated_by_name ?? 'Fairy Queen'} />
+                                <span className="text-caption">·</span>
+                                {formatRelativeTime(scene.last_activated_at)}
+                              </span>
+                            )
                           : 'Never activated'
                       }
                     />

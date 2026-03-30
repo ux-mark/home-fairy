@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { getAll, getOne, run, db } from '../db/index.js'
+import { FAIRY_QUEEN } from '../lib/constants.js'
+import { logUserAction } from '../lib/user-action-logger.js'
+import { log } from '../lib/logger.js'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 import { notificationService } from '../lib/notification-service.js'
@@ -126,6 +129,7 @@ router.put('/preferences', (req: Request, res: Response) => {
 router.put('/mode', (req: Request, res: Response) => {
   try {
     const body = modeSchema.parse(req.body)
+    const user = (req as any).user ?? FAIRY_QUEEN
     run(
       `INSERT INTO current_state (key, value, updated_at)
        VALUES ('mode', ?, datetime('now'))
@@ -140,12 +144,11 @@ router.put('/mode', (req: Request, res: Response) => {
     const wakeMode = wakeModeRow?.value || 'Morning'
     if (body.mode === wakeMode && motionHandler.getLockedRooms().length > 0) {
       motionHandler.unlockAllRooms()
-      run(
-        "INSERT INTO logs (message, category, created_at) VALUES (?, 'system', datetime('now'))",
-        [`Wake mode reached (${body.mode}) — all rooms unlocked`],
-      )
+      log(`Wake mode reached (${body.mode}) — all rooms unlocked`, 'system')
     }
 
+    log(`${user.name} changed mode to ${body.mode}`, 'system', user)
+    logUserAction(user.id, user.name, 'activate', 'mode', body.mode)
     emit('mode:change', { mode: body.mode })
     sonosManager.onModeChange(body.mode).catch(() => {})
     res.json({ mode: body.mode })
@@ -342,8 +345,8 @@ function parseTrigger(row: ModeTriggerRow) {
 // GET /modes — get all modes with their triggers
 router.get('/modes', (_req: Request, res: Response) => {
   try {
-    const modeRows = getAll<{ name: string; icon: string | null }>(
-      'SELECT name, icon FROM modes ORDER BY display_order',
+    const modeRows = getAll<{ name: string; icon: string | null; created_by: string; updated_by: string }>(
+      'SELECT name, icon, created_by, updated_by FROM modes ORDER BY display_order',
     )
     const sleepRow = getOne<CurrentStateRow>(
       "SELECT value FROM current_state WHERE key = 'sleep_mode_name'",
@@ -357,11 +360,31 @@ router.get('/modes', (_req: Request, res: Response) => {
       triggersByMode[t.mode_name].push(t)
     }
 
-    const result = modeRows.map(({ name, icon }) => ({
+    // Collect unique user IDs for batch name lookup
+    const userIds = new Set<string>()
+    for (const row of modeRows) {
+      if (row.created_by && row.created_by !== 'fairy-queen') userIds.add(row.created_by)
+      if (row.updated_by && row.updated_by !== 'fairy-queen') userIds.add(row.updated_by)
+    }
+    const userNameMap = new Map<string, string>([[FAIRY_QUEEN.id, FAIRY_QUEEN.name]])
+    if (userIds.size > 0) {
+      const placeholders = [...userIds].map(() => '?').join(',')
+      const users = getAll<{ id: string; name: string }>(
+        `SELECT id, name FROM user WHERE id IN (${placeholders})`,
+        [...userIds],
+      )
+      for (const u of users) userNameMap.set(u.id, u.name)
+    }
+
+    const result = modeRows.map(({ name, icon, created_by, updated_by }) => ({
       name,
       icon: icon ?? null,
       triggers: (triggersByMode[name] ?? []).map(parseTrigger),
       isSleepMode: name === sleepModeName,
+      created_by: created_by ?? FAIRY_QUEEN.id,
+      updated_by: updated_by ?? FAIRY_QUEEN.id,
+      created_by_name: userNameMap.get(created_by ?? FAIRY_QUEEN.id) ?? FAIRY_QUEEN.name,
+      updated_by_name: userNameMap.get(updated_by ?? FAIRY_QUEEN.id) ?? FAIRY_QUEEN.name,
     }))
 
     res.json(result)
@@ -386,8 +409,13 @@ router.post('/modes', (req: Request, res: Response) => {
       return
     }
 
+    const user = (req as any).user ?? FAIRY_QUEEN
     const maxOrder = getOne<{ m: number | null }>('SELECT MAX(display_order) as m FROM modes')
-    run('INSERT INTO modes (name, display_order, icon) VALUES (?, ?, ?)', [body.mode, (maxOrder?.m ?? 0) + 1, body.icon ?? null])
+    run(
+      'INSERT INTO modes (name, display_order, icon, created_by, updated_by) VALUES (?, ?, ?, ?, ?)',
+      [body.mode, (maxOrder?.m ?? 0) + 1, body.icon ?? null, user.id, user.id],
+    )
+    logUserAction(user.id, user.name, 'create', 'mode', body.mode)
     res.json(getAllModeNames())
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -444,9 +472,11 @@ router.put('/modes/:mode', (req: Request, res: Response) => {
       return
     }
 
+    const user = (req as any).user ?? FAIRY_QUEEN
+
     // Update icon if provided (can be done without a rename)
     if (body.icon !== undefined) {
-      run('UPDATE modes SET icon = ? WHERE name = ?', [body.icon, oldName])
+      run('UPDATE modes SET icon = ?, updated_by = ? WHERE name = ?', [body.icon, user.id, oldName])
     }
 
     // Perform rename if a new name was provided
@@ -474,7 +504,7 @@ router.put('/modes/:mode', (req: Request, res: Response) => {
 
       const renameTransaction = db.transaction(() => {
         // 1. Rename in modes table — CASCADE propagates to mode_triggers and scene_modes
-        run('UPDATE modes SET name = ? WHERE name = ?', [newName, oldName])
+        run('UPDATE modes SET name = ?, updated_by = ? WHERE name = ?', [newName, user.id, oldName])
 
         // 2. If current mode matches old name, update it
         const currentModeRow = getOne<CurrentStateRow>(
@@ -504,6 +534,7 @@ router.put('/modes/:mode', (req: Request, res: Response) => {
       renameTransaction()
     }
 
+    logUserAction(user.id, user.name, 'update', 'mode', effectiveName)
     res.json({ name: effectiveName, updatedScenes })
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -526,12 +557,16 @@ router.delete('/modes/:mode', (req: Request, res: Response) => {
       return
     }
 
+    const user = (req as any).user ?? FAIRY_QUEEN
+
     // Count affected scenes BEFORE delete for the response
     const affectedSceneCount = getOne<{ cnt: number }>(
       'SELECT COUNT(DISTINCT scene_name) as cnt FROM scene_modes WHERE mode_name = ?',
       [modeName],
     )
     const affectedScenes = affectedSceneCount?.cnt ?? 0
+
+    logUserAction(user.id, user.name, 'delete', 'mode', modeName)
 
     const deleteTransaction = db.transaction(() => {
       // 1. Delete from modes table — CASCADE propagates to mode_triggers and scene_modes
@@ -1370,15 +1405,13 @@ async function runAllOff(excludeRooms: string[] = []): Promise<string[]> {
 }
 
 // POST /all-off — turn off everything except excluded devices
-router.post('/all-off', async (_req: Request, res: Response) => {
+router.post('/all-off', async (req: Request, res: Response) => {
   try {
     const actions = await runAllOff()
+    const user = (req as any).user ?? FAIRY_QUEEN
 
     // Log the action
-    run(
-      "INSERT INTO logs (message, category, created_at) VALUES (?, 'system', datetime('now'))",
-      [`All Off executed: ${actions.length} actions`],
-    )
+    log(`${user.name} executed All Off (${actions.length} actions)`, 'system', user)
 
     emit('scene:change', { action: 'all_off' })
     res.json({ success: true, actions })
@@ -1389,7 +1422,7 @@ router.post('/all-off', async (_req: Request, res: Response) => {
 })
 
 // POST /nighttime — Sleep Time mode + all off with bedroom exclusion + room lockout
-router.post('/nighttime', async (_req: Request, res: Response) => {
+router.post('/nighttime', async (req: Request, res: Response) => {
   try {
     // Set mode to Sleep Time
     run(
@@ -1420,10 +1453,8 @@ router.post('/nighttime', async (_req: Request, res: Response) => {
     )
     const wakeMode = wakeModeRow?.value || 'Morning'
 
-    run(
-      "INSERT INTO logs (message, category, created_at) VALUES (?, 'system', datetime('now'))",
-      [`Nighttime executed: all lights off, motion-responsive rooms [${excludeRooms.join(', ')}], locked ${roomsToLock.length} rooms, wake mode: ${wakeMode}, ${actions.length} actions`],
-    )
+    const nighttimeUser = (req as any).user ?? FAIRY_QUEEN
+    log(`${nighttimeUser.name} activated Nighttime (locked ${roomsToLock.length} rooms, wake mode: ${wakeMode})`, 'system', nighttimeUser)
 
     emit('mode:change', { mode: 'Sleep Time' })
     emit('scene:change', { action: 'nighttime' })
@@ -1436,7 +1467,7 @@ router.post('/nighttime', async (_req: Request, res: Response) => {
 })
 
 // POST /guest-night — Sleep Time mode + all off with guest room exclusions + room lockout
-router.post('/guest-night', async (_req: Request, res: Response) => {
+router.post('/guest-night', async (req: Request, res: Response) => {
   try {
     // Set mode to Sleep Time
     run(
@@ -1475,10 +1506,8 @@ router.post('/guest-night', async (_req: Request, res: Response) => {
     )
     const wakeMode = wakeModeRow?.value || 'Morning'
 
-    run(
-      "INSERT INTO logs (message, category, created_at) VALUES (?, 'system', datetime('now'))",
-      [`Guest Night executed: excluded rooms [${excludeRooms.join(', ')}], locked ${roomsToLock.length} rooms, wake mode: ${wakeMode}, ${actions.length} actions`],
-    )
+    const guestNightUser = (req as any).user ?? FAIRY_QUEEN
+    log(`${guestNightUser.name} activated Guest Night (excluded: ${excludeRooms.join(', ')}, locked ${roomsToLock.length} rooms)`, 'system', guestNightUser)
 
     emit('mode:change', { mode: 'Sleep Time' })
     emit('scene:change', { action: 'guest_night' })
@@ -1509,13 +1538,11 @@ router.get('/night/status', (_req: Request, res: Response) => {
 })
 
 // POST /night/unlock — manually unlock all rooms (emergency override)
-router.post('/night/unlock', (_req: Request, res: Response) => {
+router.post('/night/unlock', (req: Request, res: Response) => {
   try {
+    const user = (req as any).user ?? FAIRY_QUEEN
     motionHandler.unlockAllRooms()
-    run(
-      "INSERT INTO logs (message, category, created_at) VALUES (?, 'system', datetime('now'))",
-      ['Manual night unlock: all rooms unlocked'],
-    )
+    log(`${user.name} unlocked all rooms`, 'system', user)
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

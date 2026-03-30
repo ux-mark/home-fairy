@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Sun, Clock, Trash2, Plus, Moon, Pencil } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { ModeWithTriggers, ModeTrigger } from '@/lib/api'
+import { UserName } from '@/components/ui/UserName'
 import { cn, formatTime } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { SUN_EVENT_LABELS } from './ModesList'
@@ -856,6 +857,20 @@ export default function ModeDetail({ modeName, onBack }: ModeDetailProps) {
           </button>
         )}
       </div>
+
+      {/* ── Attribution ─────────────────────────────────────────────────────── */}
+      {modeData.created_by && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-caption">
+          <span className="inline-flex items-center gap-1">
+            Created by <UserName userId={modeData.created_by} name={modeData.created_by_name ?? 'Fairy Queen'} />
+          </span>
+          {modeData.updated_by && modeData.updated_by !== modeData.created_by && (
+            <span className="inline-flex items-center gap-1">
+              Last edited by <UserName userId={modeData.updated_by} name={modeData.updated_by_name ?? 'Fairy Queen'} />
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ── Sleep mode badge ────────────────────────────────────────────────── */}
       {modeData.isSleepMode && (

@@ -398,3 +398,22 @@ Configure a LIFX light to reflect weather conditions using customisable colours 
 - Data management: view metrics, delete history by age/source
 - System health: version, uptime, database status
 - System logs with category filtering
+
+---
+
+## 16. User Action Tracking
+
+### Scene Attribution
+**Status**: available
+
+Every scene tracks who created it, who last edited it, and who last activated it. The Scenes list's Recent tab shows "Activated by [Name] · time ago". The Scene Editor displays creator and last modifier metadata, plus a Recent Activity timeline showing the last 10 actions on that scene.
+
+### Fairy Queen System Identity
+**Status**: available
+
+Legacy and automated content (motion-triggered scenes, timer activations, pre-existing scenes) is attributed to the Fairy Queen — the system's original spirit. Her name appears as a linked emerald-coloured link wherever it's shown; tapping it navigates to a whimsical profile page at `/fairy-queen` with sparkle effects, fun facts, stats, and a timeline of her recent enchantments. Other user names are displayed as plain text (not linked).
+
+### User Action Audit Log
+**Status**: available
+
+A `user_actions` table records who performed what action (create, update, delete, activate, deactivate) on which entity (currently scenes, extensible to rooms, devices, etc.). Queryable via `GET /api/user-actions` with optional filters for entity type, entity ID, and user ID.
