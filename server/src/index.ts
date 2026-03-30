@@ -421,7 +421,7 @@ function shutdown(signal: string): void {
   sonosManager.shutdown()
   motionHandler.shutdown()
   weatherIndicator.stop()
-  sunModeScheduler.clearTimers()
+  sunModeScheduler.shutdown()
   timeTriggerScheduler.clearTimers()
 
   io.close(() => {

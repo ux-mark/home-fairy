@@ -357,19 +357,28 @@ class SonosManager {
     }
 
     // Podcast rules: fetch latest episode from RSS and play directly
-    if (rule.podcast_feed_url) {
-      log(`Auto-play rule ${rule.id}: resolving podcast "${rule.favourite_name}" from RSS`)
-      const episode = await getLatestEpisodeUrl(rule.podcast_feed_url)
-      if (!episode) {
-        log(`Auto-play rule ${rule.id}: failed to resolve podcast episode`)
-        return
+    try {
+      if (rule.podcast_feed_url) {
+        log(`Auto-play rule ${rule.id}: resolving podcast "${rule.favourite_name}" from RSS`)
+        const episode = await getLatestEpisodeUrl(rule.podcast_feed_url)
+        if (!episode) {
+          log(`Auto-play rule ${rule.id}: failed to resolve podcast episode`)
+          return
+        }
+        log(`Auto-play rule ${rule.id}: playing episode "${episode.title}" on ${targetSpeaker}`)
+        await sonosClient.setAVTransportURI(targetSpeaker, episode.url)
+        await sonosClient.play(targetSpeaker)
+      } else {
+        log(`Auto-play rule ${rule.id}: playing "${rule.favourite_name}" on ${targetSpeaker}`)
+        await sonosClient.playFavourite(targetSpeaker, rule.favourite_name)
       }
-      log(`Auto-play rule ${rule.id}: playing episode "${episode.title}" on ${targetSpeaker}`)
-      await sonosClient.setAVTransportURI(targetSpeaker, episode.url)
-      await sonosClient.play(targetSpeaker)
-    } else {
-      log(`Auto-play rule ${rule.id}: playing "${rule.favourite_name}" on ${targetSpeaker}`)
-      await sonosClient.playFavourite(targetSpeaker, rule.favourite_name)
+    } catch (err) {
+      // The Sonos API request may have reached the speaker before the timeout,
+      // leaving it playing even though we got an error. Stop it to prevent
+      // follow-me from picking up orphaned playback.
+      log(`Auto-play rule ${rule.id}: playback failed, stopping speaker to clean up`)
+      try { await sonosClient.pause(targetSpeaker) } catch { /* best effort */ }
+      throw err
     }
     this.rulePlayCounts.set(rule.id, (this.rulePlayCounts.get(rule.id) ?? 0) + 1)
     emit('sonos:playback-update', { speaker: targetSpeaker })
