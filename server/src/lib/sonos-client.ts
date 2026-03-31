@@ -169,6 +169,22 @@ class SonosClient {
     }
   }
 
+  async next(speaker: string): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/next`)
+    } catch (err) {
+      this.handleError(err, `next(${speaker})`)
+    }
+  }
+
+  async previous(speaker: string): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/previous`)
+    } catch (err) {
+      this.handleError(err, `previous(${speaker})`)
+    }
+  }
+
   async getFavourites(): Promise<SonosFavourite[]> {
     try {
       // Use any available speaker to get favourites (they're account-wide)

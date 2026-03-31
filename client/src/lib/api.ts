@@ -1273,6 +1273,14 @@ export const api = {
       fetchApi<{ speaker: string; action: string }>('/sonos/pause/' + encodeURIComponent(speaker), {
         method: 'POST',
       }),
+    next: (speaker: string) =>
+      fetchApi<{ speaker: string; action: string }>('/sonos/next/' + encodeURIComponent(speaker), {
+        method: 'POST',
+      }),
+    previous: (speaker: string) =>
+      fetchApi<{ speaker: string; action: string }>('/sonos/previous/' + encodeURIComponent(speaker), {
+        method: 'POST',
+      }),
     joinGroup: (speaker: string, target: string) =>
       fetchApi<{ speaker: string; target: string; action: string }>(
         '/sonos/group/' + encodeURIComponent(speaker) + '/join/' + encodeURIComponent(target),

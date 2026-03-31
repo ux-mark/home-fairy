@@ -365,6 +365,32 @@ router.post('/stop/:speaker', async (req: Request, res: Response) => {
   }
 })
 
+// POST /next/:speaker — skip to next track
+router.post('/next/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    await sonosClient.next(speaker)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, action: 'next' })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /previous/:speaker — skip to previous track
+router.post('/previous/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    await sonosClient.previous(speaker)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, action: 'previous' })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
 // POST /play-favourite/:speaker — play a favourite by name on a specific speaker
 const playFavouriteSchema = z.object({ name: z.string().min(1) })
 
