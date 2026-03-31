@@ -943,11 +943,11 @@ function ManualQuickAction() {
 
   const handleToggle = () => {
     if (isActive) {
-      deactivateMutation.mutate()
+      deactivateMutation.mutate(undefined)
     } else if (!hasConfiguredRooms) {
-      toast({ message: 'Set up manual scenes in Settings first', type: 'info' })
+      toast({ message: 'Set up manual scenes in Settings first', type: 'error' })
     } else {
-      activateMutation.mutate()
+      activateMutation.mutate(undefined)
     }
   }
 
