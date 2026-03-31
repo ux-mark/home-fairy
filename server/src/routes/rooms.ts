@@ -21,6 +21,7 @@ interface RoomRow {
   sonos_follow_me: number
   sonos_auto_start: number
   icon: string | null
+  manual_scene: string | null
   created_by: string
   updated_by: string
   created_at: string
@@ -72,6 +73,7 @@ function parseRoom(row: RoomRow, userNameMap?: Map<string, string>) {
     promoted: Boolean(row.promoted),
     sonos_follow_me: Boolean(row.sonos_follow_me),
     sonos_auto_start: Boolean(row.sonos_auto_start),
+    manual_scene: row.manual_scene ?? null,
     temperature: sensorReading?.temperature ?? null,
     lux: sensorReading?.lux ?? null,
     created_by_name: nameMap.get(row.created_by ?? 'fairy-queen') ?? FAIRY_QUEEN.name,
@@ -121,6 +123,7 @@ const updateRoomSchema = z.object({
   sonos_follow_me: z.boolean().optional(),
   sonos_auto_start: z.boolean().optional(),
   icon: z.string().nullable().optional(),
+  manual_scene: z.string().nullable().optional(),
 })
 
 // GET /default-scenes — bulk: all default scene assignments for all rooms
@@ -281,6 +284,7 @@ router.put('/:name', (req: Request, res: Response) => {
     if (body.sonos_follow_me !== undefined) { fields.push('sonos_follow_me = ?'); values.push(Number(body.sonos_follow_me)) }
     if (body.sonos_auto_start !== undefined) { fields.push('sonos_auto_start = ?'); values.push(Number(body.sonos_auto_start)) }
     if (body.icon !== undefined) { fields.push('icon = ?'); values.push(body.icon) }
+    if (body.manual_scene !== undefined) { fields.push('manual_scene = ?'); values.push(body.manual_scene) }
 
     if (fields.length > 0) {
       fields.push('updated_by = ?')

@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Thermometer, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, Lock, AlertTriangle, ChevronRight, ArrowUp, ArrowDown, Activity, Loader2, Volume2, VolumeX, Footprints, Settings2, Pencil } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Thermometer, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, Lock, AlertTriangle, ChevronRight, ArrowUp, ArrowDown, Activity, Loader2, Volume2, VolumeX, Footprints, Settings2, Pencil, Speaker, Play, Pause, Wrench } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useState, useRef, useEffect, useMemo, Fragment } from 'react'
 import { api } from '@/lib/api'
 import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
@@ -738,12 +738,21 @@ function MtaCard() {
 function MusicQuickAction() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const navigate = useNavigate()
 
   const { data: muteStatus, isLoading: muteLoading } = useQuery({
     queryKey: ['sonos', 'mute-status'],
     queryFn: api.sonos.getMuteStatus,
     staleTime: 10_000,
     retry: false,
+  })
+
+  const { data: playStatus } = useQuery({
+    queryKey: ['sonos', 'play-status'],
+    queryFn: api.sonos.getPlayStatus,
+    staleTime: 5_000,
+    retry: false,
+    enabled: !!muteStatus && muteStatus.totalSpeakers > 0,
   })
 
   const muteAllMutation = useMutation({
@@ -770,10 +779,21 @@ function MusicQuickAction() {
     },
   })
 
+  const playAllMutation = useMutation({
+    mutationFn: (playing: boolean) => playing ? api.sonos.playAll() : api.sonos.pauseAll(),
+    onSuccess: (_data, playing) => {
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'play-status'] })
+      toast({ message: playing ? 'Speakers playing' : 'Speakers paused' })
+    },
+    onError: () => {
+      toast({ message: 'Failed to update speakers', type: 'error' })
+    },
+  })
+
   if (muteLoading) {
     return (
       <section className="mb-6" aria-label="Music controls">
-        <Skeleton className="h-12 w-full rounded-xl" />
+        <Skeleton className="h-14 w-full rounded-xl" />
       </section>
     )
   }
@@ -782,45 +802,182 @@ function MusicQuickAction() {
   if (!muteStatus || muteStatus.totalSpeakers === 0) return null
 
   const isMuted = muteStatus.allMuted
-  const speakerLabel = muteStatus.totalSpeakers === 1
-    ? '1 speaker'
-    : `${muteStatus.totalSpeakers} speakers`
+  const isPlaying = playStatus?.anyPlaying ?? false
 
   return (
     <section className="mb-6" aria-label="Music controls">
+      <div className="grid grid-cols-3 gap-2">
+        {/* Speakers — navigates to /sonos */}
+        <button
+          onClick={() => navigate('/sonos')}
+          className={cn(
+            'flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-xs font-medium transition-all',
+            'surface text-body hover:brightness-95 dark:hover:brightness-110 active:scale-[0.97]',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          )}
+          aria-label="Open Sonos speakers"
+        >
+          <Speaker className="h-5 w-5 text-fairy-400" aria-hidden="true" />
+          <span>Speakers</span>
+        </button>
+
+        {/* Play / Pause all */}
+        <button
+          onClick={() => playAllMutation.mutate(!isPlaying)}
+          disabled={playAllMutation.isPending}
+          aria-label={isPlaying ? 'Pause all speakers' : 'Play all speakers'}
+          aria-pressed={isPlaying}
+          className={cn(
+            'flex min-h-[52px] items-center justify-center rounded-xl px-2 py-2 transition-all',
+            'active:scale-[0.97]',
+            'focus-visible:outline-2 focus-visible:outline-offset-2',
+            'disabled:opacity-50',
+            isPlaying
+              ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 focus-visible:outline-emerald-500'
+              : 'surface text-body hover:brightness-95 dark:hover:brightness-110 focus-visible:outline-fairy-500',
+          )}
+        >
+          {playAllMutation.isPending ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : isPlaying ? (
+            <Pause className="h-5 w-5" aria-hidden="true" />
+          ) : (
+            <Play className="h-5 w-5" aria-hidden="true" />
+          )}
+        </button>
+
+        {/* Mute / Unmute all */}
+        <button
+          onClick={() => muteAllMutation.mutate(!isMuted)}
+          disabled={muteAllMutation.isPending}
+          aria-label={isMuted ? 'Unmute all speakers' : 'Mute all speakers'}
+          aria-pressed={isMuted}
+          className={cn(
+            'flex min-h-[52px] items-center justify-center rounded-xl px-2 py-2 transition-all',
+            'active:scale-[0.97]',
+            'focus-visible:outline-2 focus-visible:outline-offset-2',
+            'disabled:opacity-50',
+            isMuted
+              ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25 focus-visible:outline-fairy-500'
+              : 'surface text-body hover:brightness-95 dark:hover:brightness-110 focus-visible:outline-fairy-500',
+          )}
+        >
+          {muteAllMutation.isPending ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : isMuted ? (
+            <VolumeX className="h-5 w-5" aria-hidden="true" />
+          ) : (
+            <Volume2 className="h-5 w-5" aria-hidden="true" />
+          )}
+        </button>
+      </div>
+    </section>
+  )
+}
+
+// ── Manual mode quick action ─────────────────────────────────────────────────
+
+function ManualQuickAction() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const { data: manualStatus, isLoading } = useQuery({
+    queryKey: ['system', 'manual-status'],
+    queryFn: api.system.getManualStatus,
+    refetchInterval: 10_000,
+  })
+
+  const { data: rooms } = useQuery({
+    queryKey: ['rooms'],
+    queryFn: api.rooms.getAll,
+  })
+
+  const activateMutation = useMutation({
+    mutationFn: api.system.activateManual,
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['system', 'manual-status'] })
+      const previous = queryClient.getQueryData<{ active: boolean; configuredCount: number }>(['system', 'manual-status'])
+      queryClient.setQueryData(['system', 'manual-status'], (old: { active: boolean; configuredCount: number } | undefined) =>
+        old ? { ...old, active: true } : { active: true, configuredCount: 0 }
+      )
+      return { previous }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system', 'manual-status'] })
+      queryClient.invalidateQueries({ queryKey: ['rooms'] })
+      toast({ message: 'Manual mode activated' })
+    },
+    onError: (_err: unknown, _vars: unknown, context: { previous: { active: boolean; configuredCount: number } | undefined } | undefined) => {
+      if (context?.previous) queryClient.setQueryData(['system', 'manual-status'], context.previous)
+      toast({ message: 'Failed to activate manual mode', type: 'error' })
+    },
+  })
+
+  const deactivateMutation = useMutation({
+    mutationFn: api.system.deactivateManual,
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['system', 'manual-status'] })
+      const previous = queryClient.getQueryData<{ active: boolean; configuredCount: number }>(['system', 'manual-status'])
+      queryClient.setQueryData(['system', 'manual-status'], (old: { active: boolean; configuredCount: number } | undefined) =>
+        old ? { ...old, active: false } : { active: false, configuredCount: 0 }
+      )
+      return { previous }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system', 'manual-status'] })
+      toast({ message: 'Manual mode deactivated' })
+    },
+    onError: (_err: unknown, _vars: unknown, context: { previous: { active: boolean; configuredCount: number } | undefined } | undefined) => {
+      if (context?.previous) queryClient.setQueryData(['system', 'manual-status'], context.previous)
+      toast({ message: 'Failed to deactivate manual mode', type: 'error' })
+    },
+  })
+
+  if (isLoading) return null
+
+  const isActive = manualStatus?.active ?? false
+  const configuredCount = manualStatus?.configuredCount ?? 0
+  const isPending = activateMutation.isPending || deactivateMutation.isPending
+
+  const hasConfiguredRooms = configuredCount > 0 || (rooms ?? []).some(r => r.manual_scene)
+
+  const handleToggle = () => {
+    if (isActive) {
+      deactivateMutation.mutate()
+    } else if (!hasConfiguredRooms) {
+      toast({ message: 'Set up manual scenes in Settings first', type: 'info' })
+    } else {
+      activateMutation.mutate()
+    }
+  }
+
+  return (
+    <div className="mb-6">
       <button
-        onClick={() => muteAllMutation.mutate(!isMuted)}
-        disabled={muteAllMutation.isPending}
+        onClick={handleToggle}
+        disabled={isPending}
+        aria-pressed={isActive}
         className={cn(
-          'flex w-full min-h-[48px] items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all',
-          'active:scale-[0.98]',
-          'focus-visible:outline-2 focus-visible:outline-offset-2',
+          'flex w-full min-h-[52px] items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all active:scale-[0.97]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500',
           'disabled:opacity-50',
-          isMuted
-            ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25 focus-visible:outline-fairy-500'
-            : 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25 focus-visible:outline-amber-500',
+          isActive
+            ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30'
+            : 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20',
         )}
       >
-        {muteAllMutation.isPending ? (
-          <Loader2 className="h-4.5 w-4.5 animate-spin" />
-        ) : isMuted ? (
-          <VolumeX className="h-4.5 w-4.5" />
-        ) : (
-          <Volume2 className="h-4.5 w-4.5" />
-        )}
-        {muteAllMutation.isPending
-          ? (isMuted ? 'Unmuting...' : 'Muting...')
-          : isMuted
-            ? 'Unmute all speakers'
-            : 'Mute all speakers'}
-        <span className={cn(
-          'ml-1 text-xs font-normal',
-          isMuted ? 'text-fairy-400/60' : 'text-amber-400/60',
-        )}>
-          ({speakerLabel})
-        </span>
+        {isPending
+          ? <Loader2 className="h-4.5 w-4.5 animate-spin" aria-hidden="true" />
+          : <Wrench className="h-4.5 w-4.5" aria-hidden="true" />}
+        {isPending
+          ? (isActive ? 'Deactivating...' : 'Activating...')
+          : isActive
+            ? 'Manual — on'
+            : !hasConfiguredRooms
+              ? 'Manual — tap to set up in Settings'
+              : 'Manual'}
       </button>
-    </section>
+    </div>
   )
 }
 
@@ -1004,6 +1161,8 @@ export default function HomePage() {
         return <QuickActions key="quick-actions" />
       case 'music':
         return <MusicQuickAction key="music" />
+      case 'manual':
+        return <ManualQuickAction key="manual" />
       case 'weather':
         return <WeatherCard key="weather" />
       case 'mode-selector':

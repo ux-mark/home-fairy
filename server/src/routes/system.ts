@@ -24,6 +24,7 @@ import { sonosManager } from '../lib/sonos-manager.js'
 import { motionHandler } from '../lib/motion-handler.js'
 import { emit } from '../lib/socket.js'
 import { deviceHealthService } from '../lib/device-health-service.js'
+import { activateScene } from '../lib/scene-executor.js'
 
 const router = Router()
 
@@ -1727,6 +1728,69 @@ router.post('/devices/:type/:id/reactivate', (req: Request, res: Response) => {
     const result = deviceHealthService.reactivateDevice(type as 'hub' | 'kasa' | 'lifx', id)
     emit('device:reactivated', { deviceType: type, deviceId: id })
     res.json(result)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// POST /manual — activate manual mode for all configured rooms
+router.post('/manual', async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user ?? FAIRY_QUEEN
+    const rooms = getAll<{ name: string; manual_scene: string | null }>('SELECT name, manual_scene FROM rooms')
+    const configured = rooms.filter(r => r.manual_scene)
+
+    const activated: string[] = []
+    for (const room of configured) {
+      try {
+        await activateScene(room.manual_scene!)
+        activated.push(room.name)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        log(`Manual mode: failed to activate scene in ${room.name}: ${msg}`, 'system', user)
+      }
+    }
+
+    run(
+      `INSERT INTO current_state (key, value, updated_at)
+       VALUES ('manual_active', 'true', datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+
+    log(`${user.name} activated Manual mode (${configured.length} rooms configured, ${activated.length} scenes activated)`, 'system', user)
+    emit('scene:change', { action: 'manual_activate' })
+    res.json({ success: true, activatedRooms: activated, configuredCount: configured.length })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// POST /manual/deactivate — deactivate manual mode
+router.post('/manual/deactivate', (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user ?? FAIRY_QUEEN
+    run(
+      `INSERT INTO current_state (key, value, updated_at)
+       VALUES ('manual_active', 'false', datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+    log(`${user.name} deactivated Manual mode`, 'system', user)
+    emit('scene:change', { action: 'manual_deactivate' })
+    res.json({ success: true })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// GET /manual/status — get current manual mode state
+router.get('/manual/status', (_req: Request, res: Response) => {
+  try {
+    const row = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'manual_active'")
+    const configuredCount = (getOne<{ cnt: number }>('SELECT COUNT(*) as cnt FROM rooms WHERE manual_scene IS NOT NULL') ?? { cnt: 0 }).cnt
+    res.json({ active: row?.value === 'true', configuredCount })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
