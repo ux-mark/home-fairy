@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Play, Pause, Music, Loader2, X, Link2, Radio } from 'lucide-react'
+import { Play, Pause, Music, Loader2, X, Link2, Radio, SkipBack, SkipForward } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
@@ -60,6 +60,18 @@ export function SonosSpeakerCard({
     onError: () => toast({ message: `Couldn't pause ${roomName}`, type: 'error' }),
   })
 
+  const nextMutation = useMutation({
+    mutationFn: () => api.sonos.next(speakerName),
+    onSuccess: invalidateNowPlaying,
+    onError: () => toast({ message: `Couldn't skip track on ${roomName}`, type: 'error' }),
+  })
+
+  const previousMutation = useMutation({
+    mutationFn: () => api.sonos.previous(speakerName),
+    onSuccess: invalidateNowPlaying,
+    onError: () => toast({ message: `Couldn't go back on ${roomName}`, type: 'error' }),
+  })
+
   const volumeMutation = useMutation({
     mutationFn: (level: number) => api.sonos.setVolume(speakerName, level),
     onError: () => {
@@ -96,6 +108,10 @@ export function SonosSpeakerCard({
   const hasTrack = state && (state.currentTrack.title || state.currentTrack.stationName)
 
   const anyActionPending = playMutation.isPending || pauseMutation.isPending
+  const isSkipDisabled = isStopped || state?.inputSource === 'tv' || state?.inputSource === 'line-in' || !!error
+  const skipDisabledTitle = state?.inputSource === 'tv' || state?.inputSource === 'line-in'
+    ? "Skip isn't available for this source"
+    : undefined
 
   const isGrouped = group && group.members.length > 1
   const groupedWithNames = isGrouped
@@ -157,6 +173,24 @@ export function SonosSpeakerCard({
 
       {/* Playback controls */}
       <div className="mb-3 flex items-center gap-2">
+        {/* Skip back */}
+        <button
+          onClick={() => previousMutation.mutate()}
+          disabled={isSkipDisabled || previousMutation.isPending}
+          aria-label="Previous track"
+          title={skipDisabledTitle}
+          className={cn(
+            'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'surface',
+            isSkipDisabled || previousMutation.isPending
+              ? 'text-slate-500 opacity-40 cursor-not-allowed'
+              : 'text-slate-400 hover:brightness-95 dark:hover:brightness-110',
+          )}
+        >
+          <SkipBack className="h-5 w-5" aria-hidden="true" />
+        </button>
+
         {/* Play / Pause toggle */}
         <button
           onClick={() => isPlaying ? pauseMutation.mutate() : playMutation.mutate()}
@@ -179,6 +213,24 @@ export function SonosSpeakerCard({
           ) : (
             <Play className="h-5 w-5" aria-hidden="true" />
           )}
+        </button>
+
+        {/* Skip forward */}
+        <button
+          onClick={() => nextMutation.mutate()}
+          disabled={isSkipDisabled || nextMutation.isPending}
+          aria-label="Next track"
+          title={skipDisabledTitle}
+          className={cn(
+            'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'surface',
+            isSkipDisabled || nextMutation.isPending
+              ? 'text-slate-500 opacity-40 cursor-not-allowed'
+              : 'text-slate-400 hover:brightness-95 dark:hover:brightness-110',
+          )}
+        >
+          <SkipForward className="h-5 w-5" aria-hidden="true" />
         </button>
 
         {/* Change music */}
