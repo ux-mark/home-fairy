@@ -54,6 +54,7 @@ class SonosManager {
   private isRoomLockedFn: ((roomName: string) => boolean) | null = null
   private rulePlayCounts: Map<number, number> = new Map()
   private currentMode: string | null = null
+  private podcastArtCache: Map<string, string> = new Map()
 
   init(): void {
     this.loadRoomSpeakerMap()
@@ -86,7 +87,7 @@ class SonosManager {
         this.zones = newZones
         this.consecutiveFailures = 0
         if (changed) {
-          emit('sonos:zones-update', newZones)
+          emit('sonos:zones-update', this.injectPodcastArtIntoZones(newZones))
         }
       } catch {
         this.consecutiveFailures++
@@ -368,7 +369,10 @@ class SonosManager {
         log(`Auto-play rule ${rule.id}: playing episode "${episode.title}" on ${targetSpeaker}`)
         await sonosClient.setAVTransportURI(targetSpeaker, episode.url)
         await sonosClient.play(targetSpeaker)
+        // Cache artwork from the Sonos favourites list
+        void this.cachePodcastArtFromFavourites(targetSpeaker, rule.favourite_name)
       } else {
+        this.podcastArtCache.delete(targetSpeaker)
         log(`Auto-play rule ${rule.id}: playing "${rule.favourite_name}" on ${targetSpeaker}`)
         await sonosClient.playFavourite(targetSpeaker, rule.favourite_name)
       }
@@ -408,6 +412,19 @@ class SonosManager {
     this.emitFollowMeUpdate()
   }
 
+  private async cachePodcastArtFromFavourites(speaker: string, favouriteName: string): Promise<void> {
+    try {
+      const favs = await sonosClient.getFavourites()
+      const fav = favs.find(f => f.title === favouriteName)
+      if (fav?.albumArtURI) {
+        this.podcastArtCache.set(speaker, fav.albumArtURI)
+        log(`Cached podcast art for ${speaker} from favourites`)
+      }
+    } catch {
+      // Non-critical — artwork is optional
+    }
+  }
+
   private cancelSpeakerTimer(roomName: string): void {
     const timer = this.speakerTimers.get(roomName)
     if (timer) {
@@ -435,6 +452,39 @@ class SonosManager {
 
   getZones(): SonosZone[] {
     return this.zones
+  }
+
+  setPodcastArt(speaker: string, url: string): void {
+    this.podcastArtCache.set(speaker, url)
+    log(`Cached podcast art for ${speaker}`)
+  }
+
+  clearPodcastArt(speaker: string): void {
+    this.podcastArtCache.delete(speaker)
+  }
+
+  getPodcastArt(speaker: string): string | null {
+    return this.podcastArtCache.get(speaker) ?? null
+  }
+
+  private injectPodcastArtIntoZones(zones: SonosZone[]): SonosZone[] {
+    return zones.map(zone => {
+      const art = this.podcastArtCache.get(zone.coordinator.roomName)
+      if (!art || zone.coordinator.state.currentTrack.albumArtUri) return zone
+      return {
+        ...zone,
+        coordinator: {
+          ...zone.coordinator,
+          state: {
+            ...zone.coordinator.state,
+            currentTrack: {
+              ...zone.coordinator.state.currentTrack,
+              albumArtUri: art,
+            },
+          },
+        },
+      }
+    })
   }
 
   shutdown(): void {
