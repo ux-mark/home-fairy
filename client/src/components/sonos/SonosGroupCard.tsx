@@ -3,7 +3,7 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
 import { Play, Pause, Music, Loader2, X, ChevronDown, ChevronUp, SkipBack, SkipForward } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { cn } from '@/lib/utils'
-import { api } from '@/lib/api'
+import { api, parseApiError } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import type { SonosPlaybackState, SonosNowPlayingEntry } from '@/lib/api'
 import { SonosNowPlaying } from './SonosNowPlaying'
@@ -139,8 +139,10 @@ export function SonosGroupCard({ coordinator, members, onRefresh }: SonosGroupCa
       invalidateQueries()
       toast({ message: `Playing ${name} on group` })
     },
-    onError: (_err, name) =>
-      toast({ message: `Couldn't play ${name} on group`, type: 'error' }),
+    onError: (err, name) => {
+      const serverMsg = parseApiError(err)
+      toast({ message: serverMsg ?? `Couldn't play ${name} on group`, type: 'error' })
+    },
   })
 
   function handleVolumeChange(level: number) {

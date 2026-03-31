@@ -405,16 +405,20 @@ router.post('/play-favourite/:speaker', async (req: Request, res: Response) => {
 
     if (fav?.contentClass === 'object.container.podcast') {
       const feedUrl = await findPodcastFeedUrl(name)
-      if (feedUrl) {
-        const episode = await getLatestEpisodeUrl(feedUrl)
-        if (episode) {
-          await sonosClient.setAVTransportURI(speaker, episode.url)
-          await sonosClient.play(speaker)
-          emit('sonos:playback-update', { speaker })
-          res.json({ speaker, favourite: name, episode: episode.title })
-          return
-        }
+      if (!feedUrl) {
+        res.status(502).json({ error: `Couldn't find podcast feed for "${name}". Check server logs for details.` })
+        return
       }
+      const episode = await getLatestEpisodeUrl(feedUrl)
+      if (!episode) {
+        res.status(502).json({ error: `Couldn't find latest episode for "${name}". Check server logs for details.` })
+        return
+      }
+      await sonosClient.setAVTransportURI(speaker, episode.url)
+      await sonosClient.play(speaker)
+      emit('sonos:playback-update', { speaker })
+      res.json({ speaker, favourite: name, episode: episode.title })
+      return
     }
 
     await sonosClient.playFavourite(speaker, name)
