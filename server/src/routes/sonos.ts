@@ -4,7 +4,7 @@ import { getAll, getOne, run } from '../db/index.js'
 import { sonosClient } from '../lib/sonos-client.js'
 import { sonosManager } from '../lib/sonos-manager.js'
 import { emit } from '../lib/socket.js'
-import { findPodcastFeedUrl } from '../lib/podcast-resolver.js'
+import { findPodcastFeedUrl, getLatestEpisodeUrl } from '../lib/podcast-resolver.js'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
@@ -398,6 +398,25 @@ router.post('/play-favourite/:speaker', async (req: Request, res: Response) => {
   try {
     const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
     const { name } = playFavouriteSchema.parse(req.body)
+
+    // Check if this favourite is a podcast container — if so, resolve the latest episode
+    const favourites = favouritesCache ? favouritesCache.data : await sonosClient.getFavourites()
+    const fav = (favourites as Array<{ title: string; contentClass?: string }>).find(f => f.title === name)
+
+    if (fav?.contentClass === 'object.container.podcast') {
+      const feedUrl = await findPodcastFeedUrl(name)
+      if (feedUrl) {
+        const episode = await getLatestEpisodeUrl(feedUrl)
+        if (episode) {
+          await sonosClient.setAVTransportURI(speaker, episode.url)
+          await sonosClient.play(speaker)
+          emit('sonos:playback-update', { speaker })
+          res.json({ speaker, favourite: name, episode: episode.title })
+          return
+        }
+      }
+    }
+
     await sonosClient.playFavourite(speaker, name)
     emit('sonos:playback-update', { speaker })
     res.json({ speaker, favourite: name })
