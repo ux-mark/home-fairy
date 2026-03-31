@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Speaker, Music2, ListMusic, Disc3, Radio, AlertTriangle, RefreshCw, Settings } from 'lucide-react'
 import { Link } from 'react-router-dom'
@@ -201,12 +201,30 @@ function SpeakersTab() {
     )
   }
 
+  const sortedNowPlaying = useMemo(() => {
+    if (!nowPlaying) return nowPlaying
+    const rank = (playbackState: string | undefined) => {
+      if (playbackState === 'PLAYING') return 0
+      if (playbackState === 'PAUSED_PLAYBACK') return 1
+      return 2
+    }
+    return [...nowPlaying].sort((a, b) => {
+      const rankDiff = rank(a.state?.playbackState) - rank(b.state?.playbackState)
+      if (rankDiff !== 0) return rankDiff
+      // Within PLAYING group: lower elapsedTime = started more recently = sort first
+      if (a.state?.playbackState === 'PLAYING' && b.state?.playbackState === 'PLAYING') {
+        return (a.state.elapsedTime ?? 0) - (b.state.elapsedTime ?? 0)
+      }
+      return 0
+    })
+  }, [nowPlaying])
+
   return (
     <div className="space-y-4">
       <MasterVolumeControl />
 
-      {nowPlaying && nowPlaying.length > 0 ? (
-        nowPlaying.map(entry => (
+      {sortedNowPlaying && sortedNowPlaying.length > 0 ? (
+        sortedNowPlaying.map(entry => (
           <SonosSpeakerCard
             key={entry.speakerName}
             roomName={entry.roomName}
