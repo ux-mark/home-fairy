@@ -371,6 +371,9 @@ export function initDb(): void {
   if (!colNames.includes('promoted')) {
     db.exec('ALTER TABLE rooms ADD COLUMN promoted INTEGER DEFAULT 0')
   }
+  if (!colNames.includes('manual_scene')) {
+    db.exec('ALTER TABLE rooms ADD COLUMN manual_scene TEXT DEFAULT NULL')
+  }
 
   // Add active column to tables that need device deactivation support (existing DBs)
   const hubCols = db.prepare("PRAGMA table_info('hub_devices')").all() as { name: string }[]

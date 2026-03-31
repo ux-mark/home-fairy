@@ -317,6 +317,13 @@ export class MotionHandler {
         return
       }
 
+      // Check if Manual mode is globally active — skip auto activation
+      const manualRow = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'manual_active'")
+      if (manualRow?.value === 'true') {
+        debugLog(`Motion in ${roomName} but Manual mode is active — skipping scene activation`)
+        return
+      }
+
       // Check for manual scene override — user explicitly activated a scene, skip auto
       // If scene_manual is set but current_scene is empty, the flag is stale (e.g. server restart) — clear it
       if (room.scene_manual) {

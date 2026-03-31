@@ -44,6 +44,7 @@ export interface Room {
   sonos_follow_me: boolean
   sonos_auto_start: boolean
   icon: string | null
+  manual_scene: string | null
   created_by?: string | null
   updated_by?: string | null
   created_by_name?: string | null
@@ -341,6 +342,11 @@ export interface NightStatus {
   active: boolean
   lockedRooms: string[]
   wakeMode: string
+}
+
+export interface ManualStatus {
+  active: boolean
+  configuredCount: number
 }
 
 // ── Dashboard types ──────────────────────────────────────────────────────────
@@ -666,6 +672,13 @@ export interface SonosPlaybackState {
   trackNo: number
   elapsedTime: number
   elapsedTimeFormatted: string
+}
+
+export interface SonosNowPlayingEntry {
+  roomName: string
+  speakerName: string
+  state: SonosPlaybackState | null
+  error?: boolean
 }
 
 export interface SonosMember {
@@ -1006,6 +1019,9 @@ export const api = {
     guestNight: () => fetchApi<{ success: boolean; mode: string; excludeRooms: string[]; actions: string[] }>('/system/guest-night', { method: 'POST' }),
     getNightStatus: () => fetchApi<NightStatus>('/system/night/status'),
     unlockNight: () => fetchApi<{ success: boolean }>('/system/night/unlock', { method: 'POST' }),
+    activateManual: () => fetchApi<{ success: boolean; activatedRooms: string[]; configuredCount: number }>('/system/manual', { method: 'POST' }),
+    deactivateManual: () => fetchApi<{ success: boolean }>('/system/manual/deactivate', { method: 'POST' }),
+    getManualStatus: () => fetchApi<ManualStatus>('/system/manual/status'),
     getMtaStatus: (station?: string, direction?: string, routes?: string) =>
       fetchApi<MtaStatus>(`/system/mta/status?station=${station || '120'}&direction=${direction || 'S'}${routes ? '&routes=' + routes : ''}`),
     getMtaArrivals: (station?: string, direction?: string, routes?: string) =>
@@ -1240,6 +1256,28 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ favourite_name: favouriteName }),
       }),
+    play: (speaker: string) =>
+      fetchApi<{ speaker: string; action: string }>('/sonos/play/' + encodeURIComponent(speaker), {
+        method: 'POST',
+      }),
+    pause: (speaker: string) =>
+      fetchApi<{ speaker: string; action: string }>('/sonos/pause/' + encodeURIComponent(speaker), {
+        method: 'POST',
+      }),
+    stop: (speaker: string) =>
+      fetchApi<{ speaker: string; action: string }>('/sonos/stop/' + encodeURIComponent(speaker), {
+        method: 'POST',
+      }),
+    playFavourite: (speaker: string, name: string) =>
+      fetchApi<{ speaker: string; favourite: string }>('/sonos/play-favourite/' + encodeURIComponent(speaker), {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      }),
+    playAll: () =>
+      fetchApi<{ action: string; affectedSpeakers: number }>('/sonos/play-all', { method: 'POST' }),
+    pauseAll: () =>
+      fetchApi<{ action: string; affectedSpeakers: number }>('/sonos/pause-all', { method: 'POST' }),
+    getNowPlaying: () => fetchApi<SonosNowPlayingEntry[]>('/sonos/now-playing'),
     setVolume: (speaker: string, level: number) =>
       fetchApi<{ speaker: string; volume: number }>('/sonos/volume/' + encodeURIComponent(speaker), {
         method: 'PUT',
@@ -1257,6 +1295,8 @@ export const api = {
       }),
     getMuteStatus: () =>
       fetchApi<{ allMuted: boolean; mutedCount: number; totalSpeakers: number }>('/sonos/mute-status'),
+    getPlayStatus: () =>
+      fetchApi<{ anyPlaying: boolean; allPlaying: boolean; playingCount: number; totalSpeakers: number }>('/sonos/play-status'),
     health: () => fetchApi<{ available: boolean }>('/sonos/health'),
   },
 
