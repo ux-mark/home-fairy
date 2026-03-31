@@ -662,6 +662,7 @@ export interface SonosTrack {
   albumArtUri: string
   type: string
   stationName?: string
+  uri?: string
 }
 
 export interface SonosPlaybackState {
@@ -672,6 +673,7 @@ export interface SonosPlaybackState {
   trackNo: number
   elapsedTime: number
   elapsedTimeFormatted: string
+  inputSource?: 'tv' | 'line-in' | null
 }
 
 export interface SonosGroupInfo {

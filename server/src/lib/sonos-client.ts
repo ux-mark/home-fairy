@@ -30,6 +30,44 @@ export interface SonosPlaybackState {
   trackNo: number
   elapsedTime: number
   elapsedTimeFormatted: string
+  inputSource?: 'tv' | 'line-in' | null
+}
+
+/** Normalize raw Sonos state to handle TV/line-in input sources.
+ *  TV input (x-sonos-htastream:) reports PAUSED_PLAYBACK even when active —
+ *  override to PLAYING and clean up the track metadata.
+ */
+function normalizeState(state: SonosPlaybackState): SonosPlaybackState {
+  const uri = state.currentTrack.uri ?? ''
+  if (uri.startsWith('x-sonos-htastream:')) {
+    return {
+      ...state,
+      playbackState: 'PLAYING',
+      inputSource: 'tv',
+      currentTrack: {
+        ...state.currentTrack,
+        title: 'TV',
+        artist: '',
+        album: '',
+        albumArtUri: '',
+        stationName: undefined,
+      },
+    }
+  }
+  if (uri.startsWith('x-rincon-stream:')) {
+    return {
+      ...state,
+      playbackState: 'PLAYING',
+      inputSource: 'line-in',
+      currentTrack: {
+        ...state.currentTrack,
+        title: state.currentTrack.title || 'Line In',
+        album: '',
+        albumArtUri: '',
+      },
+    }
+  }
+  return { ...state, inputSource: null }
 }
 
 export interface SonosMember {
@@ -85,7 +123,7 @@ class SonosClient {
   async getState(speaker: string): Promise<SonosPlaybackState> {
     try {
       const { data } = await this.api.get<SonosPlaybackState>(`/${encodeURIComponent(speaker)}/state`)
-      return data
+      return normalizeState(data)
     } catch (err) {
       this.handleError(err, `getState(${speaker})`)
     }
@@ -120,6 +158,14 @@ class SonosClient {
       await this.api.get(`/${encodeURIComponent(speaker)}/pause`)
     } catch (err) {
       this.handleError(err, `pause(${speaker})`)
+    }
+  }
+
+  async stop(speaker: string): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/stop`)
+    } catch (err) {
+      this.handleError(err, `stop(${speaker})`)
     }
   }
 
