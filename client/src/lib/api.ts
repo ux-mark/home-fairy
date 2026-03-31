@@ -674,11 +674,18 @@ export interface SonosPlaybackState {
   elapsedTimeFormatted: string
 }
 
+export interface SonosGroupInfo {
+  coordinator: string
+  members: string[]
+  isCoordinator: boolean
+}
+
 export interface SonosNowPlayingEntry {
   roomName: string
   speakerName: string
   state: SonosPlaybackState | null
   error?: boolean
+  group?: SonosGroupInfo | null
 }
 
 export interface SonosMember {
