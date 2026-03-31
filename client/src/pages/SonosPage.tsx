@@ -1,12 +1,13 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Speaker, Music2, ListMusic, Disc3, Radio, AlertTriangle, RefreshCw, Settings, Link2 } from 'lucide-react'
+import { Speaker, Music2, ListMusic, Disc3, Radio, AlertTriangle, RefreshCw, Settings } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { api, type SonosNowPlayingEntry } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton, SkeletonList } from '@/components/ui/Skeleton'
 import { SonosSpeakerCard } from '@/components/sonos/SonosSpeakerCard'
+import { SonosGroupCard } from '@/components/sonos/SonosGroupCard'
 import { SonosVolumeControl } from '@/components/sonos/SonosVolumeControl'
 
 // ── Tab definition ────────────────────────────────────────────────────────────
@@ -278,37 +279,14 @@ function SpeakersTab() {
             )
           }
 
-          // Grouped speakers wrapper
-          const allInGroup = [item.coordinator, ...item.members]
-          const groupLabel = allInGroup.map(e => e.roomName).join(' + ')
+          // Unified group card
           return (
-            <div
+            <SonosGroupCard
               key={item.coordinator.speakerName}
-              className="rounded-xl border-l-2 border-fairy-500 pl-3"
-              aria-label={`Speaker group: ${groupLabel}`}
-            >
-              {/* Group header */}
-              <div className="mb-2 flex items-center gap-1.5">
-                <Link2 className="h-3.5 w-3.5 shrink-0 text-fairy-400" aria-hidden="true" />
-                <p className="text-[11px] font-medium text-fairy-400">
-                  Group: {groupLabel}
-                </p>
-              </div>
-
-              <div className="space-y-3">
-                {allInGroup.map(entry => (
-                  <SonosSpeakerCard
-                    key={entry.speakerName}
-                    roomName={entry.roomName}
-                    speakerName={entry.speakerName}
-                    state={entry.state}
-                    error={entry.error}
-                    onRefresh={handleRefresh}
-                    group={entry.group}
-                  />
-                ))}
-              </div>
-            </div>
+              coordinator={item.coordinator}
+              members={item.members}
+              onRefresh={handleRefresh}
+            />
           )
         })
       ) : (

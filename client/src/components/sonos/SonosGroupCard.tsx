@@ -1,37 +1,65 @@
 import { useState, useCallback } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Play, Pause, Music, Loader2, X, Link2, Radio } from 'lucide-react'
+import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query'
+import { Play, Pause, Music, Loader2, X, ChevronDown, ChevronUp } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
-import { useQuery } from '@tanstack/react-query'
-import type { SonosPlaybackState, SonosGroupInfo } from '@/lib/api'
+import type { SonosPlaybackState, SonosNowPlayingEntry } from '@/lib/api'
 import { SonosNowPlaying } from './SonosNowPlaying'
 import { SonosVolumeControl } from './SonosVolumeControl'
 import { FavouriteSelector } from './FavouriteSelector'
 
-interface SonosSpeakerCardProps {
-  roomName: string
-  speakerName: string
-  state: SonosPlaybackState | null
-  error?: boolean
+interface SonosGroupCardProps {
+  coordinator: SonosNowPlayingEntry
+  members: SonosNowPlayingEntry[]
   onRefresh: () => void
-  group?: SonosGroupInfo | null
 }
 
-export function SonosSpeakerCard({
-  roomName,
-  speakerName,
-  state,
-  error,
-  onRefresh,
-  group,
-}: SonosSpeakerCardProps) {
+function MemberRow({
+  entry,
+  coordinatorName,
+  onRemove,
+  isRemoving,
+}: {
+  entry: SonosNowPlayingEntry
+  coordinatorName: string
+  onRemove: (speakerName: string) => void
+  isRemoving: boolean
+}) {
+  return (
+    <li className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5">
+      <span className="truncate text-sm text-body">{entry.roomName}</span>
+      {entry.speakerName !== coordinatorName && (
+        <button
+          onClick={() => onRemove(entry.speakerName)}
+          disabled={isRemoving}
+          aria-label={`Remove ${entry.roomName} from group`}
+          className={cn(
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-caption transition-colors',
+            'hover:bg-red-500/15 hover:text-red-400',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'disabled:opacity-40',
+          )}
+        >
+          {isRemoving ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+          ) : (
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+        </button>
+      )}
+    </li>
+  )
+}
+
+export function SonosGroupCard({ coordinator, members, onRefresh }: SonosGroupCardProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [musicDialogOpen, setMusicDialogOpen] = useState(false)
   const [selectedFavourite, setSelectedFavourite] = useState('')
+  const [membersExpanded, setMembersExpanded] = useState(false)
+  const [removingMember, setRemovingMember] = useState<string | null>(null)
 
   const { data: favourites = [] } = useQuery({
     queryKey: ['sonos', 'favourites'],
@@ -40,43 +68,67 @@ export function SonosSpeakerCard({
     retry: false,
   })
 
-  // Local optimistic volume
+  const coordinatorName = coordinator.speakerName
+  const coordinatorRoom = coordinator.roomName
+  const state: SonosPlaybackState | null = coordinator.state
+
+  // Local optimistic volume for the coordinator
   const [localVolume, setLocalVolume] = useState<number | null>(null)
   const displayVolume = localVolume ?? state?.volume ?? 0
 
-  const invalidateNowPlaying = useCallback(() => {
+  const invalidateQueries = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
+    queryClient.invalidateQueries({ queryKey: ['sonos', 'zones'] })
   }, [queryClient])
 
   const playMutation = useMutation({
-    mutationFn: () => api.sonos.play(speakerName),
-    onSuccess: invalidateNowPlaying,
-    onError: () => toast({ message: `Couldn't play ${roomName}`, type: 'error' }),
+    mutationFn: () => api.sonos.play(coordinatorName),
+    onSuccess: invalidateQueries,
+    onError: () => toast({ message: `Couldn't play group`, type: 'error' }),
   })
 
   const pauseMutation = useMutation({
-    mutationFn: () => api.sonos.pause(speakerName),
-    onSuccess: invalidateNowPlaying,
-    onError: () => toast({ message: `Couldn't pause ${roomName}`, type: 'error' }),
+    mutationFn: () => api.sonos.pause(coordinatorName),
+    onSuccess: invalidateQueries,
+    onError: () => toast({ message: `Couldn't pause group`, type: 'error' }),
   })
 
   const volumeMutation = useMutation({
-    mutationFn: (level: number) => api.sonos.setVolume(speakerName, level),
+    mutationFn: (level: number) => api.sonos.setVolume(coordinatorName, level),
     onError: () => {
       setLocalVolume(null)
-      toast({ message: `Couldn't update volume for ${roomName}`, type: 'error' })
+      toast({ message: `Couldn't update group volume`, type: 'error' })
+    },
+  })
+
+  const leaveMutation = useMutation({
+    mutationFn: (speakerName: string) => api.sonos.leaveGroup(speakerName),
+    onSuccess: (_data, speakerName) => {
+      setRemovingMember(null)
+      invalidateQueries()
+      onRefresh()
+      const entry = members.find(m => m.speakerName === speakerName)
+      const roomName = entry?.roomName ?? speakerName
+      toast({ message: `${roomName} removed from group` })
+    },
+    onError: (_err, speakerName) => {
+      setRemovingMember(null)
+      const entry = members.find(m => m.speakerName === speakerName)
+      const roomName = entry?.roomName ?? speakerName
+      toast({ message: `Couldn't remove ${roomName} from group`, type: 'error' })
     },
   })
 
   const playFavouriteMutation = useMutation({
-    mutationFn: (name: string) => api.sonos.playFavourite(speakerName, name),
+    mutationFn: (name: string) => api.sonos.playFavourite(coordinatorName, name),
     onSuccess: (_data, name) => {
       setMusicDialogOpen(false)
       setSelectedFavourite('')
-      invalidateNowPlaying()
-      toast({ message: `Playing ${name} on ${roomName}` })
+      invalidateQueries()
+      toast({ message: `Playing ${name} on group` })
     },
-    onError: (_err, name) => toast({ message: `Couldn't play ${name} on ${roomName}`, type: 'error' }),
+    onError: (_err, name) =>
+      toast({ message: `Couldn't play ${name} on group`, type: 'error' }),
   })
 
   function handleVolumeChange(level: number) {
@@ -90,6 +142,11 @@ export function SonosSpeakerCard({
     }
   }
 
+  function handleRemoveMember(speakerName: string) {
+    setRemovingMember(speakerName)
+    leaveMutation.mutate(speakerName)
+  }
+
   const isPlaying = state?.playbackState === 'PLAYING'
   const isPaused = state?.playbackState === 'PAUSED_PLAYBACK'
   const isStopped = !state || state.playbackState === 'STOPPED'
@@ -97,61 +154,39 @@ export function SonosSpeakerCard({
 
   const anyActionPending = playMutation.isPending || pauseMutation.isPending
 
-  const isGrouped = group && group.members.length > 1
-  const groupedWithNames = isGrouped
-    ? group.members.filter(m => m !== speakerName)
-    : []
+  // All members including coordinator, for display
+  const allMembers = [coordinator, ...members]
+  const groupLabel = allMembers.map(e => e.roomName).join(' + ')
 
   return (
-    <div className="card rounded-xl border p-4 transition-colors" style={{ borderColor: 'var(--border-primary)' }}>
-      {/* Header: room name + playback badge */}
+    <div
+      className="card rounded-xl border p-4 transition-colors"
+      style={{ borderColor: 'var(--border-primary)' }}
+      aria-label={`Speaker group: ${groupLabel}`}
+    >
+      {/* Header: group name + playback badge */}
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <h3 className="text-base font-semibold text-heading">{roomName}</h3>
-          {/* Group label */}
-          {isGrouped && (
-            <p className="mt-0.5 flex items-center gap-1 text-[11px] text-caption">
-              {group.isCoordinator ? (
-                <Link2 className="h-3 w-3 shrink-0 text-fairy-400" aria-hidden="true" />
-              ) : (
-                <Radio className="h-3 w-3 shrink-0 text-fairy-400" aria-hidden="true" />
-              )}
-              {group.isCoordinator
-                ? `Grouped with ${groupedWithNames.join(', ')}`
-                : `Following ${group.coordinator}`}
-            </p>
-          )}
+          <h3 className="text-base font-semibold text-heading">{groupLabel}</h3>
+          <p className="mt-0.5 text-[11px] text-caption">
+            {allMembers.length} speakers
+          </p>
         </div>
-        <span className={cn(
-          'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium',
-          isPlaying && 'bg-emerald-500/15 text-emerald-400',
-          isPaused && 'bg-amber-500/15 text-amber-400',
-          isStopped && 'bg-[var(--bg-tertiary)] text-caption',
-        )}>
+        <span
+          className={cn(
+            'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium',
+            isPlaying && 'bg-emerald-500/15 text-emerald-400',
+            isPaused && 'bg-amber-500/15 text-amber-400',
+            isStopped && 'bg-[var(--bg-tertiary)] text-caption',
+          )}
+        >
           {isPlaying ? 'Playing' : isPaused ? 'Paused' : 'Stopped'}
         </span>
       </div>
 
-      {/* Error state */}
-      {error && (
-        <div className="mb-3 rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400">
-          Could not reach this speaker.{' '}
-          <button
-            onClick={onRefresh}
-            className="underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {/* Now playing (when track is known) */}
-      {state && hasTrack && (
-        <SonosNowPlaying state={state} className="mb-3" />
-      )}
-
-      {/* Idle state — no track */}
-      {!error && (!state || !hasTrack) && (
+      {/* Now playing */}
+      {state && hasTrack && <SonosNowPlaying state={state} className="mb-3" />}
+      {(!state || !hasTrack) && (
         <p className="mb-3 text-sm text-caption">Nothing playing</p>
       )}
 
@@ -159,9 +194,9 @@ export function SonosSpeakerCard({
       <div className="mb-3 flex items-center gap-2">
         {/* Play / Pause toggle */}
         <button
-          onClick={() => isPlaying ? pauseMutation.mutate() : playMutation.mutate()}
-          disabled={anyActionPending || !!error}
-          aria-label={isPlaying ? `Pause ${roomName}` : `Play ${roomName}`}
+          onClick={() => (isPlaying ? pauseMutation.mutate() : playMutation.mutate())}
+          disabled={anyActionPending}
+          aria-label={isPlaying ? `Pause group` : `Play group`}
           aria-pressed={isPlaying}
           className={cn(
             'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors',
@@ -172,8 +207,8 @@ export function SonosSpeakerCard({
               : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
           )}
         >
-          {anyActionPending && (playMutation.isPending || pauseMutation.isPending) ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
+          {anyActionPending ? (
+            <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
           ) : isPlaying ? (
             <Pause className="h-5 w-5" aria-hidden="true" />
           ) : (
@@ -190,7 +225,7 @@ export function SonosSpeakerCard({
                 'surface text-body hover:brightness-95 dark:hover:brightness-110',
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               )}
-              aria-label={`Change music on ${roomName}`}
+              aria-label={`Change music for group`}
             >
               <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
               Change music
@@ -211,7 +246,7 @@ export function SonosSpeakerCard({
             >
               <div className="mb-4 flex items-center justify-between">
                 <Dialog.Title className="text-base font-semibold text-heading">
-                  Choose music for {roomName}
+                  Choose music for group
                 </Dialog.Title>
                 <Dialog.Close asChild>
                   <button
@@ -228,7 +263,7 @@ export function SonosSpeakerCard({
               </div>
 
               <FavouriteSelector
-                id={`fav-selector-${speakerName}`}
+                id={`fav-selector-group-${coordinatorName}`}
                 favourites={favourites}
                 value={selectedFavourite}
                 onChange={setSelectedFavourite}
@@ -250,7 +285,11 @@ export function SonosSpeakerCard({
                 </Dialog.Close>
                 <button
                   onClick={handlePlayFavourite}
-                  disabled={!selectedFavourite || selectedFavourite === '__continue__' || playFavouriteMutation.isPending}
+                  disabled={
+                    !selectedFavourite ||
+                    selectedFavourite === '__continue__' ||
+                    playFavouriteMutation.isPending
+                  }
                   className={cn(
                     'flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors',
                     'bg-fairy-500 text-white hover:bg-fairy-600 active:bg-fairy-700',
@@ -260,8 +299,8 @@ export function SonosSpeakerCard({
                 >
                   {playFavouriteMutation.isPending ? (
                     <span className="flex items-center justify-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Playing…
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      Playing...
                     </span>
                   ) : (
                     'Play'
@@ -274,15 +313,53 @@ export function SonosSpeakerCard({
       </div>
 
       {/* Volume control */}
-      <div>
+      <div className="mb-3">
         <p className="mb-1.5 text-xs font-medium text-caption">Volume</p>
         <SonosVolumeControl
           value={displayVolume}
           onChange={handleVolumeChange}
           isPending={volumeMutation.isPending}
-          label={`${roomName} volume`}
-          disabled={!!error}
+          label={`Group volume`}
         />
+      </div>
+
+      {/* Member list — expandable */}
+      <div>
+        <button
+          onClick={() => setMembersExpanded(prev => !prev)}
+          aria-expanded={membersExpanded}
+          aria-controls={`group-members-${coordinatorName}`}
+          className={cn(
+            'flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-xs font-medium text-caption transition-colors',
+            'hover:bg-[var(--bg-secondary)]',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          )}
+        >
+          <span>Speakers in this group</span>
+          {membersExpanded ? (
+            <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+        </button>
+
+        {membersExpanded && (
+          <ul
+            id={`group-members-${coordinatorName}`}
+            className="mt-1 space-y-0.5"
+            aria-label={`Members of ${coordinatorRoom} group`}
+          >
+            {allMembers.map(entry => (
+              <MemberRow
+                key={entry.speakerName}
+                entry={entry}
+                coordinatorName={coordinatorName}
+                onRemove={handleRemoveMember}
+                isRemoving={removingMember === entry.speakerName}
+              />
+            ))}
+          </ul>
+        )}
       </div>
     </div>
   )
