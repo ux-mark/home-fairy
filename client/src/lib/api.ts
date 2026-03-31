@@ -653,6 +653,20 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   }
 }
 
+/** Extract the `error` field from a server JSON error body, if available. */
+export function parseApiError(err: unknown): string | null {
+  try {
+    const msg = err instanceof Error ? err.message : String(err)
+    const parsed = JSON.parse(msg) as unknown
+    if (parsed && typeof parsed === 'object' && 'error' in parsed && typeof (parsed as Record<string, unknown>).error === 'string') {
+      return (parsed as { error: string }).error
+    }
+  } catch {
+    // not JSON — ignore
+  }
+  return null
+}
+
 // ── Sonos types ─────────────────────────────────────────────────────────────
 
 export interface SonosTrack {

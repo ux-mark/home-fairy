@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Play, Pause, Music, Loader2, X, Link2, Radio, SkipBack, SkipForward } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { cn } from '@/lib/utils'
-import { api } from '@/lib/api'
+import { api, parseApiError } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { useQuery } from '@tanstack/react-query'
 import type { SonosPlaybackState, SonosGroupInfo } from '@/lib/api'
@@ -88,7 +88,10 @@ export function SonosSpeakerCard({
       invalidateNowPlaying()
       toast({ message: `Playing ${name} on ${roomName}` })
     },
-    onError: (_err, name) => toast({ message: `Couldn't play ${name} on ${roomName}`, type: 'error' }),
+    onError: (err, name) => {
+      const serverMsg = parseApiError(err)
+      toast({ message: serverMsg ?? `Couldn't play ${name} on ${roomName}`, type: 'error' })
+    },
   })
 
   function handleVolumeChange(level: number) {
