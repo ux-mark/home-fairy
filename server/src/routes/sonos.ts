@@ -326,6 +326,143 @@ router.post('/auto-play/resolve-podcast', async (req: Request, res: Response) =>
   }
 })
 
+// POST /play/:speaker — play/resume a speaker
+router.post('/play/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    await sonosClient.play(speaker)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, action: 'play' })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /pause/:speaker — pause a speaker
+router.post('/pause/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    await sonosClient.pause(speaker)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, action: 'pause' })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /stop/:speaker — stop a speaker
+router.post('/stop/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    await sonosClient.stop(speaker)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, action: 'stop' })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /play-favourite/:speaker — play a favourite by name on a specific speaker
+const playFavouriteSchema = z.object({ name: z.string().min(1) })
+
+router.post('/play-favourite/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const { name } = playFavouriteSchema.parse(req.body)
+    await sonosClient.playFavourite(speaker, name)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, favourite: name })
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: err.errors })
+      return
+    }
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /play-all — play/resume all zone coordinators
+router.post('/play-all', async (_req: Request, res: Response) => {
+  try {
+    const zones = sonosManager.getZones()
+    const coordinators = zones.map(z => z.coordinator.roomName)
+    await Promise.allSettled(coordinators.map(speaker => sonosClient.play(speaker)))
+    emit('sonos:playback-update', { allPlaying: true })
+    res.json({ action: 'play', affectedSpeakers: coordinators.length })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /pause-all — pause all zone coordinators
+router.post('/pause-all', async (_req: Request, res: Response) => {
+  try {
+    const zones = sonosManager.getZones()
+    const coordinators = zones.map(z => z.coordinator.roomName)
+    await Promise.allSettled(coordinators.map(speaker => sonosClient.pause(speaker)))
+    emit('sonos:playback-update', { allPaused: true })
+    res.json({ action: 'pause', affectedSpeakers: coordinators.length })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// GET /now-playing — aggregate playback state for all configured speakers
+router.get('/now-playing', async (_req: Request, res: Response) => {
+  try {
+    const speakers = getAll<{ room_name: string; speaker_name: string }>('SELECT room_name, speaker_name FROM sonos_speakers ORDER BY room_name')
+
+    // Build a map of speaker name → group info from the in-memory zone cache
+    const zones = sonosManager.getZones()
+    const groupMap = new Map<string, { coordinator: string; members: string[]; isCoordinator: boolean }>()
+    for (const zone of zones) {
+      const coordinatorName = zone.coordinator.roomName
+      const memberNames = zone.members.map(m => m.roomName)
+      // Only mark as grouped when there are multiple members
+      if (memberNames.length > 1) {
+        for (const member of zone.members) {
+          groupMap.set(member.roomName, {
+            coordinator: coordinatorName,
+            members: memberNames,
+            isCoordinator: member.roomName === coordinatorName,
+          })
+        }
+      }
+    }
+
+    const results = await Promise.allSettled(
+      speakers.map(async ({ room_name, speaker_name }) => {
+        const state = await sonosClient.getState(speaker_name)
+        return { roomName: room_name, speakerName: speaker_name, state }
+      }),
+    )
+    const nowPlaying = results.map((result, i) => {
+      const speakerName = speakers[i].speaker_name
+      const group = groupMap.get(speakerName) ?? null
+      if (result.status === 'fulfilled') {
+        return { ...result.value, group }
+      }
+      return {
+        roomName: speakers[i].room_name,
+        speakerName,
+        state: null,
+        error: true,
+        group,
+      }
+    })
+    res.json(nowPlaying)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
 // PUT /volume/:speaker — set live speaker volume
 const volumeSchema = z.object({ level: z.number().int().min(0).max(100) })
 
@@ -391,6 +528,26 @@ router.put('/mute-all', async (req: Request, res: Response) => {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
+})
+
+// GET /play-status — get playback state across all zones (from in-memory cache)
+router.get('/play-status', (_req: Request, res: Response) => {
+  const zones = sonosManager.getZones()
+  let totalSpeakers = 0
+  let playingCount = 0
+  for (const zone of zones) {
+    const memberCount = zone.members.length
+    totalSpeakers += memberCount
+    if (zone.coordinator.state.playbackState === 'PLAYING') {
+      playingCount += memberCount
+    }
+  }
+  res.json({
+    anyPlaying: playingCount > 0,
+    allPlaying: totalSpeakers > 0 && playingCount === totalSpeakers,
+    playingCount,
+    totalSpeakers,
+  })
 })
 
 // GET /mute-status — get mute state across all zones

@@ -1,9 +1,9 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Speaker, Music2, ListMusic, Disc3, Radio, AlertTriangle, RefreshCw, Settings } from 'lucide-react'
+import { Speaker, Music2, ListMusic, Disc3, Radio, AlertTriangle, RefreshCw, Settings, Link2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { api } from '@/lib/api'
+import { api, type SonosNowPlayingEntry } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton, SkeletonList } from '@/components/ui/Skeleton'
 import { SonosSpeakerCard } from '@/components/sonos/SonosSpeakerCard'
@@ -143,6 +143,63 @@ function SpeakersTab() {
     refetch()
   }, [queryClient, refetch])
 
+  const sortedNowPlaying = useMemo(() => {
+    if (!nowPlaying) return nowPlaying
+    const rank = (playbackState: string | undefined) => {
+      if (playbackState === 'PLAYING') return 0
+      if (playbackState === 'PAUSED_PLAYBACK') return 1
+      return 2
+    }
+    return [...nowPlaying].sort((a, b) => {
+      const rankDiff = rank(a.state?.playbackState) - rank(b.state?.playbackState)
+      if (rankDiff !== 0) return rankDiff
+      // Within PLAYING group: lower elapsedTime = started more recently = sort first
+      if (a.state?.playbackState === 'PLAYING' && b.state?.playbackState === 'PLAYING') {
+        return (a.state.elapsedTime ?? 0) - (b.state.elapsedTime ?? 0)
+      }
+      return 0
+    })
+  }, [nowPlaying])
+
+  // Group entries: coordinators lead their groups; solo speakers are their own group
+  const renderItems = useMemo(() => {
+    if (!sortedNowPlaying) return []
+
+    // Track which speaker names have been assigned to a rendered group
+    const placed = new Set<string>()
+    const items: Array<{ type: 'solo'; entry: SonosNowPlayingEntry } | { type: 'group'; coordinator: SonosNowPlayingEntry; members: SonosNowPlayingEntry[] }> = []
+
+    for (const entry of sortedNowPlaying) {
+      if (placed.has(entry.speakerName)) continue
+      const grp = entry.group
+      if (grp && grp.members.length > 1 && grp.isCoordinator) {
+        // This is a coordinator: collect all grouped members from sortedNowPlaying
+        const memberEntries = grp.members
+          .filter(m => m !== entry.speakerName)
+          .map(memberName => sortedNowPlaying.find(e => e.speakerName === memberName))
+          .filter((e): e is SonosNowPlayingEntry => e !== undefined)
+        items.push({ type: 'group', coordinator: entry, members: memberEntries })
+        placed.add(entry.speakerName)
+        memberEntries.forEach(m => placed.add(m.speakerName))
+      } else if (!grp || grp.members.length <= 1) {
+        // Solo speaker
+        items.push({ type: 'solo', entry })
+        placed.add(entry.speakerName)
+      } else {
+        // Member of a group whose coordinator hasn't been encountered yet — will be handled when coordinator appears
+        // If the coordinator is not in the configured speakers list, render this as a solo card
+        const coordinatorPresent = sortedNowPlaying.some(e => e.speakerName === grp.coordinator)
+        if (!coordinatorPresent) {
+          items.push({ type: 'solo', entry })
+          placed.add(entry.speakerName)
+        }
+        // Otherwise skip — coordinator will place it
+      }
+    }
+
+    return items
+  }, [sortedNowPlaying])
+
   // Loading
   if (isLoading) {
     return (
@@ -201,39 +258,59 @@ function SpeakersTab() {
     )
   }
 
-  const sortedNowPlaying = useMemo(() => {
-    if (!nowPlaying) return nowPlaying
-    const rank = (playbackState: string | undefined) => {
-      if (playbackState === 'PLAYING') return 0
-      if (playbackState === 'PAUSED_PLAYBACK') return 1
-      return 2
-    }
-    return [...nowPlaying].sort((a, b) => {
-      const rankDiff = rank(a.state?.playbackState) - rank(b.state?.playbackState)
-      if (rankDiff !== 0) return rankDiff
-      // Within PLAYING group: lower elapsedTime = started more recently = sort first
-      if (a.state?.playbackState === 'PLAYING' && b.state?.playbackState === 'PLAYING') {
-        return (a.state.elapsedTime ?? 0) - (b.state.elapsedTime ?? 0)
-      }
-      return 0
-    })
-  }, [nowPlaying])
-
   return (
     <div className="space-y-4">
       <MasterVolumeControl />
 
-      {sortedNowPlaying && sortedNowPlaying.length > 0 ? (
-        sortedNowPlaying.map(entry => (
-          <SonosSpeakerCard
-            key={entry.speakerName}
-            roomName={entry.roomName}
-            speakerName={entry.speakerName}
-            state={entry.state}
-            error={entry.error}
-            onRefresh={handleRefresh}
-          />
-        ))
+      {renderItems.length > 0 ? (
+        renderItems.map(item => {
+          if (item.type === 'solo') {
+            return (
+              <SonosSpeakerCard
+                key={item.entry.speakerName}
+                roomName={item.entry.roomName}
+                speakerName={item.entry.speakerName}
+                state={item.entry.state}
+                error={item.entry.error}
+                onRefresh={handleRefresh}
+                group={item.entry.group}
+              />
+            )
+          }
+
+          // Grouped speakers wrapper
+          const allInGroup = [item.coordinator, ...item.members]
+          const groupLabel = allInGroup.map(e => e.roomName).join(' + ')
+          return (
+            <div
+              key={item.coordinator.speakerName}
+              className="rounded-xl border-l-2 border-fairy-500 pl-3"
+              aria-label={`Speaker group: ${groupLabel}`}
+            >
+              {/* Group header */}
+              <div className="mb-2 flex items-center gap-1.5">
+                <Link2 className="h-3.5 w-3.5 shrink-0 text-fairy-400" aria-hidden="true" />
+                <p className="text-[11px] font-medium text-fairy-400">
+                  Group: {groupLabel}
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {allInGroup.map(entry => (
+                  <SonosSpeakerCard
+                    key={entry.speakerName}
+                    roomName={entry.roomName}
+                    speakerName={entry.speakerName}
+                    state={entry.state}
+                    error={entry.error}
+                    onRefresh={handleRefresh}
+                    group={entry.group}
+                  />
+                ))}
+              </div>
+            </div>
+          )
+        })
       ) : (
         <div className="rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] p-6 text-center">
           <Speaker className="mx-auto mb-2 h-8 w-8 text-caption" aria-hidden="true" />
