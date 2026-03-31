@@ -1273,10 +1273,16 @@ export const api = {
       fetchApi<{ speaker: string; action: string }>('/sonos/pause/' + encodeURIComponent(speaker), {
         method: 'POST',
       }),
-    stop: (speaker: string) =>
-      fetchApi<{ speaker: string; action: string }>('/sonos/stop/' + encodeURIComponent(speaker), {
-        method: 'POST',
-      }),
+    joinGroup: (speaker: string, target: string) =>
+      fetchApi<{ speaker: string; target: string; action: string }>(
+        '/sonos/group/' + encodeURIComponent(speaker) + '/join/' + encodeURIComponent(target),
+        { method: 'POST' },
+      ),
+    leaveGroup: (speaker: string) =>
+      fetchApi<{ speaker: string; action: string }>(
+        '/sonos/group/' + encodeURIComponent(speaker) + '/leave',
+        { method: 'POST' },
+      ),
     playFavourite: (speaker: string, name: string) =>
       fetchApi<{ speaker: string; favourite: string }>('/sonos/play-favourite/' + encodeURIComponent(speaker), {
         method: 'POST',

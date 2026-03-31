@@ -603,6 +603,33 @@ router.get('/speakers/:room/linked-devices', (req: Request, res: Response) => {
   }
 })
 
+// POST /group/:speaker/join/:target — add speaker to target's group
+router.post('/group/:speaker/join/:target', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const target = Array.isArray(req.params.target) ? req.params.target[0] : req.params.target
+    await sonosClient.joinGroup(speaker, target)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, target, action: 'join' })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /group/:speaker/leave — remove speaker from its current group
+router.post('/group/:speaker/leave', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    await sonosClient.leaveGroup(speaker)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, action: 'leave' })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
 // GET /health — check if Sonos API is reachable
 router.get('/health', async (_req: Request, res: Response) => {
   const available = await sonosClient.isAvailable()
