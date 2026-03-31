@@ -6,13 +6,20 @@ interface ItunesResult {
   collectionName: string
   feedUrl: string
   artistName: string
+  artworkUrl600?: string
+  artworkUrl100?: string
+}
+
+export interface PodcastInfo {
+  feedUrl: string
+  artworkUrl: string | null
 }
 
 /**
  * Search the iTunes/Apple Podcast directory for a podcast by title.
- * Returns the RSS feed URL if found, null otherwise.
+ * Returns the RSS feed URL and high-res artwork URL if found, null otherwise.
  */
-export async function findPodcastFeedUrl(title: string): Promise<string | null> {
+export async function findPodcastFeedUrl(title: string): Promise<PodcastInfo | null> {
   try {
     const { data } = await axios.get<{ results: ItunesResult[] }>(
       'https://itunes.apple.com/search',
@@ -33,14 +40,20 @@ export async function findPodcastFeedUrl(title: string): Promise<string | null> 
     )
     if (exact?.feedUrl) {
       log(`Found exact match: "${exact.collectionName}" by ${exact.artistName}`)
-      return exact.feedUrl
+      return {
+        feedUrl: exact.feedUrl,
+        artworkUrl: exact.artworkUrl600 ?? exact.artworkUrl100 ?? null,
+      }
     }
 
     // Fall back to first result with a feed URL
     const first = data.results.find(r => r.feedUrl)
     if (first?.feedUrl) {
       log(`Found closest match: "${first.collectionName}" by ${first.artistName}`)
-      return first.feedUrl
+      return {
+        feedUrl: first.feedUrl,
+        artworkUrl: first.artworkUrl600 ?? first.artworkUrl100 ?? null,
+      }
     }
 
     log(`No feed URL in iTunes results for "${title}"`)

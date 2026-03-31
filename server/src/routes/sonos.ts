@@ -30,6 +30,11 @@ router.get('/state/:speaker', async (req: Request, res: Response) => {
   try {
     const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
     const state = await sonosClient.getState(speaker)
+    // Inject cached podcast artwork when Sonos reports none
+    if (!state.currentTrack.albumArtUri) {
+      const podcastArt = sonosManager.getPodcastArt(speaker)
+      if (podcastArt) state.currentTrack.albumArtUri = podcastArt
+    }
     res.json(state)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -318,8 +323,8 @@ router.post('/auto-play/resolve-podcast', async (req: Request, res: Response) =>
     }
 
     // Search iTunes for the RSS feed URL
-    const feedUrl = await findPodcastFeedUrl(favourite_name)
-    res.json({ isPodcast: true, feedUrl })
+    const podcast = await findPodcastFeedUrl(favourite_name)
+    res.json({ isPodcast: true, feedUrl: podcast?.feedUrl ?? null })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
@@ -401,19 +406,22 @@ router.post('/play-favourite/:speaker', async (req: Request, res: Response) => {
 
     // Check if this favourite is a podcast container — if so, resolve the latest episode
     const favourites = favouritesCache ? favouritesCache.data : await sonosClient.getFavourites()
-    const fav = (favourites as Array<{ title: string; contentClass?: string }>).find(f => f.title === name)
+    const fav = (favourites as Array<{ title: string; contentClass?: string; albumArtURI?: string }>).find(f => f.title === name)
 
     if (fav?.contentClass === 'object.container.podcast') {
-      const feedUrl = await findPodcastFeedUrl(name)
-      if (!feedUrl) {
+      const podcast = await findPodcastFeedUrl(name)
+      if (!podcast) {
         res.status(502).json({ error: `Couldn't find podcast feed for "${name}". Check server logs for details.` })
         return
       }
-      const episode = await getLatestEpisodeUrl(feedUrl)
+      const episode = await getLatestEpisodeUrl(podcast.feedUrl)
       if (!episode) {
         res.status(502).json({ error: `Couldn't find latest episode for "${name}". Check server logs for details.` })
         return
       }
+      // Cache artwork: prefer Sonos favourite's albumArtURI, fall back to iTunes artwork
+      const artUrl = fav.albumArtURI ?? podcast.artworkUrl
+      if (artUrl) sonosManager.setPodcastArt(speaker, artUrl)
       await sonosClient.setAVTransportURI(speaker, episode.url)
       await sonosClient.play(speaker)
       emit('sonos:playback-update', { speaker })
@@ -421,6 +429,8 @@ router.post('/play-favourite/:speaker', async (req: Request, res: Response) => {
       return
     }
 
+    // Non-podcast favourite — clear any cached podcast art for this speaker
+    sonosManager.clearPodcastArt(speaker)
     await sonosClient.playFavourite(speaker, name)
     emit('sonos:playback-update', { speaker })
     res.json({ speaker, favourite: name })
@@ -488,6 +498,11 @@ router.get('/now-playing', async (_req: Request, res: Response) => {
     const results = await Promise.allSettled(
       speakers.map(async ({ room_name, speaker_name }) => {
         const state = await sonosClient.getState(speaker_name)
+        // Inject cached podcast artwork when Sonos reports none
+        if (!state.currentTrack.albumArtUri) {
+          const podcastArt = sonosManager.getPodcastArt(speaker_name)
+          if (podcastArt) state.currentTrack.albumArtUri = podcastArt
+        }
         return { roomName: room_name, speakerName: speaker_name, state }
       }),
     )
