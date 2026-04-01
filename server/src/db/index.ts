@@ -26,7 +26,6 @@ export function initDb(): void {
       tags TEXT DEFAULT '[]',
       current_scene TEXT,
       last_active TEXT,
-      hush_scene TEXT DEFAULT NULL,
       scene_manual INTEGER DEFAULT 0,
       created_by TEXT DEFAULT 'fairy-queen',
       updated_by TEXT DEFAULT 'fairy-queen',
@@ -425,6 +424,12 @@ export function initDb(): void {
       ).run(sceneValue)
       console.log(`[db] Seeded hushing_scene from room hush_scene: ${sceneValue}`)
     }
+  }
+
+  // Migration: drop hush_scene column from rooms (superseded by current_state hushing_scene)
+  if (colNames.includes('hush_scene')) {
+    db.exec('ALTER TABLE rooms DROP COLUMN hush_scene')
+    console.log('[db] Dropped rooms.hush_scene column')
   }
 
   // Add active column to tables that need device deactivation support (existing DBs)
