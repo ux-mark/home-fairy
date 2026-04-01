@@ -7,6 +7,7 @@ import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import type { Room, Scene } from '@/lib/api'
 import { getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
+import { HomeSpeakerPopover } from '@/components/sonos/HomeSpeakerPopover'
 import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LucideIcon } from '@/components/ui/LucideIcon'
@@ -739,6 +740,7 @@ function MusicQuickAction() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const navigate = useNavigate()
+  const [popoverOpen, setPopoverOpen] = useState(false)
 
   const { data: muteStatus, isLoading: muteLoading } = useQuery({
     queryKey: ['sonos', 'mute-status'],
@@ -806,70 +808,90 @@ function MusicQuickAction() {
 
   return (
     <section className="mb-6" aria-label="Music controls">
-      <div className="grid grid-cols-3 gap-2">
-        {/* Speakers — navigates to /sonos */}
-        <button
-          onClick={() => navigate('/sonos')}
-          className={cn(
-            'flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-xs font-medium transition-all',
-            'surface text-body hover:brightness-95 dark:hover:brightness-110 active:scale-[0.97]',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
-          aria-label="Open Sonos speakers"
-        >
-          <Speaker className="h-5 w-5 text-fairy-400" aria-hidden="true" />
-          <span>Speakers</span>
-        </button>
+      <div className="relative">
+        <div className="grid grid-cols-3 gap-2">
+          {/* Speakers — navigates to /sonos */}
+          <button
+            onClick={() => navigate('/sonos')}
+            className={cn(
+              'flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-xs font-medium transition-all',
+              'surface text-body hover:brightness-95 dark:hover:brightness-110 active:scale-[0.97]',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            )}
+            aria-label="Open Sonos speakers"
+          >
+            <Speaker className="h-5 w-5 text-fairy-400" aria-hidden="true" />
+            <span>Speakers</span>
+          </button>
 
-        {/* Play / Pause all */}
-        <button
-          onClick={() => playAllMutation.mutate(!isPlaying)}
-          disabled={playAllMutation.isPending}
-          aria-label={isPlaying ? 'Pause all speakers' : 'Play all speakers'}
-          aria-pressed={isPlaying}
-          className={cn(
-            'flex min-h-[52px] items-center justify-center rounded-xl px-2 py-2 transition-all',
-            'active:scale-[0.97]',
-            'focus-visible:outline-2 focus-visible:outline-offset-2',
-            'disabled:opacity-50',
-            isPlaying
-              ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 focus-visible:outline-emerald-500'
-              : 'surface text-body hover:brightness-95 dark:hover:brightness-110 focus-visible:outline-fairy-500',
-          )}
-        >
-          {playAllMutation.isPending ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : isPlaying ? (
-            <Pause className="h-5 w-5" aria-hidden="true" />
-          ) : (
-            <Play className="h-5 w-5" aria-hidden="true" />
-          )}
-        </button>
+          {/* Play / Pause all — opens popover when multiple speakers */}
+          <button
+            onClick={() => {
+              if (muteStatus && muteStatus.totalSpeakers > 1) {
+                setPopoverOpen(o => !o)
+              } else {
+                playAllMutation.mutate(!isPlaying)
+              }
+            }}
+            disabled={playAllMutation.isPending}
+            aria-label={
+              muteStatus && muteStatus.totalSpeakers > 1
+                ? popoverOpen
+                  ? 'Close speaker controls'
+                  : 'Open speaker controls'
+                : isPlaying
+                  ? 'Pause all speakers'
+                  : 'Play all speakers'
+            }
+            aria-pressed={muteStatus && muteStatus.totalSpeakers > 1 ? popoverOpen : isPlaying}
+            className={cn(
+              'flex min-h-[52px] items-center justify-center px-2 py-2 transition-all',
+              'active:scale-[0.97]',
+              'focus-visible:outline-2 focus-visible:outline-offset-2',
+              'disabled:opacity-50',
+              popoverOpen ? 'rounded-t-xl rounded-b-none' : 'rounded-xl',
+              isPlaying
+                ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 focus-visible:outline-emerald-500'
+                : popoverOpen
+                  ? 'bg-[var(--bg-tertiary)] text-fairy-400 focus-visible:outline-fairy-500'
+                  : 'surface text-body hover:brightness-95 dark:hover:brightness-110 focus-visible:outline-fairy-500',
+            )}
+          >
+            {playAllMutation.isPending ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : isPlaying ? (
+              <Pause className="h-5 w-5" aria-hidden="true" />
+            ) : (
+              <Play className="h-5 w-5" aria-hidden="true" />
+            )}
+          </button>
 
-        {/* Mute / Unmute all */}
-        <button
-          onClick={() => muteAllMutation.mutate(!isMuted)}
-          disabled={muteAllMutation.isPending}
-          aria-label={isMuted ? 'Unmute all speakers' : 'Mute all speakers'}
-          aria-pressed={isMuted}
-          className={cn(
-            'flex min-h-[52px] items-center justify-center rounded-xl px-2 py-2 transition-all',
-            'active:scale-[0.97]',
-            'focus-visible:outline-2 focus-visible:outline-offset-2',
-            'disabled:opacity-50',
-            isMuted
-              ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25 focus-visible:outline-fairy-500'
-              : 'surface text-body hover:brightness-95 dark:hover:brightness-110 focus-visible:outline-fairy-500',
-          )}
-        >
-          {muteAllMutation.isPending ? (
-            <Loader2 className="h-5 w-5 animate-spin" />
-          ) : isMuted ? (
-            <VolumeX className="h-5 w-5" aria-hidden="true" />
-          ) : (
-            <Volume2 className="h-5 w-5" aria-hidden="true" />
-          )}
-        </button>
+          {/* Mute / Unmute all */}
+          <button
+            onClick={() => muteAllMutation.mutate(!isMuted)}
+            disabled={muteAllMutation.isPending}
+            aria-label={isMuted ? 'Unmute all speakers' : 'Mute all speakers'}
+            aria-pressed={isMuted}
+            className={cn(
+              'flex min-h-[52px] items-center justify-center rounded-xl px-2 py-2 transition-all',
+              'active:scale-[0.97]',
+              'focus-visible:outline-2 focus-visible:outline-offset-2',
+              'disabled:opacity-50',
+              isMuted
+                ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25 focus-visible:outline-fairy-500'
+                : 'surface text-body hover:brightness-95 dark:hover:brightness-110 focus-visible:outline-fairy-500',
+            )}
+          >
+            {muteAllMutation.isPending ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : isMuted ? (
+              <VolumeX className="h-5 w-5" aria-hidden="true" />
+            ) : (
+              <Volume2 className="h-5 w-5" aria-hidden="true" />
+            )}
+          </button>
+        </div>
+        <HomeSpeakerPopover open={popoverOpen} onClose={() => setPopoverOpen(false)} />
       </div>
     </section>
   )
