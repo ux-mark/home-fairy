@@ -317,10 +317,10 @@ export class MotionHandler {
         return
       }
 
-      // Check if Manual mode is globally active — skip auto activation
-      const manualRow = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'manual_active'")
+      // Check if Hush Home is globally active — skip auto activation
+      const manualRow = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'hush_active'")
       if (manualRow?.value === 'true') {
-        debugLog(`Motion in ${roomName} but Manual mode is active — skipping scene activation`)
+        debugLog(`Motion in ${roomName} but Hush Home is active — skipping scene activation`)
         return
       }
 

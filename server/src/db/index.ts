@@ -26,6 +26,7 @@ export function initDb(): void {
       tags TEXT DEFAULT '[]',
       current_scene TEXT,
       last_active TEXT,
+      hush_scene TEXT DEFAULT NULL,
       scene_manual INTEGER DEFAULT 0,
       created_by TEXT DEFAULT 'fairy-queen',
       updated_by TEXT DEFAULT 'fairy-queen',
@@ -371,8 +372,29 @@ export function initDb(): void {
   if (!colNames.includes('promoted')) {
     db.exec('ALTER TABLE rooms ADD COLUMN promoted INTEGER DEFAULT 0')
   }
-  if (!colNames.includes('manual_scene')) {
-    db.exec('ALTER TABLE rooms ADD COLUMN manual_scene TEXT DEFAULT NULL')
+  if (!colNames.includes('hush_scene')) {
+    if (colNames.includes('manual_scene')) {
+      // Rename existing manual_scene column to hush_scene
+      db.exec('ALTER TABLE rooms RENAME COLUMN manual_scene TO hush_scene')
+      console.log('[db] Renamed rooms.manual_scene → hush_scene')
+    } else {
+      db.exec('ALTER TABLE rooms ADD COLUMN hush_scene TEXT DEFAULT NULL')
+    }
+  }
+
+  // Migrate current_state key from manual_active to hush_active
+  const hushActiveRow = db.prepare("SELECT value FROM current_state WHERE key = 'hush_active'").get() as { value: string } | undefined
+  if (!hushActiveRow) {
+    const oldManualRow = db.prepare("SELECT value FROM current_state WHERE key = 'manual_active'").get() as { value: string } | undefined
+    if (oldManualRow) {
+      db.prepare(
+        `INSERT INTO current_state (key, value, updated_at)
+         VALUES ('hush_active', ?, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      ).run(oldManualRow.value)
+      db.prepare("DELETE FROM current_state WHERE key = 'manual_active'").run()
+      console.log('[db] Migrated current_state key manual_active → hush_active')
+    }
   }
 
   // Add active column to tables that need device deactivation support (existing DBs)

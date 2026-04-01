@@ -1734,32 +1734,32 @@ router.post('/devices/:type/:id/reactivate', (req: Request, res: Response) => {
   }
 })
 
-// POST /manual — activate manual mode for all configured rooms
-router.post('/manual', async (req: Request, res: Response) => {
+// POST /hush — activate Hush Home for all configured rooms
+router.post('/hush', async (req: Request, res: Response) => {
   try {
     const user = (req as any).user ?? FAIRY_QUEEN
-    const rooms = getAll<{ name: string; manual_scene: string | null }>('SELECT name, manual_scene FROM rooms')
-    const configured = rooms.filter(r => r.manual_scene)
+    const rooms = getAll<{ name: string; hush_scene: string | null }>('SELECT name, hush_scene FROM rooms')
+    const configured = rooms.filter(r => r.hush_scene)
 
     const activated: string[] = []
     for (const room of configured) {
       try {
-        await activateScene(room.manual_scene!)
+        await activateScene(room.hush_scene!)
         activated.push(room.name)
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
-        log(`Manual mode: failed to activate scene in ${room.name}: ${msg}`, 'system', user)
+        log(`Hush Home: failed to activate scene in ${room.name}: ${msg}`, 'system', user)
       }
     }
 
     run(
       `INSERT INTO current_state (key, value, updated_at)
-       VALUES ('manual_active', 'true', datetime('now'))
+       VALUES ('hush_active', 'true', datetime('now'))
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
     )
 
-    log(`${user.name} activated Manual mode (${configured.length} rooms configured, ${activated.length} scenes activated)`, 'system', user)
-    emit('scene:change', { action: 'manual_activate' })
+    log(`${user.name} activated Hush Home (${configured.length} rooms configured, ${activated.length} scenes activated)`, 'system', user)
+    emit('scene:change', { action: 'hush_activate' })
     res.json({ success: true, activatedRooms: activated, configuredCount: configured.length })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -1767,17 +1767,17 @@ router.post('/manual', async (req: Request, res: Response) => {
   }
 })
 
-// POST /manual/deactivate — deactivate manual mode
-router.post('/manual/deactivate', (req: Request, res: Response) => {
+// POST /hush/deactivate — deactivate Hush Home
+router.post('/hush/deactivate', (req: Request, res: Response) => {
   try {
     const user = (req as any).user ?? FAIRY_QUEEN
     run(
       `INSERT INTO current_state (key, value, updated_at)
-       VALUES ('manual_active', 'false', datetime('now'))
+       VALUES ('hush_active', 'false', datetime('now'))
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
     )
-    log(`${user.name} deactivated Manual mode`, 'system', user)
-    emit('scene:change', { action: 'manual_deactivate' })
+    log(`${user.name} deactivated Hush Home`, 'system', user)
+    emit('scene:change', { action: 'hush_deactivate' })
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -1785,11 +1785,11 @@ router.post('/manual/deactivate', (req: Request, res: Response) => {
   }
 })
 
-// GET /manual/status — get current manual mode state
-router.get('/manual/status', (_req: Request, res: Response) => {
+// GET /hush/status — get current Hush Home state
+router.get('/hush/status', (_req: Request, res: Response) => {
   try {
-    const row = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'manual_active'")
-    const configuredCount = (getOne<{ cnt: number }>('SELECT COUNT(*) as cnt FROM rooms WHERE manual_scene IS NOT NULL') ?? { cnt: 0 }).cnt
+    const row = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'hush_active'")
+    const configuredCount = (getOne<{ cnt: number }>('SELECT COUNT(*) as cnt FROM rooms WHERE hush_scene IS NOT NULL') ?? { cnt: 0 }).cnt
     res.json({ active: row?.value === 'true', configuredCount })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

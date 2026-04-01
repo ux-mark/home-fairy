@@ -879,15 +879,15 @@ function MusicQuickAction() {
   )
 }
 
-// ── Manual mode quick action ─────────────────────────────────────────────────
+// ── Hush Home quick action ────────────────────────────────────────────────────
 
-function ManualQuickAction() {
+function HushQuickAction() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
-  const { data: manualStatus, isLoading } = useQuery({
-    queryKey: ['system', 'manual-status'],
-    queryFn: api.system.getManualStatus,
+  const { data: hushStatus, isLoading } = useQuery({
+    queryKey: ['system', 'hush-status'],
+    queryFn: api.system.getHushStatus,
     refetchInterval: 10_000,
   })
 
@@ -897,59 +897,59 @@ function ManualQuickAction() {
   })
 
   const activateMutation = useMutation({
-    mutationFn: api.system.activateManual,
+    mutationFn: api.system.activateHush,
     onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: ['system', 'manual-status'] })
-      const previous = queryClient.getQueryData<{ active: boolean; configuredCount: number }>(['system', 'manual-status'])
-      queryClient.setQueryData(['system', 'manual-status'], (old: { active: boolean; configuredCount: number } | undefined) =>
+      await queryClient.cancelQueries({ queryKey: ['system', 'hush-status'] })
+      const previous = queryClient.getQueryData<{ active: boolean; configuredCount: number }>(['system', 'hush-status'])
+      queryClient.setQueryData(['system', 'hush-status'], (old: { active: boolean; configuredCount: number } | undefined) =>
         old ? { ...old, active: true } : { active: true, configuredCount: 0 }
       )
       return { previous }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['system', 'manual-status'] })
+      queryClient.invalidateQueries({ queryKey: ['system', 'hush-status'] })
       queryClient.invalidateQueries({ queryKey: ['rooms'] })
-      toast({ message: 'Manual mode activated' })
+      toast({ message: 'Home is Hushed' })
     },
     onError: (_err: unknown, _vars: unknown, context: { previous: { active: boolean; configuredCount: number } | undefined } | undefined) => {
-      if (context?.previous) queryClient.setQueryData(['system', 'manual-status'], context.previous)
-      toast({ message: 'Failed to activate manual mode', type: 'error' })
+      if (context?.previous) queryClient.setQueryData(['system', 'hush-status'], context.previous)
+      toast({ message: 'Failed to activate Hush Home', type: 'error' })
     },
   })
 
   const deactivateMutation = useMutation({
-    mutationFn: api.system.deactivateManual,
+    mutationFn: api.system.deactivateHush,
     onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: ['system', 'manual-status'] })
-      const previous = queryClient.getQueryData<{ active: boolean; configuredCount: number }>(['system', 'manual-status'])
-      queryClient.setQueryData(['system', 'manual-status'], (old: { active: boolean; configuredCount: number } | undefined) =>
+      await queryClient.cancelQueries({ queryKey: ['system', 'hush-status'] })
+      const previous = queryClient.getQueryData<{ active: boolean; configuredCount: number }>(['system', 'hush-status'])
+      queryClient.setQueryData(['system', 'hush-status'], (old: { active: boolean; configuredCount: number } | undefined) =>
         old ? { ...old, active: false } : { active: false, configuredCount: 0 }
       )
       return { previous }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['system', 'manual-status'] })
-      toast({ message: 'Manual mode deactivated' })
+      queryClient.invalidateQueries({ queryKey: ['system', 'hush-status'] })
+      toast({ message: 'Hush Home deactivated' })
     },
     onError: (_err: unknown, _vars: unknown, context: { previous: { active: boolean; configuredCount: number } | undefined } | undefined) => {
-      if (context?.previous) queryClient.setQueryData(['system', 'manual-status'], context.previous)
-      toast({ message: 'Failed to deactivate manual mode', type: 'error' })
+      if (context?.previous) queryClient.setQueryData(['system', 'hush-status'], context.previous)
+      toast({ message: 'Failed to deactivate Hush Home', type: 'error' })
     },
   })
 
   if (isLoading) return null
 
-  const isActive = manualStatus?.active ?? false
-  const configuredCount = manualStatus?.configuredCount ?? 0
+  const isActive = hushStatus?.active ?? false
+  const configuredCount = hushStatus?.configuredCount ?? 0
   const isPending = activateMutation.isPending || deactivateMutation.isPending
 
-  const hasConfiguredRooms = configuredCount > 0 || (rooms ?? []).some(r => r.manual_scene)
+  const hasConfiguredRooms = configuredCount > 0 || (rooms ?? []).some(r => r.hush_scene)
 
   const handleToggle = () => {
     if (isActive) {
       deactivateMutation.mutate(undefined)
     } else if (!hasConfiguredRooms) {
-      toast({ message: 'Set up manual scenes in Settings first', type: 'error' })
+      toast({ message: 'Set up Hush Home scenes in Settings first', type: 'error' })
     } else {
       activateMutation.mutate(undefined)
     }
@@ -976,10 +976,10 @@ function ManualQuickAction() {
         {isPending
           ? (isActive ? 'Deactivating...' : 'Activating...')
           : isActive
-            ? 'Manual — on'
+            ? 'Hushed'
             : !hasConfiguredRooms
-              ? 'Manual — tap to set up in Settings'
-              : 'Manual'}
+              ? 'Hush Home — tap to set up'
+              : 'Hush Home'}
       </button>
     </div>
   )
@@ -1165,8 +1165,8 @@ export default function HomePage() {
         return <QuickActions key="quick-actions" />
       case 'music':
         return <MusicQuickAction key="music" />
-      case 'manual':
-        return <ManualQuickAction key="manual" />
+      case 'hush':
+        return <HushQuickAction key="hush" />
       case 'weather':
         return <WeatherCard key="weather" />
       case 'mode-selector':

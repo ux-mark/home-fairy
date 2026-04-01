@@ -37,7 +37,7 @@ import { useTheme } from '@/hooks/useTheme'
 import type { Theme } from '@/hooks/useTheme'
 import { Section } from '@/components/settings/Section'
 import { NightModeSection } from '@/components/settings/NightModeSection'
-import { ManualModeSection } from '@/components/settings/ManualModeSection'
+import { HushModeSection } from '@/components/settings/HushModeSection'
 import { SubwaySection } from '@/components/settings/SubwaySection'
 import { IndicatorSection } from '@/components/settings/IndicatorSection'
 import { WeatherIndicatorSection } from '@/components/settings/WeatherIndicatorSection'
@@ -938,7 +938,7 @@ export default function SettingsPage() {
         >
           <ModesSection />
           <NightModeSection />
-          <ManualModeSection />
+          <HushModeSection />
         </CategoryAccordion>
 
         <CategoryAccordion
