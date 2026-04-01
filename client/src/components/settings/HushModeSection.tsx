@@ -5,7 +5,7 @@ import { useToast } from '@/hooks/useToast'
 import { Section } from './Section'
 import { LucideIcon } from '@/components/ui/LucideIcon'
 
-export function ManualModeSection() {
+export function HushModeSection() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -19,36 +19,36 @@ export function ManualModeSection() {
     queryFn: api.scenes.getAll,
   })
 
-  const { data: manualStatus } = useQuery({
-    queryKey: ['system', 'manual-status'],
-    queryFn: api.system.getManualStatus,
+  const { data: hushStatus } = useQuery({
+    queryKey: ['system', 'hush-status'],
+    queryFn: api.system.getHushStatus,
     refetchInterval: 10_000,
   })
 
   const mutation = useMutation({
-    mutationFn: ({ name, manual_scene }: { name: string; manual_scene: string | null }) =>
-      api.rooms.update(name, { manual_scene }),
+    mutationFn: ({ name, hush_scene }: { name: string; hush_scene: string | null }) =>
+      api.rooms.update(name, { hush_scene }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rooms'] })
-      queryClient.invalidateQueries({ queryKey: ['system', 'manual-status'] })
-      toast({ message: 'Manual scene saved' })
+      queryClient.invalidateQueries({ queryKey: ['system', 'hush-status'] })
+      toast({ message: 'Hush scene saved' })
     },
-    onError: () => toast({ message: 'Failed to save manual scene', type: 'error' }),
+    onError: () => toast({ message: 'Failed to save Hush scene', type: 'error' }),
   })
 
   const sortedRooms = (rooms ?? []).sort((a, b) => a.display_order - b.display_order)
   const allScenes = scenes ?? []
 
   return (
-    <Section title="Manual Mode">
+    <Section title="Hush Home">
       <div className="space-y-5">
         <p className="text-caption text-xs">
-          When Manual mode is active, the selected scene activates in each room and motion-triggered scene changes are paused. Tap the Manual button on the home screen to toggle.
+          When Hush Home is active, the selected scene activates in each room and motion-triggered scene changes are paused. The home is shown as Hushed. Tap the Hush Home button on the home screen to toggle.
         </p>
 
-        {manualStatus?.active && (
+        {hushStatus?.active && (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
-            <p className="text-amber-400 text-sm font-medium">Manual mode is currently active</p>
+            <p className="text-amber-400 text-sm font-medium">Home is Hushed</p>
           </div>
         )}
 
@@ -57,7 +57,7 @@ export function ManualModeSection() {
             const roomScenes = allScenes.filter(s =>
               s.rooms.some(sr => sr.name === room.name)
             )
-            const current = room.manual_scene ?? ''
+            const current = room.hush_scene ?? ''
 
             return (
               <div key={room.name} className="flex items-center gap-3">
@@ -69,10 +69,10 @@ export function ManualModeSection() {
                   value={current}
                   onChange={e => mutation.mutate({
                     name: room.name,
-                    manual_scene: e.target.value || null,
+                    hush_scene: e.target.value || null,
                   })}
                   disabled={mutation.isPending}
-                  aria-label={`Manual scene for ${room.name}`}
+                  aria-label={`Hush scene for ${room.name}`}
                   className={cn(
                     'surface flex-1 rounded-lg border border-[var(--border-primary)] px-3 py-2 text-sm text-heading',
                     'min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500',
@@ -83,8 +83,8 @@ export function ManualModeSection() {
                     <option key={s.name} value={s.name}>{s.name}</option>
                   ))}
                   {/* Show current if set but not in room's scenes (e.g. scene was moved) */}
-                  {room.manual_scene && !roomScenes.some(s => s.name === room.manual_scene) && (
-                    <option value={room.manual_scene}>{room.manual_scene}</option>
+                  {room.hush_scene && !roomScenes.some(s => s.name === room.hush_scene) && (
+                    <option value={room.hush_scene}>{room.hush_scene}</option>
                   )}
                 </select>
               </div>
