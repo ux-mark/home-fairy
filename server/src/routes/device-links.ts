@@ -240,6 +240,24 @@ router.post('/', async (req: Request, res: Response) => {
         res.status(404).json({ error: `Sonos speaker not found for room "${data.source_id}"` })
         return
       }
+    } else if (data.source_type === 'lifx') {
+      const light = getOne<{ light_id: string }>(
+        'SELECT light_id FROM light_rooms WHERE light_id = ?',
+        [data.source_id],
+      )
+      if (!light) {
+        res.status(404).json({ error: `LIFX light not found with id "${data.source_id}"` })
+        return
+      }
+    } else if (data.source_type === 'hub') {
+      const hubDevice = getOne<{ id: number }>(
+        'SELECT id FROM hub_devices WHERE id = ?',
+        [data.source_id],
+      )
+      if (!hubDevice) {
+        res.status(404).json({ error: `Hub device not found with id "${data.source_id}"` })
+        return
+      }
     }
 
     // Validate target device exists

@@ -3,6 +3,7 @@ import { useParams, useMatch, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, Pencil, Check, X, Power, Shield, AlertTriangle, Link2, Volume2 } from 'lucide-react'
 import { api, type DeviceInsightsData, type KasaDevice, type DeviceLink } from '@/lib/api'
+import { DeviceLinkManager } from '@/components/DeviceLinkManager'
 import { cn, deviceDetailPath } from '@/lib/utils'
 import TimeSeriesChart from '@/components/dashboard/TimeSeriesChart'
 import OverUnderBadge from '@/components/dashboard/OverUnderBadge'
@@ -1580,7 +1581,19 @@ function HubDeviceDetail({ id }: { id: string }) {
       {/* ── 5. All attributes (collapsed by default) ─────────────────────── */}
       <AllAttributesSection attributeEntries={attributeEntries} />
 
-      {/* ── 6. Device management ──────────────────────────────────────────── */}
+      {/* ── 6. Power source (switches and dimmers only) ───────────────────── */}
+      {device && ['switch', 'dimmer'].includes(device.device_type) && (
+        <section className="card rounded-xl border p-5">
+          <h2 className="mb-4 text-sm font-semibold text-heading">Power source</h2>
+          <DeviceLinkManager
+            sourceType="hub"
+            sourceId={id}
+            description="No power source linked. Link a smart plug to track the energy cost of this device."
+          />
+        </section>
+      )}
+
+      {/* ── 7. Device management ──────────────────────────────────────────── */}
       {!isDeactivated && (
         <section aria-labelledby="hub-management-heading">
           <div className="card rounded-xl border p-5">

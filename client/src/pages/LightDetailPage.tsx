@@ -8,6 +8,7 @@ import { BackLink } from '@/components/ui/BackLink'
 import { DetailPageSkeleton } from '@/components/ui/Skeleton'
 import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { useToast } from '@/hooks/useToast'
+import { DeviceLinkManager } from '@/components/DeviceLinkManager'
 
 export default function LightDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -368,6 +369,16 @@ export default function LightDetailPage() {
           </div>
         </section>
       )}
+
+      {/* Power source */}
+      <section className="card rounded-xl border p-5">
+        <h2 className="mb-4 text-sm font-semibold text-heading">Power source</h2>
+        <DeviceLinkManager
+          sourceType="lifx"
+          sourceId={id!}
+          description="No power source linked. Link a smart plug to track the energy cost of this light."
+        />
+      </section>
 
       {/* Light management */}
       {!isDeactivated && (
