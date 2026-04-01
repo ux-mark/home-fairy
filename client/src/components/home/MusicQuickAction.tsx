@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Volume2, VolumeX, Speaker, Play, Pause, Loader2, X } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
@@ -15,6 +15,7 @@ export function MusicQuickAction() {
   const navigate = useNavigate()
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [volumePopoverOpen, setVolumePopoverOpen] = useState(false)
+  const playButtonRef = useRef<HTMLButtonElement>(null)
 
   const { data: muteStatus, isLoading: muteLoading } = useQuery({
     queryKey: ['sonos', 'mute-status'],
@@ -76,6 +77,7 @@ export function MusicQuickAction() {
 
           {/* Play / Pause all — opens popover when multiple speakers */}
           <button
+            ref={playButtonRef}
             onClick={() => {
               if (muteStatus && muteStatus.totalSpeakers > 1) {
                 setVolumePopoverOpen(false)
@@ -148,7 +150,7 @@ export function MusicQuickAction() {
             )}
           </button>
         </div>
-        <HomeSpeakerPopover open={popoverOpen} onClose={() => setPopoverOpen(false)} />
+        <HomeSpeakerPopover open={popoverOpen} onClose={() => setPopoverOpen(false)} triggerRef={playButtonRef} />
         <HomeVolumePopover open={volumePopoverOpen} onClose={() => setVolumePopoverOpen(false)} />
       </div>
     </section>

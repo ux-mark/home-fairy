@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Play, Pause, Music, Loader2 } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
@@ -11,9 +11,10 @@ import { FavouriteSelector } from './FavouriteSelector'
 interface HomeSpeakerPopoverProps {
   open: boolean
   onClose: () => void
+  triggerRef?: React.RefObject<HTMLButtonElement | null>
 }
 
-export function HomeSpeakerPopover({ open, onClose }: HomeSpeakerPopoverProps) {
+export function HomeSpeakerPopover({ open, onClose, triggerRef }: HomeSpeakerPopoverProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const panelRef = useRef<HTMLDivElement>(null)
@@ -88,13 +89,17 @@ export function HomeSpeakerPopover({ open, onClose }: HomeSpeakerPopoverProps) {
   useEffect(() => {
     if (!open) return
     function handlePointerDown(e: PointerEvent) {
+      // If the pointerdown is on the trigger button, let the button's onClick handle
+      // the toggle — otherwise on Safari/iOS the race between pointerdown (onClose)
+      // and onClick (toggle) causes the popover to reopen immediately.
+      if (triggerRef?.current && triggerRef.current.contains(e.target as Node)) return
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         onClose()
       }
     }
     document.addEventListener('pointerdown', handlePointerDown)
     return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [open, onClose])
+  }, [open, onClose, triggerRef])
 
   // Close on Escape
   useEffect(() => {
