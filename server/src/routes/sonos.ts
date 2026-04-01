@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express'
 import { z } from 'zod'
+import axios from 'axios'
 import { getAll, getOne, run } from '../db/index.js'
 import { sonosClient } from '../lib/sonos-client.js'
 import { sonosManager } from '../lib/sonos-manager.js'
@@ -7,8 +8,82 @@ import { emit } from '../lib/socket.js'
 import { findPodcastFeedUrl, getLatestEpisodeUrl } from '../lib/podcast-resolver.js'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
+const SONOS_API_URL = process.env.SONOS_API_URL || 'http://localhost:3003'
 
 const router = Router()
+
+// ── Album art proxy helpers ───────────────────────────────────────────────────
+
+const INTERNAL_IP_RE = /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|localhost|127\.0\.0\.1)([\/:?]|$)/i
+
+/**
+ * Rewrite a Sonos albumArtUri so it can be fetched by the browser.
+ * - Relative paths (starting with /) are made absolute using the Sonos HTTP API base URL
+ * - Internal/private IP addresses are proxied through /api/sonos/art-proxy
+ * - External HTTP URLs are also proxied to avoid mixed-content browser blocks
+ * - External HTTPS URLs are returned unchanged
+ */
+function rewriteAlbumArtUri(uri: string | undefined): string | undefined {
+  if (!uri) return undefined
+
+  // Relative path from node-sonos-http-api — make absolute using the API base URL
+  if (uri.startsWith('/')) {
+    const absolute = `${SONOS_API_URL}${uri}`
+    return `/api/sonos/art-proxy?url=${encodeURIComponent(absolute)}`
+  }
+
+  // Internal/private IP or localhost — must proxy
+  if (INTERNAL_IP_RE.test(uri)) {
+    return `/api/sonos/art-proxy?url=${encodeURIComponent(uri)}`
+  }
+
+  // External HTTP — proxy to avoid mixed-content blocks in HTTPS deployments
+  if (uri.startsWith('http://')) {
+    return `/api/sonos/art-proxy?url=${encodeURIComponent(uri)}`
+  }
+
+  // External HTTPS CDN — return as-is
+  return uri
+}
+
+// GET /art-proxy — server-side proxy for album art images from internal Sonos IPs
+router.get('/art-proxy', async (req: Request, res: Response) => {
+  const rawUrl = req.query.url
+  const url = typeof rawUrl === 'string' ? rawUrl : undefined
+
+  if (!url) {
+    res.status(400).json({ error: 'Missing required query parameter: url' })
+    return
+  }
+
+  // Only allow http/https schemes
+  if (!/^https?:\/\//i.test(url)) {
+    res.status(400).json({ error: 'Invalid URL scheme — only http and https are permitted' })
+    return
+  }
+
+  try {
+    const upstream = await axios.get<Buffer>(url, {
+      responseType: 'arraybuffer',
+      timeout: 8000,
+      // Don't throw on non-2xx so we can surface a clean error
+      validateStatus: status => status < 500,
+    })
+
+    if (upstream.status >= 400) {
+      res.status(502).json({ error: `Upstream returned ${upstream.status}` })
+      return
+    }
+
+    const contentType = upstream.headers['content-type'] as string | undefined
+    res.set('Content-Type', contentType || 'image/jpeg')
+    res.set('Cache-Control', 'public, max-age=3600')
+    res.send(upstream.data)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Failed to fetch album art' : msg })
+  }
+})
 
 // Cache favourites for 5 minutes
 let favouritesCache: { data: unknown[]; fetchedAt: number } | null = null
@@ -35,6 +110,8 @@ router.get('/state/:speaker', async (req: Request, res: Response) => {
       const podcastArt = sonosManager.getPodcastArt(speaker)
       if (podcastArt) state.currentTrack.albumArtUri = podcastArt
     }
+    // Rewrite album art URL so the browser can reach it
+    state.currentTrack.albumArtUri = rewriteAlbumArtUri(state.currentTrack.albumArtUri) ?? ''
     res.json(state)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -503,6 +580,8 @@ router.get('/now-playing', async (_req: Request, res: Response) => {
           const podcastArt = sonosManager.getPodcastArt(speaker_name)
           if (podcastArt) state.currentTrack.albumArtUri = podcastArt
         }
+        // Rewrite album art URL so the browser can reach it
+        state.currentTrack.albumArtUri = rewriteAlbumArtUri(state.currentTrack.albumArtUri) ?? ''
         return { roomName: room_name, speakerName: speaker_name, state }
       }),
     )
