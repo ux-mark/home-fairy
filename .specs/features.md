@@ -35,10 +35,13 @@ Colour-coded status card (green/orange/red) for all configured subway stops. Col
 
 Current outdoor temperature, weather description, humidity, and wind speed. Temperature displays in your configured unit. Only shown when weather data is available.
 
-### Mute All Speakers
+### Music Controls (3-button row)
 **Status**: available
 
-One-tap toggle to mute or unmute all Sonos speakers simultaneously. Only appears when speakers are configured.
+When speakers are configured, a three-button row replaces the single mute button:
+- **Speakers** — navigates to the Sonos page for full playback management
+- **Play / Pause** — plays or pauses all speakers simultaneously (icon-only, universally recognised)
+- **Mute / Unmute** — mutes or unmutes all speakers simultaneously (icon-only)
 
 ### Auto / Manual Room Toggle
 **Status**: available
@@ -49,6 +52,11 @@ Switch any room between Auto (motion-driven automation) and Manual mode directly
 **Status**: available
 
 When night mode has locked rooms, a button appears to unlock all rooms, returning them to normal operation.
+
+### Hushing Home
+**Status**: available
+
+A single-tap button on the home screen activates Hushing Home. When active, a single global scene (configured in Settings) runs across all rooms and all motion-triggered scene changes are paused — every room is locked. Deactivate with the same button to resume normal automation. If no scene has been configured, the button navigates to Settings to set one up.
 
 ---
 
@@ -295,7 +303,31 @@ Create rules for what plays when the system mode changes. Supports Sonos favouri
 
 ---
 
-## 12. Kasa Device Management
+## 12. Sonos Playback Management (`/sonos`)
+
+### Speaker Cards with Playback Controls
+**Status**: available
+
+Per-speaker cards showing now-playing information (album art, track title, artist) with playback state badge (Playing / Paused / Stopped). Each card has Play/Pause, Stop (when active), and Change Music buttons.
+
+### Music Selection
+**Status**: available
+
+Tap "Change music" on a speaker card to open a bottom sheet with the Favourite Selector. Browse by content type (Radio, Playlists, Podcasts, Albums, etc.). Selecting a favourite plays it on that speaker immediately.
+
+### Volume Control
+**Status**: available
+
+Per-speaker volume slider (horizontal, debounced). Master volume slider at the top adjusts all speakers to the same level simultaneously.
+
+### Bottom Tab Navigation
+**Status**: available
+
+Five tabs: Speakers (active), Genres, Playlists, Albums, Radio. Genres/Playlists/Albums/Radio are placeholders showing a "coming soon" message — full content browsing will be built out in future sessions.
+
+---
+
+## 13. Kasa Device Management
 
 ### Device List and Controls
 **Status**: available

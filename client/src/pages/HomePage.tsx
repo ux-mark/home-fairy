@@ -5,7 +5,7 @@ import { useState, useRef, useEffect, useMemo, Fragment } from 'react'
 import { api } from '@/lib/api'
 import { cn, formatTimeAgo, DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
-import type { Room, Scene } from '@/lib/api'
+import type { Room, Scene, HushingStatus } from '@/lib/api'
 import { getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 import { HomeSpeakerPopover } from '@/components/sonos/HomeSpeakerPopover'
 import { HomeVolumePopover } from '@/components/sonos/HomeVolumePopover'
@@ -106,7 +106,6 @@ function RoomCard({
   isLocked,
   expandedChildren,
   onToggleChild,
-  hushActive,
 }: {
   room: Room
   allRooms: Room[]
@@ -118,7 +117,6 @@ function RoomCard({
   isLocked?: boolean
   expandedChildren: Set<string>
   onToggleChild: (childName: string) => void
-  hushActive?: boolean
 }) {
   const childRooms = allRooms
     .filter(r => r.parent_room === room.name && !r.promoted)
@@ -238,27 +236,6 @@ function RoomCard({
               </button>
             )
           })}
-        </div>
-      )}
-
-      {/* Per-room Hush Home toggle — shown when global hush is active and room has a hush scene */}
-      {hushActive && room.hush_scene && (
-        <div className="mt-2">
-          <button
-            onClick={() => onToggleScene(room.hush_scene!, room.current_scene === room.hush_scene)}
-            aria-pressed={room.current_scene === room.hush_scene}
-            className={cn(
-              'flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500',
-              'min-h-[44px]',
-              room.current_scene === room.hush_scene
-                ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30'
-                : 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20',
-            )}
-          >
-            <Wrench className="h-3.5 w-3.5" aria-hidden="true" />
-            {room.current_scene === room.hush_scene ? 'Hushed' : 'Hush this room'}
-          </button>
         </div>
       )}
 
@@ -906,78 +883,71 @@ function MusicQuickAction() {
   )
 }
 
-// ── Hush Home quick action ────────────────────────────────────────────────────
+// ── Hushing Home quick action ─────────────────────────────────────────────────
 
-function HushQuickAction() {
+function HushingQuickAction() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const navigate = useNavigate()
 
-  const { data: hushStatus, isLoading } = useQuery({
-    queryKey: ['system', 'hush-status'],
-    queryFn: api.system.getHushStatus,
+  const { data: hushingStatus, isLoading } = useQuery({
+    queryKey: ['system', 'hushing-status'],
+    queryFn: api.system.getHushingStatus,
     refetchInterval: 10_000,
   })
 
-  const { data: rooms } = useQuery({
-    queryKey: ['rooms'],
-    queryFn: api.rooms.getAll,
-  })
-
   const activateMutation = useMutation({
-    mutationFn: api.system.activateHush,
+    mutationFn: api.system.activateHushing,
     onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: ['system', 'hush-status'] })
-      const previous = queryClient.getQueryData<{ active: boolean; configuredCount: number }>(['system', 'hush-status'])
-      queryClient.setQueryData(['system', 'hush-status'], (old: { active: boolean; configuredCount: number } | undefined) =>
-        old ? { ...old, active: true } : { active: true, configuredCount: 0 }
+      await queryClient.cancelQueries({ queryKey: ['system', 'hushing-status'] })
+      const previous = queryClient.getQueryData<HushingStatus>(['system', 'hushing-status'])
+      queryClient.setQueryData(['system', 'hushing-status'], (old: HushingStatus | undefined) =>
+        old ? { ...old, active: true } : { active: true, sceneName: null }
       )
       return { previous }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['system', 'hush-status'] })
+      queryClient.invalidateQueries({ queryKey: ['system', 'hushing-status'] })
       queryClient.invalidateQueries({ queryKey: ['rooms'] })
-      toast({ message: 'Home is Hushed' })
+      toast({ message: 'Home is Hushing' })
     },
-    onError: (_err: unknown, _vars: unknown, context: { previous: { active: boolean; configuredCount: number } | undefined } | undefined) => {
-      if (context?.previous) queryClient.setQueryData(['system', 'hush-status'], context.previous)
-      toast({ message: 'Failed to activate Hush Home', type: 'error' })
+    onError: (_err: unknown, _vars: unknown, context: { previous: HushingStatus | undefined } | undefined) => {
+      if (context?.previous) queryClient.setQueryData(['system', 'hushing-status'], context.previous)
+      toast({ message: 'Failed to activate Hushing Home', type: 'error' })
     },
   })
 
   const deactivateMutation = useMutation({
-    mutationFn: api.system.deactivateHush,
+    mutationFn: api.system.deactivateHushing,
     onMutate: async () => {
-      await queryClient.cancelQueries({ queryKey: ['system', 'hush-status'] })
-      const previous = queryClient.getQueryData<{ active: boolean; configuredCount: number }>(['system', 'hush-status'])
-      queryClient.setQueryData(['system', 'hush-status'], (old: { active: boolean; configuredCount: number } | undefined) =>
-        old ? { ...old, active: false } : { active: false, configuredCount: 0 }
+      await queryClient.cancelQueries({ queryKey: ['system', 'hushing-status'] })
+      const previous = queryClient.getQueryData<HushingStatus>(['system', 'hushing-status'])
+      queryClient.setQueryData(['system', 'hushing-status'], (old: HushingStatus | undefined) =>
+        old ? { ...old, active: false } : { active: false, sceneName: null }
       )
       return { previous }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['system', 'hush-status'] })
-      toast({ message: 'Hush Home deactivated' })
+      queryClient.invalidateQueries({ queryKey: ['system', 'hushing-status'] })
+      toast({ message: 'Hushing Home deactivated' })
     },
-    onError: (_err: unknown, _vars: unknown, context: { previous: { active: boolean; configuredCount: number } | undefined } | undefined) => {
-      if (context?.previous) queryClient.setQueryData(['system', 'hush-status'], context.previous)
-      toast({ message: 'Failed to deactivate Hush Home', type: 'error' })
+    onError: (_err: unknown, _vars: unknown, context: { previous: HushingStatus | undefined } | undefined) => {
+      if (context?.previous) queryClient.setQueryData(['system', 'hushing-status'], context.previous)
+      toast({ message: 'Failed to deactivate Hushing Home', type: 'error' })
     },
   })
 
   if (isLoading) return null
 
-  const isActive = hushStatus?.active ?? false
-  const configuredCount = hushStatus?.configuredCount ?? 0
+  const isActive = hushingStatus?.active ?? false
+  const hasScene = Boolean(hushingStatus?.sceneName)
   const isPending = activateMutation.isPending || deactivateMutation.isPending
-
-  const hasConfiguredRooms = configuredCount > 0 || (rooms ?? []).some(r => r.hush_scene)
 
   const handleToggle = () => {
     if (isActive) {
       deactivateMutation.mutate(undefined)
-    } else if (!hasConfiguredRooms) {
-      navigate('/settings#hush')
+    } else if (!hasScene) {
+      navigate('/settings#hushing-home')
     } else {
       activateMutation.mutate(undefined)
     }
@@ -1004,10 +974,10 @@ function HushQuickAction() {
         {isPending
           ? (isActive ? 'Deactivating...' : 'Activating...')
           : isActive
-            ? 'Hushed'
-            : !hasConfiguredRooms
-              ? 'Hush Home — tap to set up'
-              : 'Hush Home'}
+            ? 'Home is Hushing'
+            : !hasScene
+              ? 'Hushing Home — tap to set up'
+              : 'Hushing Home'}
       </button>
     </div>
   )
@@ -1062,12 +1032,6 @@ export default function HomePage() {
     queryFn: api.dashboard.getSummary,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
-  })
-
-  const { data: hushStatus } = useQuery({
-    queryKey: ['system', 'hush-status'],
-    queryFn: api.system.getHushStatus,
-    refetchInterval: 10_000,
   })
 
   const { data: prefs } = useQuery({
@@ -1199,8 +1163,8 @@ export default function HomePage() {
         return <QuickActions key="quick-actions" />
       case 'music':
         return <MusicQuickAction key="music" />
-      case 'hush':
-        return <HushQuickAction key="hush" />
+      case 'hushing-home':
+        return <HushingQuickAction key="hushing-home" />
       case 'weather':
         return <WeatherCard key="weather" />
       case 'mode-selector':
@@ -1281,7 +1245,6 @@ export default function HomePage() {
                       isLocked={nightStatus?.lockedRooms.includes(room.name)}
                       expandedChildren={expandedChildren}
                       onToggleChild={toggleChild}
-                      hushActive={hushStatus?.active}
                     />
                   ))}
               </div>

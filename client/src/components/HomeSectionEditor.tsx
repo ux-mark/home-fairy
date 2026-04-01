@@ -31,6 +31,7 @@ const HOMEPAGE_SECTIONS = [
   { id: 'mta', label: 'Train times', icon: 'train-front' },
   { id: 'quick-actions', label: 'Quick actions', icon: 'zap' },
   { id: 'music', label: 'Speaker controls', icon: 'volume2' },
+  { id: 'hushing-home', label: 'Hushing Home', icon: 'wrench' },
   { id: 'weather', label: 'Weather', icon: 'cloud-sun' },
   { id: 'mode-selector', label: 'Mode selector', icon: 'sun' },
   { id: 'rooms', label: 'Rooms', icon: 'door-open' },

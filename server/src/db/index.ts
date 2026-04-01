@@ -382,7 +382,7 @@ export function initDb(): void {
     }
   }
 
-  // Migrate current_state key from manual_active to hush_active
+  // Migrate current_state key from manual_active to hush_active (legacy)
   const hushActiveRow = db.prepare("SELECT value FROM current_state WHERE key = 'hush_active'").get() as { value: string } | undefined
   if (!hushActiveRow) {
     const oldManualRow = db.prepare("SELECT value FROM current_state WHERE key = 'manual_active'").get() as { value: string } | undefined
@@ -394,6 +394,36 @@ export function initDb(): void {
       ).run(oldManualRow.value)
       db.prepare("DELETE FROM current_state WHERE key = 'manual_active'").run()
       console.log('[db] Migrated current_state key manual_active → hush_active')
+    }
+  }
+
+  // Migration: rename current_state key hush_active → hushing_active
+  const hushingActiveRow = db.prepare("SELECT value FROM current_state WHERE key = 'hushing_active'").get() as { value: string } | undefined
+  if (!hushingActiveRow) {
+    const oldHushRow = db.prepare("SELECT value FROM current_state WHERE key = 'hush_active'").get() as { value: string } | undefined
+    if (oldHushRow) {
+      db.prepare(
+        `INSERT INTO current_state (key, value, updated_at)
+         VALUES ('hushing_active', ?, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      ).run(oldHushRow.value)
+      db.prepare("DELETE FROM current_state WHERE key = 'hush_active'").run()
+      console.log('[db] Migrated current_state key hush_active → hushing_active')
+    }
+  }
+
+  // Migration: seed hushing_scene from first configured room hush_scene if not already set
+  const hushingSceneRow = db.prepare("SELECT value FROM current_state WHERE key = 'hushing_scene'").get() as { value: string } | undefined
+  if (!hushingSceneRow) {
+    const firstHushRoom = db.prepare('SELECT hush_scene FROM rooms WHERE hush_scene IS NOT NULL LIMIT 1').get() as { hush_scene: string } | undefined
+    const sceneValue = firstHushRoom?.hush_scene ?? null
+    if (sceneValue) {
+      db.prepare(
+        `INSERT INTO current_state (key, value, updated_at)
+         VALUES ('hushing_scene', ?, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      ).run(sceneValue)
+      console.log(`[db] Seeded hushing_scene from room hush_scene: ${sceneValue}`)
     }
   }
 
