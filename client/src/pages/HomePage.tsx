@@ -8,6 +8,7 @@ import { useToast } from '@/hooks/useToast'
 import type { Room, Scene } from '@/lib/api'
 import { getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 import { HomeSpeakerPopover } from '@/components/sonos/HomeSpeakerPopover'
+import { HomeVolumePopover } from '@/components/sonos/HomeVolumePopover'
 import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { LucideIcon } from '@/components/ui/LucideIcon'
@@ -741,6 +742,7 @@ function MusicQuickAction() {
   const { toast } = useToast()
   const navigate = useNavigate()
   const [popoverOpen, setPopoverOpen] = useState(false)
+  const [volumePopoverOpen, setVolumePopoverOpen] = useState(false)
 
   const { data: muteStatus, isLoading: muteLoading } = useQuery({
     queryKey: ['sonos', 'mute-status'],
@@ -755,30 +757,6 @@ function MusicQuickAction() {
     staleTime: 5_000,
     retry: false,
     enabled: !!muteStatus && muteStatus.totalSpeakers > 0,
-  })
-
-  const muteAllMutation = useMutation({
-    mutationFn: (muted: boolean) => api.sonos.muteAll(muted),
-    onMutate: async (muted) => {
-      await queryClient.cancelQueries({ queryKey: ['sonos', 'mute-status'] })
-      const previous = queryClient.getQueryData<{ allMuted: boolean; mutedCount: number; totalSpeakers: number }>(['sonos', 'mute-status'])
-      if (previous) {
-        queryClient.setQueryData(['sonos', 'mute-status'], {
-          ...previous,
-          allMuted: muted,
-          mutedCount: muted ? previous.totalSpeakers : 0,
-        })
-      }
-      return { previous }
-    },
-    onSuccess: (_data, muted) => {
-      queryClient.invalidateQueries({ queryKey: ['sonos', 'mute-status'] })
-      toast({ message: muted ? 'All speakers muted' : 'All speakers unmuted' })
-    },
-    onError: (_err, _muted, context) => {
-      if (context?.previous) queryClient.setQueryData(['sonos', 'mute-status'], context.previous)
-      toast({ message: 'Failed to update speakers', type: 'error' })
-    },
   })
 
   const playAllMutation = useMutation({
@@ -812,7 +790,7 @@ function MusicQuickAction() {
         <div className="grid grid-cols-3 gap-2">
           {/* Speakers — navigates to /sonos */}
           <button
-            onClick={() => navigate('/sonos')}
+            onClick={() => { setPopoverOpen(false); setVolumePopoverOpen(false); navigate('/sonos') }}
             className={cn(
               'flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-xs font-medium transition-all',
               'surface text-body hover:brightness-95 dark:hover:brightness-110 active:scale-[0.97]',
@@ -828,6 +806,7 @@ function MusicQuickAction() {
           <button
             onClick={() => {
               if (muteStatus && muteStatus.totalSpeakers > 1) {
+                setVolumePopoverOpen(false)
                 setPopoverOpen(o => !o)
               } else {
                 playAllMutation.mutate(!isPlaying)
@@ -866,25 +845,27 @@ function MusicQuickAction() {
             )}
           </button>
 
-          {/* Mute / Unmute all */}
+          {/* Volume — opens volume popover */}
           <button
-            onClick={() => muteAllMutation.mutate(!isMuted)}
-            disabled={muteAllMutation.isPending}
-            aria-label={isMuted ? 'Unmute all speakers' : 'Mute all speakers'}
-            aria-pressed={isMuted}
+            onClick={() => {
+              setPopoverOpen(false)
+              setVolumePopoverOpen(o => !o)
+            }}
+            aria-label={volumePopoverOpen ? 'Close volume controls' : 'Open volume controls'}
+            aria-pressed={volumePopoverOpen}
             className={cn(
-              'flex min-h-[52px] items-center justify-center rounded-xl px-2 py-2 transition-all',
+              'flex min-h-[52px] items-center justify-center px-2 py-2 transition-all',
               'active:scale-[0.97]',
-              'focus-visible:outline-2 focus-visible:outline-offset-2',
-              'disabled:opacity-50',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              volumePopoverOpen ? 'rounded-t-xl rounded-b-none' : 'rounded-xl',
               isMuted
-                ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25 focus-visible:outline-fairy-500'
-                : 'surface text-body hover:brightness-95 dark:hover:brightness-110 focus-visible:outline-fairy-500',
+                ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
+                : volumePopoverOpen
+                  ? 'bg-[var(--bg-tertiary)] text-fairy-400'
+                  : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
             )}
           >
-            {muteAllMutation.isPending ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : isMuted ? (
+            {isMuted ? (
               <VolumeX className="h-5 w-5" aria-hidden="true" />
             ) : (
               <Volume2 className="h-5 w-5" aria-hidden="true" />
@@ -892,6 +873,7 @@ function MusicQuickAction() {
           </button>
         </div>
         <HomeSpeakerPopover open={popoverOpen} onClose={() => setPopoverOpen(false)} />
+        <HomeVolumePopover open={volumePopoverOpen} onClose={() => setVolumePopoverOpen(false)} />
       </div>
     </section>
   )
