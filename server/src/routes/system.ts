@@ -24,7 +24,7 @@ import { sonosManager } from '../lib/sonos-manager.js'
 import { motionHandler } from '../lib/motion-handler.js'
 import { emit } from '../lib/socket.js'
 import { deviceHealthService } from '../lib/device-health-service.js'
-import { activateScene } from '../lib/scene-executor.js'
+import { activateScene, deactivateScene } from '../lib/scene-executor.js'
 
 const router = Router()
 
@@ -1734,50 +1734,50 @@ router.post('/devices/:type/:id/reactivate', (req: Request, res: Response) => {
   }
 })
 
-// POST /hush — activate Hush Home for all configured rooms
-router.post('/hush', async (req: Request, res: Response) => {
+// POST /hushing — activate Hushing Home (global scene from current_state)
+router.post('/hushing', async (req: Request, res: Response) => {
   try {
     const user = (req as any).user ?? FAIRY_QUEEN
-    const rooms = getAll<{ name: string; hush_scene: string | null }>('SELECT name, hush_scene FROM rooms')
-    const configured = rooms.filter(r => r.hush_scene)
-
-    const activated: string[] = []
-    for (const room of configured) {
-      try {
-        await activateScene(room.hush_scene!)
-        activated.push(room.name)
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        log(`Hush Home: failed to activate scene in ${room.name}: ${msg}`, 'system', user)
-      }
+    const sceneRow = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'hushing_scene'")
+    if (!sceneRow?.value) {
+      res.status(400).json({ error: 'No hushing scene configured. Set one in Settings → Hushing Home.' })
+      return
     }
+    const sceneName = sceneRow.value
+
+    await activateScene(sceneName)
 
     run(
       `INSERT INTO current_state (key, value, updated_at)
-       VALUES ('hush_active', 'true', datetime('now'))
+       VALUES ('hushing_active', 'true', datetime('now'))
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
     )
 
-    log(`${user.name} activated Hush Home (${configured.length} rooms configured, ${activated.length} scenes activated)`, 'system', user)
-    emit('scene:change', { action: 'hush_activate' })
-    res.json({ success: true, activatedRooms: activated, configuredCount: configured.length })
+    const allRooms = getAll<{ name: string }>('SELECT name FROM rooms')
+    motionHandler.lockRooms(allRooms.map(r => r.name))
+    sonosManager.onLockedStateActivated().catch(() => {})
+
+    log(`${user.name} activated Hushing Home (scene: ${sceneName})`, 'system', user)
+    emit('scene:change', { action: 'hushing_activate' })
+    res.json({ success: true, sceneName })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 
-// POST /hush/deactivate — deactivate Hush Home
-router.post('/hush/deactivate', (req: Request, res: Response) => {
+// POST /hushing/deactivate — deactivate Hushing Home
+router.post('/hushing/deactivate', (req: Request, res: Response) => {
   try {
     const user = (req as any).user ?? FAIRY_QUEEN
     run(
       `INSERT INTO current_state (key, value, updated_at)
-       VALUES ('hush_active', 'false', datetime('now'))
+       VALUES ('hushing_active', 'false', datetime('now'))
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
     )
-    log(`${user.name} deactivated Hush Home`, 'system', user)
-    emit('scene:change', { action: 'hush_deactivate' })
+    motionHandler.unlockAllRooms()
+    log(`${user.name} deactivated Hushing Home`, 'system', user)
+    emit('scene:change', { action: 'hushing_deactivate' })
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -1785,12 +1785,37 @@ router.post('/hush/deactivate', (req: Request, res: Response) => {
   }
 })
 
-// GET /hush/status — get current Hush Home state
-router.get('/hush/status', (_req: Request, res: Response) => {
+// GET /hushing/status — get current Hushing Home state
+router.get('/hushing/status', (_req: Request, res: Response) => {
   try {
-    const row = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'hush_active'")
-    const configuredCount = (getOne<{ cnt: number }>('SELECT COUNT(*) as cnt FROM rooms WHERE hush_scene IS NOT NULL') ?? { cnt: 0 }).cnt
-    res.json({ active: row?.value === 'true', configuredCount })
+    const activeRow = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'hushing_active'")
+    const sceneRow = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'hushing_scene'")
+    res.json({ active: activeRow?.value === 'true', sceneName: sceneRow?.value ?? null })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// PUT /hushing/scene — set or update the global hushing scene
+router.put('/hushing/scene', (req: Request, res: Response) => {
+  try {
+    const { scene } = req.body as { scene: string | null }
+    if (scene !== null && typeof scene !== 'string') {
+      res.status(400).json({ error: 'scene must be a string or null' })
+      return
+    }
+    if (scene === null) {
+      run("DELETE FROM current_state WHERE key = 'hushing_scene'")
+    } else {
+      run(
+        `INSERT INTO current_state (key, value, updated_at)
+         VALUES ('hushing_scene', ?, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        [scene],
+      )
+    }
+    res.json({ sceneName: scene })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })

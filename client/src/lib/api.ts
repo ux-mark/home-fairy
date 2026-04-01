@@ -44,7 +44,6 @@ export interface Room {
   sonos_follow_me: boolean
   sonos_auto_start: boolean
   icon: string | null
-  hush_scene: string | null
   created_by?: string | null
   updated_by?: string | null
   created_by_name?: string | null
@@ -344,9 +343,9 @@ export interface NightStatus {
   wakeMode: string
 }
 
-export interface HushStatus {
+export interface HushingStatus {
   active: boolean
-  configuredCount: number
+  sceneName: string | null
 }
 
 // ── Dashboard types ──────────────────────────────────────────────────────────
@@ -1042,9 +1041,10 @@ export const api = {
     guestNight: () => fetchApi<{ success: boolean; mode: string; excludeRooms: string[]; actions: string[] }>('/system/guest-night', { method: 'POST' }),
     getNightStatus: () => fetchApi<NightStatus>('/system/night/status'),
     unlockNight: () => fetchApi<{ success: boolean }>('/system/night/unlock', { method: 'POST' }),
-    activateHush: () => fetchApi<{ success: boolean; activatedRooms: string[]; configuredCount: number }>('/system/hush', { method: 'POST' }),
-    deactivateHush: () => fetchApi<{ success: boolean }>('/system/hush/deactivate', { method: 'POST' }),
-    getHushStatus: () => fetchApi<HushStatus>('/system/hush/status'),
+    activateHushing: () => fetchApi<{ success: boolean; sceneName: string }>('/system/hushing', { method: 'POST' }),
+    deactivateHushing: () => fetchApi<{ success: boolean }>('/system/hushing/deactivate', { method: 'POST' }),
+    getHushingStatus: () => fetchApi<HushingStatus>('/system/hushing/status'),
+    setHushingScene: (scene: string | null) => fetchApi<{ sceneName: string | null }>('/system/hushing/scene', { method: 'PUT', body: JSON.stringify({ scene }) }),
     getMtaStatus: (station?: string, direction?: string, routes?: string) =>
       fetchApi<MtaStatus>(`/system/mta/status?station=${station || '120'}&direction=${direction || 'S'}${routes ? '&routes=' + routes : ''}`),
     getMtaArrivals: (station?: string, direction?: string, routes?: string) =>
