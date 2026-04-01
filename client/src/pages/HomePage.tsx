@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Thermometer, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, Lock, AlertTriangle, ChevronRight, ArrowUp, ArrowDown, Activity, Loader2, Volume2, VolumeX, Footprints, Settings2, Pencil, Speaker, Play, Pause, Wrench } from 'lucide-react'
+import { Thermometer, Zap, Cloud, Droplets, Wind, Power, Moon, Users, Train, Lock, AlertTriangle, ChevronRight, ArrowUp, ArrowDown, Activity, Loader2, Volume2, VolumeX, Footprints, Settings2, Pencil, Speaker, Play, Pause, Wrench, X } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useState, useRef, useEffect, useMemo, Fragment } from 'react'
 import { api } from '@/lib/api'
@@ -106,6 +106,7 @@ function RoomCard({
   isLocked,
   expandedChildren,
   onToggleChild,
+  hushActive,
 }: {
   room: Room
   allRooms: Room[]
@@ -117,6 +118,7 @@ function RoomCard({
   isLocked?: boolean
   expandedChildren: Set<string>
   onToggleChild: (childName: string) => void
+  hushActive?: boolean
 }) {
   const childRooms = allRooms
     .filter(r => r.parent_room === room.name && !r.promoted)
@@ -236,6 +238,27 @@ function RoomCard({
               </button>
             )
           })}
+        </div>
+      )}
+
+      {/* Per-room Hush Home toggle — shown when global hush is active and room has a hush scene */}
+      {hushActive && room.hush_scene && (
+        <div className="mt-2">
+          <button
+            onClick={() => onToggleScene(room.hush_scene!, room.current_scene === room.hush_scene)}
+            aria-pressed={room.current_scene === room.hush_scene}
+            className={cn(
+              'flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500',
+              'min-h-[44px]',
+              room.current_scene === room.hush_scene
+                ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30'
+                : 'bg-amber-500/10 text-amber-500 hover:bg-amber-500/20',
+            )}
+          >
+            <Wrench className="h-3.5 w-3.5" aria-hidden="true" />
+            {room.current_scene === room.hush_scene ? 'Hushed' : 'Hush this room'}
+          </button>
         </div>
       )}
 
@@ -838,6 +861,8 @@ function MusicQuickAction() {
           >
             {playAllMutation.isPending ? (
               <Loader2 className="h-5 w-5 animate-spin" />
+            ) : popoverOpen ? (
+              <X className="h-5 w-5" aria-hidden="true" />
             ) : isPlaying ? (
               <Pause className="h-5 w-5" aria-hidden="true" />
             ) : (
@@ -865,7 +890,9 @@ function MusicQuickAction() {
                   : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
             )}
           >
-            {isMuted ? (
+            {volumePopoverOpen ? (
+              <X className="h-5 w-5" aria-hidden="true" />
+            ) : isMuted ? (
               <VolumeX className="h-5 w-5" aria-hidden="true" />
             ) : (
               <Volume2 className="h-5 w-5" aria-hidden="true" />
@@ -884,6 +911,7 @@ function MusicQuickAction() {
 function HushQuickAction() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const navigate = useNavigate()
 
   const { data: hushStatus, isLoading } = useQuery({
     queryKey: ['system', 'hush-status'],
@@ -949,14 +977,14 @@ function HushQuickAction() {
     if (isActive) {
       deactivateMutation.mutate(undefined)
     } else if (!hasConfiguredRooms) {
-      toast({ message: 'Set up Hush Home scenes in Settings first', type: 'error' })
+      navigate('/settings#hush')
     } else {
       activateMutation.mutate(undefined)
     }
   }
 
   return (
-    <div className="mb-6">
+    <div className="mt-4 mb-6">
       <button
         onClick={handleToggle}
         disabled={isPending}
@@ -1034,6 +1062,12 @@ export default function HomePage() {
     queryFn: api.dashboard.getSummary,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
+  })
+
+  const { data: hushStatus } = useQuery({
+    queryKey: ['system', 'hush-status'],
+    queryFn: api.system.getHushStatus,
+    refetchInterval: 10_000,
   })
 
   const { data: prefs } = useQuery({
@@ -1247,6 +1281,7 @@ export default function HomePage() {
                       isLocked={nightStatus?.lockedRooms.includes(room.name)}
                       expandedChildren={expandedChildren}
                       onToggleChild={toggleChild}
+                      hushActive={hushStatus?.active}
                     />
                   ))}
               </div>
