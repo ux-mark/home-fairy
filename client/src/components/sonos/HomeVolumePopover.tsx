@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Volume2, VolumeX, Loader2 } from 'lucide-react'
+import { Volume2, VolumeX, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
@@ -142,21 +142,6 @@ export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
       role="region"
       aria-label="Volume controls"
     >
-      {/* Close button */}
-      <button
-        onClick={onClose}
-        className={cn(
-          'absolute right-2 top-2 z-10',
-          'flex h-8 w-8 items-center justify-center rounded-lg',
-          'text-caption transition-colors',
-          'hover:bg-[var(--bg-tertiary)]',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-        )}
-        aria-label="Close volume controls"
-      >
-        <X className="h-4 w-4" aria-hidden="true" />
-      </button>
-
       <div className="px-3 pt-3 pb-2">
         {/* Loading state */}
         {isLoading && (
@@ -174,7 +159,7 @@ export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
           <>
             {/* All Volume row */}
             <div className="mb-3 border-b border-[var(--border-secondary)] pb-3">
-              <div className="flex items-center gap-3 pr-10">
+              <div className="flex items-center gap-3">
                 <span className="w-24 shrink-0 text-xs font-semibold text-heading">All Volume</span>
                 <SonosVolumeControl
                   value={masterVolume}

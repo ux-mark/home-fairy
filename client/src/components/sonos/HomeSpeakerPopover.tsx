@@ -128,21 +128,6 @@ export function HomeSpeakerPopover({ open, onClose }: HomeSpeakerPopoverProps) {
       role="region"
       aria-label="Speaker controls"
     >
-      {/* Close button */}
-      <button
-        onClick={onClose}
-        className={cn(
-          'absolute right-2 top-2 z-10',
-          'flex h-8 w-8 items-center justify-center rounded-lg',
-          'text-caption transition-colors',
-          'hover:bg-[var(--bg-tertiary)]',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-        )}
-        aria-label="Close speaker controls"
-      >
-        <X className="h-4 w-4" aria-hidden="true" />
-      </button>
-
       <div className="px-3 py-3">
         {/* Loading state */}
         {isLoading && (
@@ -150,7 +135,7 @@ export function HomeSpeakerPopover({ open, onClose }: HomeSpeakerPopoverProps) {
             {[0, 1].map(i => (
               <div
                 key={i}
-                className="flex animate-pulse items-center gap-3 rounded-lg p-2 pr-10"
+                className="flex animate-pulse items-center gap-3 rounded-lg p-2"
               >
                 <div className="h-10 flex-1 rounded-lg bg-[var(--bg-tertiary)]" />
                 <div className="h-10 w-10 rounded-lg bg-[var(--bg-tertiary)]" />
@@ -182,7 +167,7 @@ export function HomeSpeakerPopover({ open, onClose }: HomeSpeakerPopoverProps) {
               return (
                 <li
                   key={entry.speakerName}
-                  className="flex items-center gap-3 rounded-lg p-2 pr-10"
+                  className="flex items-center gap-3 rounded-lg p-2"
                 >
                   {/* Left: room info + now playing */}
                   <div className="min-w-0 flex-1">
