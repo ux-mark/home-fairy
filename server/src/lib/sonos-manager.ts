@@ -115,7 +115,7 @@ class SonosManager {
 
   private isRoomFollowMeEnabled(roomName: string): boolean {
     const room = getOne<RoomRow>('SELECT * FROM rooms WHERE name = ?', [roomName])
-    return room?.sonos_follow_me === 1
+    return room?.auto === 1 && room?.sonos_follow_me === 1
   }
 
   private getSpeakerForRoom(roomName: string): string | undefined {
