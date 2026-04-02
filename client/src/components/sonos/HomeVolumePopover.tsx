@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Volume2, VolumeX, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -26,10 +26,6 @@ export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
     retry: false,
   })
 
-  // Optimistic local volume overrides: speakerName → volume
-  // Only populated when user drags a slider; falls back to server data otherwise
-  const [localVolumes, setLocalVolumes] = useState<Record<string, number>>({})
-
   // Set volume mutation for an individual speaker
   const setVolumeMutation = useMutation({
     mutationFn: ({ speaker, level }: { speaker: string; level: number }) =>
@@ -37,12 +33,6 @@ export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
     onError: (_err, { speaker }) => {
       const entry = nowPlaying.find(e => e.speakerName === speaker)
       toast({ message: `Couldn't set volume for ${entry?.roomName ?? speaker}`, type: 'error' })
-      // Revert optimistic value
-      setLocalVolumes(prev => {
-        const next = { ...prev }
-        delete next[speaker]
-        return next
-      })
     },
   })
 
@@ -103,28 +93,19 @@ export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
   const masterVolume =
     activeSpeakers.length > 0
       ? Math.round(
-          activeSpeakers.reduce(
-            (sum, e) => sum + (localVolumes[e.speakerName] ?? e.state!.volume),
-            0,
-          ) / activeSpeakers.length,
+          activeSpeakers.reduce((sum, e) => sum + e.state!.volume, 0) / activeSpeakers.length,
         )
       : 50
 
   const allMuted = activeSpeakers.length > 0 && activeSpeakers.every(e => e.state?.mute)
 
   function handleMasterVolumeChange(level: number) {
-    const updates: Record<string, number> = {}
-    for (const entry of activeSpeakers) {
-      updates[entry.speakerName] = level
-    }
-    setLocalVolumes(prev => ({ ...prev, ...updates }))
     for (const entry of activeSpeakers) {
       setVolumeMutation.mutate({ speaker: entry.speakerName, level })
     }
   }
 
   function handleVolumeChange(speaker: string, level: number) {
-    setLocalVolumes(prev => ({ ...prev, [speaker]: level }))
     setVolumeMutation.mutate({ speaker, level })
   }
 
@@ -195,7 +176,7 @@ export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
             {/* Per-speaker rows */}
             <ul className="space-y-3" role="list">
               {activeSpeakers.map(entry => {
-                const currentVolume = localVolumes[entry.speakerName] ?? entry.state!.volume
+                const currentVolume = entry.state!.volume
                 const isMuted = entry.state?.mute ?? false
                 const isMutePending =
                   setMuteMutation.isPending &&

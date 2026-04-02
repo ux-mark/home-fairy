@@ -1,14 +1,15 @@
-import { useCallback, useRef } from 'react'
+import { useCallback } from 'react'
+import { useState } from 'react'
 import * as Slider from '@radix-ui/react-slider'
 import { cn } from '@/lib/utils'
 
 interface SonosVolumeControlProps {
-  /** Current volume level 0–100 */
+  /** Current volume level 0–100 (server-authoritative) */
   value: number
-  /** Called with the new level after debounce */
+  /** Called with the final level on pointer-up / touch-end */
   onChange: (level: number) => void
-  /** Whether an API call is in flight */
-  isPending?: boolean
+  /** Optional real-time drag callback for parent display updates */
+  onDragChange?: (level: number) => void
   /** Accessible label (e.g. "Living Room volume") */
   label: string
   /** Additional className for the root element */
@@ -17,48 +18,68 @@ interface SonosVolumeControlProps {
   disabled?: boolean
 }
 
-const DEBOUNCE_MS = 300
-
 /**
  * Horizontal volume slider using Radix Slider.
- * Debounces onChange by 300ms to avoid spamming the Sonos API while dragging.
+ *
+ * Manages its own internal drag state so the thumb tracks the finger
+ * at 60 fps with zero lag on mobile (Safari, Chrome, Firefox).
+ *
+ * - onValueChange  → updates local dragValue instantly (no debounce)
+ * - onValueCommit  → fires parent onChange once on pointer-up / touch-end,
+ *                    then clears the override so the next server value shows
+ * - While dragValue is set, incoming `value` prop changes are silently
+ *   ignored, so server refetches cannot snap the thumb mid-gesture.
+ *
  * Keyboard: arrow keys ±1, Page Up/Down ±10.
  */
 export function SonosVolumeControl({
   value,
   onChange,
-  isPending = false,
+  onDragChange,
   label,
   className,
   disabled = false,
 }: SonosVolumeControlProps) {
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // null means "use server value"; non-null means "user is dragging"
+  const [dragValue, setDragValue] = useState<number | null>(null)
+  const displayValue = dragValue ?? value
 
   const handleValueChange = useCallback(
     (vals: number[]) => {
       const next = vals[0]
-      if (debounceRef.current) clearTimeout(debounceRef.current)
-      debounceRef.current = setTimeout(() => {
-        onChange(next)
-      }, DEBOUNCE_MS)
+      setDragValue(next)
+      onDragChange?.(next)
+    },
+    [onDragChange],
+  )
+
+  const handleValueCommit = useCallback(
+    (vals: number[]) => {
+      setDragValue(null)
+      onChange(vals[0])
     },
     [onChange],
   )
 
   return (
-    <div className={cn('flex items-center gap-3', className)}>
+    <div
+      className={cn('flex items-center gap-3', className)}
+      // Prevent text selection and long-press popups on iOS Safari during drag
+      style={{ userSelect: 'none', WebkitTouchCallout: 'none' } as React.CSSProperties}
+    >
       <Slider.Root
         className={cn(
           'relative flex flex-1 touch-none select-none items-center',
           'focus-within:outline-none',
-          (disabled || isPending) && 'opacity-50',
+          disabled && 'opacity-50',
         )}
         min={0}
         max={100}
         step={1}
-        value={[value]}
+        value={[displayValue]}
         onValueChange={handleValueChange}
-        disabled={disabled || isPending}
+        onValueCommit={handleValueCommit}
+        disabled={disabled}
         aria-label={label}
       >
         <Slider.Track className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
@@ -72,6 +93,8 @@ export function SonosVolumeControl({
             'transition-shadow hover:ring-fairy-500',
             'cursor-grab active:cursor-grabbing',
           )}
+          // Promote thumb to its own compositor layer for GPU-accelerated dragging
+          style={{ willChange: 'transform', transform: 'translateZ(0)' }}
           aria-label={label}
         />
       </Slider.Root>
@@ -80,7 +103,7 @@ export function SonosVolumeControl({
         aria-live="polite"
         aria-atomic="true"
       >
-        {value}%
+        {displayValue}%
       </span>
     </div>
   )

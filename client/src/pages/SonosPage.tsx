@@ -63,7 +63,6 @@ function PlaceholderTab({ id }: { id: Exclude<TabId, 'speakers'> }) {
 function MasterVolumeControl() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const [localVolume, setLocalVolume] = useState<number | null>(null)
 
   const { data: zones } = useQuery({
     queryKey: ['sonos', 'zones'],
@@ -79,8 +78,6 @@ function MasterVolumeControl() {
     return Math.round(vols.reduce((a, b) => a + b, 0) / vols.length)
   })()
 
-  const displayVolume = localVolume ?? avgVolume
-
   const volumeMutation = useMutation({
     mutationFn: async (level: number) => {
       if (!zones) return
@@ -94,20 +91,14 @@ function MasterVolumeControl() {
     onError: () => toast({ message: 'Could not update volume', type: 'error' }),
   })
 
-  function handleChange(level: number) {
-    setLocalVolume(level)
-    volumeMutation.mutate(level)
-  }
-
   if (!zones || zones.length === 0) return null
 
   return (
     <div className="card mb-4 rounded-xl border p-4" style={{ borderColor: 'var(--border-primary)' }}>
       <p className="mb-2 text-xs font-medium text-caption">All speakers</p>
       <SonosVolumeControl
-        value={displayVolume}
-        onChange={handleChange}
-        isPending={volumeMutation.isPending}
+        value={avgVolume}
+        onChange={level => volumeMutation.mutate(level)}
         label="All speakers volume"
       />
     </div>
