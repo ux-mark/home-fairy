@@ -142,7 +142,7 @@ export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
       role="region"
       aria-label="Volume controls"
     >
-      <div className="px-3 pt-3 pb-2">
+      <div className="px-4 pt-4 pb-3">
         {/* Loading state */}
         {isLoading && (
           <div className="flex items-center justify-center py-4">
@@ -173,7 +173,7 @@ export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
                   aria-label={allMuted ? 'Unmute all speakers' : 'Mute all speakers'}
                   aria-pressed={allMuted}
                   className={cn(
-                    'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors',
+                    'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-colors',
                     'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                     'disabled:opacity-50',
                     allMuted
@@ -182,18 +182,18 @@ export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
                   )}
                 >
                   {muteAllMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
                   ) : allMuted ? (
-                    <VolumeX className="h-4 w-4" aria-hidden="true" />
+                    <VolumeX className="h-5 w-5" aria-hidden="true" />
                   ) : (
-                    <Volume2 className="h-4 w-4" aria-hidden="true" />
+                    <Volume2 className="h-5 w-5" aria-hidden="true" />
                   )}
                 </button>
               </div>
             </div>
 
             {/* Per-speaker rows */}
-            <ul className="space-y-1.5" role="list">
+            <ul className="space-y-3" role="list">
               {activeSpeakers.map(entry => {
                 const currentVolume = localVolumes[entry.speakerName] ?? entry.state!.volume
                 const isMuted = entry.state?.mute ?? false
@@ -222,7 +222,7 @@ export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
                       aria-label={isMuted ? `Unmute ${entry.roomName}` : `Mute ${entry.roomName}`}
                       aria-pressed={isMuted}
                       className={cn(
-                        'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors',
+                        'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-colors',
                         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                         'disabled:opacity-50',
                         isMuted
@@ -231,11 +231,11 @@ export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
                       )}
                     >
                       {isMutePending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
                       ) : isMuted ? (
-                        <VolumeX className="h-4 w-4" aria-hidden="true" />
+                        <VolumeX className="h-5 w-5" aria-hidden="true" />
                       ) : (
-                        <Volume2 className="h-4 w-4" aria-hidden="true" />
+                        <Volume2 className="h-5 w-5" aria-hidden="true" />
                       )}
                     </button>
                   </li>
