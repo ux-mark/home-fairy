@@ -109,6 +109,7 @@ export function MusicQuickAction() {
                 : popoverOpen
                   ? 'bg-[var(--bg-tertiary)] text-fairy-400 focus-visible:outline-fairy-500'
                   : 'surface text-body hover:brightness-95 dark:hover:brightness-110 focus-visible:outline-fairy-500',
+              popoverOpen && (isPlaying ? 'border-b-2 border-b-emerald-500' : 'border-b-2 border-b-fairy-500'),
             )}
           >
             {playAllMutation.isPending ? (
@@ -141,6 +142,7 @@ export function MusicQuickAction() {
                 : volumePopoverOpen
                   ? 'bg-[var(--bg-tertiary)] text-fairy-400'
                   : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
+              volumePopoverOpen && 'border-b-2 border-b-fairy-500',
             )}
           >
             {volumePopoverOpen ? (
@@ -156,13 +158,13 @@ export function MusicQuickAction() {
           open={popoverOpen}
           onClose={() => setPopoverOpen(false)}
           triggerRef={playButtonRef}
-          borderColor={isPlaying ? 'border-emerald-500/40' : 'border-fairy-500/40'}
+          borderColor={isPlaying ? 'border-emerald-500' : 'border-fairy-500'}
         />
         <HomeVolumePopover
           open={volumePopoverOpen}
           onClose={() => setVolumePopoverOpen(false)}
           triggerRef={volumeButtonRef}
-          borderColor="border-fairy-500/40"
+          borderColor="border-fairy-500"
         />
       </div>
     </section>

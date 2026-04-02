@@ -93,7 +93,7 @@ export function HushingQuickAction() {
             'flex w-full min-h-[52px] items-center justify-center gap-2 px-4 py-3 text-sm font-semibold transition-all active:scale-[0.97]',
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500',
             setupOpen
-              ? 'rounded-t-xl rounded-b-none bg-[var(--bg-tertiary)] text-amber-400'
+              ? 'rounded-t-xl rounded-b-none bg-[var(--bg-tertiary)] text-amber-400 border-b-2 border-b-amber-500'
               : 'rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20',
           )}
         >
@@ -113,7 +113,7 @@ export function HushingQuickAction() {
           open={setupOpen}
           onClose={() => setSetupOpen(false)}
           triggerRef={setupButtonRef}
-          borderColor="border-amber-500/40"
+          borderColor="border-amber-500"
         />
       </div>
     )

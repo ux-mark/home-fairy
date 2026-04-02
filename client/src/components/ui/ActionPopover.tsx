@@ -52,7 +52,7 @@ export function ActionPopover({
       className={cn(
         'absolute left-0 right-0 top-full z-30',
         'bg-[var(--bg-secondary)]',
-        'border border-t-0',
+        'border-2 border-t-0',
         borderColor ?? 'border-[var(--border-primary)]',
         'rounded-b-xl',
         'shadow-2xl shadow-[0_8px_30px_rgba(0,0,0,0.35)]',
