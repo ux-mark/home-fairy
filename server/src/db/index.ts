@@ -151,6 +151,9 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_logs_category
       ON logs (category, created_at DESC);
 
+    CREATE INDEX IF NOT EXISTS idx_logs_parent_id
+      ON logs (parent_id) WHERE parent_id IS NOT NULL;
+
     CREATE TABLE IF NOT EXISTS notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       severity TEXT NOT NULL CHECK(severity IN ('info', 'warning', 'critical')),

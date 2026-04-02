@@ -261,10 +261,10 @@ export class MotionHandler {
     } catch { /* don't let activity tracking break motion handling */ }
 
     if (value === 'active') {
-      log(`Motion active in ${roomName} (${sensorName})`, 'motion', FAIRY_QUEEN)
+      const parentId = log(`Motion active in ${roomName} (${sensorName})`, 'motion', FAIRY_QUEEN)
 
       // Cancel any existing timer for this room
-      this.cancelRoomTimer(roomName)
+      this.cancelRoomTimer(roomName, parentId)
 
       // Notify Sonos manager of room activity (non-blocking, has its own guards)
       sonosManager.onRoomMotionActive(roomName).catch(() => {})
@@ -345,17 +345,17 @@ export class MotionHandler {
 
       // Only activate if it differs from current scene
       if (sceneName !== room.current_scene) {
-        log(`Motion active in ${roomName} → activating ${sceneName}`, 'motion', FAIRY_QUEEN)
+        log(`Motion active in ${roomName} → activating ${sceneName}`, 'motion', FAIRY_QUEEN, undefined, parentId)
         try {
-          await activateScene(sceneName)
+          await activateScene(sceneName, undefined, 'auto', undefined, parentId)
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
-          log(`Error activating scene: ${msg}`, 'motion', FAIRY_QUEEN)
+          log(`Error activating scene: ${msg}`, 'motion', FAIRY_QUEEN, undefined, parentId)
         }
       }
     } else {
       // inactive
-      log(`Motion inactive in ${roomName} (${sensorName})`, 'motion', FAIRY_QUEEN)
+      const inactiveParentId = log(`Motion inactive in ${roomName} (${sensorName})`, 'motion', FAIRY_QUEEN)
 
       // Check if ALL sensors in this room are inactive
       const roomSensors = getAll<DeviceRoomRow>(
@@ -392,12 +392,12 @@ export class MotionHandler {
 
       const durationMs = room.timer * 60 * 1000
       log(
-        `Motion inactive in ${roomName} → starting ${room.timer}m timer`, 'motion', FAIRY_QUEEN,
+        `Motion inactive in ${roomName} → starting ${room.timer}m timer`, 'motion', FAIRY_QUEEN, undefined, inactiveParentId,
       )
 
       const timeout = setTimeout(async () => {
         this.roomTimers.delete(roomName)
-        log(`Timer expired for ${roomName}, deactivating scene`, 'motion', FAIRY_QUEEN)
+        const timerParentId = log(`Timer expired for ${roomName}, deactivating scene`, 'motion', FAIRY_QUEEN)
 
         const currentRoom = getOne<RoomRow>(
           'SELECT * FROM rooms WHERE name = ?',
@@ -405,10 +405,10 @@ export class MotionHandler {
         )
         if (currentRoom?.current_scene) {
           try {
-            await deactivateScene(currentRoom.current_scene)
+            await deactivateScene(currentRoom.current_scene, undefined, timerParentId)
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
-            log(`Error deactivating scene: ${msg}`, 'motion', FAIRY_QUEEN)
+            log(`Error deactivating scene: ${msg}`, 'motion', FAIRY_QUEEN, undefined, timerParentId)
           }
         }
         // Clear manual override flag when room goes inactive
@@ -424,12 +424,12 @@ export class MotionHandler {
     }
   }
 
-  cancelRoomTimer(roomName: string): void {
+  cancelRoomTimer(roomName: string, parentId?: number): void {
     const timer = this.roomTimers.get(roomName)
     if (timer) {
       clearTimeout(timer.timeout)
       this.roomTimers.delete(roomName)
-      log(`Cancelled timer for ${roomName}`, 'motion', FAIRY_QUEEN)
+      log(`Cancelled timer for ${roomName}`, 'motion', FAIRY_QUEEN, undefined, parentId)
     }
   }
 

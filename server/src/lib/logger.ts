@@ -10,14 +10,16 @@ export function log(
   category?: string,
   user?: LogUser | null,
   debug?: string,
-): void {
+  parentId?: number,
+): number {
   try {
-    run(
-      'INSERT INTO logs (message, category, user_id, user_name, debug) VALUES (?, ?, ?, ?, ?)',
-      [message, category ?? 'system', user?.id ?? null, user?.name ?? null, debug ?? null],
-    )
+    return run(
+      'INSERT INTO logs (parent_id, message, category, user_id, user_name, debug) VALUES (?, ?, ?, ?, ?, ?)',
+      [parentId ?? null, message, category ?? 'system', user?.id ?? null, user?.name ?? null, debug ?? null],
+    ).lastInsertRowid as number
   } catch {
     console.error('Failed to write log:', message)
+    return 0
   }
 }
 

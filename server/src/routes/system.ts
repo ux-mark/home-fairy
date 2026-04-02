@@ -25,6 +25,7 @@ import { motionHandler } from '../lib/motion-handler.js'
 import { emit } from '../lib/socket.js'
 import { deviceHealthService } from '../lib/device-health-service.js'
 import { activateScene, deactivateScene } from '../lib/scene-executor.js'
+import { narrate } from '../lib/activity-narrator.js'
 
 const router = Router()
 
@@ -44,6 +45,8 @@ interface LogRow {
   message: string
   debug: string | null
   category: string | null
+  user_id: string | null
+  user_name: string | null
   created_at: string
 }
 
@@ -208,6 +211,137 @@ router.get('/logs', (req: Request, res: Response) => {
       )
     }
     res.json(rows)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// GET /activity — grouped activity feed with Fairy Queen narratives
+router.get('/activity', (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 50)
+    const before = req.query.before ? Number(req.query.before) : undefined
+    const category = req.query.category as string | undefined
+    const room = req.query.room as string | undefined
+
+    // Build WHERE clause for parent logs (parent_id IS NULL)
+    // The activity feed only shows events that are meaningful to users.
+    // Everything else belongs in Raw Logs.
+    const conditions: string[] = [
+      'parent_id IS NULL',
+      // Exclude raw sensor telemetry and internal system chatter
+      "category NOT IN ('hubitat', 'sonos', 'kasa', 'lifx')",
+      // Exclude standalone motion events (no scene change)
+      "NOT (category = 'motion' AND message LIKE 'Motion active in %' AND message NOT LIKE '%→%')",
+      "NOT (category = 'motion' AND message LIKE 'Motion inactive in %')",
+      "NOT (message LIKE 'Cancelled timer for %')",
+      // Exclude orphaned device-level messages (children that have no parent_id set from before this feature)
+      "NOT (message LIKE 'Batch set %')",
+      "NOT (message LIKE 'Batch turned off %')",
+      "NOT (message LIKE 'Turned off %')",
+      "NOT (message LIKE 'Skipping deactivated %')",
+      "NOT (message LIKE 'Hubitat device %')",
+      "NOT (message LIKE 'Kasa device %')",
+      "NOT (message LIKE 'Twinkly %')",
+      "NOT (message LIKE 'Fairy device %')",
+      "NOT (message LIKE 'LIFX effect %')",
+      "NOT (message LIKE 'Stopped effects %')",
+      "NOT (message LIKE 'Error in batch %')",
+      "NOT (message LIKE 'Mode updated to:%')",
+      "NOT (message LIKE 'Scene timer:%')",
+      "NOT (message LIKE 'Chained scene %')",
+      "NOT (message LIKE 'Room locked:%')",
+      "NOT (message LIKE 'Restored %room locks%')",
+      "NOT (message LIKE 'Sun mode schedule:%')",
+      "NOT (message LIKE 'Time trigger schedule:%')",
+      "NOT (message LIKE 'Retry %')",
+      "NOT (message LIKE 'All failed %')",
+      "NOT (message LIKE 'Skipping retry %')",
+      "NOT (message LIKE '% light(s) failed in batch%')",
+      // Exclude MTA indicator internal updates (only keep trigger start/stop)
+      "NOT (message LIKE 'Light updated:%')",
+      "NOT (message LIKE 'Indicator light turned off')",
+      "NOT (message LIKE 'Indicator started:%')",
+      // Exclude duplicate scene logs that will be children of motion/timer parents going forward
+      // (for old logs without parent_id, the scene activation/deactivation shows alongside the motion log)
+      "NOT (category = 'scene' AND message LIKE 'Fairy Queen activated %' AND message LIKE '%(auto)%')",
+      "NOT (category = 'scene' AND message LIKE 'Fairy Queen deactivated %')",
+    ]
+    const params: unknown[] = []
+
+    if (before) {
+      conditions.push('id < ?')
+      params.push(before)
+    }
+    if (category) {
+      // If user explicitly requests a filtered category, override the exclusion
+      conditions.length = 1 // keep only parent_id IS NULL
+      conditions.push('category = ?')
+      params.length = 0
+      params.push(category)
+    }
+
+    const whereClause = conditions.join(' AND ')
+    const parents = getAll<LogRow>(
+      `SELECT * FROM logs WHERE ${whereClause} ORDER BY created_at DESC LIMIT ?`,
+      [...params, limit],
+    )
+
+    if (parents.length === 0) {
+      res.json([])
+      return
+    }
+
+    // Batch-fetch all children for these parents
+    const parentIds = parents.map(p => p.id)
+    const placeholders = parentIds.map(() => '?').join(',')
+    const children = getAll<LogRow>(
+      `SELECT * FROM logs WHERE parent_id IN (${placeholders}) ORDER BY id ASC`,
+      parentIds,
+    )
+
+    // Group children by parent_id
+    const childrenByParent = new Map<number, LogRow[]>()
+    for (const child of children) {
+      const list = childrenByParent.get(child.parent_id!) || []
+      list.push(child)
+      childrenByParent.set(child.parent_id!, list)
+    }
+
+    // Build activity items
+    const activities = parents.map(parent => {
+      const parentChildren = childrenByParent.get(parent.id) || []
+      const narrative = narrate(parent, parentChildren)
+
+      return {
+        id: parent.id,
+        message: narrative.message,
+        type: narrative.type,
+        room: narrative.room,
+        user: parent.user_name,
+        isFairyQueen: narrative.isFairyQueen,
+        timestamp: parent.created_at,
+        category: parent.category,
+        childCount: parentChildren.length,
+        children: parentChildren,
+      }
+    })
+
+    // Deduplicate consecutive identical messages (e.g. repeated weather updates)
+    const deduped: typeof activities = []
+    for (const activity of activities) {
+      const prev = deduped[deduped.length - 1]
+      if (prev && prev.message === activity.message) continue
+      deduped.push(activity)
+    }
+
+    // Optional room filter (applied after narration since room is extracted from messages)
+    const filtered = room
+      ? deduped.filter(a => a.room?.toLowerCase() === room.toLowerCase())
+      : deduped
+
+    res.json(filtered)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })

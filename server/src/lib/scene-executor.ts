@@ -206,6 +206,7 @@ export async function activateScene(
   visitedScenes: Set<string> = new Set(),
   source: 'manual' | 'auto' | 'timer' | 'chain' = 'auto',
   user?: { id: string; name: string },
+  parentLogId?: number,
 ): Promise<void> {
   if (visitedScenes.has(sceneName)) {
     log(`Scene cycle detected: ${sceneName} already in chain [${[...visitedScenes].join(' -> ')}]. Skipping.`)
@@ -230,7 +231,7 @@ export async function activateScene(
   ).map(r => ({ name: r.room_name }))
 
   const sourceLabel = source === 'manual' ? '' : ` (${source})`
-  log(`${actionUser.name} activated ${sceneName}${sourceLabel}`, 'scene', actionUser)
+  log(`${actionUser.name} activated ${sceneName}${sourceLabel}`, 'scene', actionUser, undefined, parentLogId)
 
   // Collect lifx_light commands for batching
   const lightCommands: LightCommand[] = []
@@ -250,7 +251,7 @@ export async function activateScene(
       const states: BatchState[] = []
       for (const cmd of lightCommands) {
         if (!deviceHealthService.isDeviceActive('lifx', cmd.light_id)) {
-          log(`Skipping deactivated light: ${cmd.selector}`)
+          log(`Skipping deactivated light: ${cmd.selector}`, undefined, undefined, undefined, parentLogId)
           continue
         }
         const state: BatchState = { selector: cmd.selector }
@@ -262,7 +263,7 @@ export async function activateScene(
       }
       if (states.length > 0) {
         const response = await lifxClient.setStates(states)
-        log(`Batch set ${states.length} light(s) via setStates`, 'scene', actionUser)
+        log(`Batch set ${states.length} light(s) via setStates`, 'scene', actionUser, undefined, parentLogId)
         // Record success for lights that responded ok in the batch
         for (const opResult of response.results) {
           if (!opResult.results) continue
@@ -276,7 +277,7 @@ export async function activateScene(
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      log(`Error in batch setStates: ${msg}`)
+      log(`Error in batch setStates: ${msg}`, undefined, undefined, undefined, parentLogId)
     }
   }
 
@@ -307,7 +308,7 @@ export async function activateScene(
                 await lifxClient.setStates(batch)
               } catch (err) {
                 const msg = err instanceof Error ? err.message : String(err)
-                log(`Error turning off LIFX lights in scene rooms: ${msg}`)
+                log(`Error turning off LIFX lights in scene rooms: ${msg}`, undefined, undefined, undefined, parentLogId)
               }
             }
           }
@@ -331,7 +332,7 @@ export async function activateScene(
               }
             }
           }
-          log('Turned off lights in scene rooms, Hubitat switches, and Kasa devices')
+          log('Turned off lights in scene rooms, Hubitat switches, and Kasa devices', undefined, undefined, undefined, parentLogId)
           break
         }
 
@@ -340,13 +341,13 @@ export async function activateScene(
             power: 'off',
             duration: cmd.duration ?? 1,
           })
-          log(`Turned off light: ${cmd.selector}`)
+          log(`Turned off light: ${cmd.selector}`, undefined, undefined, undefined, parentLogId)
           break
         }
 
         case 'hubitat_device': {
           if (!deviceHealthService.isDeviceActive('hub', String(cmd.device_id))) {
-            log(`Skipping deactivated device: ${cmd.device_id}`)
+            log(`Skipping deactivated device: ${cmd.device_id}`, undefined, undefined, undefined, parentLogId)
             break
           }
           try {
@@ -355,11 +356,11 @@ export async function activateScene(
             } else {
               await hubitatClient.sendCommand(cmd.device_id, cmd.command)
             }
-            log(`Hubitat device ${cmd.device_id}: ${cmd.command}${cmd.value !== undefined ? ` ${cmd.value}` : ''}`)
+            log(`Hubitat device ${cmd.device_id}: ${cmd.command}${cmd.value !== undefined ? ` ${cmd.value}` : ''}`, undefined, undefined, undefined, parentLogId)
             deviceHealthService.recordSuccess('hub', String(cmd.device_id))
           } catch (hubErr) {
             const hubMsg = hubErr instanceof Error ? hubErr.message : String(hubErr)
-            log(`Error executing Hubitat device ${cmd.device_id}: ${hubMsg}`, 'device_error')
+            log(`Error executing Hubitat device ${cmd.device_id}: ${hubMsg}`, 'device_error', undefined, undefined, parentLogId)
             deviceHealthService.recordFailure('hub', String(cmd.device_id), hubMsg)
             throw hubErr
           }
@@ -368,7 +369,7 @@ export async function activateScene(
 
         case 'kasa_device': {
           if (!deviceHealthService.isDeviceActive('kasa', cmd.device_id)) {
-            log(`Skipping deactivated device: ${cmd.name}`)
+            log(`Skipping deactivated device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
             break
           }
           try {
@@ -379,11 +380,11 @@ export async function activateScene(
             } else {
               await kasaClient.sendCommand(cmd.device_id, cmd.command)
             }
-            log(`Kasa device ${cmd.name}: ${cmd.command}${cmd.brightness !== undefined ? ` (brightness: ${cmd.brightness})` : ''}`)
+            log(`Kasa device ${cmd.name}: ${cmd.command}${cmd.brightness !== undefined ? ` (brightness: ${cmd.brightness})` : ''}`, undefined, undefined, undefined, parentLogId)
             deviceHealthService.recordSuccess('kasa', cmd.device_id)
           } catch (kasaErr) {
             const kasaMsg = kasaErr instanceof Error ? kasaErr.message : String(kasaErr)
-            log(`Error executing Kasa device ${cmd.name}: ${kasaMsg}`, 'device_error')
+            log(`Error executing Kasa device ${cmd.name}: ${kasaMsg}`, 'device_error', undefined, undefined, parentLogId)
             deviceHealthService.recordFailure('kasa', cmd.device_id, kasaMsg)
             throw kasaErr
           }
@@ -398,7 +399,7 @@ export async function activateScene(
           )
           if (twinklyDev?.ip) {
             if (!deviceHealthService.isDeviceActive('hub', String(twinklyDev.id))) {
-              log(`Skipping deactivated device: ${cmd.name}`)
+              log(`Skipping deactivated device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
               break
             }
             try {
@@ -407,16 +408,16 @@ export async function activateScene(
               } else {
                 await twinklyClient.turnOff(twinklyDev.ip)
               }
-              log(`Twinkly ${cmd.name}: ${cmd.command}`)
+              log(`Twinkly ${cmd.name}: ${cmd.command}`, undefined, undefined, undefined, parentLogId)
               deviceHealthService.recordSuccess('hub', String(twinklyDev.id))
             } catch (twinklyErr) {
               const twinklyMsg = twinklyErr instanceof Error ? twinklyErr.message : String(twinklyErr)
-              log(`Error executing Twinkly ${cmd.name}: ${twinklyMsg}`, 'device_error')
+              log(`Error executing Twinkly ${cmd.name}: ${twinklyMsg}`, 'device_error', undefined, undefined, parentLogId)
               deviceHealthService.recordFailure('hub', String(twinklyDev.id), twinklyMsg)
               throw twinklyErr
             }
           } else {
-            log(`Twinkly device not found: ${cmd.name}`)
+            log(`Twinkly device not found: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
           }
           break
         }
@@ -428,7 +429,7 @@ export async function activateScene(
           )
           if (fairyDev?.ip) {
             if (!deviceHealthService.isDeviceActive('hub', String(fairyDev.id))) {
-              log(`Skipping deactivated device: ${cmd.name}`)
+              log(`Skipping deactivated device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
               break
             }
             try {
@@ -438,16 +439,16 @@ export async function activateScene(
               } else {
                 await fairyDeviceClient.setBrightness(fairyDev.ip, Math.round(brightness * 2.55))
               }
-              log(`Fairy device ${cmd.name}: ${cmd.command} (brightness: ${brightness})`)
+              log(`Fairy device ${cmd.name}: ${cmd.command} (brightness: ${brightness})`, undefined, undefined, undefined, parentLogId)
               deviceHealthService.recordSuccess('hub', String(fairyDev.id))
             } catch (fairyErr) {
               const fairyMsg = fairyErr instanceof Error ? fairyErr.message : String(fairyErr)
-              log(`Error executing Fairy device ${cmd.name}: ${fairyMsg}`, 'device_error')
+              log(`Error executing Fairy device ${cmd.name}: ${fairyMsg}`, 'device_error', undefined, undefined, parentLogId)
               deviceHealthService.recordFailure('hub', String(fairyDev.id), fairyMsg)
               throw fairyErr
             }
           } else {
-            log(`Fairy device not found: ${cmd.name}`)
+            log(`Fairy device not found: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
           }
           break
         }
@@ -473,15 +474,15 @@ export async function activateScene(
                 : (today >= from || today <= to)
               if (!inRange) {
                 const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-                log(`Skipping chained scene "${cmd.name}": out of season (${fromD} ${monthNames[fromM - 1]} to ${toD} ${monthNames[toM - 1]})`)
+                log(`Skipping chained scene "${cmd.name}": out of season (${fromD} ${monthNames[fromM - 1]} to ${toD} ${monthNames[toM - 1]})`, undefined, undefined, undefined, parentLogId)
                 break
               }
             }
-            await activateScene(cmd.name, visitedScenes, 'chain', user)
-            log(`Chained scene activation: ${cmd.name}`)
+            await activateScene(cmd.name, visitedScenes, 'chain', user, parentLogId)
+            log(`Chained scene activation: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
           } catch (chainErr) {
             const chainMsg = chainErr instanceof Error ? chainErr.message : String(chainErr)
-            log(`Error chaining scene ${cmd.name}: ${chainMsg}`)
+            log(`Error chaining scene ${cmd.name}: ${chainMsg}`, undefined, undefined, undefined, parentLogId)
           }
           break
         }
@@ -490,7 +491,7 @@ export async function activateScene(
           const delaySec = cmd.duration ?? 300
           const targetScene = cmd.command || cmd.name
           timerManager.createTimer(sceneName, targetScene, delaySec)
-          log(`Scene timer: activate "${targetScene}" in ${delaySec}s`)
+          log(`Scene timer: activate "${targetScene}" in ${delaySec}s`, undefined, undefined, undefined, parentLogId)
           break
         }
 
@@ -503,7 +504,7 @@ export async function activateScene(
                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
               [newMode],
             )
-            log(`Mode updated to: ${newMode}`)
+            log(`Mode updated to: ${newMode}`, undefined, undefined, undefined, parentLogId)
           }
           break
         }
@@ -515,14 +516,14 @@ export async function activateScene(
             : null
           if (effectMethod) {
             await effectMethod(cmd.selector, cmd.effect_params || {})
-            log(`LIFX effect ${cmd.effect} on ${cmd.selector}`)
+            log(`LIFX effect ${cmd.effect} on ${cmd.selector}`, undefined, undefined, undefined, parentLogId)
           }
           break
         }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      log(`Error executing command ${cmd.type}: ${msg}`)
+      log(`Error executing command ${cmd.type}: ${msg}`, undefined, undefined, undefined, parentLogId)
     }
   }
 
@@ -545,7 +546,7 @@ export async function activateScene(
   emit('scene:change', { scene: sceneName, action: 'activated', rooms: rooms.map(r => r.name) })
 }
 
-export async function deactivateScene(sceneName: string, user?: { id: string; name: string }): Promise<void> {
+export async function deactivateScene(sceneName: string, user?: { id: string; name: string }, parentLogId?: number): Promise<void> {
   const scene = getOne<SceneRow>(
     'SELECT * FROM scenes WHERE name = ?',
     [sceneName],
@@ -562,7 +563,7 @@ export async function deactivateScene(sceneName: string, user?: { id: string; na
   ).map(r => ({ name: r.room_name }))
   const commands: Command[] = JSON.parse(scene.commands)
 
-  log(`${actionUser.name} deactivated ${sceneName}`, 'scene', actionUser)
+  log(`${actionUser.name} deactivated ${sceneName}`, 'scene', actionUser, undefined, parentLogId)
 
   // Batch turn off all lifx_light commands
   const lightCommands = commands.filter(
@@ -574,14 +575,14 @@ export async function deactivateScene(sceneName: string, user?: { id: string; na
       const states: BatchState[] = []
       for (const cmd of lightCommands) {
         if (!deviceHealthService.isDeviceActive('lifx', cmd.light_id)) {
-          log(`Skipping deactivated light: ${cmd.selector}`)
+          log(`Skipping deactivated light: ${cmd.selector}`, undefined, undefined, undefined, parentLogId)
           continue
         }
         states.push({ selector: cmd.selector, power: 'off', duration: 1 })
       }
       if (states.length > 0) {
         const response = await lifxClient.setStates(states)
-        log(`Batch turned off ${states.length} light(s)`)
+        log(`Batch turned off ${states.length} light(s)`, undefined, undefined, undefined, parentLogId)
         // Record success for lights that responded ok
         for (const opResult of response.results) {
           if (!opResult.results) continue
@@ -595,7 +596,7 @@ export async function deactivateScene(sceneName: string, user?: { id: string; na
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      log(`Error in batch deactivate: ${msg}`)
+      log(`Error in batch deactivate: ${msg}`, undefined, undefined, undefined, parentLogId)
     }
   }
 
@@ -606,15 +607,15 @@ export async function deactivateScene(sceneName: string, user?: { id: string; na
   for (const cmd of hubitatCommands) {
     try {
       if (!deviceHealthService.isDeviceActive('hub', String(cmd.device_id))) {
-        log(`Skipping deactivated device: ${cmd.device_id}`)
+        log(`Skipping deactivated device: ${cmd.device_id}`, undefined, undefined, undefined, parentLogId)
         continue
       }
       await hubitatClient.sendCommand(cmd.device_id, 'off')
-      log(`Turned off Hubitat device ${cmd.device_id}`)
+      log(`Turned off Hubitat device ${cmd.device_id}`, undefined, undefined, undefined, parentLogId)
       deviceHealthService.recordSuccess('hub', String(cmd.device_id))
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      log(`Error turning off Hubitat device: ${msg}`)
+      log(`Error turning off Hubitat device: ${msg}`, undefined, undefined, undefined, parentLogId)
       deviceHealthService.recordFailure('hub', String(cmd.device_id), msg)
     }
   }
@@ -626,15 +627,15 @@ export async function deactivateScene(sceneName: string, user?: { id: string; na
   for (const cmd of kasaCommands) {
     try {
       if (!deviceHealthService.isDeviceActive('kasa', cmd.device_id)) {
-        log(`Skipping deactivated device: ${cmd.name}`)
+        log(`Skipping deactivated device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
         continue
       }
       await kasaClient.sendCommand(cmd.device_id, 'off')
-      log(`Turned off Kasa device: ${cmd.name}`)
+      log(`Turned off Kasa device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
       deviceHealthService.recordSuccess('kasa', cmd.device_id)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      log(`Error turning off Kasa device: ${msg}`)
+      log(`Error turning off Kasa device: ${msg}`, undefined, undefined, undefined, parentLogId)
       deviceHealthService.recordFailure('kasa', cmd.device_id, msg)
     }
   }
@@ -651,16 +652,16 @@ export async function deactivateScene(sceneName: string, user?: { id: string; na
       )
       if (dev?.ip) {
         if (!deviceHealthService.isDeviceActive('hub', String(dev.id))) {
-          log(`Skipping deactivated device: ${cmd.name}`)
+          log(`Skipping deactivated device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
           continue
         }
         await twinklyClient.turnOff(dev.ip)
-        log(`Turned off Twinkly: ${cmd.name}`)
+        log(`Turned off Twinkly: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
         deviceHealthService.recordSuccess('hub', String(dev.id))
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      log(`Error turning off Twinkly: ${msg}`)
+      log(`Error turning off Twinkly: ${msg}`, undefined, undefined, undefined, parentLogId)
     }
   }
 
@@ -676,16 +677,16 @@ export async function deactivateScene(sceneName: string, user?: { id: string; na
       )
       if (dev?.ip) {
         if (!deviceHealthService.isDeviceActive('hub', String(dev.id))) {
-          log(`Skipping deactivated device: ${cmd.name}`)
+          log(`Skipping deactivated device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
           continue
         }
         await fairyDeviceClient.turnOff(dev.ip)
-        log(`Turned off Fairy device: ${cmd.name}`)
+        log(`Turned off Fairy device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
         deviceHealthService.recordSuccess('hub', String(dev.id))
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      log(`Error turning off Fairy device: ${msg}`)
+      log(`Error turning off Fairy device: ${msg}`, undefined, undefined, undefined, parentLogId)
     }
   }
 
@@ -696,10 +697,10 @@ export async function deactivateScene(sceneName: string, user?: { id: string; na
   for (const cmd of effectCommands) {
     try {
       await lifxClient.effectsOff(cmd.selector)
-      log(`Stopped effects on: ${cmd.selector}`)
+      log(`Stopped effects on: ${cmd.selector}`, undefined, undefined, undefined, parentLogId)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      log(`Error stopping effects: ${msg}`)
+      log(`Error stopping effects: ${msg}`, undefined, undefined, undefined, parentLogId)
     }
   }
 
@@ -736,10 +737,10 @@ export async function deactivateScene(sceneName: string, user?: { id: string; na
         }
         await retryFailedLights(batchResponse, batch)
       }
-      log(`Batch turned off ${roomLightStates.length} room light(s)`)
+      log(`Batch turned off ${roomLightStates.length} room light(s)`, undefined, undefined, undefined, parentLogId)
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
-      log(`Error turning off room lights: ${msg}`)
+      log(`Error turning off room lights: ${msg}`, undefined, undefined, undefined, parentLogId)
     }
   }
 
