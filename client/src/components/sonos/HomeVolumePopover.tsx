@@ -159,8 +159,8 @@ export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
           <>
             {/* All Volume row */}
             <div className="mb-3 border-b border-[var(--border-secondary)] pb-3">
+              <span className="mb-1 block text-xs font-semibold text-heading">All Volume</span>
               <div className="flex items-center gap-3">
-                <span className="w-24 shrink-0 text-xs font-semibold text-heading">All Volume</span>
                 <SonosVolumeControl
                   value={masterVolume}
                   onChange={handleMasterVolumeChange}
@@ -203,41 +203,43 @@ export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
                     entry.speakerName
 
                 return (
-                  <li key={entry.speakerName} className="flex items-center gap-3">
-                    <span className="w-24 shrink-0 truncate text-xs font-medium text-heading">
+                  <li key={entry.speakerName}>
+                    <span className="mb-1 block truncate text-xs font-medium text-heading">
                       {entry.roomName}
                     </span>
-                    <SonosVolumeControl
-                      value={currentVolume}
-                      onChange={level => handleVolumeChange(entry.speakerName, level)}
-                      label={`${entry.roomName} volume`}
-                      disabled={isMuted}
-                      className="flex-1"
-                    />
-                    <button
-                      onClick={() =>
-                        setMuteMutation.mutate({ speaker: entry.speakerName, muted: !isMuted })
-                      }
-                      disabled={isMutePending}
-                      aria-label={isMuted ? `Unmute ${entry.roomName}` : `Mute ${entry.roomName}`}
-                      aria-pressed={isMuted}
-                      className={cn(
-                        'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-colors',
-                        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                        'disabled:opacity-50',
-                        isMuted
-                          ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
-                          : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
-                      )}
-                    >
-                      {isMutePending ? (
-                        <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-                      ) : isMuted ? (
-                        <VolumeX className="h-5 w-5" aria-hidden="true" />
-                      ) : (
-                        <Volume2 className="h-5 w-5" aria-hidden="true" />
-                      )}
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <SonosVolumeControl
+                        value={currentVolume}
+                        onChange={level => handleVolumeChange(entry.speakerName, level)}
+                        label={`${entry.roomName} volume`}
+                        disabled={isMuted}
+                        className="flex-1"
+                      />
+                      <button
+                        onClick={() =>
+                          setMuteMutation.mutate({ speaker: entry.speakerName, muted: !isMuted })
+                        }
+                        disabled={isMutePending}
+                        aria-label={isMuted ? `Unmute ${entry.roomName}` : `Mute ${entry.roomName}`}
+                        aria-pressed={isMuted}
+                        className={cn(
+                          'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg transition-colors',
+                          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                          'disabled:opacity-50',
+                          isMuted
+                            ? 'bg-fairy-500/15 text-fairy-400 hover:bg-fairy-500/25'
+                            : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
+                        )}
+                      >
+                        {isMutePending ? (
+                          <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+                        ) : isMuted ? (
+                          <VolumeX className="h-5 w-5" aria-hidden="true" />
+                        ) : (
+                          <Volume2 className="h-5 w-5" aria-hidden="true" />
+                        )}
+                      </button>
+                    </div>
                   </li>
                 )
               })}
