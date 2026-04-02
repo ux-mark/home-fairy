@@ -1120,6 +1120,34 @@ export const api = {
         }[]
       >('/system/logs' + (qs ? '?' + qs : ''))
     },
+    getActivity: (limit?: number, before?: number, category?: string, room?: string) => {
+      const params = new URLSearchParams()
+      if (limit) params.set('limit', String(limit))
+      if (before) params.set('before', String(before))
+      if (category) params.set('category', category)
+      if (room) params.set('room', room)
+      const qs = params.toString()
+      return fetchApi<
+        {
+          id: number
+          message: string
+          type: string
+          room: string | null
+          user: string | null
+          isFairyQueen: boolean
+          timestamp: string
+          category: string | null
+          childCount: number
+          children: {
+            id: number
+            message: string
+            debug: string | null
+            category: string | null
+            created_at: string
+          }[]
+        }[]
+      >('/system/activity' + (qs ? '?' + qs : ''))
+    },
   },
   devices: {
     getDeactivated: () => fetchApi<DeactivatedDevice[]>('/system/devices/deactivated'),
