@@ -16,6 +16,7 @@ export function MusicQuickAction() {
   const [popoverOpen, setPopoverOpen] = useState(false)
   const [volumePopoverOpen, setVolumePopoverOpen] = useState(false)
   const playButtonRef = useRef<HTMLButtonElement>(null)
+  const volumeButtonRef = useRef<HTMLButtonElement>(null)
 
   const { data: muteStatus, isLoading: muteLoading } = useQuery({
     queryKey: ['sonos', 'mute-status'],
@@ -123,6 +124,7 @@ export function MusicQuickAction() {
 
           {/* Volume — opens volume popover */}
           <button
+            ref={volumeButtonRef}
             onClick={() => {
               setPopoverOpen(false)
               setVolumePopoverOpen(o => !o)
@@ -151,7 +153,7 @@ export function MusicQuickAction() {
           </button>
         </div>
         <HomeSpeakerPopover open={popoverOpen} onClose={() => setPopoverOpen(false)} triggerRef={playButtonRef} />
-        <HomeVolumePopover open={volumePopoverOpen} onClose={() => setVolumePopoverOpen(false)} />
+        <HomeVolumePopover open={volumePopoverOpen} onClose={() => setVolumePopoverOpen(false)} triggerRef={volumeButtonRef} />
       </div>
     </section>
   )

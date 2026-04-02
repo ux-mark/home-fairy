@@ -1,4 +1,5 @@
 import { useRef, useEffect } from 'react'
+import type React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Volume2, VolumeX, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -9,9 +10,10 @@ import { SonosVolumeControl } from './SonosVolumeControl'
 interface HomeVolumePopoverProps {
   open: boolean
   onClose: () => void
+  triggerRef?: React.RefObject<HTMLButtonElement | null>
 }
 
-export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
+export function HomeVolumePopover({ open, onClose, triggerRef }: HomeVolumePopoverProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const panelRef = useRef<HTMLDivElement>(null)
@@ -67,13 +69,14 @@ export function HomeVolumePopover({ open, onClose }: HomeVolumePopoverProps) {
   useEffect(() => {
     if (!open) return
     function handlePointerDown(e: PointerEvent) {
+      if (triggerRef?.current && triggerRef.current.contains(e.target as Node)) return
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
         onClose()
       }
     }
     document.addEventListener('pointerdown', handlePointerDown)
     return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [open, onClose])
+  }, [open, onClose, triggerRef])
 
   // Close on Escape
   useEffect(() => {
