@@ -72,10 +72,6 @@ export function SonosGroupCard({ coordinator, members, onRefresh }: SonosGroupCa
   const coordinatorRoom = coordinator.roomName
   const state: SonosPlaybackState | null = coordinator.state
 
-  // Local optimistic volume for the coordinator
-  const [localVolume, setLocalVolume] = useState<number | null>(null)
-  const displayVolume = localVolume ?? state?.volume ?? 0
-
   const invalidateQueries = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
     queryClient.invalidateQueries({ queryKey: ['sonos', 'zones'] })
@@ -107,10 +103,7 @@ export function SonosGroupCard({ coordinator, members, onRefresh }: SonosGroupCa
 
   const volumeMutation = useMutation({
     mutationFn: (level: number) => api.sonos.setVolume(coordinatorName, level),
-    onError: () => {
-      setLocalVolume(null)
-      toast({ message: `Couldn't update group volume`, type: 'error' })
-    },
+    onError: () => toast({ message: `Couldn't update group volume`, type: 'error' }),
   })
 
   const leaveMutation = useMutation({
@@ -146,7 +139,6 @@ export function SonosGroupCard({ coordinator, members, onRefresh }: SonosGroupCa
   })
 
   function handleVolumeChange(level: number) {
-    setLocalVolume(level)
     volumeMutation.mutate(level)
   }
 
@@ -370,9 +362,8 @@ export function SonosGroupCard({ coordinator, members, onRefresh }: SonosGroupCa
       <div className="mb-3">
         <p className="mb-1.5 text-xs font-medium text-caption">Volume</p>
         <SonosVolumeControl
-          value={displayVolume}
+          value={state?.volume ?? 0}
           onChange={handleVolumeChange}
-          isPending={volumeMutation.isPending}
           label={`Group volume`}
         />
       </div>

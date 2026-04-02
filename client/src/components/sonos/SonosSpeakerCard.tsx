@@ -40,10 +40,6 @@ export function SonosSpeakerCard({
     retry: false,
   })
 
-  // Local optimistic volume
-  const [localVolume, setLocalVolume] = useState<number | null>(null)
-  const displayVolume = localVolume ?? state?.volume ?? 0
-
   const invalidateNowPlaying = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
   }, [queryClient])
@@ -74,10 +70,7 @@ export function SonosSpeakerCard({
 
   const volumeMutation = useMutation({
     mutationFn: (level: number) => api.sonos.setVolume(speakerName, level),
-    onError: () => {
-      setLocalVolume(null)
-      toast({ message: `Couldn't update volume for ${roomName}`, type: 'error' })
-    },
+    onError: () => toast({ message: `Couldn't update volume for ${roomName}`, type: 'error' }),
   })
 
   const playFavouriteMutation = useMutation({
@@ -95,7 +88,6 @@ export function SonosSpeakerCard({
   })
 
   function handleVolumeChange(level: number) {
-    setLocalVolume(level)
     volumeMutation.mutate(level)
   }
 
@@ -332,9 +324,8 @@ export function SonosSpeakerCard({
       <div>
         <p className="mb-1.5 text-xs font-medium text-caption">Volume</p>
         <SonosVolumeControl
-          value={displayVolume}
+          value={state?.volume ?? 0}
           onChange={handleVolumeChange}
-          isPending={volumeMutation.isPending}
           label={`${roomName} volume`}
           disabled={!!error}
         />
