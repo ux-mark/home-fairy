@@ -50,7 +50,7 @@ export function kelvinToHex(kelvin: number): string {
  */
 export function parseServerDate(dateStr: string): Date {
   // If it already has a timezone (Z, +, -), parse as-is
-  if (/[Z+\-]\d{0,2}:?\d{0,2}$/.test(dateStr) || dateStr.endsWith('Z')) {
+  if (/[Z+-]\d{0,2}:?\d{0,2}$/.test(dateStr) || dateStr.endsWith('Z')) {
     return new Date(dateStr)
   }
   // SQLite format: "2026-03-21 13:27:05" → treat as UTC by appending Z
@@ -109,8 +109,53 @@ export function getLightColorHex(light: { color: { hue: number; saturation: numb
   return kelvinToHex(light.color.kelvin)
 }
 
+/**
+ * Convert HSV (0-360, 0-1, 0-1) to RGB (0-255 each).
+ * Used for canvas pixel-by-pixel rendering in the colour wheel.
+ */
+export function hsvToRgb(h: number, s: number, v: number): { r: number; g: number; b: number } {
+  const hNorm = h / 360
+  const i = Math.floor(hNorm * 6)
+  const f = hNorm * 6 - i
+  const p = v * (1 - s)
+  const q = v * (1 - f * s)
+  const t = v * (1 - (1 - f) * s)
+  let r: number, g: number, b: number
+  switch (i % 6) {
+    case 0: r = v; g = t; b = p; break
+    case 1: r = q; g = v; b = p; break
+    case 2: r = p; g = v; b = t; break
+    case 3: r = p; g = q; b = v; break
+    case 4: r = t; g = p; b = v; break
+    default: r = v; g = p; b = q; break
+  }
+  return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) }
+}
+
+/**
+ * Convert a kelvin value to an RGB tuple (0-255 each).
+ * Based on Tanner Helland's algorithm. Used for canvas rendering in the kelvin wheel.
+ */
+export function kelvinToRgb(kelvin: number): { r: number; g: number; b: number } {
+  const temp = kelvin / 100
+  let r: number, g: number, b: number
+  if (temp <= 66) {
+    r = 255
+    g = Math.min(255, Math.max(0, 99.4708025861 * Math.log(temp) - 161.1195681661))
+  } else {
+    r = Math.min(255, Math.max(0, 329.698727446 * Math.pow(temp - 60, -0.1332047592)))
+    g = Math.min(255, Math.max(0, 288.1221695283 * Math.pow(temp - 60, -0.0755148492)))
+  }
+  if (temp >= 66) b = 255
+  else if (temp <= 19) b = 0
+  else b = Math.min(255, Math.max(0, 138.5177312231 * Math.log(temp - 10) - 305.0447927307))
+  return { r: Math.round(r), g: Math.round(g), b: Math.round(b) }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function debounce<T extends (...args: any[]) => any>(fn: T, ms: number): T & { cancel: () => void } {
   let timer: ReturnType<typeof setTimeout>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const debounced = (...args: any[]) => {
     clearTimeout(timer)
     timer = setTimeout(() => fn(...args), ms)

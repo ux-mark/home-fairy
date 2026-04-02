@@ -9,6 +9,7 @@ import { DetailPageSkeleton } from '@/components/ui/Skeleton'
 import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { useToast } from '@/hooks/useToast'
 import { DeviceLinkManager } from '@/components/DeviceLinkManager'
+import ColorBrightnessPicker from '@/components/ui/ColorBrightnessPicker'
 
 export default function LightDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -75,8 +76,12 @@ export default function LightDetailPage() {
   })
 
   const setStateMutation = useMutation({
-    mutationFn: (brightness: number) =>
-      api.lifx.setState(`id:${id}`, { brightness: brightness / 100, duration: 0.3 }),
+    mutationFn: (params: { brightness?: number; color?: string }) =>
+      api.lifx.setState(`id:${id}`, {
+        color: params.color,
+        brightness: params.brightness !== undefined ? params.brightness / 100 : undefined,
+        duration: 0.3,
+      }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }),
   })
 
@@ -252,40 +257,52 @@ export default function LightDetailPage() {
             />
           </div>
 
-          {/* Brightness */}
+          {/* Colour picker — shown when light is on and not deactivated */}
           {isOn && !isDeactivated && (
-            <div>
-              <label className="text-body mb-2 flex items-center justify-between text-xs font-medium">
-                <span>Brightness</span>
-                <span className="text-heading">{brightness}%</span>
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                defaultValue={brightness}
-                onPointerUp={e => setStateMutation.mutate(Number((e.target as HTMLInputElement).value))}
-                onKeyUp={e => {
-                  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
-                    setStateMutation.mutate(Number((e.target as HTMLInputElement).value))
+            <div className="pt-1">
+              <ColorBrightnessPicker
+                hasColor={light.product.capabilities.has_color}
+                color={{
+                  h: light.color.hue,
+                  s: light.color.saturation * 100,
+                  v: brightness,
                 }}
-                className="h-11 w-full cursor-pointer appearance-none rounded-lg"
-                style={{
-                  background: `linear-gradient(to right, var(--bg-primary), ${colorHex})`,
+                kelvin={light.color.kelvin}
+                brightness={brightness}
+                minKelvin={light.product.capabilities.min_kelvin}
+                maxKelvin={light.product.capabilities.max_kelvin}
+                onChange={update => {
+                  // Committed change: fire the API and refresh
+                  if (update.color) {
+                    const lifxColor = `hue:${update.color.h} saturation:${(update.color.s / 100).toFixed(4)}`
+                    setStateMutation.mutate({
+                      color: lifxColor,
+                      brightness: update.color.v,
+                    })
+                  } else if (update.kelvin !== undefined) {
+                    setStateMutation.mutate({ color: `kelvin:${update.kelvin}` })
+                  } else if (update.brightness !== undefined) {
+                    setStateMutation.mutate({ brightness: update.brightness })
+                  }
                 }}
-                aria-label={`Brightness for ${light.label}`}
+                onLiveChange={update => {
+                  // Live preview: fire API without invalidating query cache
+                  if (update.color) {
+                    const lifxColor = `hue:${update.color.h} saturation:${(update.color.s / 100).toFixed(4)}`
+                    api.lifx.setState(`id:${id}`, {
+                      color: lifxColor,
+                      brightness: update.color.v !== undefined ? update.color.v / 100 : undefined,
+                      duration: 0.1,
+                    })
+                  } else if (update.kelvin !== undefined) {
+                    api.lifx.setState(`id:${id}`, { color: `kelvin:${update.kelvin}`, duration: 0.1 })
+                  } else if (update.brightness !== undefined) {
+                    api.lifx.setState(`id:${id}`, { brightness: update.brightness / 100, duration: 0.1 })
+                  }
+                }}
               />
             </div>
           )}
-
-          {/* Color info */}
-          <div className="text-caption flex items-center gap-2 text-xs">
-            {light.product.capabilities.has_color ? (
-              <span>Hue: {Math.round(light.color.hue)}°, Saturation: {Math.round(light.color.saturation * 100)}%</span>
-            ) : (
-              <span>Colour temperature: {light.color.kelvin}K</span>
-            )}
-          </div>
 
           {/* LIFX group */}
           <p className="text-xs text-caption">
