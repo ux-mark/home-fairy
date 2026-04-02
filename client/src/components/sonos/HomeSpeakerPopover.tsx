@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Play, Pause, Music, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
@@ -7,17 +7,18 @@ import { api, parseApiError, type SonosNowPlayingEntry } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { SonosNowPlaying } from './SonosNowPlaying'
 import { FavouriteSelector } from './FavouriteSelector'
+import { ActionPopover } from '@/components/ui/ActionPopover'
 
 interface HomeSpeakerPopoverProps {
   open: boolean
   onClose: () => void
   triggerRef?: React.RefObject<HTMLButtonElement | null>
+  borderColor?: string
 }
 
-export function HomeSpeakerPopover({ open, onClose, triggerRef }: HomeSpeakerPopoverProps) {
+export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: HomeSpeakerPopoverProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const panelRef = useRef<HTMLDivElement>(null)
 
   // Dialog state: which speaker is having music chosen for it
   const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null)
@@ -145,34 +146,6 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef }: HomeSpeakerPop
 
     return items
   }, [nowPlaying])
-
-  // Close on click outside
-  useEffect(() => {
-    if (!open) return
-    function handlePointerDown(e: PointerEvent) {
-      // If the pointerdown is on the trigger button, let the button's onClick handle
-      // the toggle — otherwise on Safari/iOS the race between pointerdown (onClose)
-      // and onClick (toggle) causes the popover to reopen immediately.
-      if (triggerRef?.current && triggerRef.current.contains(e.target as Node)) return
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        onClose()
-      }
-    }
-    document.addEventListener('pointerdown', handlePointerDown)
-    return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [open, onClose, triggerRef])
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        onClose()
-      }
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, onClose])
 
   if (!open) return null
 
@@ -354,18 +327,12 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef }: HomeSpeakerPop
   }
 
   return (
-    <div
-      ref={panelRef}
-      className={cn(
-        'absolute left-0 right-0 top-full z-30',
-        'bg-[var(--bg-secondary)]',
-        'border border-t-0 border-[var(--border-primary)]',
-        'rounded-b-xl',
-        'shadow-xl',
-        'overflow-hidden',
-      )}
-      role="region"
-      aria-label="Speaker controls"
+    <ActionPopover
+      open={open}
+      onClose={onClose}
+      triggerRef={triggerRef}
+      ariaLabel="Speaker controls"
+      borderColor={borderColor}
     >
       <div className="px-3 py-3">
         {/* Loading state */}
@@ -560,6 +527,6 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef }: HomeSpeakerPop
           Choosing music for {activeSpeakerEntry.roomName}
         </span>
       )}
-    </div>
+    </ActionPopover>
   )
 }

@@ -152,8 +152,18 @@ export function MusicQuickAction() {
             )}
           </button>
         </div>
-        <HomeSpeakerPopover open={popoverOpen} onClose={() => setPopoverOpen(false)} triggerRef={playButtonRef} />
-        <HomeVolumePopover open={volumePopoverOpen} onClose={() => setVolumePopoverOpen(false)} triggerRef={volumeButtonRef} />
+        <HomeSpeakerPopover
+          open={popoverOpen}
+          onClose={() => setPopoverOpen(false)}
+          triggerRef={playButtonRef}
+          borderColor={isPlaying ? 'border-emerald-500/40' : 'border-fairy-500/40'}
+        />
+        <HomeVolumePopover
+          open={volumePopoverOpen}
+          onClose={() => setVolumePopoverOpen(false)}
+          triggerRef={volumeButtonRef}
+          borderColor="border-fairy-500/40"
+        />
       </div>
     </section>
   )

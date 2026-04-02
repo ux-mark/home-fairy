@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { MoonStar, X, Loader2 } from 'lucide-react'
+import { BellOff, X, Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
@@ -36,7 +36,7 @@ export function HushingQuickAction() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['system', 'hushing-status'] })
       queryClient.invalidateQueries({ queryKey: ['rooms'] })
-      toast({ message: 'Home is Hushing' })
+      toast({ message: 'Home Hushed' })
     },
     onError: (_err: unknown, _vars: unknown, context: { previous: HushingStatus | undefined } | undefined) => {
       if (context?.previous) queryClient.setQueryData(['system', 'hushing-status'], context.previous)
@@ -104,8 +104,8 @@ export function HushingQuickAction() {
             </>
           ) : (
             <>
-              <MoonStar className="h-4.5 w-4.5" aria-hidden="true" />
-              <span>Setup Hushing Home</span>
+              <BellOff className="h-4.5 w-4.5" aria-hidden="true" />
+              <span>Setup Hush Home</span>
             </>
           )}
         </button>
@@ -113,6 +113,7 @@ export function HushingQuickAction() {
           open={setupOpen}
           onClose={() => setSetupOpen(false)}
           triggerRef={setupButtonRef}
+          borderColor="border-amber-500/40"
         />
       </div>
     )
@@ -136,12 +137,12 @@ export function HushingQuickAction() {
       >
         {isPending
           ? <Loader2 className="h-4.5 w-4.5 animate-spin" aria-hidden="true" />
-          : <MoonStar className="h-4.5 w-4.5" aria-hidden="true" />}
+          : <BellOff className="h-4.5 w-4.5" aria-hidden="true" />}
         {isPending
           ? (isActive ? 'Deactivating...' : 'Activating...')
           : isActive
-            ? 'Home is Hushing'
-            : 'Hushing Home'}
+            ? 'Home Hushed'
+            : 'Hush Home'}
       </button>
     </div>
   )
