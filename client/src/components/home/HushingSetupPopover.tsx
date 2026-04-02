@@ -1,21 +1,21 @@
-import React, { useRef, useEffect } from 'react'
+import React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { SearchableSelect } from '@/components/ui/SearchableSelect'
+import { ActionPopover } from '@/components/ui/ActionPopover'
 
 interface HushingSetupPopoverProps {
   open: boolean
   onClose: () => void
   triggerRef?: React.RefObject<HTMLButtonElement | null>
+  borderColor?: string
 }
 
-export function HushingSetupPopover({ open, onClose, triggerRef }: HushingSetupPopoverProps) {
+export function HushingSetupPopover({ open, onClose, triggerRef, borderColor }: HushingSetupPopoverProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const panelRef = useRef<HTMLDivElement>(null)
 
   const { data: scenes, isLoading } = useQuery({
     queryKey: ['scenes'],
@@ -33,46 +33,17 @@ export function HushingSetupPopover({ open, onClose, triggerRef }: HushingSetupP
     onError: () => toast({ message: 'Failed to save scene', type: 'error' }),
   })
 
-  // Close on click outside
-  useEffect(() => {
-    if (!open) return
-    function handlePointerDown(e: PointerEvent) {
-      if (triggerRef?.current && triggerRef.current.contains(e.target as Node)) return
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        onClose()
-      }
-    }
-    document.addEventListener('pointerdown', handlePointerDown)
-    return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [open, onClose, triggerRef])
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, onClose])
-
   if (!open) return null
 
   const sceneOptions = (scenes ?? []).map(s => ({ value: s.name, label: s.name }))
 
   return (
-    <div
-      ref={panelRef}
-      className={cn(
-        'absolute left-0 right-0 top-full z-30',
-        'bg-[var(--bg-secondary)]',
-        'border border-t-0 border-[var(--border-primary)]',
-        'rounded-b-xl',
-        'shadow-xl',
-        'overflow-hidden',
-      )}
-      role="region"
-      aria-label="Hushing scene setup"
+    <ActionPopover
+      open={open}
+      onClose={onClose}
+      triggerRef={triggerRef}
+      ariaLabel="Hushing scene setup"
+      borderColor={borderColor}
     >
       <div className="px-3 py-3 space-y-3">
         <p className="text-xs font-semibold text-heading">Select a Hushing scene</p>
@@ -107,6 +78,6 @@ export function HushingSetupPopover({ open, onClose, triggerRef }: HushingSetupP
           </div>
         )}
       </div>
-    </div>
+    </ActionPopover>
   )
 }

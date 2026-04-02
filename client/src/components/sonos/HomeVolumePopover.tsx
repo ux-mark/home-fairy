@@ -1,4 +1,3 @@
-import { useRef, useEffect } from 'react'
 import type React from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Volume2, VolumeX, Loader2 } from 'lucide-react'
@@ -6,17 +5,18 @@ import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { SonosVolumeControl } from './SonosVolumeControl'
+import { ActionPopover } from '@/components/ui/ActionPopover'
 
 interface HomeVolumePopoverProps {
   open: boolean
   onClose: () => void
   triggerRef?: React.RefObject<HTMLButtonElement | null>
+  borderColor?: string
 }
 
-export function HomeVolumePopover({ open, onClose, triggerRef }: HomeVolumePopoverProps) {
+export function HomeVolumePopover({ open, onClose, triggerRef, borderColor }: HomeVolumePopoverProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const panelRef = useRef<HTMLDivElement>(null)
 
   // Now-playing query — only when popover is open
   const { data: nowPlaying = [], isLoading } = useQuery({
@@ -65,29 +65,6 @@ export function HomeVolumePopover({ open, onClose, triggerRef }: HomeVolumePopov
     },
   })
 
-  // Close on click outside
-  useEffect(() => {
-    if (!open) return
-    function handlePointerDown(e: PointerEvent) {
-      if (triggerRef?.current && triggerRef.current.contains(e.target as Node)) return
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        onClose()
-      }
-    }
-    document.addEventListener('pointerdown', handlePointerDown)
-    return () => document.removeEventListener('pointerdown', handlePointerDown)
-  }, [open, onClose, triggerRef])
-
-  // Close on Escape
-  useEffect(() => {
-    if (!open) return
-    function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [open, onClose])
-
   if (!open) return null
 
   const activeSpeakers = nowPlaying.filter(e => !e.error && e.state)
@@ -113,18 +90,12 @@ export function HomeVolumePopover({ open, onClose, triggerRef }: HomeVolumePopov
   }
 
   return (
-    <div
-      ref={panelRef}
-      className={cn(
-        'absolute left-0 right-0 top-full z-30',
-        'bg-[var(--bg-secondary)]',
-        'border border-t-0 border-[var(--border-primary)]',
-        'rounded-b-xl',
-        'shadow-xl',
-        'overflow-hidden',
-      )}
-      role="region"
-      aria-label="Volume controls"
+    <ActionPopover
+      open={open}
+      onClose={onClose}
+      triggerRef={triggerRef}
+      ariaLabel="Volume controls"
+      borderColor={borderColor}
     >
       <div className="px-4 pt-4 pb-3">
         {/* Loading state */}
@@ -231,6 +202,6 @@ export function HomeVolumePopover({ open, onClose, triggerRef }: HomeVolumePopov
           </>
         )}
       </div>
-    </div>
+    </ActionPopover>
   )
 }
