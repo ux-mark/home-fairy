@@ -625,6 +625,63 @@ class SonosClient {
     }
   }
 
+  // ── UPnP album/artist browsing (with artwork) ──────────────────────────────
+
+  private parseContainers(xml: string, ip: string): Array<{ title: string; artist: string; albumArtUri: string; objectId: string }> {
+    const decoded = this.decodeXmlEntities(xml)
+    const containers = [...decoded.matchAll(/<container[^>]*id="([^"]*)"[^>]*>(.*?)<\/container>/gs)]
+    return containers.map(([, id, content]) => {
+      const title = content.match(/<dc:title>([^<]+)<\/dc:title>/)
+      const creator = content.match(/<dc:creator>([^<]+)<\/dc:creator>/)
+      const art = content.match(/<upnp:albumArtURI>([^<]+)<\/upnp:albumArtURI>/)
+      const name = title ? this.decodeXmlEntities(title[1]) : ''
+      const artUri = art ? this.decodeXmlEntities(art[1]) : ''
+      const absoluteArt = artUri.startsWith('/') ? `http://${ip}:1400${artUri}` : artUri
+      return {
+        title: name,
+        artist: creator ? this.decodeXmlEntities(creator[1]) : '',
+        albumArtUri: absoluteArt,
+        objectId: decodeURIComponent(this.decodeXmlEntities(id)),
+      }
+    }).filter(c => c.title !== 'All')
+  }
+
+  async browseAlbumsWithArt(): Promise<SonosGenreAlbum[]> {
+    const ip = await this.getSpeakerIp()
+    if (!ip) return []
+    try {
+      // Browse all albums — paginate in batches of 200
+      const allAlbums: SonosGenreAlbum[] = []
+      let start = 0
+      const batchSize = 200
+      while (true) {
+        const xml = await this.browseUPnP(ip, 'A:ALBUM', start, batchSize)
+        const decoded = this.decodeXmlEntities(xml)
+        const totalMatch = decoded.match(/<TotalMatches>(\d+)<\/TotalMatches>/)
+        const total = totalMatch ? Number(totalMatch[1]) : 0
+        const containers = this.parseContainers(xml, ip)
+        for (const c of containers) {
+          allAlbums.push({
+            name: c.title,
+            artist: c.artist,
+            albumArtUri: c.albumArtUri,
+            objectId: c.objectId,
+          })
+        }
+        start += batchSize
+        if (start >= total || containers.length === 0) break
+      }
+      return allAlbums
+    } catch {
+      return []
+    }
+  }
+
+  async browseAlbumTracks(objectId: string): Promise<SonosLibraryTrack[]> {
+    // Reuse getGenreAlbumTracks — same UPnP browse logic
+    return this.getGenreAlbumTracks(objectId)
+  }
+
   // ── NAS library browsing (reads node-sonos-http-api cache directly) ────────
 
   private libraryCache: NasLibraryTrack[] | null = null

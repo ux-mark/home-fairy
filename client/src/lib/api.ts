@@ -1540,11 +1540,11 @@ export const api = {
     getLibraryArtists: () =>
       fetchApi<SonosLibraryArtist[]>('/sonos/library/artists'),
     getLibraryAlbums: () =>
-      fetchApi<SonosLibraryAlbum[]>('/sonos/library/albums'),
+      fetchApi<SonosGenreAlbum[]>('/sonos/library/albums'),
     getArtistTracks: (name: string) =>
       fetchApi<SonosLibraryTrack[]>('/sonos/library/artist/' + encodeURIComponent(name)),
-    getAlbumTracks: (artist: string, album: string) =>
-      fetchApi<SonosLibraryTrack[]>('/sonos/library/album/' + encodeURIComponent(artist) + '/' + encodeURIComponent(album)),
+    getAlbumTracks: (objectId: string) =>
+      fetchApi<SonosLibraryTrack[]>('/sonos/library/album-tracks?objectId=' + encodeURIComponent(objectId)),
     searchLibrary: (query: string) =>
       fetchApi<SonosLibrarySearchResult>('/sonos/library/search?q=' + encodeURIComponent(query)),
     getRadioStations: () =>

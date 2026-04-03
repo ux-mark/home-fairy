@@ -590,9 +590,18 @@ router.get('/library/artists', (_req: Request, res: Response) => {
   res.json(sonosClient.getLibraryArtists())
 })
 
-// GET /library/albums — list all albums
-router.get('/library/albums', (_req: Request, res: Response) => {
-  res.json(sonosClient.getLibraryAlbums())
+// GET /library/albums — list all albums (with artwork from Sonos UPnP)
+router.get('/library/albums', async (_req: Request, res: Response) => {
+  try {
+    const albums = await sonosClient.browseAlbumsWithArt()
+    res.json(albums.map(a => ({
+      ...a,
+      albumArtUri: rewriteAlbumArtUri(a.albumArtUri) ?? '',
+    })))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
 })
 
 // GET /library/artist/:name — list tracks for an artist
@@ -601,11 +610,23 @@ router.get('/library/artist/:name', (req: Request, res: Response) => {
   res.json(sonosClient.getArtistTracks(name))
 })
 
-// GET /library/album/:artist/:album — list tracks for an album
-router.get('/library/album/:artist/:album', (req: Request, res: Response) => {
-  const artist = Array.isArray(req.params.artist) ? req.params.artist[0] : req.params.artist
-  const album = Array.isArray(req.params.album) ? req.params.album[0] : req.params.album
-  res.json(sonosClient.getAlbumTracks(artist, album))
+// GET /library/album-tracks?objectId= — list tracks for an album by UPnP objectId
+router.get('/library/album-tracks', async (req: Request, res: Response) => {
+  const objectId = typeof req.query.objectId === 'string' ? req.query.objectId : ''
+  if (!objectId) {
+    res.status(400).json({ error: 'Missing required query parameter: objectId' })
+    return
+  }
+  try {
+    const tracks = await sonosClient.browseAlbumTracks(objectId)
+    res.json(tracks.map(t => ({
+      ...t,
+      albumArtUri: rewriteAlbumArtUri(t.albumArtUri) ?? '',
+    })))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
 })
 
 // GET /library/search?q= — search the NAS library

@@ -13,7 +13,7 @@ import {
   User,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { SonosLibraryTrack, SonosLibraryArtist, SonosLibraryAlbum, SonosGenre, SonosGenreAlbum } from '@/lib/api'
+import type { SonosLibraryTrack, SonosLibraryArtist, SonosGenre, SonosGenreAlbum } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
@@ -310,7 +310,7 @@ function ArtistList({
 function AlbumList({
   onSelectAlbum,
 }: {
-  onSelectAlbum: (artist: string, album: string) => void
+  onSelectAlbum: (album: SonosGenreAlbum) => void
 }) {
   const { data: albums, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['sonos-library-albums'],
@@ -340,11 +340,11 @@ function AlbumList({
 
   return (
     <ul className="-mx-4">
-      {albums.map((album: SonosLibraryAlbum) => (
-        <li key={`${album.artist}\0${album.name}`}>
+      {albums.map((album: SonosGenreAlbum) => (
+        <li key={album.objectId}>
           <button
             type="button"
-            onClick={() => onSelectAlbum(album.artist, album.name)}
+            onClick={() => onSelectAlbum(album)}
             className={cn(
               'flex w-full items-center gap-3 px-4 py-2.5 text-left',
               'transition-colors hover:bg-[var(--bg-secondary)]',
@@ -352,14 +352,10 @@ function AlbumList({
               'min-h-[44px]',
             )}
           >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[var(--bg-tertiary)]">
-              <Disc3 className="h-4 w-4 text-caption/60" aria-hidden="true" />
-            </div>
+            <AlbumArt uri={album.albumArtUri} size={48} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-heading">{album.name}</p>
-              <p className="truncate text-xs text-caption">
-                {album.artist} · {album.trackCount} {album.trackCount === 1 ? 'track' : 'tracks'}
-              </p>
+              <p className="truncate text-xs text-caption">{album.artist}</p>
             </div>
             <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
           </button>
@@ -380,7 +376,7 @@ function ArtistDetail({
   artist: string
   speaker: string | null
   onBack: () => void
-  onSelectAlbum: (artist: string, album: string) => void
+  onSelectAlbum: (album: SonosGenreAlbum) => void
 }) {
   const { data: tracks, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['sonos-library-artist-tracks', artist],
@@ -432,7 +428,7 @@ function ArtistDetail({
             <section key={albumName} aria-label={albumName}>
               <button
                 type="button"
-                onClick={() => onSelectAlbum(artist, albumName)}
+                onClick={() => onSelectAlbum({ name: albumName, artist, albumArtUri: '', objectId: `A:ALBUMARTIST/${artist}/${albumName}` })}
                 className={cn(
                   'flex w-full items-center gap-2 px-4 pb-1 pt-4 text-left',
                   'transition-colors hover:bg-[var(--bg-secondary)]',
@@ -452,7 +448,7 @@ function ArtistDetail({
                   <li className="px-4 py-2">
                     <button
                       type="button"
-                      onClick={() => onSelectAlbum(artist, albumName)}
+                      onClick={() => onSelectAlbum({ name: albumName, artist, albumArtUri: '', objectId: `A:ALBUMARTIST/${artist}/${albumName}` })}
                       className="text-xs font-medium text-fairy-400 hover:text-fairy-300"
                     >
                       Show all {albumTracks.length} tracks
@@ -471,19 +467,17 @@ function ArtistDetail({
 // ── Album detail view ────────────────────────────────────────────────────────
 
 function AlbumDetail({
-  artist,
   album,
   speaker,
   onBack,
 }: {
-  artist: string
-  album: string
+  album: SonosGenreAlbum
   speaker: string | null
   onBack: () => void
 }) {
   const { data: tracks, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['sonos-library-album-tracks', artist, album],
-    queryFn: () => api.sonos.getAlbumTracks(artist, album),
+    queryKey: ['sonos-library-album-tracks', album.objectId],
+    queryFn: () => api.sonos.getAlbumTracks(album.objectId),
     staleTime: 5 * 60_000,
   })
 
@@ -502,9 +496,10 @@ function AlbumDetail({
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
+        <AlbumArt uri={album.albumArtUri} size={44} />
         <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold text-heading">{album}</h2>
-          <p className="truncate text-xs text-caption">{artist}</p>
+          <h2 className="truncate text-lg font-semibold text-heading">{album.name}</h2>
+          <p className="truncate text-xs text-caption">{album.artist}</p>
         </div>
       </div>
 
@@ -800,7 +795,7 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
   const [view, setView] = useState<NasView>('home')
   const [browseMode, setBrowseMode] = useState<BrowseMode>('genres')
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null)
-  const [selectedAlbum, setSelectedAlbum] = useState<{ artist: string; album: string } | null>(null)
+  const [selectedAlbum, setSelectedAlbum] = useState<SonosGenreAlbum | null>(null)
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null)
   const [selectedGenreAlbum, setSelectedGenreAlbum] = useState<SonosGenreAlbum | null>(null)
   const firstSpeaker = useFirstSpeaker()
@@ -814,8 +809,8 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
     setView('artist-detail')
   }
 
-  function handleSelectAlbum(artist: string, album: string) {
-    setSelectedAlbum({ artist, album })
+  function handleSelectAlbum(album: SonosGenreAlbum) {
+    setSelectedAlbum(album)
     setView('album-detail')
   }
 
@@ -872,8 +867,7 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
   if (view === 'album-detail' && selectedAlbum) {
     return (
       <AlbumDetail
-        artist={selectedAlbum.artist}
-        album={selectedAlbum.album}
+        album={selectedAlbum}
         speaker={speaker}
         onBack={handleBack}
       />
