@@ -429,9 +429,11 @@ class SonosClient {
           }
         })
       }
+      // node-sonos-http-api returns {status:"error"} when no library is indexed
       return []
-    } catch (err) {
-      this.handleError(err, 'getGenres')
+    } catch {
+      // Music library search not available — no NAS or library indexed
+      return []
     }
   }
 
@@ -454,8 +456,8 @@ class SonosClient {
         })
       }
       return []
-    } catch (err) {
-      this.handleError(err, `getGenreTracks(${genre})`)
+    } catch {
+      return []
     }
   }
 
@@ -484,31 +486,22 @@ class SonosClient {
         albums: mapItems(result.albums),
         tracks: mapItems(result.tracks),
       }
-    } catch (err) {
-      this.handleError(err, `searchLibrary(${query})`)
+    } catch {
+      return { artists: [], albums: [], tracks: [] }
     }
   }
 
   async getRadioStations(): Promise<SonosRadioStation[]> {
-    try {
-      const zones = await this.getZones()
-      if (zones.length === 0) return []
-      const speaker = zones[0].coordinator.roomName
-      const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/radios`)
-      if (Array.isArray(data)) {
-        return data.map((item: unknown) => {
-          const obj = item as Record<string, unknown>
-          return {
-            title: typeof obj.title === 'string' ? obj.title : '',
-            uri: typeof obj.uri === 'string' ? obj.uri : '',
-            albumArtUri: typeof obj.albumArtUri === 'string' ? obj.albumArtUri : undefined,
-          }
-        })
-      }
-      return []
-    } catch (err) {
-      this.handleError(err, 'getRadioStations')
-    }
+    // Derive radio stations from Sonos favourites — the /radios endpoint
+    // doesn't exist in all node-sonos-http-api versions
+    const favourites = await this.getFavourites()
+    return favourites
+      .filter(f => f.contentClass === 'object.item.audioItem.audioBroadcast')
+      .map(f => ({
+        title: f.title,
+        uri: f.uri ?? '',
+        albumArtUri: f.albumArtURI,
+      }))
   }
 
   async isAvailable(): Promise<boolean> {

@@ -3,6 +3,7 @@ import { Play, Search, Heart } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NowPlayingTab } from '@/components/sonos/NowPlayingTab'
 import { BrowseTab } from '@/components/sonos/BrowseTab'
+import { FavouritesTab } from '@/components/sonos/FavouritesTab'
 
 // ── Tab definition ────────────────────────────────────────────────────────────
 
@@ -30,13 +31,7 @@ export default function SonosPage() {
           {activeTab === 'now-playing' && <NowPlayingTab />}
           {activeTab === 'browse' && <BrowseTab />}
           {activeTab === 'favourites' && (
-            <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
-              <Heart className="h-10 w-10 text-caption/40" aria-hidden="true" />
-              <div>
-                <h2 className="text-lg font-semibold text-heading">Favourites</h2>
-                <p className="mt-1 max-w-xs text-sm text-caption">Your saved favourites for quick playback — coming soon.</p>
-              </div>
-            </div>
+            <FavouritesTab onNavigateToBrowse={() => setActiveTab('browse')} />
           )}
         </div>
       </div>

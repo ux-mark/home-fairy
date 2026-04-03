@@ -643,8 +643,15 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
       throw new Error('Unauthorized')
     }
     if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(text || `API error: ${res.status}`)
+      let message = `API error: ${res.status}`
+      try {
+        const body = await res.json()
+        if (body?.error) message = body.error
+      } catch {
+        const text = await res.text().catch(() => '')
+        if (text && !text.startsWith('<!')) message = text
+      }
+      throw new Error(message)
     }
     return res.json()
   } finally {
@@ -844,6 +851,7 @@ export interface SpotifyTrack {
 
 export interface SpotifyStatus {
   connected: boolean
+  configured: boolean
   display_name?: string
 }
 
