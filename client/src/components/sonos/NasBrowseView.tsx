@@ -28,7 +28,7 @@ function useFirstSpeaker() {
     queryFn: api.sonos.getZones,
     staleTime: 30_000,
   })
-  return zones?.[0]?.members?.[0]?.roomName ?? zones?.[0]?.coordinator ?? null
+  return zones?.[0]?.members?.[0]?.roomName ?? zones?.[0]?.coordinator?.roomName ?? null
 }
 
 function useDebounce<T>(value: T, delay: number): T {
@@ -80,19 +80,19 @@ function TrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: strin
   const addToQueue = useMutation({
     mutationFn: () => api.sonos.addToQueue(speaker!, track.uri),
     onSuccess: () => {
-      toast({ title: 'Added to queue', description: track.title })
+      toast({ message: `Added "${track.title}" to queue` })
       queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
     },
-    onError: () => toast({ title: 'Failed to add to queue', variant: 'destructive' }),
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
 
   const playNext = useMutation({
     mutationFn: () => api.sonos.playNext(speaker!, track.uri),
     onSuccess: () => {
-      toast({ title: 'Playing next', description: track.title })
+      toast({ message: `"${track.title}" will play next` })
       queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
     },
-    onError: () => toast({ title: 'Failed to play next', variant: 'destructive' }),
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
 
   return (
