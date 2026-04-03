@@ -13,14 +13,14 @@ import {
   User,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { SonosLibraryTrack, SonosLibraryArtist, SonosLibraryAlbum, SonosGenre, SonosGenreArtist } from '@/lib/api'
+import type { SonosLibraryTrack, SonosLibraryArtist, SonosLibraryAlbum, SonosGenre, SonosGenreAlbum } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type NasView = 'home' | 'artist-detail' | 'album-detail' | 'genre-artists' | 'genre-artist-tracks'
+type NasView = 'home' | 'artist-detail' | 'album-detail' | 'genre-albums' | 'genre-album-tracks'
 type BrowseMode = 'genres' | 'artists' | 'albums'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -47,6 +47,32 @@ function useDebounce<T>(value: T, delay: number): T {
   }, [value, delay])
 
   return debounced
+}
+
+// ── Album art thumbnail ───────────────────────────────────────────────────────
+
+function AlbumArt({ uri, size = 40 }: { uri?: string; size?: number }) {
+  const [failed, setFailed] = useState(false)
+  return (
+    <div
+      className="shrink-0 overflow-hidden rounded-md bg-[var(--bg-tertiary)]"
+      style={{ width: size, height: size }}
+    >
+      {uri && !failed ? (
+        <img
+          src={uri}
+          alt=""
+          loading="lazy"
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center">
+          <Disc3 className="h-4 w-4 text-caption/40" aria-hidden="true" />
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── Track row ─────────────────────────────────────────────────────────────────
@@ -573,20 +599,20 @@ function GenreList({
   )
 }
 
-// ── Genre artist list ────────────────────────────────────────────────────────
+// ── Genre album list ─────────────────────────────────────────────────────────
 
-function GenreArtistList({
+function GenreAlbumList({
   genre,
-  onSelectArtist,
+  onSelectAlbum,
   onBack,
 }: {
   genre: string
-  onSelectArtist: (genre: string, artist: string) => void
+  onSelectAlbum: (album: SonosGenreAlbum) => void
   onBack: () => void
 }) {
-  const { data: artists, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['sonos-genre-artists', genre],
-    queryFn: () => api.sonos.getGenreArtists(genre),
+  const { data: albums, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['sonos-genre-albums', genre],
+    queryFn: () => api.sonos.getGenreAlbums(genre),
     staleTime: 5 * 60_000,
   })
 
@@ -612,18 +638,18 @@ function GenreArtistList({
 
       {isError && (
         <ErrorState
-          message={(error as Error).message ?? 'Failed to load artists'}
+          message={(error as Error).message ?? 'Failed to load albums'}
           onRetry={() => refetch()}
         />
       )}
 
-      {!isLoading && !isError && artists && artists.length > 0 && (
+      {!isLoading && !isError && albums && albums.length > 0 && (
         <ul className="-mx-4">
-          {artists.map((artist: SonosGenreArtist) => (
-            <li key={artist.name}>
+          {albums.map((album: SonosGenreAlbum) => (
+            <li key={album.objectId}>
               <button
                 type="button"
-                onClick={() => onSelectArtist(genre, artist.name)}
+                onClick={() => onSelectAlbum(album)}
                 className={cn(
                   'flex w-full items-center gap-3 px-4 py-2.5 text-left',
                   'transition-colors hover:bg-[var(--bg-secondary)]',
@@ -631,36 +657,42 @@ function GenreArtistList({
                   'min-h-[44px]',
                 )}
               >
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--bg-tertiary)]">
-                  <User className="h-4 w-4 text-caption/60" aria-hidden="true" />
+                <AlbumArt uri={album.albumArtUri} size={48} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-heading">{album.name}</p>
+                  <p className="truncate text-xs text-caption">{album.artist}</p>
                 </div>
-                <p className="min-w-0 flex-1 truncate text-sm font-medium text-heading">{artist.name}</p>
                 <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
               </button>
             </li>
           ))}
         </ul>
       )}
+
+      {!isLoading && !isError && (!albums || albums.length === 0) && (
+        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+          <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+          <p className="text-sm text-caption">No albums found in {genre}</p>
+        </div>
+      )}
     </div>
   )
 }
 
-// ── Genre artist tracks ──────────────────────────────────────────────────────
+// ── Genre album tracks ───────────────────────────────────────────────────────
 
-function GenreArtistTracks({
-  genre,
-  artist,
+function GenreAlbumTracks({
+  album,
   speaker,
   onBack,
 }: {
-  genre: string
-  artist: string
+  album: SonosGenreAlbum
   speaker: string | null
   onBack: () => void
 }) {
   const { data: tracks, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['sonos-genre-artist-tracks', genre, artist],
-    queryFn: () => api.sonos.getGenreArtistTracks(genre, artist),
+    queryKey: ['sonos-genre-album-tracks', album.objectId],
+    queryFn: () => api.sonos.getGenreAlbumTracks(album.objectId),
     staleTime: 5 * 60_000,
   })
 
@@ -670,7 +702,7 @@ function GenreArtistTracks({
         <button
           type="button"
           onClick={onBack}
-          aria-label={`Back to ${genre}`}
+          aria-label="Back to albums"
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
             'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
@@ -679,9 +711,10 @@ function GenreArtistTracks({
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
+        <AlbumArt uri={album.albumArtUri} size={44} />
         <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold text-heading">{artist}</h2>
-          <p className="truncate text-xs text-caption">{genre}</p>
+          <h2 className="truncate text-lg font-semibold text-heading">{album.name}</h2>
+          <p className="truncate text-xs text-caption">{album.artist}</p>
         </div>
       </div>
 
@@ -769,7 +802,7 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null)
   const [selectedAlbum, setSelectedAlbum] = useState<{ artist: string; album: string } | null>(null)
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null)
-  const [selectedGenreArtist, setSelectedGenreArtist] = useState<string | null>(null)
+  const [selectedGenreAlbum, setSelectedGenreAlbum] = useState<SonosGenreAlbum | null>(null)
   const firstSpeaker = useFirstSpeaker()
   const speaker = targetSpeaker ?? firstSpeaker
 
@@ -788,19 +821,18 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
 
   function handleSelectGenre(genre: string) {
     setSelectedGenre(genre)
-    setView('genre-artists')
+    setView('genre-albums')
   }
 
-  function handleSelectGenreArtist(genre: string, artist: string) {
-    setSelectedGenre(genre)
-    setSelectedGenreArtist(artist)
-    setView('genre-artist-tracks')
+  function handleSelectGenreAlbum(album: SonosGenreAlbum) {
+    setSelectedGenreAlbum(album)
+    setView('genre-album-tracks')
   }
 
   function handleBack() {
-    if (view === 'genre-artist-tracks') {
-      setView('genre-artists')
-      setSelectedGenreArtist(null)
+    if (view === 'genre-album-tracks') {
+      setView('genre-albums')
+      setSelectedGenreAlbum(null)
     } else if (view === 'album-detail' && selectedArtist) {
       setView('artist-detail')
       setSelectedAlbum(null)
@@ -809,7 +841,7 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
       setSelectedArtist(null)
       setSelectedAlbum(null)
       setSelectedGenre(null)
-      setSelectedGenreArtist(null)
+      setSelectedGenreAlbum(null)
     }
   }
 
@@ -817,22 +849,21 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
     return <SearchResults query={debouncedQuery} speaker={speaker} />
   }
 
-  if (view === 'genre-artist-tracks' && selectedGenre && selectedGenreArtist) {
+  if (view === 'genre-album-tracks' && selectedGenreAlbum) {
     return (
-      <GenreArtistTracks
-        genre={selectedGenre}
-        artist={selectedGenreArtist}
+      <GenreAlbumTracks
+        album={selectedGenreAlbum}
         speaker={speaker}
         onBack={handleBack}
       />
     )
   }
 
-  if (view === 'genre-artists' && selectedGenre) {
+  if (view === 'genre-albums' && selectedGenre) {
     return (
-      <GenreArtistList
+      <GenreAlbumList
         genre={selectedGenre}
-        onSelectArtist={handleSelectGenreArtist}
+        onSelectAlbum={handleSelectGenreAlbum}
         onBack={handleBack}
       />
     )

@@ -142,9 +142,11 @@ export interface SonosGenre {
   artistCount: number
 }
 
-export interface SonosGenreArtist {
+export interface SonosGenreAlbum {
   name: string
-  uri: string
+  artist: string
+  albumArtUri: string
+  objectId: string
 }
 
 export interface SonosRadioStation {
@@ -534,37 +536,71 @@ class SonosClient {
     }
   }
 
-  async getGenreArtists(genre: string): Promise<SonosGenreArtist[]> {
+  async getGenreAlbums(genre: string): Promise<SonosGenreAlbum[]> {
     const ip = await this.getSpeakerIp()
     if (!ip) return []
     try {
-      const xml = await this.browseUPnP(ip, `A:GENRE/${genre}`)
-      const decoded = this.decodeXmlEntities(xml)
-      const titles = [...decoded.matchAll(/<dc:title>([^<]+)<\/dc:title>/g)].map(m => this.decodeXmlEntities(m[1]))
-      const uris = [...decoded.matchAll(/<res[^>]*>([^<]+)<\/res>/g)].map(m => this.decodeXmlEntities(m[1]))
-      return titles.map((name, i) => ({ name, uri: uris[i] ?? '' }))
+      // First get all artists in this genre
+      const artistXml = await this.browseUPnP(ip, `A:GENRE/${genre}`)
+      const decoded = this.decodeXmlEntities(artistXml)
+      const artistNames = [...decoded.matchAll(/<dc:title>([^<]+)<\/dc:title>/g)]
+        .map(m => this.decodeXmlEntities(m[1]))
+        .filter(n => n !== 'All')
+
+      // Then browse each artist to get their albums (with art)
+      const albums: SonosGenreAlbum[] = []
+      for (const artist of artistNames) {
+        try {
+          const albumXml = await this.browseUPnP(ip, `A:GENRE/${genre}/${artist}`)
+          const albumDecoded = this.decodeXmlEntities(albumXml)
+          // Parse containers (albums)
+          const containers = [...albumDecoded.matchAll(/<container[^>]*id="([^"]*)"[^>]*>(.*?)<\/container>/gs)]
+          for (const [, id, content] of containers) {
+            const title = content.match(/<dc:title>([^<]+)<\/dc:title>/)
+            const art = content.match(/<upnp:albumArtURI>([^<]+)<\/upnp:albumArtURI>/)
+            const name = title ? this.decodeXmlEntities(title[1]) : ''
+            if (name === 'All') continue
+            const artUri = art ? this.decodeXmlEntities(art[1]) : ''
+            // Convert relative art URI to absolute using speaker IP
+            const absoluteArt = artUri.startsWith('/') ? `http://${ip}:1400${artUri}` : artUri
+            albums.push({
+              name,
+              artist,
+              albumArtUri: absoluteArt,
+              objectId: this.decodeXmlEntities(id),
+            })
+          }
+        } catch { /* skip artist on error */ }
+      }
+      return albums
     } catch {
       return []
     }
   }
 
-  async getGenreArtistTracks(genre: string, artist: string): Promise<SonosLibraryTrack[]> {
+  async getGenreAlbumTracks(objectId: string): Promise<SonosLibraryTrack[]> {
     const ip = await this.getSpeakerIp()
     if (!ip) return []
     try {
-      const xml = await this.browseUPnP(ip, `A:GENRE/${genre}/${artist}`, 0, 500)
+      const xml = await this.browseUPnP(ip, objectId, 0, 500)
       const decoded = this.decodeXmlEntities(xml)
-      const titles = [...decoded.matchAll(/<dc:title>([^<]+)<\/dc:title>/g)].map(m => this.decodeXmlEntities(m[1]))
-      const artists = [...decoded.matchAll(/<dc:creator>([^<]+)<\/dc:creator>/g)].map(m => this.decodeXmlEntities(m[1]))
-      const albums = [...decoded.matchAll(/<upnp:album>([^<]+)<\/upnp:album>/g)].map(m => this.decodeXmlEntities(m[1]))
-      const uris = [...decoded.matchAll(/<res[^>]*>([^<]+)<\/res>/g)].map(m => this.decodeXmlEntities(m[1]))
-      return titles.map((title, i) => ({
-        title,
-        artist: artists[i] ?? artist,
-        album: albums[i] ?? '',
-        albumArtUri: '',
-        uri: uris[i] ?? '',
-      }))
+      const items = [...decoded.matchAll(/<item[^>]*>(.*?)<\/item>/gs)]
+      return items.map(([, content]) => {
+        const title = content.match(/<dc:title>([^<]+)<\/dc:title>/)
+        const creator = content.match(/<dc:creator>([^<]+)<\/dc:creator>/)
+        const album = content.match(/<upnp:album>([^<]+)<\/upnp:album>/)
+        const art = content.match(/<upnp:albumArtURI>([^<]+)<\/upnp:albumArtURI>/)
+        const uri = content.match(/<res[^>]*>([^<]+)<\/res>/)
+        const artUri = art ? this.decodeXmlEntities(art[1]) : ''
+        const absoluteArt = artUri.startsWith('/') ? `http://${ip}:1400${artUri}` : artUri
+        return {
+          title: title ? this.decodeXmlEntities(title[1]) : '',
+          artist: creator ? this.decodeXmlEntities(creator[1]) : '',
+          album: album ? this.decodeXmlEntities(album[1]) : '',
+          albumArtUri: absoluteArt,
+          uri: uri ? this.decodeXmlEntities(uri[1]) : '',
+        }
+      })
     } catch {
       return []
     }

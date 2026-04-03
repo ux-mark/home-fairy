@@ -524,25 +524,37 @@ router.get('/library/genres', async (_req: Request, res: Response) => {
   }
 })
 
-// GET /library/genre/:genre — list artists in a genre
+// GET /library/genre/:genre — list albums in a genre (with album art)
 router.get('/library/genre/:genre', async (req: Request, res: Response) => {
   try {
     const genre = Array.isArray(req.params.genre) ? req.params.genre[0] : req.params.genre
-    const artists = await sonosClient.getGenreArtists(genre)
-    res.json(artists)
+    const albums = await sonosClient.getGenreAlbums(genre)
+    // Proxy album art URIs through our art-proxy
+    const result = albums.map(a => ({
+      ...a,
+      albumArtUri: rewriteAlbumArtUri(a.albumArtUri) ?? '',
+    }))
+    res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
-// GET /library/genre/:genre/:artist — list tracks by an artist in a genre
-router.get('/library/genre/:genre/:artist', async (req: Request, res: Response) => {
+// GET /library/genre-album-tracks?objectId= — list tracks in a genre album
+router.get('/library/genre-album-tracks', async (req: Request, res: Response) => {
+  const objectId = typeof req.query.objectId === 'string' ? req.query.objectId : ''
+  if (!objectId) {
+    res.status(400).json({ error: 'Missing required query parameter: objectId' })
+    return
+  }
   try {
-    const genre = Array.isArray(req.params.genre) ? req.params.genre[0] : req.params.genre
-    const artist = Array.isArray(req.params.artist) ? req.params.artist[0] : req.params.artist
-    const tracks = await sonosClient.getGenreArtistTracks(genre, artist)
-    res.json(tracks)
+    const tracks = await sonosClient.getGenreAlbumTracks(objectId)
+    const result = tracks.map(t => ({
+      ...t,
+      albumArtUri: rewriteAlbumArtUri(t.albumArtUri) ?? '',
+    }))
+    res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })

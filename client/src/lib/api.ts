@@ -756,9 +756,11 @@ export interface SonosGenre {
   artistCount: number
 }
 
-export interface SonosGenreArtist {
+export interface SonosGenreAlbum {
   name: string
-  uri: string
+  artist: string
+  albumArtUri: string
+  objectId: string
 }
 
 export interface SonosRadioStation {
@@ -1527,10 +1529,10 @@ export const api = {
     health: () => fetchApi<{ available: boolean }>('/sonos/health'),
     getLibraryGenres: () =>
       fetchApi<SonosGenre[]>('/sonos/library/genres'),
-    getGenreArtists: (genre: string) =>
-      fetchApi<SonosGenreArtist[]>('/sonos/library/genre/' + encodeURIComponent(genre)),
-    getGenreArtistTracks: (genre: string, artist: string) =>
-      fetchApi<SonosLibraryTrack[]>('/sonos/library/genre/' + encodeURIComponent(genre) + '/' + encodeURIComponent(artist)),
+    getGenreAlbums: (genre: string) =>
+      fetchApi<SonosGenreAlbum[]>('/sonos/library/genre/' + encodeURIComponent(genre)),
+    getGenreAlbumTracks: (objectId: string) =>
+      fetchApi<SonosLibraryTrack[]>('/sonos/library/genre-album-tracks?objectId=' + encodeURIComponent(objectId)),
     getLibraryStatus: () =>
       fetchApi<SonosLibraryStatus>('/sonos/library/status'),
     reloadLibrary: () =>
