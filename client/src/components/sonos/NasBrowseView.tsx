@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils'
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type NasView = 'home' | 'artist-detail' | 'album-detail' | 'genre-albums' | 'genre-album-tracks'
-type BrowseMode = 'genres' | 'artists' | 'albums'
+type BrowseMode = 'genres' | 'albums' | 'artists' | 'songs'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -277,9 +277,9 @@ function BrowseModeTabs({
     <div
       role="tablist"
       aria-label="Browse by"
-      className="mb-4 flex gap-2"
+      className="mb-4 flex gap-2 overflow-x-auto pb-0.5"
     >
-      {(['genres', 'artists', 'albums'] as const).map(m => (
+      {(['genres', 'albums', 'artists', 'songs'] as const).map(m => (
         <button
           key={m}
           role="tab"
@@ -294,7 +294,7 @@ function BrowseModeTabs({
               : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
           )}
         >
-          {m === 'genres' ? 'Genres' : m === 'artists' ? 'Artists' : 'Albums'}
+          {m === 'genres' ? 'Genres' : m === 'albums' ? 'Albums' : m === 'artists' ? 'Artists' : 'Songs'}
         </button>
       ))}
     </div>
@@ -847,6 +847,44 @@ function GenreAlbumTracks({
   )
 }
 
+// ── Songs list ───────────────────────────────────────────────────────────────
+
+function SongsList({ speaker }: { speaker: string | null }) {
+  const { data: tracks, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['sonos-library-songs'],
+    queryFn: api.sonos.getLibrarySongs,
+    staleTime: 5 * 60_000,
+  })
+
+  if (isLoading) return <ListSkeleton />
+
+  if (isError) {
+    return (
+      <ErrorState
+        message={(error as Error).message ?? 'Failed to load songs'}
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  if (!tracks || tracks.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+        <p className="text-sm font-medium text-heading">No songs found</p>
+      </div>
+    )
+  }
+
+  return (
+    <ul className="-mx-4">
+      {tracks.map((track: SonosLibraryTrack, i: number) => (
+        <TrackRow key={track.uri + ':' + i} track={track} speaker={speaker} />
+      ))}
+    </ul>
+  )
+}
+
 // ── Search results view ───────────────────────────────────────────────────────
 
 function SearchResults({ query, speaker }: { query: string; speaker: string | null }) {
@@ -996,8 +1034,9 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
     <div>
       <BrowseModeTabs mode={browseMode} onChangeMode={setBrowseMode} />
       {browseMode === 'genres' && <GenreList onSelectGenre={handleSelectGenre} />}
-      {browseMode === 'artists' && <ArtistList onSelectArtist={handleSelectArtist} />}
       {browseMode === 'albums' && <AlbumList onSelectAlbum={handleSelectAlbum} />}
+      {browseMode === 'artists' && <ArtistList onSelectArtist={handleSelectArtist} />}
+      {browseMode === 'songs' && <SongsList speaker={speaker} />}
     </div>
   )
 }

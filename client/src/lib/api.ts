@@ -959,6 +959,17 @@ export interface SpotifyEpisode {
   explicit: boolean
 }
 
+export interface SpotifyArtist {
+  id: string
+  name: string
+  images: Array<{ url: string; height: number | null; width: number | null }>
+  genres: string[]
+  uri: string
+  external_urls: { spotify: string }
+  followers: { total: number }
+  popularity: number
+}
+
 // ── User action types ────────────────────────────────────────────────────────
 
 export interface UserAction {
@@ -1589,6 +1600,8 @@ export const api = {
       fetchApi<SonosLibraryTrack[]>('/sonos/library/artist/' + encodeURIComponent(name)),
     getAlbumTracks: (objectId: string) =>
       fetchApi<SonosLibraryTrack[]>('/sonos/library/album-tracks?objectId=' + encodeURIComponent(objectId)),
+    getLibrarySongs: () =>
+      fetchApi<SonosLibraryTrack[]>('/sonos/library/songs'),
     searchLibrary: (query: string) =>
       fetchApi<SonosLibrarySearchResult>('/sonos/library/search?q=' + encodeURIComponent(query)),
     getRadioStations: () =>
@@ -1738,6 +1751,24 @@ export const api = {
       const qs = params.toString()
       return fetchApi<{ items: Array<{ added_at: string; track: SpotifyTrack }>; total: number; next: string | null }>(
         '/spotify/tracks' + (qs ? '?' + qs : ''),
+      )
+    },
+    getArtists: (limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: SpotifyArtist[]; total: number; scope_warning?: string }>(
+        '/spotify/artists' + (qs ? '?' + qs : ''),
+      )
+    },
+    getArtistAlbums: (id: string, limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: SpotifyAlbum[]; total: number; next: string | null }>(
+        '/spotify/artists/' + encodeURIComponent(id) + '/albums' + (qs ? '?' + qs : ''),
       )
     },
   },

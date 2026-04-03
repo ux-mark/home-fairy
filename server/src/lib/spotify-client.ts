@@ -11,6 +11,8 @@ const SPOTIFY_SCOPES = [
   'playlist-read-private',
   'playlist-read-collaborative',
   'user-library-read',
+  'user-follow-read',
+  'user-top-read',
 ].join(' ')
 
 export class SpotifyApiError extends Error {
@@ -145,6 +147,17 @@ export interface SpotifyEpisode {
   uri: string
   release_date: string
   explicit: boolean
+}
+
+export interface SpotifyArtist {
+  id: string
+  name: string
+  images: SpotifyImage[]
+  genres: string[]
+  uri: string
+  external_urls: { spotify: string }
+  followers: { total: number }
+  popularity: number
 }
 
 class SpotifyClient {
@@ -394,6 +407,64 @@ class SpotifyClient {
     } catch (err) {
       const status = err instanceof AxiosError ? err.response?.status : undefined
       throw new SpotifyApiError('Failed to fetch saved tracks', status)
+    }
+  }
+
+  async getFollowedArtists(limit = 50, after?: string): Promise<{
+    artists: { items: SpotifyArtist[]; total: number; cursors: { after: string | null } }
+  }> {
+    const token = await this.getAccessToken()
+    try {
+      const params: Record<string, string | number> = { type: 'artist', limit }
+      if (after) params.after = after
+      const response = await this.api.get<{
+        artists: { items: SpotifyArtist[]; total: number; cursors: { after: string | null } }
+      }>('/me/following', {
+        headers: { Authorization: `Bearer ${token}` },
+        params,
+      })
+      return response.data
+    } catch (err) {
+      const status = err instanceof AxiosError ? err.response?.status : undefined
+      throw new SpotifyApiError('Failed to fetch followed artists', status)
+    }
+  }
+
+  async getTopArtists(limit = 50, offset = 0, time_range = 'medium_term'): Promise<{
+    items: SpotifyArtist[]; total: number; next: string | null
+  }> {
+    const token = await this.getAccessToken()
+    try {
+      const response = await this.api.get<{ items: SpotifyArtist[]; total: number; next: string | null }>(
+        '/me/top/artists',
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { limit, offset, time_range },
+        },
+      )
+      return response.data
+    } catch (err) {
+      const status = err instanceof AxiosError ? err.response?.status : undefined
+      throw new SpotifyApiError('Failed to fetch top artists', status)
+    }
+  }
+
+  async getArtistAlbums(artistId: string, limit = 50, offset = 0, include_groups = 'album,single'): Promise<{
+    items: SpotifyAlbum[]; total: number; next: string | null
+  }> {
+    const token = await this.getAccessToken()
+    try {
+      const response = await this.api.get<{ items: SpotifyAlbum[]; total: number; next: string | null }>(
+        `/artists/${artistId}/albums`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { limit, offset, include_groups },
+        },
+      )
+      return response.data
+    } catch (err) {
+      const status = err instanceof AxiosError ? err.response?.status : undefined
+      throw new SpotifyApiError(`Failed to fetch albums for artist ${artistId}`, status)
     }
   }
 
