@@ -355,10 +355,15 @@ function NasSection({ query, speaker }: { query: string; speaker: string | null 
 // ── Spotify section ───────────────────────────────────────────────────────────
 
 function SpotifySection({ query, speaker }: { query: string; speaker: string | null }) {
-  const { data: statusData } = useQuery({
+  const {
+    data: statusData,
+    isError: statusIsError,
+    refetch: refetchStatus,
+  } = useQuery({
     queryKey: ['spotify-status'],
     queryFn: api.spotify.getStatus,
-    staleTime: 60_000,
+    staleTime: 30_000,
+    retry: 1,
   })
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -373,19 +378,25 @@ function SpotifySection({ query, speaker }: { query: string; speaker: string | n
   return (
     <section aria-label="Spotify results">
       <SectionHeading icon={Music2} label="Spotify" />
-      {!statusData?.connected && (
+      {statusIsError && (
+        <SectionError
+          message="Spotify unavailable — check your internet connection"
+          onRetry={() => refetchStatus()}
+        />
+      )}
+      {!statusIsError && !statusData?.connected && (
         <p className="px-4 py-3 text-xs text-caption">
           Connect Spotify in Settings to see results here
         </p>
       )}
-      {statusData?.connected && isLoading && <SectionSkeleton />}
-      {statusData?.connected && isError && (
+      {!statusIsError && statusData?.connected && isLoading && <SectionSkeleton />}
+      {!statusIsError && statusData?.connected && isError && (
         <SectionError
           message={(error as Error).message ?? 'Failed to search Spotify'}
           onRetry={() => refetch()}
         />
       )}
-      {statusData?.connected && !isLoading && !isError && trackItems.length === 0 && (
+      {!statusIsError && statusData?.connected && !isLoading && !isError && trackItems.length === 0 && (
         <p className="px-4 py-3 text-xs text-caption">No Spotify results for &ldquo;{query}&rdquo;</p>
       )}
       {trackItems.length > 0 && (

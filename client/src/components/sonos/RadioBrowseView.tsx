@@ -85,12 +85,20 @@ function StationListSkeleton() {
 
 // ── Error state ───────────────────────────────────────────────────────────────
 
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorState({
+  title = 'Radio stations unavailable',
+  message,
+  onRetry,
+}: {
+  title?: string
+  message: string
+  onRetry: () => void
+}) {
   return (
     <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
       <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
       <div>
-        <p className="text-sm font-medium text-heading">Something went wrong</p>
+        <p className="text-sm font-medium text-heading">{title}</p>
         <p className="mt-1 max-w-xs text-xs text-caption">{message}</p>
       </div>
       <button

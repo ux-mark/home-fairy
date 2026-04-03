@@ -124,12 +124,20 @@ function TrackListSkeleton() {
 
 // ── Error state ───────────────────────────────────────────────────────────────
 
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
+function ErrorState({
+  title = 'Something went wrong',
+  message,
+  onRetry,
+}: {
+  title?: string
+  message: string
+  onRetry: () => void
+}) {
   return (
     <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
       <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
       <div>
-        <p className="text-sm font-medium text-heading">Something went wrong</p>
+        <p className="text-sm font-medium text-heading">{title}</p>
         <p className="mt-1 max-w-xs text-xs text-caption">{message}</p>
       </div>
       <button
@@ -223,7 +231,8 @@ function PlaylistGrid({ onSelect }: { onSelect: (playlist: SpotifyPlaylist) => v
   if (isError) {
     return (
       <ErrorState
-        message={(error as Error).message ?? 'Failed to load playlists'}
+        title="Spotify unavailable"
+        message={(error as Error).message ?? 'Could not load playlists. Check your internet connection and try again.'}
         onRetry={() => refetch()}
       />
     )
@@ -505,10 +514,16 @@ export function SpotifyBrowseView({ searchQuery }: { searchQuery: string }) {
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
   const isSearching = debouncedQuery.length > 0
 
-  const { data: statusData, isLoading: statusLoading } = useQuery({
+  const {
+    data: statusData,
+    isLoading: statusLoading,
+    isError: statusIsError,
+    refetch: refetchStatus,
+  } = useQuery({
     queryKey: ['spotify-status'],
     queryFn: api.spotify.getStatus,
-    staleTime: 60_000,
+    staleTime: 30_000,
+    retry: 1,
   })
 
   function handleSelectPlaylist(playlist: SpotifyPlaylist) {
@@ -523,6 +538,16 @@ export function SpotifyBrowseView({ searchQuery }: { searchQuery: string }) {
 
   if (statusLoading) {
     return <PlaylistGridSkeleton />
+  }
+
+  if (statusIsError) {
+    return (
+      <ErrorState
+        title="Spotify unavailable"
+        message="Could not reach Spotify. Check your internet connection and try again."
+        onRetry={() => refetchStatus()}
+      />
+    )
   }
 
   if (!statusData?.connected) {

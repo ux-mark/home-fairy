@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { Search, X, Music, Radio, Heart, HardDrive } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { AlertTriangle, CheckCircle2, Search, X, Music, Radio, Heart, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { api } from '@/lib/api'
 import { NasBrowseView } from './NasBrowseView'
 import { SpotifyBrowseView } from './SpotifyBrowseView'
 import { RadioBrowseView } from './RadioBrowseView'
@@ -26,6 +28,68 @@ const SOURCES: SourceConfig[] = [
   { id: 'favourites', label: 'Favourites', Icon: Heart },
 ]
 
+// ── Source status subtitle helpers ────────────────────────────────────────────
+
+function SpotifyStatusSubtitle() {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['spotify-status'],
+    queryFn: api.spotify.getStatus,
+    staleTime: 30_000,
+    retry: 1,
+  })
+
+  if (isLoading) return <p className="text-xs text-caption">Checking…</p>
+  if (isError) return (
+    <span className="flex items-center gap-1 text-xs text-amber-400">
+      <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+      Unavailable
+    </span>
+  )
+  if (data?.connected) return (
+    <span className="flex items-center gap-1 text-xs text-emerald-400">
+      <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+      Connected
+    </span>
+  )
+  return <p className="text-xs text-caption">Not connected</p>
+}
+
+function RadioStatusSubtitle() {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['sonos-radio-stations'],
+    queryFn: api.sonos.getRadioStations,
+    staleTime: 5 * 60_000,
+  })
+
+  if (isLoading) return <p className="text-xs text-caption">Checking…</p>
+  if (isError) return (
+    <span className="flex items-center gap-1 text-xs text-amber-400">
+      <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+      Unavailable
+    </span>
+  )
+  const count = data?.length ?? 0
+  return <p className="text-xs text-caption">{count} {count === 1 ? 'station' : 'stations'}</p>
+}
+
+function NasStatusSubtitle() {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['sonos-library-genres'],
+    queryFn: api.sonos.getLibraryGenres,
+    staleTime: 5 * 60_000,
+  })
+
+  if (isLoading) return <p className="text-xs text-caption">Checking…</p>
+  if (isError) return (
+    <span className="flex items-center gap-1 text-xs text-amber-400">
+      <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+      Unavailable
+    </span>
+  )
+  const count = data?.length ?? 0
+  return <p className="text-xs text-caption">{count} {count === 1 ? 'genre' : 'genres'}</p>
+}
+
 // ── Source preview card (used in the 'all' view) ──────────────────────────────
 
 function SourcePreviewCard({
@@ -35,7 +99,7 @@ function SourcePreviewCard({
   source: SourceConfig
   onClick: () => void
 }) {
-  const { label, Icon } = source
+  const { label, Icon, id } = source
   return (
     <button
       type="button"
@@ -52,7 +116,10 @@ function SourcePreviewCard({
       </span>
       <div>
         <p className="text-sm font-medium text-heading">{label}</p>
-        <p className="text-xs text-caption">Coming soon</p>
+        {id === 'spotify' && <SpotifyStatusSubtitle />}
+        {id === 'radio' && <RadioStatusSubtitle />}
+        {id === 'nas' && <NasStatusSubtitle />}
+        {id === 'favourites' && <p className="text-xs text-caption">Available</p>}
       </div>
     </button>
   )
