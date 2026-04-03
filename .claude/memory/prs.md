@@ -567,6 +567,13 @@
 - **Summary**: Replaces the flat log list with a narrative activity feed as the default view. Groups related log events using parent_id linking, generates Fairy Queen-voiced messages explaining what happened and why. Filters out sensor telemetry noise. Raw Logs tab preserved.
 - **Files**: `server/src/lib/activity-narrator.ts`, `server/src/lib/logger.ts`, `server/src/lib/motion-handler.ts`, `server/src/lib/scene-executor.ts`, `server/src/routes/system.ts`, `server/src/db/index.ts`, `client/src/components/ui/ActivityCard.tsx`, `client/src/pages/LogsPage.tsx`, `client/src/lib/api.ts`
 
+## PR #145 — Fix Sonos Browse: play buttons, track menus, album/playlist actions
+- **Branch**: fix/sonos-browse-ux → dev
+- **Created**: 2026-04-03
+- **Status**: open
+- **Summary**: Replace unclear icon-only buttons on track rows with Play + three-dot context menu (Play next, Add to queue, Add to favourites). Add Play album/playlist buttons. Make Spotify search albums/playlists actionable. New PUT /sonos/play-uri endpoint. Fix radio playNext API, 44px touch targets, remove truncate, theme-consistent colours.
+- **Files**: 5 files changed — NasBrowseView.tsx, SpotifyBrowseView.tsx, RadioBrowseView.tsx, api.ts, sonos.ts
+
 ## PR #144 — Fix Sonos Browse: genres, albums with art, radio, Spotify config
 - **Branch**: fix/sonos-browse-errors → dev
 - **Created**: 2026-04-03

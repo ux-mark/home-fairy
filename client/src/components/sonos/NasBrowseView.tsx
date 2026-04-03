@@ -122,9 +122,7 @@ function TrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: strin
 
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[var(--bg-tertiary)]">
-        <Music2 className="h-4 w-4 text-caption/60" aria-hidden="true" />
-      </div>
+      <AlbumArt uri={track.albumArtUri} />
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{track.title || 'Unknown track'}</p>
