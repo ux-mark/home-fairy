@@ -431,6 +431,7 @@ router.get('/queue/:speaker', async (req: Request, res: Response) => {
 })
 
 // POST /queue/:speaker/add — add item to queue
+// Falls back to setAVTransportURI + play if queue operation fails (e.g. speaker is stopped with no active transport)
 router.post('/queue/:speaker/add', async (req: Request, res: Response) => {
   try {
     const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
@@ -439,7 +440,13 @@ router.post('/queue/:speaker/add', async (req: Request, res: Response) => {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
       return
     }
-    await sonosClient.addToQueue(speaker, parsed.data.uri)
+    try {
+      await sonosClient.addToQueue(speaker, parsed.data.uri)
+    } catch {
+      // Queue op failed (speaker may be stopped) — fall back to direct playback
+      await sonosClient.setAVTransportURI(speaker, parsed.data.uri)
+      await sonosClient.play(speaker)
+    }
     emit('sonos:playback-update', { speaker })
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'add', queue })
@@ -451,6 +458,7 @@ router.post('/queue/:speaker/add', async (req: Request, res: Response) => {
 })
 
 // POST /queue/:speaker/playnext — insert item as next track
+// Falls back to setAVTransportURI + play if queue operation fails (e.g. speaker is stopped with no active transport)
 router.post('/queue/:speaker/playnext', async (req: Request, res: Response) => {
   try {
     const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
@@ -459,7 +467,13 @@ router.post('/queue/:speaker/playnext', async (req: Request, res: Response) => {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
       return
     }
-    await sonosClient.playNext(speaker, parsed.data.uri)
+    try {
+      await sonosClient.playNext(speaker, parsed.data.uri)
+    } catch {
+      // Queue op failed (speaker may be stopped) — fall back to direct playback
+      await sonosClient.setAVTransportURI(speaker, parsed.data.uri)
+      await sonosClient.play(speaker)
+    }
     emit('sonos:playback-update', { speaker })
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'playnext', queue })
