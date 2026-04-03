@@ -686,6 +686,9 @@ export interface SonosPlaybackState {
   trackNo: number
   elapsedTime: number
   elapsedTimeFormatted: string
+  duration?: number
+  durationFormatted?: string
+  currentPlayMode?: string
   inputSource?: 'tv' | 'line-in' | null
 }
 
@@ -1519,6 +1522,21 @@ export const api = {
       fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/reorder`, {
         method: 'POST',
         body: JSON.stringify({ from, to }),
+      }),
+    shuffle: (speaker: string, enabled: boolean) =>
+      fetchApi<void>(`/sonos/shuffle/${encodeURIComponent(speaker)}`, {
+        method: 'POST',
+        body: JSON.stringify({ enabled }),
+      }),
+    repeat: (speaker: string, enabled: boolean) =>
+      fetchApi<void>(`/sonos/repeat/${encodeURIComponent(speaker)}`, {
+        method: 'POST',
+        body: JSON.stringify({ enabled }),
+      }),
+    seek: (speaker: string, seconds: number) =>
+      fetchApi<void>(`/sonos/seek/${encodeURIComponent(speaker)}`, {
+        method: 'POST',
+        body: JSON.stringify({ seconds }),
       }),
   },
 

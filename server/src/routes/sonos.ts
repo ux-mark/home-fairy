@@ -631,6 +631,66 @@ router.post('/previous/:speaker', async (req: Request, res: Response) => {
   }
 })
 
+// POST /shuffle/:speaker — enable or disable shuffle
+const shuffleSchema = z.object({ enabled: z.boolean() })
+
+router.post('/shuffle/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const { enabled } = shuffleSchema.parse(req.body)
+    await sonosClient.shuffle(speaker, enabled)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, shuffle: enabled })
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: err.errors })
+      return
+    }
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /repeat/:speaker — enable or disable repeat
+const repeatSchema = z.object({ enabled: z.boolean() })
+
+router.post('/repeat/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const { enabled } = repeatSchema.parse(req.body)
+    await sonosClient.repeat(speaker, enabled)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, repeat: enabled })
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: err.errors })
+      return
+    }
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /seek/:speaker — seek to a position in seconds
+const seekSchema = z.object({ seconds: z.number().int().min(0) })
+
+router.post('/seek/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const { seconds } = seekSchema.parse(req.body)
+    await sonosClient.seek(speaker, seconds)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, seconds })
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: err.errors })
+      return
+    }
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
 // POST /play-favourite/:speaker — play a favourite by name on a specific speaker
 const playFavouriteSchema = z.object({ name: z.string().min(1) })
 
