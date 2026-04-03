@@ -17,12 +17,16 @@ interface ColorWheelProps {
   saturation: number // 0-100
   /** Diameter of the wheel in CSS pixels (canvas is sized to match). Default 256. */
   size?: number
+  /** Called on every pointer move during drag — for live local UI update */
   onChange: (hue: number, saturation: number) => void
+  /** Called on pointer up — for final API commit */
+  onCommit?: (hue: number, saturation: number) => void
 }
 
-export default function ColorWheel({ hue, saturation, size = 256, onChange }: ColorWheelProps) {
+export default function ColorWheel({ hue, saturation, size = 256, onChange, onCommit }: ColorWheelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const isDragging = useRef(false)
+  const lastValues = useRef<{ h: number; s: number }>({ h: hue, s: saturation })
   const labelId = useId()
   const r = size / 2
 
@@ -78,7 +82,10 @@ export default function ColorWheel({ hue, saturation, size = 256, onChange }: Co
       // Clamp saturation to within the circle
       const newSat = Math.min(dist / r, 1) * 100
 
-      onChange(Math.round(newHue * 10) / 10, Math.round(newSat * 10) / 10)
+      const h = Math.round(newHue * 10) / 10
+      const s = Math.round(newSat * 10) / 10
+      lastValues.current = { h, s }
+      onChange(h, s)
     },
     [size, r, onChange],
   )
@@ -93,7 +100,7 @@ export default function ColorWheel({ hue, saturation, size = 256, onChange }: Co
   return (
     <div
       className="relative"
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, touchAction: 'none' }}
       role="group"
       aria-labelledby={labelId}
     >
@@ -116,7 +123,10 @@ export default function ColorWheel({ hue, saturation, size = 256, onChange }: Co
           if (!isDragging.current) return
           handlePointerEvent(e)
         }}
-        onPointerUp={() => { isDragging.current = false }}
+        onPointerUp={() => {
+          isDragging.current = false
+          onCommit?.(lastValues.current.h, lastValues.current.s)
+        }}
         onPointerCancel={() => { isDragging.current = false }}
       />
       {/* Draggable thumb */}

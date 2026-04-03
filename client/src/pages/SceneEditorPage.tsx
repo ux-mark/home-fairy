@@ -122,12 +122,23 @@ function LightEditorCard({
     }
   }, [debouncedApiCall])
 
-  const handleLiveChange = useCallback(
+  // Build the next LightEditorState from a colour update
+  const applyUpdate = useCallback(
     (update: { color?: { h: number; s: number; v: number }; kelvin?: number; brightness?: number }) => {
-      if (!livePreview) return
-      debouncedApiCall(update)
+      const next = { ...state }
+      if (update.color) {
+        next.hue = update.color.h
+        next.saturation = update.color.s
+        // For colour lights, v encodes brightness — keep them in sync.
+        next.brightness = update.color.v
+      }
+      if (update.kelvin !== undefined) next.kelvin = update.kelvin
+      // For kelvin lights, brightness comes from the dedicated slider.
+      if (!state.hasColor && update.brightness !== undefined)
+        next.brightness = update.brightness
+      return next
     },
-    [livePreview, debouncedApiCall],
+    [state],
   )
 
   return (
@@ -233,20 +244,16 @@ function LightEditorCard({
             minKelvin={state.minKelvin}
             maxKelvin={state.maxKelvin}
             onChange={update => {
-              const next = { ...state }
-              if (update.color) {
-                next.hue = update.color.h
-                next.saturation = update.color.s
-                // For colour lights, v encodes brightness — keep them in sync.
-                next.brightness = update.color.v
-              }
-              if (update.kelvin !== undefined) next.kelvin = update.kelvin
-              // For kelvin lights, brightness comes from the dedicated slider.
-              if (!state.hasColor && update.brightness !== undefined)
-                next.brightness = update.brightness
-              onChange(next)
+              // During drag: update parent state so picker props stay current (thumb follows finger),
+              // and fire a debounced API call for live preview if enabled.
+              onChange(applyUpdate(update))
+              debouncedApiCall(update)
             }}
-            onLiveChange={handleLiveChange}
+            onCommit={update => {
+              // Pointer up: cancel any pending debounced call and persist the final value.
+              debouncedApiCall.cancel()
+              onChange(applyUpdate(update))
+            }}
           />
         </div>
       )}

@@ -1,15 +1,17 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Power, ChevronRight, Wifi, WifiOff, AlertTriangle } from 'lucide-react'
 import { api } from '@/lib/api'
-import { cn, getLightColorHex } from '@/lib/utils'
+import { cn, getLightColorHex, debounce } from '@/lib/utils'
 import { BackLink } from '@/components/ui/BackLink'
 import { DetailPageSkeleton } from '@/components/ui/Skeleton'
 import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { useToast } from '@/hooks/useToast'
 import { DeviceLinkManager } from '@/components/DeviceLinkManager'
 import ColorBrightnessPicker from '@/components/ui/ColorBrightnessPicker'
+
+interface DragState { h: number; s: number; v: number; kelvin: number }
 
 export default function LightDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -82,8 +84,46 @@ export default function LightDetailPage() {
         brightness: params.brightness !== undefined ? params.brightness / 100 : undefined,
         duration: 0.3,
       }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }),
+    // Do NOT invalidate the lights query here — we clear dragState and invalidate
+    // in onCommit so the query fetch happens after the drag is fully complete.
+    // Invalidating on every mutation success causes the UI to revert to stale
+    // server data while a drag is still in progress.
   })
+
+  // ── Local colour state ────────────────────────────────────────────────────
+  // During drag we keep an override object so the picker stays responsive
+  // without waiting for server round-trips. When dragState is null we fall back
+  // to server values, so the picker auto-updates after a query invalidation.
+
+  const [dragState, setDragState] = useState<DragState | null>(null)
+
+  const serverHue = light?.color.hue ?? 0
+  const serverSat = (light?.color.saturation ?? 0) * 100
+  const serverV = Math.round((light?.brightness ?? 0) * 100)
+  const serverKelvin = light?.color.kelvin ?? 4000
+
+  // Displayed values: drag overrides take priority, otherwise use server data
+  const localH = dragState?.h ?? serverHue
+  const localS = dragState?.s ?? serverSat
+  const localV = dragState?.v ?? serverV
+  const localKelvin = dragState?.kelvin ?? serverKelvin
+
+  // Debounced API call during drag — live preview without hammering LIFX
+  const debouncedSetState = useMemo(
+    () =>
+      debounce((params: { brightness?: number; color?: string }) => {
+        api.lifx.setState(`id:${id}`, {
+          color: params.color,
+          brightness: params.brightness !== undefined ? params.brightness / 100 : undefined,
+          duration: 0.1,
+        })
+      }, 500),
+    [id],
+  )
+
+  useEffect(() => {
+    return () => { debouncedSetState.cancel() }
+  }, [debouncedSetState])
 
   // Room assignment
   const [lightRoomDropdownOpen, setLightRoomDropdownOpen] = useState(false)
@@ -143,7 +183,6 @@ export default function LightDetailPage() {
 
   const isOn = light.power === 'on'
   const colorHex = getLightColorHex(light)
-  const brightness = Math.round(light.brightness * 100)
 
   return (
     <div className="space-y-6">
@@ -262,42 +301,54 @@ export default function LightDetailPage() {
             <div className="pt-1">
               <ColorBrightnessPicker
                 hasColor={light.product.capabilities.has_color}
-                color={{
-                  h: light.color.hue,
-                  s: light.color.saturation * 100,
-                  v: brightness,
-                }}
-                kelvin={light.color.kelvin}
-                brightness={brightness}
+                color={{ h: localH, s: localS, v: localV }}
+                kelvin={localKelvin}
+                brightness={localV}
                 minKelvin={light.product.capabilities.min_kelvin}
                 maxKelvin={light.product.capabilities.max_kelvin}
                 onChange={update => {
-                  // Committed change: fire the API and refresh
+                  // Live drag: update local drag state for instant UI feedback AND
+                  // fire a debounced API call so the physical light follows the finger.
+                  setDragState(prev => {
+                    const base: DragState = prev ?? { h: serverHue, s: serverSat, v: serverV, kelvin: serverKelvin }
+                    if (update.color) {
+                      return { ...base, h: update.color.h, s: update.color.s, v: update.color.v }
+                    }
+                    if (update.kelvin !== undefined) return { ...base, kelvin: update.kelvin }
+                    if (update.brightness !== undefined) return { ...base, v: update.brightness }
+                    return base
+                  })
+                  // Debounced live preview — no query invalidation so the UI doesn't revert
                   if (update.color) {
                     const lifxColor = `hue:${update.color.h} saturation:${(update.color.s / 100).toFixed(4)}`
-                    setStateMutation.mutate({
-                      color: lifxColor,
-                      brightness: update.color.v,
-                    })
+                    debouncedSetState({ color: lifxColor, brightness: update.color.v })
                   } else if (update.kelvin !== undefined) {
-                    setStateMutation.mutate({ color: `kelvin:${update.kelvin}` })
+                    debouncedSetState({ color: `kelvin:${update.kelvin}` })
                   } else if (update.brightness !== undefined) {
-                    setStateMutation.mutate({ brightness: update.brightness })
+                    debouncedSetState({ brightness: update.brightness })
                   }
                 }}
-                onLiveChange={update => {
-                  // Live preview: fire API without invalidating query cache
+                onCommit={update => {
+                  // Pointer up: cancel any pending debounced call, clear drag state,
+                  // fire the final mutation, then invalidate to sync server data.
+                  debouncedSetState.cancel()
+                  setDragState(null)
                   if (update.color) {
                     const lifxColor = `hue:${update.color.h} saturation:${(update.color.s / 100).toFixed(4)}`
-                    api.lifx.setState(`id:${id}`, {
-                      color: lifxColor,
-                      brightness: update.color.v !== undefined ? update.color.v / 100 : undefined,
-                      duration: 0.1,
-                    })
+                    setStateMutation.mutate(
+                      { color: lifxColor, brightness: update.color.v },
+                      { onSettled: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }) },
+                    )
                   } else if (update.kelvin !== undefined) {
-                    api.lifx.setState(`id:${id}`, { color: `kelvin:${update.kelvin}`, duration: 0.1 })
+                    setStateMutation.mutate(
+                      { color: `kelvin:${update.kelvin}` },
+                      { onSettled: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }) },
+                    )
                   } else if (update.brightness !== undefined) {
-                    api.lifx.setState(`id:${id}`, { brightness: update.brightness / 100, duration: 0.1 })
+                    setStateMutation.mutate(
+                      { brightness: update.brightness },
+                      { onSettled: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }) },
+                    )
                   }
                 }}
               />

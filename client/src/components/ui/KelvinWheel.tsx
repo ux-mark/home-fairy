@@ -8,7 +8,7 @@
  * - Dragging anywhere within the circle updates the kelvin value
  * - Displays current temperature as "Temp: XXXXXK"
  */
-import { useRef, useEffect, useCallback, useState, useId } from 'react'
+import { useRef, useEffect, useCallback, useId, useState } from 'react'
 import { kelvinToRgb } from '@/lib/utils'
 
 interface KelvinWheelProps {
@@ -17,7 +17,10 @@ interface KelvinWheelProps {
   maxKelvin?: number
   /** Diameter of the wheel in CSS pixels. Default 256. */
   size?: number
+  /** Called on every pointer move during drag — for live local UI update */
   onChange: (kelvin: number) => void
+  /** Called on pointer up — for final API commit */
+  onCommit?: (kelvin: number) => void
 }
 
 export default function KelvinWheel({
@@ -26,14 +29,20 @@ export default function KelvinWheel({
   maxKelvin = 9000,
   size = 256,
   onChange,
+  onCommit,
 }: KelvinWheelProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const isDragging = useRef(false)
   const labelId = useId()
   const r = size / 2
 
-  // Track drag x so the thumb can move freely left/right while kelvin is from y only
+  // Track drag x so the thumb can move freely left/right while kelvin is from y only.
+  // useState is correct here — React state persists across re-renders, so parent-driven
+  // re-renders (e.g. new kelvin prop) will not reset the x position during an active drag.
   const [thumbDragX, setThumbDragX] = useState<number | null>(null)
+  // Ref mirrors the state for synchronous reads inside event handlers (avoids stale closures).
+  const thumbDragXRef = useRef<number | null>(null)
+  const lastKelvin = useRef(kelvin)
 
   // Render the kelvin disc once (or when size / kelvin range changes)
   useEffect(() => {
@@ -111,8 +120,11 @@ export default function KelvinWheel({
       const t = clampedY / size
       const newKelvin = Math.round((maxKelvin * (1 - t) + minKelvin * t) / 100) * 100
 
+      thumbDragXRef.current = clampedX
       setThumbDragX(clampedX)
-      onChange(Math.max(minKelvin, Math.min(maxKelvin, newKelvin)))
+      const k = Math.max(minKelvin, Math.min(maxKelvin, newKelvin))
+      lastKelvin.current = k
+      onChange(k)
     },
     [size, r, minKelvin, maxKelvin, onChange],
   )
@@ -124,7 +136,7 @@ export default function KelvinWheel({
   return (
     <div
       className="relative"
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, touchAction: 'none' }}
       role="group"
       aria-labelledby={labelId}
     >
@@ -147,8 +159,17 @@ export default function KelvinWheel({
           if (!isDragging.current) return
           handlePointerEvent(e)
         }}
-        onPointerUp={() => { isDragging.current = false }}
-        onPointerCancel={() => { isDragging.current = false }}
+        onPointerUp={() => {
+          isDragging.current = false
+          thumbDragXRef.current = null
+          setThumbDragX(null)
+          onCommit?.(lastKelvin.current)
+        }}
+        onPointerCancel={() => {
+          isDragging.current = false
+          thumbDragXRef.current = null
+          setThumbDragX(null)
+        }}
       />
       {/* Draggable thumb */}
       <div
