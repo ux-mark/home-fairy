@@ -55,9 +55,10 @@ export function ActionPopover({
         'border-2 border-t-0',
         borderColor ?? 'border-[var(--border-primary)]',
         'rounded-b-xl',
-        'shadow-2xl shadow-[0_8px_30px_rgba(0,0,0,0.35)]',
+        'shadow-[0_8px_30px_rgba(0,0,0,0.35)] dark:shadow-[0_8px_30px_rgba(255,255,255,0.07)]',
         'overflow-hidden',
       )}
+      style={{ clipPath: 'inset(0px -40px -40px -40px)' }}
       role="region"
       aria-label={ariaLabel}
     >
