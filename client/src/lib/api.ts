@@ -749,6 +749,14 @@ export interface SonosLibrarySearchResult {
   tracks: SonosLibraryTrack[]
 }
 
+export interface SonosQueueItem {
+  title: string
+  artist: string
+  album: string
+  albumArtUri: string
+  uri: string
+}
+
 export interface SonosSpeakerMapping {
   id: number
   room_name: string
@@ -1396,6 +1404,27 @@ export const api = {
       fetchApi<SonosLibrarySearchResult>('/sonos/library/search?q=' + encodeURIComponent(query)),
     getRadioStations: () =>
       fetchApi<SonosRadioStation[]>('/sonos/radio/stations'),
+    getQueue: (speaker: string) =>
+      fetchApi<SonosQueueItem[]>(`/sonos/queue/${encodeURIComponent(speaker)}`),
+    addToQueue: (speaker: string, uri: string) =>
+      fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/add`, {
+        method: 'POST',
+        body: JSON.stringify({ uri }),
+      }),
+    playNext: (speaker: string, uri: string) =>
+      fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/playnext`, {
+        method: 'POST',
+        body: JSON.stringify({ uri }),
+      }),
+    removeFromQueue: (speaker: string, index: number) =>
+      fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/remove/${index}`, {
+        method: 'DELETE',
+      }),
+    reorderQueue: (speaker: string, from: number, to: number) =>
+      fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/reorder`, {
+        method: 'POST',
+        body: JSON.stringify({ from, to }),
+      }),
   },
 
   deviceLinks: {
