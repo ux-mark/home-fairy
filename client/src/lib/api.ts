@@ -825,6 +825,42 @@ export interface SpotifyStatus {
   connected: boolean
 }
 
+export interface SpotifyPlaylistTrackItem {
+  added_at: string
+  track: SpotifyTrack | null
+}
+
+export interface SpotifySearchResult {
+  tracks?: {
+    items: SpotifyTrack[]
+    total: number
+    next: string | null
+    offset: number
+    limit: number
+  }
+  playlists?: {
+    items: SpotifyPlaylist[]
+    total: number
+    next: string | null
+    offset: number
+    limit: number
+  }
+  albums?: {
+    items: Array<{
+      id: string
+      name: string
+      images: SpotifyImage[]
+      artists: Array<{ id: string; name: string }>
+      uri: string
+      external_urls: { spotify: string }
+    }>
+    total: number
+    next: string | null
+    offset: number
+    limit: number
+  }
+}
+
 // ── User action types ────────────────────────────────────────────────────────
 
 export interface UserAction {
@@ -1485,6 +1521,36 @@ export const api = {
       }),
     delete: (id: number) =>
       fetchApi<{ deleted: boolean }>(`/device-links/${id}`, { method: 'DELETE' }),
+  },
+
+  spotify: {
+    getStatus: () => fetchApi<SpotifyStatus>('/spotify/status'),
+    getPlaylists: (limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: SpotifyPlaylist[]; total: number; next: string | null }>(
+        '/spotify/playlists' + (qs ? '?' + qs : ''),
+      )
+    },
+    getPlaylistTracks: (id: string, limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: SpotifyPlaylistTrackItem[]; total: number; next: string | null }>(
+        '/spotify/playlists/' + encodeURIComponent(id) + '/tracks' + (qs ? '?' + qs : ''),
+      )
+    },
+    search: (q: string, types?: string[], limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      params.set('q', q)
+      if (types?.length) params.set('types', types.join(','))
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      return fetchApi<SpotifySearchResult>('/spotify/search?' + params.toString())
+    },
   },
 
   accessLinks: {
