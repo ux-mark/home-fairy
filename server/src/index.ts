@@ -17,6 +17,7 @@ import motionRoutes from './routes/motion.js'
 import dashboardRoutes from './routes/dashboard.js'
 import kasaRoutes from './routes/kasa.js'
 import sonosRoutes from './routes/sonos.js'
+import spotifyRoutes from './routes/spotify.js'
 import deviceLinksRoutes from './routes/device-links.js'
 import accessLinksRoutes from './routes/access-links.js'
 import accessLinksPublicRoutes from './routes/access-links-public.js'
@@ -118,6 +119,8 @@ app.use('/api/motion', requireAuth, motionRoutes)
 app.use('/api/dashboard', requireAuth, dashboardRoutes)
 app.use('/api/kasa', requireAuth, kasaRoutes)
 app.use('/api/sonos', requireAuth, sonosRoutes)
+// Spotify router: /auth and /callback are public (OAuth flow); protected routes apply requireAuth internally
+app.use('/api/spotify', spotifyRoutes)
 app.use('/api/device-links', requireAuth, deviceLinksRoutes)
 app.use('/api/access-links', requireAuth, accessLinksRoutes)
 app.use('/api/user-actions', requireAuth, userActionsRouter)
