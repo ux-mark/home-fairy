@@ -33,9 +33,39 @@ function artCachePath(url: string): { imgPath: string; metaPath: string } {
 
 const INTERNAL_IP_RE = /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|localhost|127\.0\.0\.1)([\/:?]|$)/i
 
+// Speaker IP cache for album art rewriting — populated from zones on first use
+let cachedSpeakerIp: string | null = null
+
+async function ensureSpeakerIp(): Promise<string | null> {
+  if (cachedSpeakerIp) return cachedSpeakerIp
+  try {
+    const info = await sonosClient.getSpeakerInfoByName('')
+    // getSpeakerInfoByName with empty name falls through to getSpeakerIp
+  } catch { /* ignore */ }
+  // Try via zones
+  try {
+    const zones = await sonosClient.getZones()
+    for (const zone of zones) {
+      const coord = zone.coordinator as Record<string, unknown> | undefined
+      const state = coord?.state as Record<string, unknown> | undefined
+      const ct = state?.currentTrack as Record<string, unknown> | undefined
+      const absUri = ct?.absoluteAlbumArtUri
+      if (typeof absUri === 'string') {
+        const match = absUri.match(/https?:\/\/([\d.]+)/)
+        if (match) { cachedSpeakerIp = match[1]; return match[1] }
+      }
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+// Warm the cache on startup (non-blocking)
+setTimeout(() => ensureSpeakerIp(), 5_000)
+
 /**
  * Rewrite a Sonos albumArtUri so it can be fetched by the browser.
- * - Relative paths (starting with /) are made absolute using the Sonos HTTP API base URL
+ * - Relative /getaa paths are routed to the Sonos speaker IP directly (not via node-sonos-http-api)
+ * - Other relative paths are made absolute using the Sonos HTTP API base URL
  * - Internal/private IP addresses are proxied through /api/sonos/art-proxy
  * - External HTTP URLs are also proxied to avoid mixed-content browser blocks
  * - External HTTPS URLs are returned unchanged
@@ -43,9 +73,11 @@ const INTERNAL_IP_RE = /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{
 function rewriteAlbumArtUri(uri: string | undefined): string | undefined {
   if (!uri) return undefined
 
-  // Relative path from node-sonos-http-api — make absolute using the API base URL
+  // Relative /getaa path — route directly to Sonos speaker IP (node-sonos-http-api's
+  // /getaa proxy is unreliable). Falls back to node-sonos-http-api if speaker IP unknown.
   if (uri.startsWith('/')) {
-    const absolute = `${SONOS_API_URL}${uri}`
+    const base = cachedSpeakerIp ? `http://${cachedSpeakerIp}:1400` : SONOS_API_URL
+    const absolute = `${base}${uri}`
     return `/api/sonos/art-proxy?url=${encodeURIComponent(absolute)}`
   }
 
