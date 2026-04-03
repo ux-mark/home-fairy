@@ -320,10 +320,25 @@ Tap "Change music" on a speaker card to open a bottom sheet with the Favourite S
 
 Per-speaker volume slider (horizontal, debounced). Master volume slider at the top adjusts all speakers to the same level simultaneously.
 
-### Bottom Tab Navigation
+### Tab Navigation
 **Status**: available
 
-Five tabs: Speakers (active), Genres, Playlists, Albums, Radio. Genres/Playlists/Albums/Radio are placeholders showing a "coming soon" message — full content browsing will be built out in future sessions.
+Three tabs: Now Playing, Browse, and Favourites. Each tab is accessible via the bottom nav bar with an icon and label.
+
+### Now Playing Tab
+**Status**: available
+
+Speaker cards showing now-playing information (album art, track title, artist) with playback state badge (Playing / Paused / Stopped). Each card has Play/Pause, Stop (when active), and Change Music buttons. Master volume slider at the top adjusts all speakers simultaneously. Per-speaker volume sliders (horizontal, debounced) are shown on each card.
+
+### Browse Tab
+**Status**: available
+
+Browse and search for music across multiple sources from a single screen. A horizontal source filter strip lets you narrow to a specific source: NAS/Pi local library (by genre), Spotify playlists, Sonos Radio, and Sonos Favourites. An "All" view shows a preview of each source. A search bar at the top finds content across all selected sources. Tap any item to play it on the active speaker.
+
+### Favourites Tab
+**Status**: available
+
+A user-curated list of favourite tracks, albums, playlists, and radio stations drawn from any source. Tap to play instantly. Drag to reorder. Add items from the Browse tab. Remove items with a swipe or long-press. Source badges indicate where each item comes from (NAS, Spotify, Radio, Sonos).
 
 ---
 
