@@ -1125,4 +1125,26 @@ router.post('/play-spotify/:speaker', async (req: Request, res: Response) => {
   }
 })
 
+// PUT /sonos/play-uri/:speaker — set and play a URI immediately via setAVTransportURI
+// Accepts: { uri: string }
+// Used for NAS tracks and container URIs (albums) where the URI can be passed
+// directly to the Sonos HTTP API's setavtransporturi action.
+router.put('/play-uri/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const { uri } = req.body as { uri?: unknown }
+    if (typeof uri !== 'string' || !uri) {
+      res.status(400).json({ error: 'uri is required and must be a non-empty string' })
+      return
+    }
+    await sonosClient.setAVTransportURI(speaker, uri)
+    await sonosClient.play(speaker)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, uri })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
 export default router
