@@ -270,7 +270,7 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
   const { toast } = useToast()
 
   const addToQueue = useMutation({
-    mutationFn: () => api.sonos.addToQueue(speaker!, track.uri),
+    mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'queue'),
     onSuccess: () => {
       toast({ message: `Added "${track.name}" to queue` })
       queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
@@ -279,7 +279,7 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
   })
 
   const playNext = useMutation({
-    mutationFn: () => api.sonos.playNext(speaker!, track.uri),
+    mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'next'),
     onSuccess: () => {
       toast({ message: `"${track.name}" will play next` })
       queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
