@@ -22,6 +22,20 @@ export default defineConfig({
             handler: 'StaleWhileRevalidate',
             options: { cacheName: 'js-chunks' },
           },
+          {
+            urlPattern: /\/api\/sonos\/art-proxy\?/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'album-art-cache',
+              expiration: {
+                maxEntries: 2000,
+                maxAgeSeconds: 365 * 24 * 60 * 60, // 1 year
+              },
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+            },
+          },
         ],
       },
       manifest: {

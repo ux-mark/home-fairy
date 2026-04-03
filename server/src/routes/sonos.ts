@@ -1,6 +1,9 @@
 import { Router, type Request, type Response } from 'express'
 import { z } from 'zod'
 import axios from 'axios'
+import { createHash } from 'crypto'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { join } from 'path'
 import { getAll, getOne, run } from '../db/index.js'
 import { sonosClient } from '../lib/sonos-client.js'
 import { sonosManager } from '../lib/sonos-manager.js'
@@ -11,6 +14,20 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 const SONOS_API_URL = process.env.SONOS_API_URL || 'http://localhost:3003'
 
 const router = Router()
+
+// ── Album art disk cache ──────────────────────────────────────────────────────
+
+const ART_CACHE_DIR = join(process.cwd(), 'data', 'art-cache')
+// Create cache directory on module load — recursive so it works even if data/ doesn't exist yet
+mkdirSync(ART_CACHE_DIR, { recursive: true })
+
+function artCachePath(url: string): { imgPath: string; metaPath: string } {
+  const hash = createHash('sha256').update(url).digest('hex')
+  return {
+    imgPath: join(ART_CACHE_DIR, hash),
+    metaPath: join(ART_CACHE_DIR, `${hash}.meta.json`),
+  }
+}
 
 // ── Album art proxy helpers ───────────────────────────────────────────────────
 
@@ -62,10 +79,26 @@ router.get('/art-proxy', async (req: Request, res: Response) => {
     return
   }
 
+  const { imgPath, metaPath } = artCachePath(url)
+
+  // Serve from disk cache if both files exist
+  if (existsSync(imgPath) && existsSync(metaPath)) {
+    try {
+      const meta = JSON.parse(readFileSync(metaPath, 'utf-8')) as { contentType?: string }
+      res.set('Content-Type', meta.contentType || 'image/jpeg')
+      res.set('Cache-Control', 'public, max-age=31536000, immutable')
+      res.sendFile(imgPath)
+      return
+    } catch {
+      // Corrupted cache entry — fall through to re-fetch
+    }
+  }
+
+  // Fetch from upstream with a generous timeout for slow NAS devices
   try {
     const upstream = await axios.get<Buffer>(url, {
       responseType: 'arraybuffer',
-      timeout: 8000,
+      timeout: 15_000,
       // Don't throw on non-2xx so we can surface a clean error
       validateStatus: status => status < 500,
     })
@@ -75,9 +108,18 @@ router.get('/art-proxy', async (req: Request, res: Response) => {
       return
     }
 
-    const contentType = upstream.headers['content-type'] as string | undefined
-    res.set('Content-Type', contentType || 'image/jpeg')
-    res.set('Cache-Control', 'public, max-age=3600')
+    const contentType = (upstream.headers['content-type'] as string | undefined) || 'image/jpeg'
+
+    // Write to disk cache (don't block response on failure)
+    try {
+      writeFileSync(imgPath, upstream.data)
+      writeFileSync(metaPath, JSON.stringify({ contentType, url, cachedAt: new Date().toISOString() }))
+    } catch {
+      // Cache write failed — not critical, serve the image anyway
+    }
+
+    res.set('Content-Type', contentType)
+    res.set('Cache-Control', 'public, max-age=31536000, immutable')
     res.send(upstream.data)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -1153,22 +1195,45 @@ router.put('/play-uri/:speaker', async (req: Request, res: Response) => {
       return
     }
 
+    const isContainer = uri.startsWith('A:') || uri.startsWith('S:') || uri.startsWith('SQ:')
+    console.log(`[sonos] play-uri: speaker=${speaker}, uri=${uri}, isContainer=${isContainer}`)
+
     // Content directory container (album/playlist) — queue all tracks then play
-    if (uri.startsWith('A:') || uri.startsWith('S:') || uri.startsWith('SQ:')) {
+    if (isContainer) {
       const tracks = await sonosClient.getGenreAlbumTracks(uri)
+      console.log(`[sonos] play-uri: fetched ${tracks.length} tracks for container`)
       if (tracks.length === 0) {
         res.status(404).json({ error: 'No tracks found in this container' })
         return
       }
+      // Get speaker IP for direct UPnP SOAP calls (bypasses node-sonos-http-api
+      // which mangles URIs with special characters like accents and spaces)
+      const speakerIp = await sonosClient.getSpeakerIpByName(speaker)
+      if (!speakerIp) {
+        res.status(424).json({ error: 'Could not resolve speaker IP address' })
+        return
+      }
       await sonosClient.clearQueue(speaker)
+      // Add tracks sequentially via UPnP SOAP — preserves album order exactly
+      let queued = 0
       for (const track of tracks) {
-        await sonosClient.addToQueue(speaker, track.uri)
+        try {
+          await sonosClient.addToQueueSOAP(speakerIp, track.uri)
+          queued++
+        } catch (err) {
+          console.error(`[sonos] play-uri: SOAP addToQueue failed for "${track.title}": ${err instanceof Error ? err.message : err}`)
+        }
+      }
+      if (queued === 0) {
+        res.status(424).json({ error: 'Could not add any tracks to queue' })
+        return
       }
       await sonosClient.play(speaker)
       emit('sonos:playback-update', { speaker })
       const queue = await sonosClient.getQueue(speaker)
       emit('sonos:queue-update', { speaker, action: 'replace', queue })
-      res.json({ speaker, uri, tracksQueued: tracks.length })
+      console.log(`[sonos] play-uri: queued ${queued}/${tracks.length} tracks`)
+      res.json({ speaker, uri, tracksQueued: queued })
     } else {
       // Direct track URI — set transport and play
       await sonosClient.setAVTransportURI(speaker, uri)
@@ -1178,6 +1243,7 @@ router.put('/play-uri/:speaker', async (req: Request, res: Response) => {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
+    console.error(`[sonos] play-uri failed: ${msg}`)
     res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
