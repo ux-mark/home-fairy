@@ -567,9 +567,11 @@
 - **Summary**: Replaces the flat log list with a narrative activity feed as the default view. Groups related log events using parent_id linking, generates Fairy Queen-voiced messages explaining what happened and why. Filters out sensor telemetry noise. Raw Logs tab preserved.
 - **Files**: `server/src/lib/activity-narrator.ts`, `server/src/lib/logger.ts`, `server/src/lib/motion-handler.ts`, `server/src/lib/scene-executor.ts`, `server/src/routes/system.ts`, `server/src/db/index.ts`, `client/src/components/ui/ActivityCard.tsx`, `client/src/pages/LogsPage.tsx`, `client/src/lib/api.ts`
 
-## PR #144 — Fix Sonos Browse: radio, NAS, Spotify config, Favourites tab
+## PR #144 — Fix Sonos Browse: genres, albums with art, radio, Spotify config
 - **Branch**: fix/sonos-browse-errors → dev
 - **Created**: 2026-04-03
-- **Status**: open
-- **Summary**: Fix NAS/Radio 502 HTML dump (Cloudflare interception), rewrite radio to use favourites, graceful NAS fallback, Spotify configured flag, wire FavouritesTab, remove duplicate Browse source, SearchableSelect for Hushing Home
-- **Files**: `server/src/routes/sonos.ts`, `server/src/lib/sonos-client.ts`, `server/src/lib/spotify-client.ts`, `server/src/routes/spotify.ts`, `client/src/lib/api.ts`, `client/src/components/sonos/BrowseTab.tsx`, `client/src/components/sonos/SpotifyBrowseView.tsx`, `client/src/pages/SonosPage.tsx`, `client/src/components/settings/HushingHomeSection.tsx`, `server/.env.example`
+- **Status**: merged
+- **Merge date**: 2026-04-03
+- **Branch cleanup**: done
+- **Summary**: Complete Sonos Browse overhaul. Genre browsing via UPnP SOAP (26 genres → albums with cover art → tracks). Album browsing with artwork (704 albums). Artist browsing (1,240 artists). Radio from Sonos favourites. Spotify configured/not-configured states. PWA service worker fix for OAuth. Cloudflare 502 HTML interception fix. FavouritesTab wired up. SearchableSelect for Hushing Home.
+- **Files**: 13 files changed (+1,166/-311) — sonos-client.ts, sonos.ts, spotify-client.ts, spotify.ts, NasBrowseView.tsx, BrowseTab.tsx, SpotifyBrowseView.tsx, SonosPage.tsx, api.ts, HushingHomeSection.tsx, vite.config.ts, .env.example, prs.md
