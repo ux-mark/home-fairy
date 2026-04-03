@@ -543,7 +543,7 @@ function SpotifySection({ query, speaker }: { query: string; speaker: string | n
     enabled: query.length > 0 && !!statusData?.connected,
   })
 
-  const trackItems = data?.tracks?.items ?? []
+  const trackItems = (data?.tracks?.items ?? []).filter((t): t is SpotifyTrack => t !== null)
 
   return (
     <section aria-label="Spotify results">

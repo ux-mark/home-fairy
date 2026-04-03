@@ -672,9 +672,9 @@ function SpotifySearchResults({ query, speaker }: { query: string; speaker: stri
     )
   }
 
-  const trackItems = data?.tracks?.items ?? []
-  const playlistItems = data?.playlists?.items ?? []
-  const albumItems = data?.albums?.items ?? []
+  const trackItems = (data?.tracks?.items ?? []).filter((t): t is SpotifyTrack => t !== null)
+  const playlistItems = (data?.playlists?.items ?? []).filter((p): p is SpotifyPlaylist => p !== null)
+  const albumItems = (data?.albums?.items ?? []).filter((a): a is SpotifySearchAlbum => a !== null)
   const totalResults = trackItems.length + playlistItems.length + albumItems.length
 
   if (totalResults === 0) {
