@@ -4,6 +4,7 @@ import { ListMusic } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { NowPlayingFullView } from './NowPlayingFullView'
+import { QueueView } from './QueueView'
 
 /**
  * Top-level Now Playing tab for the Sonos page.
@@ -29,6 +30,7 @@ export function NowPlayingTab() {
 
   // The user's explicit choice — undefined means "auto-select"
   const [userChoice, setUserChoice] = useState<string | undefined>(undefined)
+  const [queueOpen, setQueueOpen] = useState(false)
 
   // Derive the selected speaker: prefer user choice (if still in list), else auto-select
   const autoSpeaker = (() => {
@@ -56,23 +58,27 @@ export function NowPlayingTab() {
         error={isError || speakerError}
       />
 
-      {/* View queue — placeholder for future implementation */}
+      {/* View queue */}
       <button
-        disabled
-        aria-disabled="true"
-        title="Queue view coming soon"
+        onClick={() => setQueueOpen(true)}
         className={cn(
           'flex w-full items-center justify-center gap-2 rounded-xl border py-3 text-sm font-medium',
-          'border-[var(--border-primary)] text-caption opacity-50',
-          'cursor-not-allowed',
+          'border-[var(--border-primary)] text-slate-300',
+          'hover:border-[var(--border-secondary)] hover:text-white transition-colors',
+          'active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
         )}
+        aria-label="View playback queue"
       >
         <ListMusic className="h-4 w-4" aria-hidden="true" />
         View queue
-        <span className="rounded-full bg-[var(--bg-tertiary)] px-2 py-0.5 text-[10px] font-medium text-caption">
-          Soon
-        </span>
       </button>
+
+      <QueueView
+        speaker={selectedSpeaker}
+        open={queueOpen}
+        onClose={() => setQueueOpen(false)}
+        currentTrackUri={speakerState?.currentTrack?.uri ?? null}
+      />
     </div>
   )
 }
