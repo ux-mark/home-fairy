@@ -91,6 +91,14 @@ export interface SonosFavourite {
   contentClass?: string
 }
 
+export interface SonosQueueItem {
+  title: string
+  artist: string
+  album: string
+  albumArtUri: string
+  uri: string
+}
+
 class SonosClient {
   private api: AxiosInstance
 
@@ -304,6 +312,47 @@ class SonosClient {
       return Array.from(serviceNames).sort()
     } catch (err) {
       this.handleError(err, 'getUserServices')
+    }
+  }
+
+  async getQueue(speaker: string): Promise<SonosQueueItem[]> {
+    try {
+      const { data } = await this.api.get<SonosQueueItem[]>(`/${encodeURIComponent(speaker)}/queue`)
+      return Array.isArray(data) ? data : []
+    } catch (err) {
+      this.handleError(err, `getQueue(${speaker})`)
+    }
+  }
+
+  async addToQueue(speaker: string, uri: string): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/addtoqueue/${encodeURIComponent(uri)}`)
+    } catch (err) {
+      this.handleError(err, `addToQueue(${speaker})`)
+    }
+  }
+
+  async playNext(speaker: string, uri: string): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/playnext/${encodeURIComponent(uri)}`)
+    } catch (err) {
+      this.handleError(err, `playNext(${speaker})`)
+    }
+  }
+
+  async removeFromQueue(speaker: string, index: number): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/removetrack/${index}`)
+    } catch (err) {
+      this.handleError(err, `removeFromQueue(${speaker}, ${index})`)
+    }
+  }
+
+  async reorderQueue(speaker: string, from: number, to: number): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/reorder/${from}/${to}`)
+    } catch (err) {
+      this.handleError(err, `reorderQueue(${speaker}, ${from}, ${to})`)
     }
   }
 
