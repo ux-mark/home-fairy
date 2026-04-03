@@ -185,8 +185,14 @@ function StationRow({
 
 // ── RadioBrowseView ───────────────────────────────────────────────────────────
 
-export function RadioBrowseView({ searchQuery }: { searchQuery: string }) {
-  const speaker = useFirstSpeaker()
+interface RadioBrowseViewProps {
+  searchQuery: string
+  targetSpeaker?: string | null
+}
+
+export function RadioBrowseView({ searchQuery, targetSpeaker }: RadioBrowseViewProps) {
+  const firstSpeaker = useFirstSpeaker()
+  const speaker = targetSpeaker ?? firstSpeaker
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
 
   const { data: stations, isLoading, isError, error, refetch } = useQuery({

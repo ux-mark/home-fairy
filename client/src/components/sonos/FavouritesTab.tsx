@@ -27,11 +27,12 @@ import { FavouriteItem } from './FavouriteItem'
 
 interface FavouritesTabProps {
   onNavigateToBrowse?: () => void
+  targetSpeaker?: string  // When provided, skip speaker selector and use this speaker
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function FavouritesTab({ onNavigateToBrowse }: FavouritesTabProps) {
+export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesTabProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -64,6 +65,8 @@ export function FavouritesTab({ onNavigateToBrowse }: FavouritesTabProps) {
     userSpeakerChoice && allSpeakerNames.includes(userSpeakerChoice)
       ? userSpeakerChoice
       : autoSpeaker
+
+  const effectiveSpeaker = targetSpeaker ?? selectedSpeaker
 
   // ── Favourites query ─────────────────────────────────────────────────────
   const favsKey = ['favourites']
@@ -146,11 +149,11 @@ export function FavouritesTab({ onNavigateToBrowse }: FavouritesTabProps) {
   }
 
   function handlePlay(item: UserFavourite) {
-    if (!selectedSpeaker) {
+    if (!effectiveSpeaker) {
       toast({ message: 'No speaker available', type: 'error' })
       return
     }
-    playMutation.mutate({ speaker: selectedSpeaker, title: item.title })
+    playMutation.mutate({ speaker: effectiveSpeaker, title: item.title })
   }
 
   function handleRemove(id: number) {
@@ -160,23 +163,24 @@ export function FavouritesTab({ onNavigateToBrowse }: FavouritesTabProps) {
   }
 
   function handlePlayNext(item: UserFavourite) {
-    if (!selectedSpeaker) {
+    if (!effectiveSpeaker) {
       toast({ message: 'No speaker available', type: 'error' })
       return
     }
-    playNextMutation.mutate({ speaker: selectedSpeaker, uri: item.source_uri })
+    playNextMutation.mutate({ speaker: effectiveSpeaker, uri: item.source_uri })
   }
 
   function handleAddToQueue(item: UserFavourite) {
-    if (!selectedSpeaker) {
+    if (!effectiveSpeaker) {
       toast({ message: 'No speaker available', type: 'error' })
       return
     }
-    addToQueueMutation.mutate({ speaker: selectedSpeaker, uri: item.source_uri })
+    addToQueueMutation.mutate({ speaker: effectiveSpeaker, uri: item.source_uri })
   }
 
-  // ── Speaker selector (shown when multiple speakers available) ────────────
+  // ── Speaker selector (shown when multiple speakers available, hidden when targetSpeaker set) ─
   function renderSpeakerSelector() {
+    if (targetSpeaker) return null
     if (allSpeakerNames.length <= 1) return null
     return (
       <div className="mb-4 flex items-center gap-2">

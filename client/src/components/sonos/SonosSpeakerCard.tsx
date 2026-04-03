@@ -1,15 +1,15 @@
 import { useState, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Play, Pause, Music, Loader2, X, Link2, Radio, SkipBack, SkipForward } from 'lucide-react'
-import * as Dialog from '@radix-ui/react-dialog'
+import { Play, Pause, Music, Loader2, Link2, Radio, SkipBack, SkipForward, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { api, parseApiError } from '@/lib/api'
+import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
-import { useQuery } from '@tanstack/react-query'
-import type { SonosPlaybackState, SonosGroupInfo } from '@/lib/api'
+import type { SonosPlaybackState, SonosGroupInfo, SonosNowPlayingEntry } from '@/lib/api'
 import { SonosNowPlaying } from './SonosNowPlaying'
 import { SonosVolumeControl } from './SonosVolumeControl'
-import { FavouriteSelector } from './FavouriteSelector'
+import { InlineQueue } from './InlineQueue'
+import { SpeakerMusicPicker } from './SpeakerMusicPicker'
+import { GroupManager } from './GroupManager'
 
 interface SonosSpeakerCardProps {
   roomName: string
@@ -18,6 +18,7 @@ interface SonosSpeakerCardProps {
   error?: boolean
   onRefresh: () => void
   group?: SonosGroupInfo | null
+  allSpeakers: SonosNowPlayingEntry[]
 }
 
 export function SonosSpeakerCard({
@@ -27,18 +28,13 @@ export function SonosSpeakerCard({
   error,
   onRefresh,
   group,
+  allSpeakers,
 }: SonosSpeakerCardProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [musicDialogOpen, setMusicDialogOpen] = useState(false)
-  const [selectedFavourite, setSelectedFavourite] = useState('')
-
-  const { data: favourites = [] } = useQuery({
-    queryKey: ['sonos', 'favourites'],
-    queryFn: api.sonos.getFavourites,
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-  })
+  const [queueExpanded, setQueueExpanded] = useState(false)
+  const [groupManagerOpen, setGroupManagerOpen] = useState(false)
 
   const invalidateNowPlaying = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
@@ -73,28 +69,8 @@ export function SonosSpeakerCard({
     onError: () => toast({ message: `Couldn't update volume for ${roomName}`, type: 'error' }),
   })
 
-  const playFavouriteMutation = useMutation({
-    mutationFn: (name: string) => api.sonos.playFavourite(speakerName, name),
-    onSuccess: (_data, name) => {
-      setMusicDialogOpen(false)
-      setSelectedFavourite('')
-      invalidateNowPlaying()
-      toast({ message: `Playing ${name} on ${roomName}` })
-    },
-    onError: (err, name) => {
-      const serverMsg = parseApiError(err)
-      toast({ message: serverMsg ?? `Couldn't play ${name} on ${roomName}`, type: 'error' })
-    },
-  })
-
   function handleVolumeChange(level: number) {
     volumeMutation.mutate(level)
-  }
-
-  function handlePlayFavourite() {
-    if (selectedFavourite && selectedFavourite !== '__continue__') {
-      playFavouriteMutation.mutate(selectedFavourite)
-    }
   }
 
   const isPlaying = state?.playbackState === 'PLAYING'
@@ -113,12 +89,30 @@ export function SonosSpeakerCard({
     ? group.members.filter(m => m !== speakerName)
     : []
 
+  // Current members of this speaker's group (excluding coordinator/self)
+  const currentGroupMembers = group?.isCoordinator
+    ? group.members.filter(m => m !== speakerName)
+    : []
+
   return (
     <div className="card rounded-xl border p-4 transition-colors" style={{ borderColor: 'var(--border-primary)' }}>
-      {/* Header: room name + playback badge */}
+      {/* Header: room name + group button + playback badge */}
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <h3 className="text-base font-semibold text-heading">{roomName}</h3>
+          <div className="flex items-center gap-2">
+            <h3 className="text-base font-semibold text-heading">{roomName}</h3>
+            <button
+              onClick={() => setGroupManagerOpen(true)}
+              aria-label={`Manage group for ${roomName}`}
+              className={cn(
+                'flex h-8 w-8 items-center justify-center rounded-lg text-caption transition-colors',
+                'hover:bg-[var(--bg-secondary)]',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              )}
+            >
+              <Users className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </div>
           {/* Group label */}
           {isGrouped && (
             <p className="mt-0.5 flex items-center gap-1 text-[11px] text-caption">
@@ -229,95 +223,18 @@ export function SonosSpeakerCard({
         </button>
 
         {/* Change music */}
-        <Dialog.Root open={musicDialogOpen} onOpenChange={setMusicDialogOpen}>
-          <Dialog.Trigger asChild>
-            <button
-              className={cn(
-                'flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors',
-                'surface text-body hover:brightness-95 dark:hover:brightness-110',
-                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              )}
-              aria-label={`Change music on ${roomName}`}
-            >
-              <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
-              Change music
-            </button>
-          </Dialog.Trigger>
-
-          <Dialog.Portal>
-            <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-            <Dialog.Content
-              className={cn(
-                'fixed bottom-0 left-0 right-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-2xl',
-                'bg-[var(--bg-primary)] p-6 shadow-xl',
-                'data-[state=open]:animate-in data-[state=closed]:animate-out',
-                'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
-                'focus:outline-none',
-              )}
-              aria-describedby={undefined}
-            >
-              <div className="mb-4 flex items-center justify-between">
-                <Dialog.Title className="text-base font-semibold text-heading">
-                  Choose music for {roomName}
-                </Dialog.Title>
-                <Dialog.Close asChild>
-                  <button
-                    className={cn(
-                      'flex h-8 w-8 items-center justify-center rounded-lg text-caption transition-colors',
-                      'hover:bg-[var(--bg-secondary)]',
-                      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                    )}
-                    aria-label="Close"
-                  >
-                    <X className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                </Dialog.Close>
-              </div>
-
-              <FavouriteSelector
-                id={`fav-selector-${speakerName}`}
-                favourites={favourites}
-                value={selectedFavourite}
-                onChange={setSelectedFavourite}
-                includeContinue={isPlaying || isPaused}
-              />
-
-              <div className="mt-4 flex gap-2">
-                <Dialog.Close asChild>
-                  <button
-                    className={cn(
-                      'flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors',
-                      'surface text-body hover:brightness-95 dark:hover:brightness-110',
-                      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                      'min-h-[44px]',
-                    )}
-                  >
-                    Cancel
-                  </button>
-                </Dialog.Close>
-                <button
-                  onClick={handlePlayFavourite}
-                  disabled={!selectedFavourite || selectedFavourite === '__continue__' || playFavouriteMutation.isPending}
-                  className={cn(
-                    'flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors',
-                    'bg-fairy-500 text-white hover:bg-fairy-600 active:bg-fairy-700',
-                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                    'disabled:opacity-50 min-h-[44px]',
-                  )}
-                >
-                  {playFavouriteMutation.isPending ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Playing…
-                    </span>
-                  ) : (
-                    'Play'
-                  )}
-                </button>
-              </div>
-            </Dialog.Content>
-          </Dialog.Portal>
-        </Dialog.Root>
+        <button
+          onClick={() => setMusicDialogOpen(true)}
+          className={cn(
+            'flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors',
+            'surface text-body hover:brightness-95 dark:hover:brightness-110',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          )}
+          aria-label={`Change music on ${roomName}`}
+        >
+          <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
+          Change music
+        </button>
       </div>
 
       {/* Volume control */}
@@ -330,6 +247,34 @@ export function SonosSpeakerCard({
           disabled={!!error}
         />
       </div>
+
+      {/* Inline queue */}
+      <InlineQueue
+        speaker={speakerName}
+        currentTrackUri={state?.currentTrack?.uri ?? null}
+        expanded={queueExpanded}
+        onToggle={() => setQueueExpanded(v => !v)}
+      />
+
+      {/* Music picker bottom sheet */}
+      <SpeakerMusicPicker
+        speakerName={speakerName}
+        roomName={roomName}
+        open={musicDialogOpen}
+        onClose={() => setMusicDialogOpen(false)}
+        isPlaying={isPlaying}
+        isPaused={isPaused}
+      />
+
+      {/* Group manager bottom sheet */}
+      <GroupManager
+        coordinatorSpeaker={speakerName}
+        coordinatorRoom={roomName}
+        currentMembers={currentGroupMembers}
+        allSpeakers={allSpeakers}
+        open={groupManagerOpen}
+        onClose={() => setGroupManagerOpen(false)}
+      />
     </div>
   )
 }
