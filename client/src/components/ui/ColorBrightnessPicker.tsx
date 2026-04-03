@@ -9,9 +9,16 @@
  *   - White-only lights show KelvinWheel + brightness slider directly
  *
  * All colour work is done in HSV space (= HSB, matching LIFX's API).
+ *
+ * Props:
+ *   onChange  — called on every pointer move during drag (instant local UI update)
+ *   onCommit  — called on pointer up for the final API commit
+ *
+ * The parent is responsible for debouncing any API calls it makes in onChange.
+ * This component is a simple controlled input: it reports changes, parent decides what to do.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { kelvinToHex, hsbToHex, debounce } from '@/lib/utils'
+import { useCallback, useState } from 'react'
+import { kelvinToHex, hsbToHex } from '@/lib/utils'
 import ColorWheel from './ColorWheel'
 import KelvinWheel from './KelvinWheel'
 
@@ -31,8 +38,10 @@ interface ColorBrightnessPickerProps {
   brightness: number
   minKelvin?: number
   maxKelvin?: number
+  /** Called on every pointer move during drag — update local UI state immediately */
   onChange: (update: { color?: HsvColor; kelvin?: number; brightness?: number }) => void
-  onLiveChange?: (update: { color?: HsvColor; kelvin?: number; brightness?: number }) => void
+  /** Called on pointer up — fire the final API commit */
+  onCommit: (update: { color?: HsvColor; kelvin?: number; brightness?: number }) => void
 }
 
 // Wheel display size in CSS px — large enough for comfortable touch interaction
@@ -49,7 +58,7 @@ export default function ColorBrightnessPicker({
   minKelvin = 2500,
   maxKelvin = 9000,
   onChange,
-  onLiveChange,
+  onCommit,
 }: ColorBrightnessPickerProps) {
   // Active tab — only relevant when hasColor=true
   const [tab, setTab] = useState<'colours' | 'whites'>(() => {
@@ -57,30 +66,20 @@ export default function ColorBrightnessPicker({
     return hasColor && color.s > 5 ? 'colours' : 'whites'
   })
 
-  // Debounced live change (300ms) — prevents hammering LIFX
-  const debouncedLiveChange = useMemo(() => {
-    if (!onLiveChange) return undefined
-    return debounce(
-      (update: { color?: HsvColor; kelvin?: number; brightness?: number }) => {
-        onLiveChange(update)
-      },
-      300,
-    )
-  }, [onLiveChange])
-
-  useEffect(() => {
-    return () => { debouncedLiveChange?.cancel() }
-  }, [debouncedLiveChange])
-
   // ── Colour wheel ──────────────────────────────────────────────────────────
 
   const handleColorWheelChange = useCallback(
     (h: number, s: number) => {
-      const update: HsvColor = { h, s, v: color.v }
-      onChange({ color: update })
-      debouncedLiveChange?.({ color: update })
+      onChange({ color: { h, s, v: color.v } })
     },
-    [color.v, onChange, debouncedLiveChange],
+    [color.v, onChange],
+  )
+
+  const handleColorWheelCommit = useCallback(
+    (h: number, s: number) => {
+      onCommit({ color: { h, s, v: color.v } })
+    },
+    [color.v, onCommit],
   )
 
   // ── Kelvin wheel ──────────────────────────────────────────────────────────
@@ -88,27 +87,43 @@ export default function ColorBrightnessPicker({
   const handleKelvinChange = useCallback(
     (k: number) => {
       onChange({ kelvin: k })
-      debouncedLiveChange?.({ kelvin: k })
     },
-    [onChange, debouncedLiveChange],
+    [onChange],
+  )
+
+  const handleKelvinCommit = useCallback(
+    (k: number) => {
+      onCommit({ kelvin: k })
+    },
+    [onCommit],
   )
 
   // ── Brightness slider ─────────────────────────────────────────────────────
 
+  // Called on every input event (including during touch drag) for instant local update
+  const handleBrightnessInput = useCallback(
+    (e: React.FormEvent<HTMLInputElement>) => {
+      const b = Number((e.target as HTMLInputElement).value)
+      if (hasColor) {
+        onChange({ color: { h: color.h, s: color.s, v: b }, brightness: b })
+      } else {
+        onChange({ brightness: b })
+      }
+    },
+    [hasColor, color, onChange],
+  )
+
+  // Called on pointer up / finger lift — final commit
   const handleBrightnessChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const b = Number(e.target.value)
       if (hasColor) {
-        // Keep hue+saturation; update v (= brightness)
-        const update: HsvColor = { h: color.h, s: color.s, v: b }
-        onChange({ color: update, brightness: b })
-        debouncedLiveChange?.({ color: update, brightness: b })
+        onCommit({ color: { h: color.h, s: color.s, v: b }, brightness: b })
       } else {
-        onChange({ brightness: b })
-        debouncedLiveChange?.({ brightness: b })
+        onCommit({ brightness: b })
       }
     },
-    [hasColor, color, onChange, debouncedLiveChange],
+    [hasColor, color, onCommit],
   )
 
   // ── Derived display values ────────────────────────────────────────────────
@@ -155,6 +170,7 @@ export default function ColorBrightnessPicker({
               saturation={color.s}
               size={WHEEL_SIZE}
               onChange={handleColorWheelChange}
+              onCommit={handleColorWheelCommit}
             />
           )}
           {showWhitesWheel && (
@@ -164,6 +180,7 @@ export default function ColorBrightnessPicker({
               maxKelvin={maxKelvin}
               size={WHEEL_SIZE}
               onChange={handleKelvinChange}
+              onCommit={handleKelvinCommit}
             />
           )}
         </div>
@@ -184,6 +201,7 @@ export default function ColorBrightnessPicker({
             max={100}
             step={1}
             value={Math.round(effectiveBrightness)}
+            onInput={handleBrightnessInput}
             onChange={handleBrightnessChange}
             aria-label="Brightness"
             className="brightness-slider-vertical"
