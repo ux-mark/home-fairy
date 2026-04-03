@@ -118,6 +118,12 @@ export interface SonosLibrarySearchResult {
   tracks: SonosLibraryTrack[]
 }
 
+export interface SonosRadioStation {
+  title: string
+  uri: string
+  albumArtUri?: string
+}
+
 class SonosClient {
   private api: AxiosInstance
 
@@ -447,6 +453,28 @@ class SonosClient {
       }
     } catch (err) {
       this.handleError(err, `searchLibrary(${query})`)
+    }
+  }
+
+  async getRadioStations(): Promise<SonosRadioStation[]> {
+    try {
+      const zones = await this.getZones()
+      if (zones.length === 0) return []
+      const speaker = zones[0].coordinator.roomName
+      const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/radios`)
+      if (Array.isArray(data)) {
+        return data.map((item: unknown) => {
+          const obj = item as Record<string, unknown>
+          return {
+            title: typeof obj.title === 'string' ? obj.title : '',
+            uri: typeof obj.uri === 'string' ? obj.uri : '',
+            albumArtUri: typeof obj.albumArtUri === 'string' ? obj.albumArtUri : undefined,
+          }
+        })
+      }
+      return []
+    } catch (err) {
+      this.handleError(err, 'getRadioStations')
     }
   }
 
