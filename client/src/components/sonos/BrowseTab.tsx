@@ -74,8 +74,8 @@ function RadioStatusSubtitle() {
 
 function NasStatusSubtitle() {
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['sonos-library-genres'],
-    queryFn: api.sonos.getLibraryGenres,
+    queryKey: ['sonos-library-status'],
+    queryFn: api.sonos.getLibraryStatus,
     staleTime: 5 * 60_000,
   })
 
@@ -86,8 +86,8 @@ function NasStatusSubtitle() {
       Unavailable
     </span>
   )
-  const count = data?.length ?? 0
-  return <p className="text-xs text-caption">{count} {count === 1 ? 'genre' : 'genres'}</p>
+  if (!data?.available) return <p className="text-xs text-caption">Not indexed</p>
+  return <p className="text-xs text-caption">{data.artistCount} artists</p>
 }
 
 // ── Source preview card (used in the 'all' view) ──────────────────────────────

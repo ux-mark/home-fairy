@@ -511,56 +511,62 @@ router.post('/queue/:speaker/reorder', async (req: Request, res: Response) => {
   }
 })
 
-// ── NAS library browsing ──────────────────────────────────────────────────────
+// ── NAS library browsing (reads node-sonos-http-api cache) ───────────────────
 
-// GET /library/genres — list all genres from the local NAS library
-router.get('/library/genres', async (_req: Request, res: Response) => {
+// GET /library/status — check if library is loaded
+router.get('/library/status', async (_req: Request, res: Response) => {
   try {
-    const genres = await sonosClient.getGenres()
-    res.json(genres)
+    const artists = sonosClient.getLibraryArtists()
+    res.json({ available: artists.length > 0, artistCount: artists.length })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
-// GET /library/genre/:genre — list tracks for a specific genre
-router.get('/library/genre/:genre', async (req: Request, res: Response) => {
+// POST /library/reload — trigger library re-index
+router.post('/library/reload', async (_req: Request, res: Response) => {
   try {
-    const genre = Array.isArray(req.params.genre) ? req.params.genre[0] : req.params.genre
-    const tracks = await sonosClient.getGenreTracks(genre)
-    const items = tracks.map(track => ({
-      ...track,
-      albumArtUri: rewriteAlbumArtUri(track.albumArtUri),
-    }))
-    res.json(items)
+    const loaded = await sonosClient.ensureLibraryLoaded()
+    res.json({ loaded })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
-// GET /library/search?q= — search the local NAS library
-router.get('/library/search', async (req: Request, res: Response) => {
+// GET /library/artists — list all artists
+router.get('/library/artists', (_req: Request, res: Response) => {
+  res.json(sonosClient.getLibraryArtists())
+})
+
+// GET /library/albums — list all albums
+router.get('/library/albums', (_req: Request, res: Response) => {
+  res.json(sonosClient.getLibraryAlbums())
+})
+
+// GET /library/artist/:name — list tracks for an artist
+router.get('/library/artist/:name', (req: Request, res: Response) => {
+  const name = Array.isArray(req.params.name) ? req.params.name[0] : req.params.name
+  res.json(sonosClient.getArtistTracks(name))
+})
+
+// GET /library/album/:artist/:album — list tracks for an album
+router.get('/library/album/:artist/:album', (req: Request, res: Response) => {
+  const artist = Array.isArray(req.params.artist) ? req.params.artist[0] : req.params.artist
+  const album = Array.isArray(req.params.album) ? req.params.album[0] : req.params.album
+  res.json(sonosClient.getAlbumTracks(artist, album))
+})
+
+// GET /library/search?q= — search the NAS library
+router.get('/library/search', (req: Request, res: Response) => {
   const rawQ = req.query.q
   const q = typeof rawQ === 'string' ? rawQ.trim() : ''
   if (!q) {
     res.status(400).json({ error: 'Missing required query parameter: q' })
     return
   }
-  try {
-    const result = await sonosClient.searchLibrary(q)
-    const rewriteTracks = (tracks: typeof result.tracks) =>
-      tracks.map(track => ({ ...track, albumArtUri: rewriteAlbumArtUri(track.albumArtUri) }))
-    res.json({
-      artists: rewriteTracks(result.artists),
-      albums: rewriteTracks(result.albums),
-      tracks: rewriteTracks(result.tracks),
-    })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
-  }
+  res.json(sonosClient.searchLibrary(q))
 })
 
 // GET /radio/stations — list available radio stations

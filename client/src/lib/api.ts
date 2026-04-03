@@ -734,9 +734,21 @@ export interface SonosFavourite {
   contentClass?: string
 }
 
-export interface SonosGenre {
-  title: string
-  count?: number
+export interface SonosLibraryArtist {
+  name: string
+  trackCount: number
+  albumCount: number
+}
+
+export interface SonosLibraryAlbum {
+  name: string
+  artist: string
+  trackCount: number
+}
+
+export interface SonosLibraryStatus {
+  available: boolean
+  artistCount: number
 }
 
 export interface SonosRadioStation {
@@ -1503,10 +1515,18 @@ export const api = {
     getPlayStatus: () =>
       fetchApi<{ anyPlaying: boolean; allPlaying: boolean; playingCount: number; totalSpeakers: number }>('/sonos/play-status'),
     health: () => fetchApi<{ available: boolean }>('/sonos/health'),
-    getLibraryGenres: () =>
-      fetchApi<SonosGenre[]>('/sonos/library/genres'),
-    getLibraryGenreTracks: (genre: string) =>
-      fetchApi<SonosLibraryTrack[]>('/sonos/library/genre/' + encodeURIComponent(genre)),
+    getLibraryStatus: () =>
+      fetchApi<SonosLibraryStatus>('/sonos/library/status'),
+    reloadLibrary: () =>
+      fetchApi<{ loaded: boolean }>('/sonos/library/reload', { method: 'POST' }),
+    getLibraryArtists: () =>
+      fetchApi<SonosLibraryArtist[]>('/sonos/library/artists'),
+    getLibraryAlbums: () =>
+      fetchApi<SonosLibraryAlbum[]>('/sonos/library/albums'),
+    getArtistTracks: (name: string) =>
+      fetchApi<SonosLibraryTrack[]>('/sonos/library/artist/' + encodeURIComponent(name)),
+    getAlbumTracks: (artist: string, album: string) =>
+      fetchApi<SonosLibraryTrack[]>('/sonos/library/album/' + encodeURIComponent(artist) + '/' + encodeURIComponent(album)),
     searchLibrary: (query: string) =>
       fetchApi<SonosLibrarySearchResult>('/sonos/library/search?q=' + encodeURIComponent(query)),
     getRadioStations: () =>

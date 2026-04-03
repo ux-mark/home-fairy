@@ -108,9 +108,16 @@ export interface SonosQueueItem {
   uri: string
 }
 
-export interface SonosGenre {
-  title: string
-  count?: number
+export interface SonosLibraryArtist {
+  name: string
+  trackCount: number
+  albumCount: number
+}
+
+export interface SonosLibraryAlbum {
+  name: string
+  artist: string
+  trackCount: number
 }
 
 export interface SonosLibraryTrack {
@@ -131,6 +138,13 @@ export interface SonosRadioStation {
   title: string
   uri: string
   albumArtUri?: string
+}
+
+interface NasLibraryTrack {
+  title: string
+  artist: string
+  album: string
+  uri: string
 }
 
 class SonosClient {
@@ -414,81 +428,104 @@ class SonosClient {
     }
   }
 
-  async getGenres(): Promise<SonosGenre[]> {
-    try {
-      const zones = await this.getZones()
-      if (zones.length === 0) return []
-      const speaker = zones[0].coordinator.roomName
-      const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/musicsearch/library/genres`)
-      if (Array.isArray(data)) {
-        return data.map((item: unknown) => {
-          const obj = item as Record<string, unknown>
-          return {
-            title: String(obj.title ?? obj.name ?? ''),
-            count: typeof obj.count === 'number' ? obj.count : undefined,
-          }
-        })
-      }
-      // node-sonos-http-api returns {status:"error"} when no library is indexed
-      return []
-    } catch {
-      // Music library search not available — no NAS or library indexed
-      return []
-    }
-  }
+  // ── NAS library browsing (reads node-sonos-http-api cache directly) ────────
 
-  async getGenreTracks(genre: string): Promise<SonosLibraryTrack[]> {
+  private libraryCache: NasLibraryTrack[] | null = null
+  private libraryCacheMtime: number = 0
+
+  private readLibraryCache(): NasLibraryTrack[] {
+    const fs = require('fs')
+    const cachePath = require('path').join(
+      require('os').homedir(), 'node-sonos-http-api', 'cache', 'library.json',
+    )
     try {
-      const zones = await this.getZones()
-      if (zones.length === 0) return []
-      const speaker = zones[0].coordinator.roomName
-      const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/musicsearch/library/genre/${encodeURIComponent(genre)}`)
-      if (Array.isArray(data)) {
-        return data.map((item: unknown) => {
-          const obj = item as Record<string, unknown>
-          return {
-            title: String(obj.title ?? ''),
-            artist: String(obj.artist ?? ''),
-            album: String(obj.album ?? ''),
-            albumArtUri: String(obj.albumArtUri ?? obj.albumArtURI ?? ''),
-            uri: String(obj.uri ?? ''),
-          }
-        })
+      const stat = fs.statSync(cachePath)
+      if (this.libraryCache && stat.mtimeMs === this.libraryCacheMtime) {
+        return this.libraryCache
       }
-      return []
+      const raw = JSON.parse(fs.readFileSync(cachePath, 'utf-8'))
+      const items = raw?.tracks?.items ?? []
+      this.libraryCache = items.map((t: Record<string, unknown>) => ({
+        title: String(t.trackName ?? ''),
+        artist: String(t.artistName ?? ''),
+        album: String(t.albumName ?? ''),
+        uri: String(t.uri ?? ''),
+      }))
+      this.libraryCacheMtime = stat.mtimeMs
+      return this.libraryCache!
     } catch {
       return []
     }
   }
 
-  async searchLibrary(query: string): Promise<SonosLibrarySearchResult> {
+  async ensureLibraryLoaded(): Promise<boolean> {
+    const tracks = this.readLibraryCache()
+    if (tracks.length > 0) return true
+    // Trigger node-sonos-http-api to index the library
     try {
       const zones = await this.getZones()
-      if (zones.length === 0) return { artists: [], albums: [], tracks: [] }
+      if (zones.length === 0) return false
       const speaker = zones[0].coordinator.roomName
-      const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/musicsearch/library/${encodeURIComponent(query)}`)
-      const mapItems = (items: unknown): SonosLibraryTrack[] => {
-        if (!Array.isArray(items)) return []
-        return items.map((item: unknown) => {
-          const obj = item as Record<string, unknown>
-          return {
-            title: String(obj.title ?? ''),
-            artist: String(obj.artist ?? ''),
-            album: String(obj.album ?? ''),
-            albumArtUri: String(obj.albumArtUri ?? obj.albumArtURI ?? ''),
-            uri: String(obj.uri ?? ''),
-          }
-        })
-      }
-      const result = data as Record<string, unknown>
-      return {
-        artists: mapItems(result.artists),
-        albums: mapItems(result.albums),
-        tracks: mapItems(result.tracks),
-      }
+      await this.api.get(`/${encodeURIComponent(speaker)}/musicsearch/library/load`, { timeout: 120_000 })
+      return this.readLibraryCache().length > 0
     } catch {
-      return { artists: [], albums: [], tracks: [] }
+      return false
     }
+  }
+
+  getLibraryArtists(): SonosLibraryArtist[] {
+    const tracks = this.readLibraryCache()
+    const artistMap = new Map<string, { albums: Set<string>; count: number }>()
+    for (const t of tracks) {
+      if (!t.artist) continue
+      const entry = artistMap.get(t.artist)
+      if (entry) {
+        entry.count++
+        if (t.album) entry.albums.add(t.album)
+      } else {
+        artistMap.set(t.artist, { albums: new Set(t.album ? [t.album] : []), count: 1 })
+      }
+    }
+    return Array.from(artistMap.entries())
+      .map(([name, { albums, count }]) => ({ name, trackCount: count, albumCount: albums.size }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  getLibraryAlbums(): SonosLibraryAlbum[] {
+    const tracks = this.readLibraryCache()
+    const albumMap = new Map<string, { artist: string; count: number }>()
+    for (const t of tracks) {
+      if (!t.album) continue
+      const key = `${t.artist}\0${t.album}`
+      const entry = albumMap.get(key)
+      if (entry) { entry.count++ }
+      else { albumMap.set(key, { artist: t.artist, count: 1 }) }
+    }
+    return Array.from(albumMap.entries())
+      .map(([key, { artist, count }]) => ({ name: key.split('\0')[1], artist, trackCount: count }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  getArtistTracks(artist: string): SonosLibraryTrack[] {
+    return this.readLibraryCache()
+      .filter(t => t.artist === artist)
+      .map(t => ({ ...t, albumArtUri: '' }))
+  }
+
+  getAlbumTracks(artist: string, album: string): SonosLibraryTrack[] {
+    return this.readLibraryCache()
+      .filter(t => t.artist === artist && t.album === album)
+      .map(t => ({ ...t, albumArtUri: '' }))
+  }
+
+  searchLibrary(query: string): SonosLibrarySearchResult {
+    const tracks = this.readLibraryCache()
+    const q = query.toLowerCase()
+    const matchingTracks = tracks
+      .filter(t => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q) || t.album.toLowerCase().includes(q))
+      .slice(0, 50)
+      .map(t => ({ ...t, albumArtUri: '' }))
+    return { artists: [], albums: [], tracks: matchingTracks }
   }
 
   async getRadioStations(): Promise<SonosRadioStation[]> {
