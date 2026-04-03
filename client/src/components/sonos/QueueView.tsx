@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   DndContext,
@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosQueueItem } from '@/lib/api'
+import { getSocket } from '@/hooks/useSocket'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { SortableOverlay } from '@/components/ui/SortableOverlay'
@@ -180,11 +181,24 @@ export function QueueView({ speaker, open, onClose, currentTrackUri }: QueueView
   } = useQuery({
     queryKey: queueKey,
     queryFn: () => api.sonos.getQueue(speaker),
-    refetchInterval: 5_000,
-    staleTime: 4_000,
+    refetchInterval: 30_000,
+    staleTime: 29_000,
     enabled: open && !!speaker,
     retry: 1,
   })
+
+  useEffect(() => {
+    if (!open || !speaker) return
+    const s = getSocket()
+    function handleQueueUpdate(event: { speaker: string; action: string; queue: SonosQueueItem[] }) {
+      if (event.speaker !== speaker) return
+      queryClient.setQueryData<SonosQueueItem[]>(queueKey, event.queue)
+    }
+    s.on('sonos:queue-update', handleQueueUpdate)
+    return () => {
+      s.off('sonos:queue-update', handleQueueUpdate)
+    }
+  }, [open, speaker, queryClient]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
