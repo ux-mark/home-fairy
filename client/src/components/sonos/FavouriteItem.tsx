@@ -183,6 +183,7 @@ export function FavouriteItem({
   // from isSwipeOpen so no effect-based sync is needed
   const [liveX, setLiveX] = useState(0)
   const [isGesturing, setIsGesturing] = useState(false)
+  const isSwipeOpen = swipedItemId === item.id
   const translateX = isGesturing ? liveX : (isSwipeOpen ? -TRAY_WIDTH : 0)
 
   const {
@@ -193,8 +194,6 @@ export function FavouriteItem({
     transition,
     isDragging,
   } = useSortable({ id: item.id })
-
-  const isSwipeOpen = swipedItemId === item.id
 
   const contentRef = useRef<HTMLDivElement>(null)
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
