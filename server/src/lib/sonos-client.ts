@@ -451,6 +451,71 @@ class SonosClient {
     }
   }
 
+  // ── UPnP SOAP queue management (bypasses node-sonos-http-api for reliability) ─
+
+  /**
+   * Add a track to the queue using UPnP SOAP directly.
+   * Bypasses node-sonos-http-api which mangles URIs containing special characters.
+   */
+  async addToQueueSOAP(speakerIp: string, uri: string): Promise<void> {
+    // Escape XML special characters in the URI
+    const xmlUri = uri
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+
+    const body = `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:AddURIToQueue xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+      <InstanceID>0</InstanceID>
+      <EnqueuedURI>${xmlUri}</EnqueuedURI>
+      <EnqueuedURIMetaData></EnqueuedURIMetaData>
+      <DesiredFirstTrackNumberEnqueued>0</DesiredFirstTrackNumberEnqueued>
+      <EnqueueAsNext>0</EnqueueAsNext>
+    </u:AddURIToQueue>
+  </s:Body>
+</s:Envelope>`
+    await axios.post(
+      `http://${speakerIp}:1400/MediaRenderer/AVTransport/Control`,
+      body,
+      {
+        headers: {
+          'Content-Type': 'text/xml; charset=utf-8',
+          'SOAPAction': '"urn:schemas-upnp-org:service:AVTransport:1#AddURIToQueue"',
+        },
+        timeout: 10_000,
+      },
+    )
+  }
+
+  /**
+   * Resolve a speaker room name to its IP address via node-sonos-http-api zones.
+   */
+  async getSpeakerIpByName(speakerName: string): Promise<string | null> {
+    try {
+      const { data } = await this.api.get('/zones')
+      for (const zone of data as Array<Record<string, unknown>>) {
+        for (const member of (zone.members ?? []) as Array<Record<string, unknown>>) {
+          if (member.roomName === speakerName) {
+            const state = member.state as Record<string, unknown> | undefined
+            const ct = state?.currentTrack as Record<string, unknown> | undefined
+            const absUri = ct?.absoluteAlbumArtUri
+            if (typeof absUri === 'string') {
+              const match = absUri.match(/https?:\/\/([\d.]+)/)
+              if (match) return match[1]
+            }
+          }
+        }
+      }
+      // Fallback: use any known speaker IP (all speakers can address each other)
+      return this.getSpeakerIp()
+    } catch {
+      return null
+    }
+  }
+
   // ── Sonos UPnP browse (genre browsing) ─────────────────────────────────────
 
   private speakerIpCache: string | null = null
