@@ -99,6 +99,25 @@ export interface SonosQueueItem {
   uri: string
 }
 
+export interface SonosGenre {
+  title: string
+  count?: number
+}
+
+export interface SonosLibraryTrack {
+  title: string
+  artist: string
+  album: string
+  albumArtUri: string
+  uri: string
+}
+
+export interface SonosLibrarySearchResult {
+  artists: SonosLibraryTrack[]
+  albums: SonosLibraryTrack[]
+  tracks: SonosLibraryTrack[]
+}
+
 class SonosClient {
   private api: AxiosInstance
 
@@ -353,6 +372,81 @@ class SonosClient {
       await this.api.get(`/${encodeURIComponent(speaker)}/reorder/${from}/${to}`)
     } catch (err) {
       this.handleError(err, `reorderQueue(${speaker}, ${from}, ${to})`)
+    }
+  }
+
+  async getGenres(): Promise<SonosGenre[]> {
+    try {
+      const zones = await this.getZones()
+      if (zones.length === 0) return []
+      const speaker = zones[0].coordinator.roomName
+      const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/musicsearch/library/genres`)
+      if (Array.isArray(data)) {
+        return data.map((item: unknown) => {
+          const obj = item as Record<string, unknown>
+          return {
+            title: String(obj.title ?? obj.name ?? ''),
+            count: typeof obj.count === 'number' ? obj.count : undefined,
+          }
+        })
+      }
+      return []
+    } catch (err) {
+      this.handleError(err, 'getGenres')
+    }
+  }
+
+  async getGenreTracks(genre: string): Promise<SonosLibraryTrack[]> {
+    try {
+      const zones = await this.getZones()
+      if (zones.length === 0) return []
+      const speaker = zones[0].coordinator.roomName
+      const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/musicsearch/library/genre/${encodeURIComponent(genre)}`)
+      if (Array.isArray(data)) {
+        return data.map((item: unknown) => {
+          const obj = item as Record<string, unknown>
+          return {
+            title: String(obj.title ?? ''),
+            artist: String(obj.artist ?? ''),
+            album: String(obj.album ?? ''),
+            albumArtUri: String(obj.albumArtUri ?? obj.albumArtURI ?? ''),
+            uri: String(obj.uri ?? ''),
+          }
+        })
+      }
+      return []
+    } catch (err) {
+      this.handleError(err, `getGenreTracks(${genre})`)
+    }
+  }
+
+  async searchLibrary(query: string): Promise<SonosLibrarySearchResult> {
+    try {
+      const zones = await this.getZones()
+      if (zones.length === 0) return { artists: [], albums: [], tracks: [] }
+      const speaker = zones[0].coordinator.roomName
+      const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/musicsearch/library/${encodeURIComponent(query)}`)
+      const mapItems = (items: unknown): SonosLibraryTrack[] => {
+        if (!Array.isArray(items)) return []
+        return items.map((item: unknown) => {
+          const obj = item as Record<string, unknown>
+          return {
+            title: String(obj.title ?? ''),
+            artist: String(obj.artist ?? ''),
+            album: String(obj.album ?? ''),
+            albumArtUri: String(obj.albumArtUri ?? obj.albumArtURI ?? ''),
+            uri: String(obj.uri ?? ''),
+          }
+        })
+      }
+      const result = data as Record<string, unknown>
+      return {
+        artists: mapItems(result.artists),
+        albums: mapItems(result.albums),
+        tracks: mapItems(result.tracks),
+      }
+    } catch (err) {
+      this.handleError(err, `searchLibrary(${query})`)
     }
   }
 
