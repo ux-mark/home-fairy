@@ -30,6 +30,9 @@ export interface SonosPlaybackState {
   trackNo: number
   elapsedTime: number
   elapsedTimeFormatted: string
+  duration?: number
+  durationFormatted?: string
+  currentPlayMode?: string
   inputSource?: 'tv' | 'line-in' | null
 }
 
@@ -67,7 +70,13 @@ function normalizeState(state: SonosPlaybackState): SonosPlaybackState {
       },
     }
   }
-  return { ...state, inputSource: null }
+  return {
+    ...state,
+    inputSource: null,
+    duration: state.duration,
+    durationFormatted: state.durationFormatted,
+    currentPlayMode: state.currentPlayMode,
+  }
 }
 
 export interface SonosMember {
@@ -215,6 +224,30 @@ class SonosClient {
       await this.api.get(`/${encodeURIComponent(speaker)}/previous`)
     } catch (err) {
       this.handleError(err, `previous(${speaker})`)
+    }
+  }
+
+  async shuffle(speaker: string, enabled: boolean): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/shuffle/${enabled ? 'on' : 'off'}`)
+    } catch (err) {
+      this.handleError(err, `shuffle(${speaker}, ${enabled})`)
+    }
+  }
+
+  async repeat(speaker: string, enabled: boolean): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/repeat/${enabled ? 'on' : 'off'}`)
+    } catch (err) {
+      this.handleError(err, `repeat(${speaker}, ${enabled})`)
+    }
+  }
+
+  async seek(speaker: string, seconds: number): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/seek/${seconds}`)
+    } catch (err) {
+      this.handleError(err, `seek(${speaker}, ${seconds})`)
     }
   }
 
