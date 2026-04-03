@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Search, X, Music, Radio, Heart, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { NasBrowseView } from './NasBrowseView'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -168,7 +169,10 @@ export function BrowseTab() {
         {activeSource === 'all' && (
           <AllSourcesView onSelectSource={setActiveSource} />
         )}
-        {activeSource !== 'all' && (
+        {activeSource === 'nas' && (
+          <NasBrowseView searchQuery={searchQuery} />
+        )}
+        {activeSource !== 'all' && activeSource !== 'nas' && (
           <SourcePlaceholder source={SOURCES.find(s => s.id === activeSource)!} />
         )}
       </div>
