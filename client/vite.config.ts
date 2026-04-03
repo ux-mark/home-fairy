@@ -14,6 +14,8 @@ export default defineConfig({
         // Only precache the HTML entry and CSS — JS chunks use runtime caching
         // to avoid preload warnings for lazy-loaded modules
         globPatterns: ['**/*.{css,ico,png,svg,webmanifest}', 'index.html'],
+        // Don't serve index.html for /api/ requests — let them through to the server
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
             urlPattern: /\/assets\/.*\.js$/,
