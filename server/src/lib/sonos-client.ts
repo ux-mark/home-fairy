@@ -1,4 +1,7 @@
 import axios, { type AxiosInstance, AxiosError } from 'axios'
+import { readFileSync, statSync } from 'fs'
+import { join } from 'path'
+import { homedir } from 'os'
 
 const SONOS_API_URL = process.env.SONOS_API_URL || 'http://localhost:3003'
 const TIMEOUT = 5000
@@ -434,16 +437,13 @@ class SonosClient {
   private libraryCacheMtime: number = 0
 
   private readLibraryCache(): NasLibraryTrack[] {
-    const fs = require('fs')
-    const cachePath = require('path').join(
-      require('os').homedir(), 'node-sonos-http-api', 'cache', 'library.json',
-    )
+    const cachePath = join(homedir(), 'node-sonos-http-api', 'cache', 'library.json')
     try {
-      const stat = fs.statSync(cachePath)
+      const stat = statSync(cachePath)
       if (this.libraryCache && stat.mtimeMs === this.libraryCacheMtime) {
         return this.libraryCache
       }
-      const raw = JSON.parse(fs.readFileSync(cachePath, 'utf-8'))
+      const raw = JSON.parse(readFileSync(cachePath, 'utf-8'))
       const items = raw?.tracks?.items ?? []
       this.libraryCache = items.map((t: Record<string, unknown>) => ({
         title: String(t.trackName ?? ''),
