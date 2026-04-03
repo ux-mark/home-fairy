@@ -441,6 +441,8 @@ router.post('/queue/:speaker/add', async (req: Request, res: Response) => {
     }
     await sonosClient.addToQueue(speaker, parsed.data.uri)
     emit('sonos:playback-update', { speaker })
+    const queue = await sonosClient.getQueue(speaker)
+    emit('sonos:queue-update', { speaker, action: 'add', queue })
     res.json({ speaker, action: 'add-to-queue' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -459,6 +461,8 @@ router.post('/queue/:speaker/playnext', async (req: Request, res: Response) => {
     }
     await sonosClient.playNext(speaker, parsed.data.uri)
     emit('sonos:playback-update', { speaker })
+    const queue = await sonosClient.getQueue(speaker)
+    emit('sonos:queue-update', { speaker, action: 'playnext', queue })
     res.json({ speaker, action: 'play-next' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -478,6 +482,8 @@ router.delete('/queue/:speaker/remove/:index', async (req: Request, res: Respons
     }
     await sonosClient.removeFromQueue(speaker, index)
     emit('sonos:playback-update', { speaker })
+    const queue = await sonosClient.getQueue(speaker)
+    emit('sonos:queue-update', { speaker, action: 'remove', queue })
     res.json({ speaker, action: 'remove-from-queue', index })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -496,6 +502,8 @@ router.post('/queue/:speaker/reorder', async (req: Request, res: Response) => {
     }
     await sonosClient.reorderQueue(speaker, parsed.data.from, parsed.data.to)
     emit('sonos:playback-update', { speaker })
+    const queue = await sonosClient.getQueue(speaker)
+    emit('sonos:queue-update', { speaker, action: 'reorder', queue })
     res.json({ speaker, action: 'reorder-queue', from: parsed.data.from, to: parsed.data.to })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
