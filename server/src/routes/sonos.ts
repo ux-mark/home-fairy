@@ -511,6 +511,44 @@ router.post('/queue/:speaker/reorder', async (req: Request, res: Response) => {
   }
 })
 
+// ── Genre browsing (via Sonos UPnP SOAP) ─────────────────────────────────────
+
+// GET /library/genres — list all genres from the Sonos music library index
+router.get('/library/genres', async (_req: Request, res: Response) => {
+  try {
+    const genres = await sonosClient.getGenres()
+    res.json(genres)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// GET /library/genre/:genre — list artists in a genre
+router.get('/library/genre/:genre', async (req: Request, res: Response) => {
+  try {
+    const genre = Array.isArray(req.params.genre) ? req.params.genre[0] : req.params.genre
+    const artists = await sonosClient.getGenreArtists(genre)
+    res.json(artists)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// GET /library/genre/:genre/:artist — list tracks by an artist in a genre
+router.get('/library/genre/:genre/:artist', async (req: Request, res: Response) => {
+  try {
+    const genre = Array.isArray(req.params.genre) ? req.params.genre[0] : req.params.genre
+    const artist = Array.isArray(req.params.artist) ? req.params.artist[0] : req.params.artist
+    const tracks = await sonosClient.getGenreArtistTracks(genre, artist)
+    res.json(tracks)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
 // ── NAS library browsing (reads node-sonos-http-api cache) ───────────────────
 
 // GET /library/status — check if library is loaded

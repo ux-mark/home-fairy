@@ -751,6 +751,16 @@ export interface SonosLibraryStatus {
   artistCount: number
 }
 
+export interface SonosGenre {
+  title: string
+  artistCount: number
+}
+
+export interface SonosGenreArtist {
+  name: string
+  uri: string
+}
+
 export interface SonosRadioStation {
   title: string
   uri: string
@@ -1515,6 +1525,12 @@ export const api = {
     getPlayStatus: () =>
       fetchApi<{ anyPlaying: boolean; allPlaying: boolean; playingCount: number; totalSpeakers: number }>('/sonos/play-status'),
     health: () => fetchApi<{ available: boolean }>('/sonos/health'),
+    getLibraryGenres: () =>
+      fetchApi<SonosGenre[]>('/sonos/library/genres'),
+    getGenreArtists: (genre: string) =>
+      fetchApi<SonosGenreArtist[]>('/sonos/library/genre/' + encodeURIComponent(genre)),
+    getGenreArtistTracks: (genre: string, artist: string) =>
+      fetchApi<SonosLibraryTrack[]>('/sonos/library/genre/' + encodeURIComponent(genre) + '/' + encodeURIComponent(artist)),
     getLibraryStatus: () =>
       fetchApi<SonosLibraryStatus>('/sonos/library/status'),
     reloadLibrary: () =>

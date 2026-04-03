@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ChevronRight,
   Disc3,
+  Hash,
   ListStart,
   Music2,
   Plus,
@@ -12,15 +13,15 @@ import {
   User,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { SonosLibraryTrack, SonosLibraryArtist, SonosLibraryAlbum } from '@/lib/api'
+import type { SonosLibraryTrack, SonosLibraryArtist, SonosLibraryAlbum, SonosGenre, SonosGenreArtist } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type NasView = 'home' | 'artist-detail' | 'album-detail'
-type BrowseMode = 'artists' | 'albums'
+type NasView = 'home' | 'artist-detail' | 'album-detail' | 'genre-artists' | 'genre-artist-tracks'
+type BrowseMode = 'genres' | 'artists' | 'albums'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -187,7 +188,7 @@ function BrowseModeTabs({
       aria-label="Browse by"
       className="mb-4 flex gap-2"
     >
-      {(['artists', 'albums'] as const).map(m => (
+      {(['genres', 'artists', 'albums'] as const).map(m => (
         <button
           key={m}
           role="tab"
@@ -202,7 +203,7 @@ function BrowseModeTabs({
               : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
           )}
         >
-          {m === 'artists' ? 'Artists' : 'Albums'}
+          {m === 'genres' ? 'Genres' : m === 'artists' ? 'Artists' : 'Albums'}
         </button>
       ))}
     </div>
@@ -508,6 +509,209 @@ function AlbumDetail({
   )
 }
 
+// ── Genre list ───────────────────────────────────────────────────────────────
+
+function GenreList({
+  onSelectGenre,
+}: {
+  onSelectGenre: (genre: string) => void
+}) {
+  const { data: genres, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['sonos-library-genres'],
+    queryFn: api.sonos.getLibraryGenres,
+    staleTime: 5 * 60_000,
+  })
+
+  if (isLoading) return <ListSkeleton />
+
+  if (isError) {
+    return (
+      <ErrorState
+        message={(error as Error).message ?? 'Failed to load genres'}
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  if (!genres || genres.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+        <div>
+          <p className="text-sm font-medium text-heading">No genres found</p>
+          <p className="mt-1 max-w-xs text-xs text-caption">
+            Your music library may not have genre metadata, or it hasn't been indexed yet.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <ul className="-mx-4">
+      {genres.map((genre: SonosGenre) => (
+        <li key={genre.title}>
+          <button
+            type="button"
+            onClick={() => onSelectGenre(genre.title)}
+            className={cn(
+              'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+              'transition-colors hover:bg-[var(--bg-secondary)]',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              'min-h-[44px]',
+            )}
+          >
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-tertiary)]">
+              <Hash className="h-4 w-4 text-caption/60" aria-hidden="true" />
+            </div>
+            <p className="min-w-0 flex-1 truncate text-sm font-medium text-heading">{genre.title}</p>
+            <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// ── Genre artist list ────────────────────────────────────────────────────────
+
+function GenreArtistList({
+  genre,
+  onSelectArtist,
+  onBack,
+}: {
+  genre: string
+  onSelectArtist: (genre: string, artist: string) => void
+  onBack: () => void
+}) {
+  const { data: artists, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['sonos-genre-artists', genre],
+    queryFn: () => api.sonos.getGenreArtists(genre),
+    staleTime: 5 * 60_000,
+  })
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back to genres"
+          className={cn(
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
+            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          )}
+        >
+          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+        </button>
+        <h2 className="truncate text-lg font-semibold text-heading">{genre}</h2>
+      </div>
+
+      {isLoading && <ListSkeleton />}
+
+      {isError && (
+        <ErrorState
+          message={(error as Error).message ?? 'Failed to load artists'}
+          onRetry={() => refetch()}
+        />
+      )}
+
+      {!isLoading && !isError && artists && artists.length > 0 && (
+        <ul className="-mx-4">
+          {artists.map((artist: SonosGenreArtist) => (
+            <li key={artist.name}>
+              <button
+                type="button"
+                onClick={() => onSelectArtist(genre, artist.name)}
+                className={cn(
+                  'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+                  'transition-colors hover:bg-[var(--bg-secondary)]',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                  'min-h-[44px]',
+                )}
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--bg-tertiary)]">
+                  <User className="h-4 w-4 text-caption/60" aria-hidden="true" />
+                </div>
+                <p className="min-w-0 flex-1 truncate text-sm font-medium text-heading">{artist.name}</p>
+                <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ── Genre artist tracks ──────────────────────────────────────────────────────
+
+function GenreArtistTracks({
+  genre,
+  artist,
+  speaker,
+  onBack,
+}: {
+  genre: string
+  artist: string
+  speaker: string | null
+  onBack: () => void
+}) {
+  const { data: tracks, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['sonos-genre-artist-tracks', genre, artist],
+    queryFn: () => api.sonos.getGenreArtistTracks(genre, artist),
+    staleTime: 5 * 60_000,
+  })
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label={`Back to ${genre}`}
+          className={cn(
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
+            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          )}
+        >
+          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+        </button>
+        <div className="min-w-0">
+          <h2 className="truncate text-lg font-semibold text-heading">{artist}</h2>
+          <p className="truncate text-xs text-caption">{genre}</p>
+        </div>
+      </div>
+
+      {isLoading && <ListSkeleton count={5} />}
+
+      {isError && (
+        <ErrorState
+          message={(error as Error).message ?? 'Failed to load tracks'}
+          onRetry={() => refetch()}
+        />
+      )}
+
+      {!isLoading && !isError && tracks && tracks.length > 0 && (
+        <ul className="-mx-4">
+          {tracks.map((track, i) => (
+            <TrackRow key={track.uri + ':' + i} track={track} speaker={speaker} />
+          ))}
+        </ul>
+      )}
+
+      {!isLoading && !isError && (!tracks || tracks.length === 0) && (
+        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+          <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+          <p className="text-sm text-caption">No tracks found</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Search results view ───────────────────────────────────────────────────────
 
 function SearchResults({ query, speaker }: { query: string; speaker: string | null }) {
@@ -561,9 +765,11 @@ interface NasBrowseViewProps {
 
 export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps) {
   const [view, setView] = useState<NasView>('home')
-  const [browseMode, setBrowseMode] = useState<BrowseMode>('artists')
+  const [browseMode, setBrowseMode] = useState<BrowseMode>('genres')
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null)
   const [selectedAlbum, setSelectedAlbum] = useState<{ artist: string; album: string } | null>(null)
+  const [selectedGenre, setSelectedGenre] = useState<string | null>(null)
+  const [selectedGenreArtist, setSelectedGenreArtist] = useState<string | null>(null)
   const firstSpeaker = useFirstSpeaker()
   const speaker = targetSpeaker ?? firstSpeaker
 
@@ -580,19 +786,56 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
     setView('album-detail')
   }
 
+  function handleSelectGenre(genre: string) {
+    setSelectedGenre(genre)
+    setView('genre-artists')
+  }
+
+  function handleSelectGenreArtist(genre: string, artist: string) {
+    setSelectedGenre(genre)
+    setSelectedGenreArtist(artist)
+    setView('genre-artist-tracks')
+  }
+
   function handleBack() {
-    if (view === 'album-detail' && selectedArtist) {
+    if (view === 'genre-artist-tracks') {
+      setView('genre-artists')
+      setSelectedGenreArtist(null)
+    } else if (view === 'album-detail' && selectedArtist) {
       setView('artist-detail')
       setSelectedAlbum(null)
     } else {
       setView('home')
       setSelectedArtist(null)
       setSelectedAlbum(null)
+      setSelectedGenre(null)
+      setSelectedGenreArtist(null)
     }
   }
 
   if (isSearching) {
     return <SearchResults query={debouncedQuery} speaker={speaker} />
+  }
+
+  if (view === 'genre-artist-tracks' && selectedGenre && selectedGenreArtist) {
+    return (
+      <GenreArtistTracks
+        genre={selectedGenre}
+        artist={selectedGenreArtist}
+        speaker={speaker}
+        onBack={handleBack}
+      />
+    )
+  }
+
+  if (view === 'genre-artists' && selectedGenre) {
+    return (
+      <GenreArtistList
+        genre={selectedGenre}
+        onSelectArtist={handleSelectGenreArtist}
+        onBack={handleBack}
+      />
+    )
   }
 
   if (view === 'album-detail' && selectedAlbum) {
@@ -620,6 +863,7 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
   return (
     <div>
       <BrowseModeTabs mode={browseMode} onChangeMode={setBrowseMode} />
+      {browseMode === 'genres' && <GenreList onSelectGenre={handleSelectGenre} />}
       {browseMode === 'artists' && <ArtistList onSelectArtist={handleSelectArtist} />}
       {browseMode === 'albums' && <AlbumList onSelectAlbum={handleSelectAlbum} />}
     </div>
