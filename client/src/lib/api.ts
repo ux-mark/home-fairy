@@ -805,6 +805,24 @@ export interface SpotifyPlaylist {
   owner: { display_name: string; id: string }
 }
 
+export interface UserFavourite {
+  id: number
+  user_id: string
+  source: 'sonos' | 'spotify' | 'nas' | 'radio'
+  source_uri: string
+  title: string
+  album_art_uri: string | null
+  sort_order: number
+  created_at: string
+}
+
+export interface AddFavouriteInput {
+  source: 'sonos' | 'spotify' | 'nas' | 'radio'
+  source_uri: string
+  title: string
+  album_art_uri?: string
+}
+
 export interface SpotifyTrack {
   id: string
   name: string
@@ -1551,6 +1569,22 @@ export const api = {
       if (offset !== undefined) params.set('offset', String(offset))
       return fetchApi<SpotifySearchResult>('/spotify/search?' + params.toString())
     },
+  },
+
+  favourites: {
+    list: () => fetchApi<UserFavourite[]>('/favourites'),
+    add: (data: AddFavouriteInput) =>
+      fetchApi<UserFavourite>('/favourites', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    remove: (id: number) =>
+      fetchApi<void>(`/favourites/${id}`, { method: 'DELETE' }),
+    reorder: (ids: number[]) =>
+      fetchApi<{ success: boolean }>('/favourites/reorder', {
+        method: 'PUT',
+        body: JSON.stringify({ ids }),
+      }),
   },
 
   accessLinks: {
