@@ -713,7 +713,7 @@ function SonosUnassignedCard({ speakerName }: { speakerName: string }) {
         </div>
 
         <Link
-          to="/sonos-setup"
+          to="/sonos/setup"
           className="block min-w-0 flex-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
         >
           <p className="break-words text-sm font-medium text-body hover:text-heading transition-colors">

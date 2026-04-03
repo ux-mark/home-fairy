@@ -44,7 +44,7 @@ function SonosConnectionStatus() {
       <AlertCircle className="h-4 w-4 text-amber-400" aria-hidden="true" />
       <span className="text-heading">Sonos unavailable</span>
       <Link
-        to="/sonos-setup"
+        to="/sonos/setup"
         className="text-fairy-400 underline underline-offset-2 hover:text-fairy-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded"
       >
         Set up Sonos
@@ -608,7 +608,7 @@ export function MusicSection() {
       {/* Speaker assignments */}
       <Section title="Speaker assignments">
         <Link
-          to="/sonos-setup"
+          to="/sonos/setup"
           className="surface flex items-center justify-between rounded-lg border px-3 py-2.5 text-heading text-sm transition-colors hover:brightness-95 dark:hover:brightness-110 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           style={{ borderColor: 'var(--border-secondary)' }}
         >

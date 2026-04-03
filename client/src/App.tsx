@@ -2,7 +2,6 @@ import React, { Suspense } from 'react'
 import { Routes, Route } from 'react-router-dom'
 import AppLayout from '@/components/layout/AppLayout'
 import WatchLayout from '@/components/layout/WatchLayout'
-import SonosLayout from '@/components/layout/SonosLayout'
 import HomePage from '@/pages/HomePage'
 import { Skeleton, SkeletonList } from '@/components/ui/Skeleton'
 import { AuthGuard } from '@/components/auth/AuthGuard'
@@ -24,7 +23,9 @@ const KasaSetupPage = React.lazy(() => import('@/pages/KasaSetupPage'))
 const LightsPage = React.lazy(() => import('@/pages/LightsPage'))
 const SonosSetupPage = React.lazy(() => import('@/pages/SonosSetupPage'))
 const SonosDetailPage = React.lazy(() => import('@/pages/SonosDetailPage'))
-const SonosPage = React.lazy(() => import('@/pages/SonosPage'))
+const SonosPlayingPage = React.lazy(() => import('@/pages/SonosPlayingPage'))
+const SonosBrowsePage = React.lazy(() => import('@/pages/SonosBrowsePage'))
+const SonosFavouritesPage = React.lazy(() => import('@/pages/SonosFavouritesPage'))
 const AccountPage = React.lazy(() => import('@/pages/AccountPage'))
 const FairyQueenPage = React.lazy(() => import('@/pages/FairyQueenPage'))
 
@@ -60,10 +61,12 @@ export default function App() {
           <Route path="/settings/kasa" element={<KasaSetupPage />} />
           <Route path="/account" element={<AccountPage />} />
           <Route path="/fairy-queen" element={<FairyQueenPage />} />
-        </Route>
-        <Route element={<AuthGuard><SonosLayout /></AuthGuard>}>
-          <Route path="/sonos" element={<SonosPage />} />
-          <Route path="/sonos-setup" element={<SonosSetupPage />} />
+          <Route path="/sonos" element={<SonosPlayingPage />} />
+          <Route path="/sonos/playing" element={<SonosPlayingPage />} />
+          <Route path="/sonos/browse" element={<SonosBrowsePage />} />
+          <Route path="/sonos/favourites" element={<SonosFavouritesPage />} />
+          <Route path="/sonos/insights" element={<DashboardPage />} />
+          <Route path="/sonos/setup" element={<SonosSetupPage />} />
           <Route path="/sonos/:speaker" element={<SonosDetailPage />} />
         </Route>
         <Route element={<AuthGuard><WatchLayout /></AuthGuard>}>
