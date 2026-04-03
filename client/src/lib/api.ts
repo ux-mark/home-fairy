@@ -1524,6 +1524,14 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ from, to }),
       }),
+    playSpotify: (speaker: string, uri: string, action?: 'now' | 'queue' | 'next') =>
+      fetchApi<{ speaker: string; uri: string; action: string }>(
+        `/sonos/play-spotify/${encodeURIComponent(speaker)}`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ uri, action }),
+        },
+      ),
     shuffle: (speaker: string, enabled: boolean) =>
       fetchApi<void>(`/sonos/shuffle/${encodeURIComponent(speaker)}`, {
         method: 'POST',

@@ -1005,4 +1005,47 @@ router.get('/health', async (_req: Request, res: Response) => {
   res.json({ available })
 })
 
+// POST /test-spotify-playback/:speaker — diagnostic route (dev only)
+// Tests whether a Spotify URI plays correctly through node-sonos-http-api's native spotify action.
+// Accepts: { uri: string } — a Spotify URI (spotify:track:..., spotify:playlist:..., spotify:album:...)
+// Returns: { played, playbackState, currentTrack, error? }
+if (process.env.NODE_ENV !== 'production') {
+  router.post('/test-spotify-playback/:speaker', async (req: Request, res: Response) => {
+    try {
+      const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+      const { uri } = req.body as { uri?: unknown }
+      if (typeof uri !== 'string' || !uri.startsWith('spotify:')) {
+        res.status(400).json({ error: 'uri must be a Spotify URI (spotify:track:..., spotify:playlist:..., etc.)' })
+        return
+      }
+      const result = await sonosClient.testSpotifyPlayback(speaker, uri)
+      res.json(result)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      res.status(502).json({ error: msg })
+    }
+  })
+}
+
+// POST /play-spotify/:speaker — play a Spotify URI through Sonos
+// Accepts: { uri: string, action?: 'now' | 'queue' | 'next' }
+// Uses node-sonos-http-api's native spotify action for correct URI translation.
+router.post('/play-spotify/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const { uri, action } = req.body as { uri?: unknown; action?: unknown }
+    if (typeof uri !== 'string' || !uri.startsWith('spotify:')) {
+      res.status(400).json({ error: 'uri must be a Spotify URI (spotify:track:..., spotify:playlist:..., etc.)' })
+      return
+    }
+    const safeAction = action === 'queue' || action === 'next' ? action : 'now'
+    await sonosClient.playSpotifyUri(speaker, uri, safeAction)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, uri, action: safeAction })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
 export default router

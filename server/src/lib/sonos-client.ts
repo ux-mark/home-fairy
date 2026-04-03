@@ -519,6 +519,42 @@ class SonosClient {
       return false
     }
   }
+
+  async testSpotifyPlayback(speaker: string, uri: string): Promise<{
+    played: boolean
+    playbackState: string
+    currentTrack: SonosTrack
+    error?: string
+  }> {
+    try {
+      // Use node-sonos-http-api's native spotify action for validated playback
+      await this.api.get(`/${encodeURIComponent(speaker)}/spotify/now/${encodeURIComponent(uri)}`)
+      // Wait 2 seconds for Sonos to begin playback
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      const state = await this.getState(speaker)
+      return {
+        played: state.playbackState === 'PLAYING',
+        playbackState: state.playbackState,
+        currentTrack: state.currentTrack,
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err)
+      return {
+        played: false,
+        playbackState: 'STOPPED',
+        currentTrack: { artist: '', title: '', album: '', albumArtUri: '', type: 'track' },
+        error,
+      }
+    }
+  }
+
+  async playSpotifyUri(speaker: string, spotifyUri: string, action: 'now' | 'queue' | 'next' = 'now'): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/spotify/${action}/${encodeURIComponent(spotifyUri)}`)
+    } catch (err) {
+      this.handleError(err, `playSpotifyUri(${speaker}, ${spotifyUri}, ${action})`)
+    }
+  }
 }
 
 export const sonosClient = new SonosClient()
