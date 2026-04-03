@@ -96,7 +96,7 @@ router.get('/zones', async (_req: Request, res: Response) => {
     res.json(zones)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -115,7 +115,7 @@ router.get('/state/:speaker', async (req: Request, res: Response) => {
     res.json(state)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -133,7 +133,7 @@ router.get('/favourites', async (_req: Request, res: Response) => {
     res.json(favs)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -144,7 +144,7 @@ router.get('/services', async (_req: Request, res: Response) => {
     res.json(services)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -426,7 +426,7 @@ router.get('/queue/:speaker', async (req: Request, res: Response) => {
     res.json(items)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -446,7 +446,7 @@ router.post('/queue/:speaker/add', async (req: Request, res: Response) => {
     res.json({ speaker, action: 'add-to-queue' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -466,7 +466,7 @@ router.post('/queue/:speaker/playnext', async (req: Request, res: Response) => {
     res.json({ speaker, action: 'play-next' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -487,7 +487,7 @@ router.delete('/queue/:speaker/remove/:index', async (req: Request, res: Respons
     res.json({ speaker, action: 'remove-from-queue', index })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -507,60 +507,137 @@ router.post('/queue/:speaker/reorder', async (req: Request, res: Response) => {
     res.json({ speaker, action: 'reorder-queue', from: parsed.data.from, to: parsed.data.to })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
-// ── NAS library browsing ──────────────────────────────────────────────────────
+// ── Genre browsing (via Sonos UPnP SOAP) ─────────────────────────────────────
 
-// GET /library/genres — list all genres from the local NAS library
+// GET /library/genres — list all genres from the Sonos music library index
 router.get('/library/genres', async (_req: Request, res: Response) => {
   try {
     const genres = await sonosClient.getGenres()
     res.json(genres)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
-// GET /library/genre/:genre — list tracks for a specific genre
+// GET /library/genre/:genre — list albums in a genre (with album art)
 router.get('/library/genre/:genre', async (req: Request, res: Response) => {
   try {
     const genre = Array.isArray(req.params.genre) ? req.params.genre[0] : req.params.genre
-    const tracks = await sonosClient.getGenreTracks(genre)
-    const items = tracks.map(track => ({
-      ...track,
-      albumArtUri: rewriteAlbumArtUri(track.albumArtUri),
+    const albums = await sonosClient.getGenreAlbums(genre)
+    // Proxy album art URIs through our art-proxy
+    const result = albums.map(a => ({
+      ...a,
+      albumArtUri: rewriteAlbumArtUri(a.albumArtUri) ?? '',
     }))
-    res.json(items)
+    res.json(result)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
-// GET /library/search?q= — search the local NAS library
-router.get('/library/search', async (req: Request, res: Response) => {
+// GET /library/genre-album-tracks?objectId= — list tracks in a genre album
+router.get('/library/genre-album-tracks', async (req: Request, res: Response) => {
+  const objectId = typeof req.query.objectId === 'string' ? req.query.objectId : ''
+  if (!objectId) {
+    res.status(400).json({ error: 'Missing required query parameter: objectId' })
+    return
+  }
+  try {
+    const tracks = await sonosClient.getGenreAlbumTracks(objectId)
+    const result = tracks.map(t => ({
+      ...t,
+      albumArtUri: rewriteAlbumArtUri(t.albumArtUri) ?? '',
+    }))
+    res.json(result)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// ── NAS library browsing (reads node-sonos-http-api cache) ───────────────────
+
+// GET /library/status — check if library is loaded
+router.get('/library/status', async (_req: Request, res: Response) => {
+  try {
+    const artists = sonosClient.getLibraryArtists()
+    res.json({ available: artists.length > 0, artistCount: artists.length })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /library/reload — trigger library re-index
+router.post('/library/reload', async (_req: Request, res: Response) => {
+  try {
+    const loaded = await sonosClient.ensureLibraryLoaded()
+    res.json({ loaded })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// GET /library/artists — list all artists
+router.get('/library/artists', (_req: Request, res: Response) => {
+  res.json(sonosClient.getLibraryArtists())
+})
+
+// GET /library/albums — list all albums (with artwork from Sonos UPnP)
+router.get('/library/albums', async (_req: Request, res: Response) => {
+  try {
+    const albums = await sonosClient.browseAlbumsWithArt()
+    res.json(albums.map(a => ({
+      ...a,
+      albumArtUri: rewriteAlbumArtUri(a.albumArtUri) ?? '',
+    })))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// GET /library/artist/:name — list tracks for an artist
+router.get('/library/artist/:name', (req: Request, res: Response) => {
+  const name = Array.isArray(req.params.name) ? req.params.name[0] : req.params.name
+  res.json(sonosClient.getArtistTracks(name))
+})
+
+// GET /library/album-tracks?objectId= — list tracks for an album by UPnP objectId
+router.get('/library/album-tracks', async (req: Request, res: Response) => {
+  const objectId = typeof req.query.objectId === 'string' ? req.query.objectId : ''
+  if (!objectId) {
+    res.status(400).json({ error: 'Missing required query parameter: objectId' })
+    return
+  }
+  try {
+    const tracks = await sonosClient.browseAlbumTracks(objectId)
+    res.json(tracks.map(t => ({
+      ...t,
+      albumArtUri: rewriteAlbumArtUri(t.albumArtUri) ?? '',
+    })))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// GET /library/search?q= — search the NAS library
+router.get('/library/search', (req: Request, res: Response) => {
   const rawQ = req.query.q
   const q = typeof rawQ === 'string' ? rawQ.trim() : ''
   if (!q) {
     res.status(400).json({ error: 'Missing required query parameter: q' })
     return
   }
-  try {
-    const result = await sonosClient.searchLibrary(q)
-    const rewriteTracks = (tracks: typeof result.tracks) =>
-      tracks.map(track => ({ ...track, albumArtUri: rewriteAlbumArtUri(track.albumArtUri) }))
-    res.json({
-      artists: rewriteTracks(result.artists),
-      albums: rewriteTracks(result.albums),
-      tracks: rewriteTracks(result.tracks),
-    })
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
-  }
+  res.json(sonosClient.searchLibrary(q))
 })
 
 // GET /radio/stations — list available radio stations
@@ -570,7 +647,7 @@ router.get('/radio/stations', async (_req: Request, res: Response) => {
     res.json(stations.map(s => ({ ...s, albumArtUri: s.albumArtUri ? rewriteAlbumArtUri(s.albumArtUri) : undefined })))
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -583,7 +660,7 @@ router.post('/play/:speaker', async (req: Request, res: Response) => {
     res.json({ speaker, action: 'play' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -596,7 +673,7 @@ router.post('/pause/:speaker', async (req: Request, res: Response) => {
     res.json({ speaker, action: 'pause' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -609,7 +686,7 @@ router.post('/stop/:speaker', async (req: Request, res: Response) => {
     res.json({ speaker, action: 'stop' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -622,7 +699,7 @@ router.post('/next/:speaker', async (req: Request, res: Response) => {
     res.json({ speaker, action: 'next' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -635,7 +712,7 @@ router.post('/previous/:speaker', async (req: Request, res: Response) => {
     res.json({ speaker, action: 'previous' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -655,7 +732,7 @@ router.post('/shuffle/:speaker', async (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -675,7 +752,7 @@ router.post('/repeat/:speaker', async (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -695,7 +772,7 @@ router.post('/seek/:speaker', async (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -743,7 +820,7 @@ router.post('/play-favourite/:speaker', async (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -757,7 +834,7 @@ router.post('/play-all', async (_req: Request, res: Response) => {
     res.json({ action: 'play', affectedSpeakers: coordinators.length })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -771,7 +848,7 @@ router.post('/pause-all', async (_req: Request, res: Response) => {
     res.json({ action: 'pause', affectedSpeakers: coordinators.length })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -828,7 +905,7 @@ router.get('/now-playing', async (_req: Request, res: Response) => {
     res.json(nowPlaying)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -848,7 +925,7 @@ router.put('/volume/:speaker', async (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -872,7 +949,7 @@ router.put('/mute/:speaker', async (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -895,7 +972,7 @@ router.put('/mute-all', async (req: Request, res: Response) => {
       return
     }
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -982,7 +1059,7 @@ router.post('/group/:speaker/join/:target', async (req: Request, res: Response) 
     res.json({ speaker, target, action: 'join' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -995,7 +1072,7 @@ router.post('/group/:speaker/leave', async (req: Request, res: Response) => {
     res.json({ speaker, action: 'leave' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 
@@ -1044,7 +1121,7 @@ router.post('/play-spotify/:speaker', async (req: Request, res: Response) => {
     res.json({ speaker, uri, action: safeAction })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
   }
 })
 

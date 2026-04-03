@@ -159,7 +159,22 @@ function ErrorState({
 
 // ── Connect Spotify prompt ────────────────────────────────────────────────────
 
-function ConnectSpotifyPrompt() {
+function ConnectSpotifyPrompt({ configured }: { configured: boolean }) {
+  if (!configured) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#1DB954]/10">
+          <Music2 className="h-8 w-8 text-[#1DB954]" aria-hidden="true" />
+        </div>
+        <div>
+          <p className="text-base font-semibold text-heading">Spotify not configured</p>
+          <p className="mt-1 max-w-xs text-sm text-caption">
+            Add your Spotify Developer credentials to the server .env file, then restart.
+          </p>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
       <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#1DB954]/10">
@@ -172,7 +187,7 @@ function ConnectSpotifyPrompt() {
         </p>
       </div>
       <a
-        href="/spotify/auth"
+        href="/api/spotify/auth"
         className={cn(
           'flex items-center gap-2 rounded-xl bg-[#1DB954] px-6 py-3 text-sm font-semibold text-white',
           'transition-opacity hover:opacity-90',
@@ -557,7 +572,7 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
   }
 
   if (!statusData?.connected) {
-    return <ConnectSpotifyPrompt />
+    return <ConnectSpotifyPrompt configured={statusData?.configured ?? false} />
   }
 
   if (isSearching) {

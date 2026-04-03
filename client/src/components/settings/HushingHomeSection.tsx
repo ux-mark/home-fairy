@@ -1,8 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { Section } from './Section'
+import { SearchableSelect } from '@/components/ui/SearchableSelect'
 
 export function HushingHomeSection() {
   const queryClient = useQueryClient()
@@ -30,6 +30,7 @@ export function HushingHomeSection() {
 
   const allScenes = scenes ?? []
   const currentScene = hushingStatus?.sceneName ?? ''
+  const sceneOptions = allScenes.map(s => ({ value: s.name, label: s.name }))
 
   return (
     <Section title="Hushing Home">
@@ -40,7 +41,7 @@ export function HushingHomeSection() {
 
         {hushingStatus?.active && (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
-            <p className="text-amber-400 text-sm font-medium">Home is Hushing</p>
+            <p className="text-amber-400 text-sm font-medium">Home is Hushed</p>
           </div>
         )}
 
@@ -54,31 +55,16 @@ export function HushingHomeSection() {
           <p className="text-xs text-caption">
             This scene activates across all rooms when Hushing Home is turned on.
           </p>
-          <select
+          <SearchableSelect
             id="hushing-scene-select"
+            options={sceneOptions}
             value={currentScene}
-            onChange={e => mutation.mutate(e.target.value || null)}
-            disabled={mutation.isPending}
+            onChange={value => mutation.mutate(value || null)}
+            placeholder="Search scenes..."
+            emptyMessage={allScenes.length === 0 ? 'No scenes configured yet.' : 'No scenes match your search'}
             aria-label="Select the scene to activate when Hushing Home is on"
-            className={cn(
-              'surface w-full rounded-lg border border-[var(--border-primary)] px-3 py-2 text-sm text-heading',
-              'min-h-[44px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500',
-            )}
-          >
-            <option value="">-- No scene selected --</option>
-            {allScenes.map(s => (
-              <option key={s.name} value={s.name}>{s.name}</option>
-            ))}
-            {/* Keep current option visible even if the scene no longer exists */}
-            {currentScene && !allScenes.some(s => s.name === currentScene) && (
-              <option value={currentScene}>{currentScene}</option>
-            )}
-          </select>
+          />
         </div>
-
-        {allScenes.length === 0 && (
-          <p className="text-caption text-sm">No scenes configured yet.</p>
-        )}
       </div>
     </Section>
   )

@@ -643,8 +643,15 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
       throw new Error('Unauthorized')
     }
     if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(text || `API error: ${res.status}`)
+      let message = `API error: ${res.status}`
+      try {
+        const body = await res.json()
+        if (body?.error) message = body.error
+      } catch {
+        const text = await res.text().catch(() => '')
+        if (text && !text.startsWith('<!')) message = text
+      }
+      throw new Error(message)
     }
     return res.json()
   } finally {
@@ -727,9 +734,33 @@ export interface SonosFavourite {
   contentClass?: string
 }
 
+export interface SonosLibraryArtist {
+  name: string
+  trackCount: number
+  albumCount: number
+}
+
+export interface SonosLibraryAlbum {
+  name: string
+  artist: string
+  trackCount: number
+}
+
+export interface SonosLibraryStatus {
+  available: boolean
+  artistCount: number
+}
+
 export interface SonosGenre {
   title: string
-  count?: number
+  artistCount: number
+}
+
+export interface SonosGenreAlbum {
+  name: string
+  artist: string
+  albumArtUri: string
+  objectId: string
 }
 
 export interface SonosRadioStation {
@@ -844,6 +875,7 @@ export interface SpotifyTrack {
 
 export interface SpotifyStatus {
   connected: boolean
+  configured: boolean
   display_name?: string
 }
 
@@ -1497,8 +1529,22 @@ export const api = {
     health: () => fetchApi<{ available: boolean }>('/sonos/health'),
     getLibraryGenres: () =>
       fetchApi<SonosGenre[]>('/sonos/library/genres'),
-    getLibraryGenreTracks: (genre: string) =>
-      fetchApi<SonosLibraryTrack[]>('/sonos/library/genre/' + encodeURIComponent(genre)),
+    getGenreAlbums: (genre: string) =>
+      fetchApi<SonosGenreAlbum[]>('/sonos/library/genre/' + encodeURIComponent(genre)),
+    getGenreAlbumTracks: (objectId: string) =>
+      fetchApi<SonosLibraryTrack[]>('/sonos/library/genre-album-tracks?objectId=' + encodeURIComponent(objectId)),
+    getLibraryStatus: () =>
+      fetchApi<SonosLibraryStatus>('/sonos/library/status'),
+    reloadLibrary: () =>
+      fetchApi<{ loaded: boolean }>('/sonos/library/reload', { method: 'POST' }),
+    getLibraryArtists: () =>
+      fetchApi<SonosLibraryArtist[]>('/sonos/library/artists'),
+    getLibraryAlbums: () =>
+      fetchApi<SonosGenreAlbum[]>('/sonos/library/albums'),
+    getArtistTracks: (name: string) =>
+      fetchApi<SonosLibraryTrack[]>('/sonos/library/artist/' + encodeURIComponent(name)),
+    getAlbumTracks: (objectId: string) =>
+      fetchApi<SonosLibraryTrack[]>('/sonos/library/album-tracks?objectId=' + encodeURIComponent(objectId)),
     searchLibrary: (query: string) =>
       fetchApi<SonosLibrarySearchResult>('/sonos/library/search?q=' + encodeURIComponent(query)),
     getRadioStations: () =>

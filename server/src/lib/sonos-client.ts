@@ -1,4 +1,7 @@
 import axios, { type AxiosInstance, AxiosError } from 'axios'
+import { readFileSync, statSync } from 'fs'
+import { join } from 'path'
+import { homedir } from 'os'
 
 const SONOS_API_URL = process.env.SONOS_API_URL || 'http://localhost:3003'
 const TIMEOUT = 5000
@@ -108,9 +111,16 @@ export interface SonosQueueItem {
   uri: string
 }
 
-export interface SonosGenre {
-  title: string
-  count?: number
+export interface SonosLibraryArtist {
+  name: string
+  trackCount: number
+  albumCount: number
+}
+
+export interface SonosLibraryAlbum {
+  name: string
+  artist: string
+  trackCount: number
 }
 
 export interface SonosLibraryTrack {
@@ -127,10 +137,29 @@ export interface SonosLibrarySearchResult {
   tracks: SonosLibraryTrack[]
 }
 
+export interface SonosGenre {
+  title: string
+  artistCount: number
+}
+
+export interface SonosGenreAlbum {
+  name: string
+  artist: string
+  albumArtUri: string
+  objectId: string
+}
+
 export interface SonosRadioStation {
   title: string
   uri: string
   albumArtUri?: string
+}
+
+interface NasLibraryTrack {
+  title: string
+  artist: string
+  album: string
+  uri: string
 }
 
 class SonosClient {
@@ -414,101 +443,353 @@ class SonosClient {
     }
   }
 
+  // ── Sonos UPnP browse (genre browsing) ─────────────────────────────────────
+
+  private speakerIpCache: string | null = null
+
+  private async getSpeakerIp(): Promise<string | null> {
+    if (this.speakerIpCache) return this.speakerIpCache
+    try {
+      const { data } = await this.api.get('/zones')
+      // Extract IP from absoluteAlbumArtUri in any zone's coordinator state
+      for (const zone of data as Array<Record<string, unknown>>) {
+        const coord = zone.coordinator as Record<string, unknown> | undefined
+        const state = coord?.state as Record<string, unknown> | undefined
+        const ct = state?.currentTrack as Record<string, unknown> | undefined
+        const absUri = ct?.absoluteAlbumArtUri
+        if (typeof absUri === 'string') {
+          const match = absUri.match(/https?:\/\/([\d.]+)/)
+          if (match) {
+            this.speakerIpCache = match[1]
+            return match[1]
+          }
+        }
+      }
+      // Fallback: try each speaker's state endpoint for album art URIs
+      for (const zone of data as Array<Record<string, unknown>>) {
+        const coord = zone.coordinator as Record<string, unknown> | undefined
+        const room = coord?.roomName as string | undefined
+        if (!room) continue
+        try {
+          const { data: stateData } = await this.api.get(`/${encodeURIComponent(room)}/state`)
+          const absUri = (stateData as Record<string, unknown>)?.currentTrack
+          const uri = (absUri as Record<string, unknown>)?.absoluteAlbumArtUri
+          if (typeof uri === 'string') {
+            const match = uri.match(/https?:\/\/([\d.]+)/)
+            if (match) {
+              this.speakerIpCache = match[1]
+              return match[1]
+            }
+          }
+        } catch { /* try next speaker */ }
+      }
+    } catch { /* fall through */ }
+    return null
+  }
+
+  private async browseUPnP(speakerIp: string, objectId: string, start = 0, count = 200): Promise<string> {
+    const body = `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
+      <ObjectID>${objectId}</ObjectID>
+      <BrowseFlag>BrowseDirectChildren</BrowseFlag>
+      <Filter>*</Filter>
+      <StartingIndex>${start}</StartingIndex>
+      <RequestedCount>${count}</RequestedCount>
+      <SortCriteria></SortCriteria>
+    </u:Browse>
+  </s:Body>
+</s:Envelope>`
+    const { data } = await axios.post(
+      `http://${speakerIp}:1400/MediaServer/ContentDirectory/Control`,
+      body,
+      {
+        headers: {
+          'Content-Type': 'text/xml; charset=utf-8',
+          'SOAPAction': '"urn:schemas-upnp-org:service:ContentDirectory:1#Browse"',
+        },
+        timeout: 10_000,
+      },
+    )
+    return typeof data === 'string' ? data : String(data)
+  }
+
+  private decodeXmlEntities(s: string): string {
+    return s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+  }
+
   async getGenres(): Promise<SonosGenre[]> {
+    const ip = await this.getSpeakerIp()
+    if (!ip) return []
     try {
-      const zones = await this.getZones()
-      if (zones.length === 0) return []
-      const speaker = zones[0].coordinator.roomName
-      const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/musicsearch/library/genres`)
-      if (Array.isArray(data)) {
-        return data.map((item: unknown) => {
-          const obj = item as Record<string, unknown>
-          return {
-            title: String(obj.title ?? obj.name ?? ''),
-            count: typeof obj.count === 'number' ? obj.count : undefined,
-          }
-        })
-      }
+      const xml = await this.browseUPnP(ip, 'A:GENRE')
+      const decoded = this.decodeXmlEntities(xml)
+      const titles = [...decoded.matchAll(/<dc:title>([^<]+)<\/dc:title>/g)].map(m => m[1])
+      const counts = [...decoded.matchAll(/<childCount>(\d+)<\/childCount>/g)].map(m => Number(m[1]))
+      return titles.map((title, i) => ({
+        title: this.decodeXmlEntities(title),
+        artistCount: counts[i] ?? 0,
+      }))
+    } catch {
       return []
-    } catch (err) {
-      this.handleError(err, 'getGenres')
     }
   }
 
-  async getGenreTracks(genre: string): Promise<SonosLibraryTrack[]> {
+  async getGenreAlbums(genre: string): Promise<SonosGenreAlbum[]> {
+    const ip = await this.getSpeakerIp()
+    if (!ip) return []
     try {
-      const zones = await this.getZones()
-      if (zones.length === 0) return []
-      const speaker = zones[0].coordinator.roomName
-      const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/musicsearch/library/genre/${encodeURIComponent(genre)}`)
-      if (Array.isArray(data)) {
-        return data.map((item: unknown) => {
-          const obj = item as Record<string, unknown>
-          return {
-            title: String(obj.title ?? ''),
-            artist: String(obj.artist ?? ''),
-            album: String(obj.album ?? ''),
-            albumArtUri: String(obj.albumArtUri ?? obj.albumArtURI ?? ''),
-            uri: String(obj.uri ?? ''),
+      // First get all artists in this genre
+      const artistXml = await this.browseUPnP(ip, `A:GENRE/${genre}`)
+      const decoded = this.decodeXmlEntities(artistXml)
+      const artistNames = [...decoded.matchAll(/<dc:title>([^<]+)<\/dc:title>/g)]
+        .map(m => this.decodeXmlEntities(m[1]))
+        .filter(n => n !== 'All')
+
+      // Then browse each artist to get their albums (with art)
+      const albums: SonosGenreAlbum[] = []
+      for (const artist of artistNames) {
+        try {
+          const albumXml = await this.browseUPnP(ip, `A:GENRE/${genre}/${artist}`)
+          const albumDecoded = this.decodeXmlEntities(albumXml)
+          // Parse containers (albums)
+          const containers = [...albumDecoded.matchAll(/<container[^>]*id="([^"]*)"[^>]*>(.*?)<\/container>/gs)]
+          for (const [, id, content] of containers) {
+            const title = content.match(/<dc:title>([^<]+)<\/dc:title>/)
+            const art = content.match(/<upnp:albumArtURI>([^<]+)<\/upnp:albumArtURI>/)
+            const name = title ? this.decodeXmlEntities(title[1]) : ''
+            if (name === 'All') continue
+            const artUri = art ? this.decodeXmlEntities(art[1]) : ''
+            // Convert relative art URI to absolute using speaker IP
+            const absoluteArt = artUri.startsWith('/') ? `http://${ip}:1400${artUri}` : artUri
+            albums.push({
+              name,
+              artist,
+              albumArtUri: absoluteArt,
+              objectId: decodeURIComponent(this.decodeXmlEntities(id)),
+            })
           }
-        })
+        } catch { /* skip artist on error */ }
       }
+      // Merge albums that appear under multiple artists (compilations)
+      const albumMap = new Map<string, SonosGenreAlbum>()
+      const artistsByAlbum = new Map<string, Set<string>>()
+      for (const album of albums) {
+        const existing = albumMap.get(album.name)
+        if (existing) {
+          artistsByAlbum.get(album.name)!.add(album.artist)
+        } else {
+          albumMap.set(album.name, album)
+          artistsByAlbum.set(album.name, new Set([album.artist]))
+        }
+      }
+      // Mark multi-artist albums as "Various Artists"
+      return Array.from(albumMap.values()).map(album => {
+        const artists = artistsByAlbum.get(album.name)!
+        return {
+          ...album,
+          artist: artists.size > 1 ? 'Various Artists' : album.artist,
+        }
+      })
+    } catch {
       return []
-    } catch (err) {
-      this.handleError(err, `getGenreTracks(${genre})`)
     }
   }
 
-  async searchLibrary(query: string): Promise<SonosLibrarySearchResult> {
+  async getGenreAlbumTracks(objectId: string): Promise<SonosLibraryTrack[]> {
+    const ip = await this.getSpeakerIp()
+    if (!ip) return []
     try {
-      const zones = await this.getZones()
-      if (zones.length === 0) return { artists: [], albums: [], tracks: [] }
-      const speaker = zones[0].coordinator.roomName
-      const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/musicsearch/library/${encodeURIComponent(query)}`)
-      const mapItems = (items: unknown): SonosLibraryTrack[] => {
-        if (!Array.isArray(items)) return []
-        return items.map((item: unknown) => {
-          const obj = item as Record<string, unknown>
-          return {
-            title: String(obj.title ?? ''),
-            artist: String(obj.artist ?? ''),
-            album: String(obj.album ?? ''),
-            albumArtUri: String(obj.albumArtUri ?? obj.albumArtURI ?? ''),
-            uri: String(obj.uri ?? ''),
-          }
-        })
-      }
-      const result = data as Record<string, unknown>
+      const xml = await this.browseUPnP(ip, objectId, 0, 500)
+      const decoded = this.decodeXmlEntities(xml)
+      const items = [...decoded.matchAll(/<item[^>]*>(.*?)<\/item>/gs)]
+      return items.map(([, content]) => {
+        const title = content.match(/<dc:title>([^<]+)<\/dc:title>/)
+        const creator = content.match(/<dc:creator>([^<]+)<\/dc:creator>/)
+        const album = content.match(/<upnp:album>([^<]+)<\/upnp:album>/)
+        const art = content.match(/<upnp:albumArtURI>([^<]+)<\/upnp:albumArtURI>/)
+        const uri = content.match(/<res[^>]*>([^<]+)<\/res>/)
+        const artUri = art ? this.decodeXmlEntities(art[1]) : ''
+        const absoluteArt = artUri.startsWith('/') ? `http://${ip}:1400${artUri}` : artUri
+        return {
+          title: title ? this.decodeXmlEntities(title[1]) : '',
+          artist: creator ? this.decodeXmlEntities(creator[1]) : '',
+          album: album ? this.decodeXmlEntities(album[1]) : '',
+          albumArtUri: absoluteArt,
+          uri: uri ? this.decodeXmlEntities(uri[1]) : '',
+        }
+      })
+    } catch {
+      return []
+    }
+  }
+
+  // ── UPnP album/artist browsing (with artwork) ──────────────────────────────
+
+  private parseContainers(xml: string, ip: string): Array<{ title: string; artist: string; albumArtUri: string; objectId: string }> {
+    const decoded = this.decodeXmlEntities(xml)
+    const containers = [...decoded.matchAll(/<container[^>]*id="([^"]*)"[^>]*>(.*?)<\/container>/gs)]
+    return containers.map(([, id, content]) => {
+      const title = content.match(/<dc:title>([^<]+)<\/dc:title>/)
+      const creator = content.match(/<dc:creator>([^<]+)<\/dc:creator>/)
+      const art = content.match(/<upnp:albumArtURI>([^<]+)<\/upnp:albumArtURI>/)
+      const name = title ? this.decodeXmlEntities(title[1]) : ''
+      const artUri = art ? this.decodeXmlEntities(art[1]) : ''
+      const absoluteArt = artUri.startsWith('/') ? `http://${ip}:1400${artUri}` : artUri
       return {
-        artists: mapItems(result.artists),
-        albums: mapItems(result.albums),
-        tracks: mapItems(result.tracks),
+        title: name,
+        artist: creator ? this.decodeXmlEntities(creator[1]) : '',
+        albumArtUri: absoluteArt,
+        objectId: decodeURIComponent(this.decodeXmlEntities(id)),
       }
-    } catch (err) {
-      this.handleError(err, `searchLibrary(${query})`)
+    }).filter(c => c.title !== 'All')
+  }
+
+  async browseAlbumsWithArt(): Promise<SonosGenreAlbum[]> {
+    const ip = await this.getSpeakerIp()
+    if (!ip) return []
+    try {
+      // Browse all albums — paginate in batches of 200
+      const allAlbums: SonosGenreAlbum[] = []
+      let start = 0
+      const batchSize = 200
+      while (true) {
+        const xml = await this.browseUPnP(ip, 'A:ALBUM', start, batchSize)
+        const decoded = this.decodeXmlEntities(xml)
+        const totalMatch = decoded.match(/<TotalMatches>(\d+)<\/TotalMatches>/)
+        const total = totalMatch ? Number(totalMatch[1]) : 0
+        const containers = this.parseContainers(xml, ip)
+        for (const c of containers) {
+          allAlbums.push({
+            name: c.title,
+            artist: c.artist,
+            albumArtUri: c.albumArtUri,
+            objectId: c.objectId,
+          })
+        }
+        start += batchSize
+        if (start >= total || containers.length === 0) break
+      }
+      return allAlbums
+    } catch {
+      return []
     }
+  }
+
+  async browseAlbumTracks(objectId: string): Promise<SonosLibraryTrack[]> {
+    // Reuse getGenreAlbumTracks — same UPnP browse logic
+    return this.getGenreAlbumTracks(objectId)
+  }
+
+  // ── NAS library browsing (reads node-sonos-http-api cache directly) ────────
+
+  private libraryCache: NasLibraryTrack[] | null = null
+  private libraryCacheMtime: number = 0
+
+  private readLibraryCache(): NasLibraryTrack[] {
+    const cachePath = join(homedir(), 'node-sonos-http-api', 'cache', 'library.json')
+    try {
+      const stat = statSync(cachePath)
+      if (this.libraryCache && stat.mtimeMs === this.libraryCacheMtime) {
+        return this.libraryCache
+      }
+      const raw = JSON.parse(readFileSync(cachePath, 'utf-8'))
+      const items = raw?.tracks?.items ?? []
+      this.libraryCache = items.map((t: Record<string, unknown>) => ({
+        title: String(t.trackName ?? ''),
+        artist: String(t.artistName ?? ''),
+        album: String(t.albumName ?? ''),
+        uri: String(t.uri ?? ''),
+      }))
+      this.libraryCacheMtime = stat.mtimeMs
+      return this.libraryCache!
+    } catch {
+      return []
+    }
+  }
+
+  async ensureLibraryLoaded(): Promise<boolean> {
+    const tracks = this.readLibraryCache()
+    if (tracks.length > 0) return true
+    // Trigger node-sonos-http-api to index the library
+    try {
+      const zones = await this.getZones()
+      if (zones.length === 0) return false
+      const speaker = zones[0].coordinator.roomName
+      await this.api.get(`/${encodeURIComponent(speaker)}/musicsearch/library/load`, { timeout: 120_000 })
+      return this.readLibraryCache().length > 0
+    } catch {
+      return false
+    }
+  }
+
+  getLibraryArtists(): SonosLibraryArtist[] {
+    const tracks = this.readLibraryCache()
+    const artistMap = new Map<string, { albums: Set<string>; count: number }>()
+    for (const t of tracks) {
+      if (!t.artist) continue
+      const entry = artistMap.get(t.artist)
+      if (entry) {
+        entry.count++
+        if (t.album) entry.albums.add(t.album)
+      } else {
+        artistMap.set(t.artist, { albums: new Set(t.album ? [t.album] : []), count: 1 })
+      }
+    }
+    return Array.from(artistMap.entries())
+      .map(([name, { albums, count }]) => ({ name, trackCount: count, albumCount: albums.size }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  getLibraryAlbums(): SonosLibraryAlbum[] {
+    const tracks = this.readLibraryCache()
+    const albumMap = new Map<string, { artist: string; count: number }>()
+    for (const t of tracks) {
+      if (!t.album) continue
+      const key = `${t.artist}\0${t.album}`
+      const entry = albumMap.get(key)
+      if (entry) { entry.count++ }
+      else { albumMap.set(key, { artist: t.artist, count: 1 }) }
+    }
+    return Array.from(albumMap.entries())
+      .map(([key, { artist, count }]) => ({ name: key.split('\0')[1], artist, trackCount: count }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  getArtistTracks(artist: string): SonosLibraryTrack[] {
+    return this.readLibraryCache()
+      .filter(t => t.artist === artist)
+      .map(t => ({ ...t, albumArtUri: '' }))
+  }
+
+  getAlbumTracks(artist: string, album: string): SonosLibraryTrack[] {
+    return this.readLibraryCache()
+      .filter(t => t.artist === artist && t.album === album)
+      .map(t => ({ ...t, albumArtUri: '' }))
+  }
+
+  searchLibrary(query: string): SonosLibrarySearchResult {
+    const tracks = this.readLibraryCache()
+    const q = query.toLowerCase()
+    const matchingTracks = tracks
+      .filter(t => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q) || t.album.toLowerCase().includes(q))
+      .slice(0, 50)
+      .map(t => ({ ...t, albumArtUri: '' }))
+    return { artists: [], albums: [], tracks: matchingTracks }
   }
 
   async getRadioStations(): Promise<SonosRadioStation[]> {
-    try {
-      const zones = await this.getZones()
-      if (zones.length === 0) return []
-      const speaker = zones[0].coordinator.roomName
-      const { data } = await this.api.get(`/${encodeURIComponent(speaker)}/radios`)
-      if (Array.isArray(data)) {
-        return data.map((item: unknown) => {
-          const obj = item as Record<string, unknown>
-          return {
-            title: typeof obj.title === 'string' ? obj.title : '',
-            uri: typeof obj.uri === 'string' ? obj.uri : '',
-            albumArtUri: typeof obj.albumArtUri === 'string' ? obj.albumArtUri : undefined,
-          }
-        })
-      }
-      return []
-    } catch (err) {
-      this.handleError(err, 'getRadioStations')
-    }
+    // Derive radio stations from Sonos favourites — the /radios endpoint
+    // doesn't exist in all node-sonos-http-api versions
+    const favourites = await this.getFavourites()
+    return favourites
+      .filter(f => f.contentClass === 'object.item.audioItem.audioBroadcast')
+      .map(f => ({
+        title: f.title,
+        uri: f.uri ?? '',
+        albumArtUri: f.albumArtURI,
+      }))
   }
 
   async isAvailable(): Promise<boolean> {

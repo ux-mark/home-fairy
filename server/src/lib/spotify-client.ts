@@ -268,6 +268,10 @@ class SpotifyClient {
     }
   }
 
+  isConfigured(): boolean {
+    return !!(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET)
+  }
+
   isConnected(): boolean {
     const row = db.prepare('SELECT refresh_token FROM spotify_tokens WHERE id = 1').get() as
       | Pick<SpotifyTokenRow, 'refresh_token'>
@@ -275,9 +279,12 @@ class SpotifyClient {
     return !!row?.refresh_token
   }
 
-  async getStatus(): Promise<{ connected: boolean; display_name?: string }> {
+  async getStatus(): Promise<{ connected: boolean; configured: boolean; display_name?: string }> {
+    if (!this.isConfigured()) {
+      return { connected: false, configured: false }
+    }
     if (!this.isConnected()) {
-      return { connected: false }
+      return { connected: false, configured: true }
     }
     try {
       const token = await this.getAccessToken()
@@ -287,10 +294,11 @@ class SpotifyClient {
       )
       return {
         connected: true,
+        configured: true,
         display_name: response.data.display_name ?? response.data.id,
       }
     } catch {
-      return { connected: true }
+      return { connected: true, configured: true }
     }
   }
 

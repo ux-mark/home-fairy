@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AlertTriangle, CheckCircle2, Search, X, Music, Radio, Heart, HardDrive } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Search, X, Music, Radio, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { NasBrowseView } from './NasBrowseView'
@@ -10,7 +10,7 @@ import { UnifiedSearchResults } from './UnifiedSearchResults'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type SourceFilter = 'all' | 'nas' | 'spotify' | 'radio' | 'favourites'
+type SourceFilter = 'all' | 'nas' | 'spotify' | 'radio'
 
 interface SourceConfig {
   id: SourceFilter
@@ -25,7 +25,6 @@ const SOURCES: SourceConfig[] = [
   { id: 'nas', label: 'NAS', Icon: HardDrive },
   { id: 'spotify', label: 'Spotify', Icon: Music },
   { id: 'radio', label: 'Radio', Icon: Radio },
-  { id: 'favourites', label: 'Favourites', Icon: Heart },
 ]
 
 // ── Source status subtitle helpers ────────────────────────────────────────────
@@ -51,6 +50,7 @@ function SpotifyStatusSubtitle() {
       Connected
     </span>
   )
+  if (data && !data.configured) return <p className="text-xs text-caption">Not configured</p>
   return <p className="text-xs text-caption">Not connected</p>
 }
 
@@ -87,7 +87,8 @@ function NasStatusSubtitle() {
     </span>
   )
   const count = data?.length ?? 0
-  return <p className="text-xs text-caption">{count} {count === 1 ? 'genre' : 'genres'}</p>
+  if (count === 0) return <p className="text-xs text-caption">Not indexed</p>
+  return <p className="text-xs text-caption">{count} genres</p>
 }
 
 // ── Source preview card (used in the 'all' view) ──────────────────────────────
@@ -119,24 +120,8 @@ function SourcePreviewCard({
         {id === 'spotify' && <SpotifyStatusSubtitle />}
         {id === 'radio' && <RadioStatusSubtitle />}
         {id === 'nas' && <NasStatusSubtitle />}
-        {id === 'favourites' && <p className="text-xs text-caption">Available</p>}
       </div>
     </button>
-  )
-}
-
-// ── Placeholder view for a specific source ────────────────────────────────────
-
-function SourcePlaceholder({ source }: { source: SourceConfig }) {
-  const { label, Icon } = source
-  return (
-    <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-      <Icon className="h-10 w-10 text-caption/40" aria-hidden="true" />
-      <div>
-        <h2 className="text-lg font-semibold text-heading">{label}</h2>
-        <p className="mt-1 max-w-xs text-sm text-caption">{label} browsing coming soon.</p>
-      </div>
-    </div>
   )
 }
 
@@ -253,9 +238,6 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
         )}
         {activeSource === 'radio' && (
           <RadioBrowseView searchQuery={searchQuery} targetSpeaker={targetSpeaker} />
-        )}
-        {activeSource !== 'all' && activeSource !== 'nas' && activeSource !== 'spotify' && activeSource !== 'radio' && (
-          <SourcePlaceholder source={SOURCES.find(s => s.id === activeSource)!} />
         )}
       </div>
     </div>

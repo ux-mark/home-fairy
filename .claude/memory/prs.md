@@ -548,3 +548,28 @@
 - **Action**: Merged main into dev (fast-forward) to reconcile divergence
 - **Context**: PRs #60 and #61 had been merged directly to main (bypassing dev). PR #62 was merged to dev without #61's changes. This caused progressive disclosure work from PR #61 to be missing on dev. After merging PR #63 into main, merged main into dev — both branches now at commit 18cca7a, fully in sync.
 - **Resolved divergence**: dev now has PRs #61 (insights progressive disclosure) + #63 (kasa strip fix) that it was missing
+
+## PR #106 — Disable Sonos follow-me for rooms in manual mode
+- **Branch**: fix/follow-me-respect-manual-mode → dev
+- **Created**: 2026-04-01
+- **Status**: merged
+- **Merge date**: 2026-04-01
+- **Branch cleanup**: done
+- **Summary**: When a room's auto/manual toggle is set to manual, follow-me music no longer triggers for that room's speaker on motion. One-line change in `isRoomFollowMeEnabled()` to also check `room.auto === 1`.
+- **Files**: `server/src/lib/sonos-manager.ts`
+
+## PR #109 — Add activity feed with Fairy Queen narratives
+- **Branch**: feature/activity-feed → dev
+- **Created**: 2026-04-02
+- **Status**: merged
+- **Merge date**: 2026-04-02
+- **Branch cleanup**: done
+- **Summary**: Replaces the flat log list with a narrative activity feed as the default view. Groups related log events using parent_id linking, generates Fairy Queen-voiced messages explaining what happened and why. Filters out sensor telemetry noise. Raw Logs tab preserved.
+- **Files**: `server/src/lib/activity-narrator.ts`, `server/src/lib/logger.ts`, `server/src/lib/motion-handler.ts`, `server/src/lib/scene-executor.ts`, `server/src/routes/system.ts`, `server/src/db/index.ts`, `client/src/components/ui/ActivityCard.tsx`, `client/src/pages/LogsPage.tsx`, `client/src/lib/api.ts`
+
+## PR #144 — Fix Sonos Browse: radio, NAS, Spotify config, Favourites tab
+- **Branch**: fix/sonos-browse-errors → dev
+- **Created**: 2026-04-03
+- **Status**: open
+- **Summary**: Fix NAS/Radio 502 HTML dump (Cloudflare interception), rewrite radio to use favourites, graceful NAS fallback, Spotify configured flag, wire FavouritesTab, remove duplicate Browse source, SearchableSelect for Hushing Home
+- **Files**: `server/src/routes/sonos.ts`, `server/src/lib/sonos-client.ts`, `server/src/lib/spotify-client.ts`, `server/src/routes/spotify.ts`, `client/src/lib/api.ts`, `client/src/components/sonos/BrowseTab.tsx`, `client/src/components/sonos/SpotifyBrowseView.tsx`, `client/src/pages/SonosPage.tsx`, `client/src/components/settings/HushingHomeSection.tsx`, `server/.env.example`
