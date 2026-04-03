@@ -427,6 +427,14 @@ class SonosClient {
     }
   }
 
+  async clearQueue(speaker: string): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/clearqueue`)
+    } catch (err) {
+      this.handleError(err, `clearQueue(${speaker})`)
+    }
+  }
+
   async removeFromQueue(speaker: string, index: number): Promise<void> {
     try {
       await this.api.get(`/${encodeURIComponent(speaker)}/removetrack/${index}`)
@@ -441,6 +449,127 @@ class SonosClient {
     } catch (err) {
       this.handleError(err, `reorderQueue(${speaker}, ${from}, ${to})`)
     }
+  }
+
+  // ── UPnP SOAP queue management (bypasses node-sonos-http-api for reliability) ─
+
+  /**
+   * Add a track to the queue using UPnP SOAP directly.
+   * Bypasses node-sonos-http-api which mangles URIs containing special characters.
+   */
+  async addToQueueSOAP(speakerIp: string, uri: string): Promise<void> {
+    // Escape XML special characters in the URI
+    const xmlUri = uri
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+
+    const body = `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:AddURIToQueue xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+      <InstanceID>0</InstanceID>
+      <EnqueuedURI>${xmlUri}</EnqueuedURI>
+      <EnqueuedURIMetaData></EnqueuedURIMetaData>
+      <DesiredFirstTrackNumberEnqueued>0</DesiredFirstTrackNumberEnqueued>
+      <EnqueueAsNext>0</EnqueueAsNext>
+    </u:AddURIToQueue>
+  </s:Body>
+</s:Envelope>`
+    await axios.post(
+      `http://${speakerIp}:1400/MediaRenderer/AVTransport/Control`,
+      body,
+      {
+        headers: {
+          'Content-Type': 'text/xml; charset=utf-8',
+          'SOAPAction': '"urn:schemas-upnp-org:service:AVTransport:1#AddURIToQueue"',
+        },
+        timeout: 10_000,
+      },
+    )
+  }
+
+  /**
+   * Resolve a speaker room name to its IP and UUID via node-sonos-http-api zones.
+   */
+  async getSpeakerInfoByName(speakerName: string): Promise<{ ip: string; uuid: string } | null> {
+    try {
+      const { data } = await this.api.get('/zones')
+      for (const zone of data as Array<Record<string, unknown>>) {
+        for (const member of (zone.members ?? []) as Array<Record<string, unknown>>) {
+          if (member.roomName === speakerName) {
+            const uuid = member.uuid as string | undefined
+            // Try to get IP from album art URI
+            const state = member.state as Record<string, unknown> | undefined
+            const ct = state?.currentTrack as Record<string, unknown> | undefined
+            const absUri = ct?.absoluteAlbumArtUri
+            if (typeof absUri === 'string' && uuid) {
+              const match = absUri.match(/https?:\/\/([\d.]+)/)
+              if (match) return { ip: match[1], uuid }
+            }
+            // Fallback: use any known speaker IP
+            if (uuid) {
+              const ip = await this.getSpeakerIp()
+              if (ip) return { ip, uuid }
+            }
+          }
+        }
+      }
+    } catch { /* fall through */ }
+    return null
+  }
+
+  // Backwards-compat wrapper
+  async getSpeakerIpByName(speakerName: string): Promise<string | null> {
+    const info = await this.getSpeakerInfoByName(speakerName)
+    return info?.ip ?? null
+  }
+
+  /**
+   * Switch the speaker to play from its queue starting at track 1.
+   * Uses SOAP to set transport to x-rincon-queue:{UUID}#0, seek to track 1, then play.
+   */
+  async playQueueFromStart(speakerIp: string, speakerUuid: string): Promise<void> {
+    const avTransport = `http://${speakerIp}:1400/MediaRenderer/AVTransport/Control`
+    const headers = {
+      'Content-Type': 'text/xml; charset=utf-8',
+    }
+
+    // 1. Set transport to the queue
+    await axios.post(avTransport, `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+      <InstanceID>0</InstanceID>
+      <CurrentURI>x-rincon-queue:${speakerUuid}#0</CurrentURI>
+      <CurrentURIMetaData></CurrentURIMetaData>
+    </u:SetAVTransportURI>
+  </s:Body>
+</s:Envelope>`, { headers: { ...headers, SOAPAction: '"urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI"' }, timeout: 10_000 })
+
+    // 2. Seek to track 1
+    await axios.post(avTransport, `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:Seek xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+      <InstanceID>0</InstanceID>
+      <Unit>TRACK_NR</Unit>
+      <Target>1</Target>
+    </u:Seek>
+  </s:Body>
+</s:Envelope>`, { headers: { ...headers, SOAPAction: '"urn:schemas-upnp-org:service:AVTransport:1#Seek"' }, timeout: 10_000 })
+
+    // 3. Play
+    await axios.post(avTransport, `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+      <InstanceID>0</InstanceID>
+      <Speed>1</Speed>
+    </u:Play>
+  </s:Body>
+</s:Envelope>`, { headers: { ...headers, SOAPAction: '"urn:schemas-upnp-org:service:AVTransport:1#Play"' }, timeout: 10_000 })
   }
 
   // ── Sonos UPnP browse (genre browsing) ─────────────────────────────────────

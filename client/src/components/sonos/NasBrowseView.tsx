@@ -6,9 +6,12 @@ import {
   ChevronRight,
   Disc3,
   Hash,
+  Heart,
+  ListEnd,
   ListStart,
+  MoreVertical,
   Music2,
-  Plus,
+  Play,
   RefreshCw,
   User,
 } from 'lucide-react'
@@ -80,6 +83,13 @@ function AlbumArt({ uri, size = 40 }: { uri?: string; size?: number }) {
 function TrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: string | null }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.playUri(speaker!, track.uri),
+    onSuccess: () => toast({ message: `Playing "${track.title}"` }),
+    onError: () => toast({ message: 'Failed to play track', type: 'error' }),
+  })
 
   const addToQueue = useMutation({
     mutationFn: () => api.sonos.addToQueue(speaker!, track.uri),
@@ -99,11 +109,20 @@ function TrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: strin
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
 
+  const addToFavourites = useMutation({
+    mutationFn: () => api.favourites.add({
+      source: 'nas',
+      source_uri: track.uri,
+      title: track.title,
+      album_art_uri: track.albumArtUri,
+    }),
+    onSuccess: () => toast({ message: `Added "${track.title}" to favourites` }),
+    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
+  })
+
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-[var(--bg-tertiary)]">
-        <Music2 className="h-4 w-4 text-caption/60" aria-hidden="true" />
-      </div>
+      <AlbumArt uri={track.albumArtUri} />
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{track.title || 'Unknown track'}</p>
@@ -113,11 +132,12 @@ function TrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: strin
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
+        {/* Play now — universally recognisable icon, icon-only acceptable */}
         <button
           type="button"
-          disabled={!speaker || playNext.isPending}
-          onClick={() => playNext.mutate()}
-          aria-label={`Play ${track.title} next`}
+          disabled={!speaker || playNow.isPending}
+          onClick={() => playNow.mutate()}
+          aria-label={`Play ${track.title}`}
           className={cn(
             'flex h-11 w-11 items-center justify-center rounded-lg',
             'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
@@ -125,22 +145,67 @@ function TrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: strin
             'disabled:opacity-40',
           )}
         >
-          <ListStart className="h-4 w-4" aria-hidden="true" />
+          <Play className="h-4 w-4" aria-hidden="true" />
         </button>
-        <button
-          type="button"
-          disabled={!speaker || addToQueue.isPending}
-          onClick={() => addToQueue.mutate()}
-          aria-label={`Add ${track.title} to queue`}
-          className={cn(
-            'flex h-11 w-11 items-center justify-center rounded-lg',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'disabled:opacity-40',
+
+        {/* Three-dot menu */}
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            disabled={!speaker}
+            onClick={() => setMenuOpen(v => !v)}
+            onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
+            aria-label={`More options for ${track.title}`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            className={cn(
+              'flex h-11 w-11 items-center justify-center rounded-lg',
+              'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              'disabled:opacity-40',
+            )}
+          >
+            <MoreVertical className="h-4 w-4" aria-hidden="true" />
+          </button>
+
+          {menuOpen && (
+            <ul
+              role="menu"
+              className="absolute right-0 top-full z-50 mt-1 min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
+            >
+              <li role="none">
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); playNext.mutate() }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                >
+                  <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  Play next
+                </button>
+              </li>
+              <li role="none">
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); addToQueue.mutate() }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                >
+                  <ListEnd className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  Add to queue
+                </button>
+              </li>
+              <li role="none">
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); addToFavourites.mutate() }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                >
+                  <Heart className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  Add to favourites
+                </button>
+              </li>
+            </ul>
           )}
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-        </button>
+        </div>
       </div>
     </li>
   )
@@ -475,10 +540,17 @@ function AlbumDetail({
   speaker: string | null
   onBack: () => void
 }) {
+  const { toast } = useToast()
   const { data: tracks, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['sonos-library-album-tracks', album.objectId],
     queryFn: () => api.sonos.getAlbumTracks(album.objectId),
     staleTime: 5 * 60_000,
+  })
+
+  const playAlbum = useMutation({
+    mutationFn: () => api.sonos.playUri(speaker!, album.objectId),
+    onSuccess: () => toast({ message: `Playing "${album.name}"` }),
+    onError: () => toast({ message: 'Failed to play album', type: 'error' }),
   })
 
   return (
@@ -497,10 +569,24 @@ function AlbumDetail({
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
         <AlbumArt uri={album.albumArtUri} size={44} />
-        <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold text-heading">{album.name}</h2>
-          <p className="truncate text-xs text-caption">{album.artist}</p>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-lg font-semibold leading-snug text-heading">{album.name}</h2>
+          <p className="text-xs text-caption">{album.artist}</p>
         </div>
+        <button
+          type="button"
+          disabled={!speaker || playAlbum.isPending}
+          onClick={() => playAlbum.mutate()}
+          aria-label={`Play album ${album.name}`}
+          className={cn(
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
+            'text-white transition-colors hover:bg-fairy-400',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'disabled:opacity-40',
+          )}
+        >
+          <Play className="h-5 w-5" aria-hidden="true" />
+        </button>
       </div>
 
       {isLoading && <ListSkeleton />}
@@ -685,10 +771,17 @@ function GenreAlbumTracks({
   speaker: string | null
   onBack: () => void
 }) {
+  const { toast } = useToast()
   const { data: tracks, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['sonos-genre-album-tracks', album.objectId],
     queryFn: () => api.sonos.getGenreAlbumTracks(album.objectId),
     staleTime: 5 * 60_000,
+  })
+
+  const playAlbum = useMutation({
+    mutationFn: () => api.sonos.playUri(speaker!, album.objectId),
+    onSuccess: () => toast({ message: `Playing "${album.name}"` }),
+    onError: () => toast({ message: 'Failed to play album', type: 'error' }),
   })
 
   return (
@@ -707,10 +800,24 @@ function GenreAlbumTracks({
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
         <AlbumArt uri={album.albumArtUri} size={44} />
-        <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold text-heading">{album.name}</h2>
-          <p className="truncate text-xs text-caption">{album.artist}</p>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-lg font-semibold leading-snug text-heading">{album.name}</h2>
+          <p className="text-xs text-caption">{album.artist}</p>
         </div>
+        <button
+          type="button"
+          disabled={!speaker || playAlbum.isPending}
+          onClick={() => playAlbum.mutate()}
+          aria-label={`Play album ${album.name}`}
+          className={cn(
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
+            'text-white transition-colors hover:bg-fairy-400',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'disabled:opacity-40',
+          )}
+        >
+          <Play className="h-5 w-5" aria-hidden="true" />
+        </button>
       </div>
 
       {isLoading && <ListSkeleton count={5} />}

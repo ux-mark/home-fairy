@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
+  Heart,
   ImageOff,
   ListStart,
+  MoreVertical,
   Play,
   Radio,
   RefreshCw,
@@ -127,7 +129,9 @@ function StationRow({
   station: SonosRadioStation
   speaker: string | null
 }) {
+  const queryClient = useQueryClient()
   const { toast } = useToast()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const play = useMutation({
     mutationFn: () => api.sonos.playFavourite(speaker!, station.title),
@@ -136,9 +140,23 @@ function StationRow({
   })
 
   const playNext = useMutation({
-    mutationFn: () => api.sonos.playFavourite(speaker!, station.title),
-    onSuccess: () => toast({ message: `${station.title} queued as next` }),
+    mutationFn: () => api.sonos.playNext(speaker!, station.uri),
+    onSuccess: () => {
+      toast({ message: `${station.title} will play next` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
     onError: () => toast({ message: `Failed to queue ${station.title}`, type: 'error' }),
+  })
+
+  const addToFavourites = useMutation({
+    mutationFn: () => api.favourites.add({
+      source: 'radio',
+      source_uri: station.uri,
+      title: station.title,
+      album_art_uri: station.albumArtUri,
+    }),
+    onSuccess: () => toast({ message: `Added "${station.title}" to favourites` }),
+    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
   })
 
   return (
@@ -150,20 +168,7 @@ function StationRow({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        <button
-          type="button"
-          disabled={!speaker || playNext.isPending}
-          onClick={() => playNext.mutate()}
-          aria-label={`Play ${station.title} next`}
-          className={cn(
-            'flex h-11 w-11 items-center justify-center rounded-lg',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'disabled:opacity-40',
-          )}
-        >
-          <ListStart className="h-4 w-4" aria-hidden="true" />
-        </button>
+        {/* Play now — universally recognisable icon, icon-only acceptable */}
         <button
           type="button"
           disabled={!speaker || play.isPending}
@@ -178,6 +183,55 @@ function StationRow({
         >
           <Play className="h-4 w-4" aria-hidden="true" />
         </button>
+
+        {/* Three-dot menu */}
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            disabled={!speaker}
+            onClick={() => setMenuOpen(v => !v)}
+            onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
+            aria-label={`More options for ${station.title}`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            className={cn(
+              'flex h-11 w-11 items-center justify-center rounded-lg',
+              'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              'disabled:opacity-40',
+            )}
+          >
+            <MoreVertical className="h-4 w-4" aria-hidden="true" />
+          </button>
+
+          {menuOpen && (
+            <ul
+              role="menu"
+              className="absolute right-0 top-full z-50 mt-1 min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
+            >
+              <li role="none">
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); playNext.mutate() }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                >
+                  <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  Play next
+                </button>
+              </li>
+              <li role="none">
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); addToFavourites.mutate() }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                >
+                  <Heart className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  Add to favourites
+                </button>
+              </li>
+            </ul>
+          )}
+        </div>
       </div>
     </li>
   )

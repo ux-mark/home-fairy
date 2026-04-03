@@ -3,10 +3,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ArrowLeft,
+  Heart,
   ImageOff,
+  ListEnd,
   ListStart,
+  MoreVertical,
   Music2,
-  Plus,
+  Play,
   RefreshCw,
 } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -283,6 +286,13 @@ function PlaylistGrid({ onSelect }: { onSelect: (playlist: SpotifyPlaylist) => v
 function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: string | null }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const [menuOpen, setMenuOpen] = useState(false)
+
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'now'),
+    onSuccess: () => toast({ message: `Playing "${track.name}"` }),
+    onError: () => toast({ message: 'Failed to play track', type: 'error' }),
+  })
 
   const addToQueue = useMutation({
     mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'queue'),
@@ -302,6 +312,17 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
 
+  const addToFavourites = useMutation({
+    mutationFn: () => api.favourites.add({
+      source: 'spotify',
+      source_uri: track.uri,
+      title: track.name,
+      album_art_uri: track.album.images?.[0]?.url,
+    }),
+    onSuccess: () => toast({ message: `Added "${track.name}" to favourites` }),
+    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
+  })
+
   const artistNames = track.artists.map(a => a.name).join(', ')
 
   return (
@@ -317,11 +338,13 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
 
       <div className="flex shrink-0 items-center gap-1">
         <span className="mr-1 text-xs text-caption/70">{formatDuration(track.duration_ms)}</span>
+
+        {/* Play now — universally recognisable icon, icon-only acceptable */}
         <button
           type="button"
-          disabled={!speaker || playNext.isPending}
-          onClick={() => playNext.mutate()}
-          aria-label={`Play ${track.name} next`}
+          disabled={!speaker || playNow.isPending}
+          onClick={() => playNow.mutate()}
+          aria-label={`Play ${track.name}`}
           className={cn(
             'flex h-11 w-11 items-center justify-center rounded-lg',
             'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
@@ -329,22 +352,67 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
             'disabled:opacity-40',
           )}
         >
-          <ListStart className="h-4 w-4" aria-hidden="true" />
+          <Play className="h-4 w-4" aria-hidden="true" />
         </button>
-        <button
-          type="button"
-          disabled={!speaker || addToQueue.isPending}
-          onClick={() => addToQueue.mutate()}
-          aria-label={`Add ${track.name} to queue`}
-          className={cn(
-            'flex h-11 w-11 items-center justify-center rounded-lg',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'disabled:opacity-40',
+
+        {/* Three-dot menu */}
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            disabled={!speaker}
+            onClick={() => setMenuOpen(v => !v)}
+            onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
+            aria-label={`More options for ${track.name}`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            className={cn(
+              'flex h-11 w-11 items-center justify-center rounded-lg',
+              'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              'disabled:opacity-40',
+            )}
+          >
+            <MoreVertical className="h-4 w-4" aria-hidden="true" />
+          </button>
+
+          {menuOpen && (
+            <ul
+              role="menu"
+              className="absolute right-0 top-full z-50 mt-1 min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
+            >
+              <li role="none">
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); playNext.mutate() }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                >
+                  <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  Play next
+                </button>
+              </li>
+              <li role="none">
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); addToQueue.mutate() }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                >
+                  <ListEnd className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  Add to queue
+                </button>
+              </li>
+              <li role="none">
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); addToFavourites.mutate() }}
+                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                >
+                  <Heart className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  Add to favourites
+                </button>
+              </li>
+            </ul>
           )}
-        >
-          <Plus className="h-4 w-4" aria-hidden="true" />
-        </button>
+        </div>
       </div>
     </li>
   )
@@ -361,10 +429,17 @@ function PlaylistDetail({
   speaker: string | null
   onBack: () => void
 }) {
+  const { toast } = useToast()
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['spotify-playlist-tracks', playlist.id],
     queryFn: () => api.spotify.getPlaylistTracks(playlist.id),
     staleTime: 5 * 60_000,
+  })
+
+  const playPlaylist = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'now'),
+    onSuccess: () => toast({ message: `Playing "${playlist.name}"` }),
+    onError: () => toast({ message: 'Failed to play playlist', type: 'error' }),
   })
 
   const tracks = (data?.items ?? [])
@@ -387,12 +462,26 @@ function PlaylistDetail({
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
-        <div className="min-w-0">
-          <h2 className="truncate text-lg font-semibold text-heading">{playlist.name}</h2>
+        <div className="min-w-0 flex-1">
+          <h2 className="text-lg font-semibold leading-snug text-heading">{playlist.name}</h2>
           <p className="text-xs text-caption">
             {playlist.tracks.total} {playlist.tracks.total === 1 ? 'track' : 'tracks'}
           </p>
         </div>
+        <button
+          type="button"
+          disabled={!speaker || playPlaylist.isPending}
+          onClick={() => playPlaylist.mutate()}
+          aria-label={`Play playlist ${playlist.name}`}
+          className={cn(
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
+            'text-white transition-colors hover:bg-fairy-400',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'disabled:opacity-40',
+          )}
+        >
+          <Play className="h-5 w-5" aria-hidden="true" />
+        </button>
       </div>
 
       {/* Content */}
@@ -423,6 +512,145 @@ function PlaylistDetail({
   )
 }
 
+// ── Search result playlist row ────────────────────────────────────────────────
+
+function SearchResultPlaylists({
+  playlists,
+  speaker,
+}: {
+  playlists: SpotifyPlaylist[]
+  speaker: string | null
+}) {
+  return (
+    <section aria-label="Playlists">
+      <h3 className="px-4 pb-2 pt-3 text-xs font-semibold uppercase tracking-wide text-caption">
+        Playlists
+      </h3>
+      <ul>
+        {playlists.map(pl => (
+          <SearchPlaylistRow key={pl.id} playlist={pl} speaker={speaker} />
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function SearchPlaylistRow({
+  playlist,
+  speaker,
+}: {
+  playlist: SpotifyPlaylist
+  speaker: string | null
+}) {
+  const { toast } = useToast()
+
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'now'),
+    onSuccess: () => toast({ message: `Playing "${playlist.name}"` }),
+    onError: () => toast({ message: 'Failed to play playlist', type: 'error' }),
+  })
+
+  return (
+    <li className="flex items-center gap-3 px-4 py-2.5">
+      <CoverArt images={playlist.images} size={40} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-heading">{playlist.name}</p>
+        <p className="truncate text-xs text-caption">
+          {playlist.tracks.total} {playlist.tracks.total === 1 ? 'track' : 'tracks'}
+        </p>
+      </div>
+      <button
+        type="button"
+        disabled={!speaker || playNow.isPending}
+        onClick={() => playNow.mutate()}
+        aria-label={`Play playlist ${playlist.name}`}
+        className={cn(
+          'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg',
+          'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'disabled:opacity-40',
+        )}
+      >
+        <Play className="h-4 w-4" aria-hidden="true" />
+      </button>
+    </li>
+  )
+}
+
+// ── Search result album row ───────────────────────────────────────────────────
+
+type SpotifySearchAlbum = {
+  id: string
+  name: string
+  images: Array<{ url: string; height: number | null; width: number | null }>
+  artists: Array<{ id: string; name: string }>
+  uri: string
+  external_urls: { spotify: string }
+}
+
+function SearchResultAlbums({
+  albums,
+  speaker,
+}: {
+  albums: SpotifySearchAlbum[]
+  speaker: string | null
+}) {
+  return (
+    <section aria-label="Albums">
+      <h3 className="px-4 pb-2 pt-3 text-xs font-semibold uppercase tracking-wide text-caption">
+        Albums
+      </h3>
+      <ul>
+        {albums.map((album, i) => (
+          <SearchAlbumRow key={album.id + ':album:' + i} album={album} speaker={speaker} />
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+function SearchAlbumRow({
+  album,
+  speaker,
+}: {
+  album: SpotifySearchAlbum
+  speaker: string | null
+}) {
+  const { toast } = useToast()
+
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'now'),
+    onSuccess: () => toast({ message: `Playing "${album.name}"` }),
+    onError: () => toast({ message: 'Failed to play album', type: 'error' }),
+  })
+
+  return (
+    <li className="flex items-center gap-3 px-4 py-2.5">
+      <CoverArt images={album.images} size={40} />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-heading">{album.name}</p>
+        <p className="truncate text-xs text-caption">
+          {album.artists.map(a => a.name).join(', ')}
+        </p>
+      </div>
+      <button
+        type="button"
+        disabled={!speaker || playNow.isPending}
+        onClick={() => playNow.mutate()}
+        aria-label={`Play album ${album.name}`}
+        className={cn(
+          'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg',
+          'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'disabled:opacity-40',
+        )}
+      >
+        <Play className="h-4 w-4" aria-hidden="true" />
+      </button>
+    </li>
+  )
+}
+
 // ── Spotify search results ────────────────────────────────────────────────────
 
 function SpotifySearchResults({ query, speaker }: { query: string; speaker: string | null }) {
@@ -444,9 +672,9 @@ function SpotifySearchResults({ query, speaker }: { query: string; speaker: stri
     )
   }
 
-  const trackItems = data?.tracks?.items ?? []
-  const playlistItems = data?.playlists?.items ?? []
-  const albumItems = data?.albums?.items ?? []
+  const trackItems = (data?.tracks?.items ?? []).filter((t): t is SpotifyTrack => t !== null)
+  const playlistItems = (data?.playlists?.items ?? []).filter((p): p is SpotifyPlaylist => p !== null)
+  const albumItems = (data?.albums?.items ?? []).filter((a): a is SpotifySearchAlbum => a !== null)
   const totalResults = trackItems.length + playlistItems.length + albumItems.length
 
   if (totalResults === 0) {
@@ -476,44 +704,10 @@ function SpotifySearchResults({ query, speaker }: { query: string; speaker: stri
         </section>
       )}
       {playlistItems.length > 0 && (
-        <section aria-label="Playlists">
-          <h3 className="px-4 pb-2 pt-3 text-xs font-semibold uppercase tracking-wide text-caption">
-            Playlists
-          </h3>
-          <ul>
-            {playlistItems.map(pl => (
-              <li key={pl.id} className="flex items-center gap-3 px-4 py-2.5">
-                <CoverArt images={pl.images} size={40} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-heading">{pl.name}</p>
-                  <p className="truncate text-xs text-caption">
-                    {pl.tracks.total} {pl.tracks.total === 1 ? 'track' : 'tracks'}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <SearchResultPlaylists playlists={playlistItems} speaker={speaker} />
       )}
       {albumItems.length > 0 && (
-        <section aria-label="Albums">
-          <h3 className="px-4 pb-2 pt-3 text-xs font-semibold uppercase tracking-wide text-caption">
-            Albums
-          </h3>
-          <ul>
-            {albumItems.map((album, i) => (
-              <li key={album.id + ':album:' + i} className="flex items-center gap-3 px-4 py-2.5">
-                <CoverArt images={album.images} size={40} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-heading">{album.name}</p>
-                  <p className="truncate text-xs text-caption">
-                    {album.artists.map(a => a.name).join(', ')}
-                  </p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <SearchResultAlbums albums={albumItems} speaker={speaker} />
       )}
     </div>
   )
