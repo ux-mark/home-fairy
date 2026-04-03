@@ -161,7 +161,7 @@ function TrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: strin
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             className={cn(
-              'flex h-11 w-9 items-center justify-center rounded-lg',
+              'flex h-11 w-11 items-center justify-center rounded-lg',
               'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               'disabled:opacity-40',
@@ -572,8 +572,8 @@ function AlbumDetail({
         </button>
         <AlbumArt uri={album.albumArtUri} size={44} />
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-lg font-semibold text-heading">{album.name}</h2>
-          <p className="truncate text-xs text-caption">{album.artist}</p>
+          <h2 className="text-lg font-semibold leading-snug text-heading">{album.name}</h2>
+          <p className="text-xs text-caption">{album.artist}</p>
         </div>
         <button
           type="button"
@@ -803,8 +803,8 @@ function GenreAlbumTracks({
         </button>
         <AlbumArt uri={album.albumArtUri} size={44} />
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-lg font-semibold text-heading">{album.name}</h2>
-          <p className="truncate text-xs text-caption">{album.artist}</p>
+          <h2 className="text-lg font-semibold leading-snug text-heading">{album.name}</h2>
+          <p className="text-xs text-caption">{album.artist}</p>
         </div>
         <button
           type="button"

@@ -140,7 +140,7 @@ function StationRow({
   })
 
   const playNext = useMutation({
-    mutationFn: () => api.sonos.playFavourite(speaker!, station.title),
+    mutationFn: () => api.sonos.playNext(speaker!, station.uri),
     onSuccess: () => {
       toast({ message: `${station.title} will play next` })
       queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
@@ -195,7 +195,7 @@ function StationRow({
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             className={cn(
-              'flex h-11 w-9 items-center justify-center rounded-lg',
+              'flex h-11 w-11 items-center justify-center rounded-lg',
               'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               'disabled:opacity-40',

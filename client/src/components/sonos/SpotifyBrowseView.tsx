@@ -366,7 +366,7 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             className={cn(
-              'flex h-11 w-9 items-center justify-center rounded-lg',
+              'flex h-11 w-11 items-center justify-center rounded-lg',
               'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               'disabled:opacity-40',
@@ -463,7 +463,7 @@ function PlaylistDetail({
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-lg font-semibold text-heading">{playlist.name}</h2>
+          <h2 className="text-lg font-semibold leading-snug text-heading">{playlist.name}</h2>
           <p className="text-xs text-caption">
             {playlist.tracks.total} {playlist.tracks.total === 1 ? 'track' : 'tracks'}
           </p>
@@ -474,8 +474,8 @@ function PlaylistDetail({
           onClick={() => playPlaylist.mutate()}
           aria-label={`Play playlist ${playlist.name}`}
           className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1DB954]',
-            'text-white transition-opacity hover:opacity-90',
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
+            'text-white transition-colors hover:bg-fairy-400',
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
             'disabled:opacity-40',
           )}
