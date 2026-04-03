@@ -784,6 +784,47 @@ export interface FollowMeStatus {
   anchorRoom: string | null
 }
 
+// ── Spotify types ────────────────────────────────────────────────────────────
+
+export interface SpotifyImage {
+  url: string
+  height: number | null
+  width: number | null
+}
+
+export interface SpotifyPlaylist {
+  id: string
+  name: string
+  description: string | null
+  public: boolean | null
+  collaborative: boolean
+  images: SpotifyImage[]
+  tracks: { total: number; href: string }
+  uri: string
+  external_urls: { spotify: string }
+  owner: { display_name: string; id: string }
+}
+
+export interface SpotifyTrack {
+  id: string
+  name: string
+  duration_ms: number
+  explicit: boolean
+  uri: string
+  external_urls: { spotify: string }
+  artists: Array<{ id: string; name: string }>
+  album: {
+    id: string
+    name: string
+    images: SpotifyImage[]
+    uri: string
+  }
+}
+
+export interface SpotifyStatus {
+  connected: boolean
+}
+
 // ── User action types ────────────────────────────────────────────────────────
 
 export interface UserAction {

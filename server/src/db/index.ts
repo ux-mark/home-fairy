@@ -304,6 +304,16 @@ export function initDb(): void {
 
     CREATE INDEX IF NOT EXISTS idx_user_actions_user
       ON user_actions (user_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS spotify_tokens (
+      id INTEGER PRIMARY KEY,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      scope TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
   `)
 
   // Migration: add user tracking columns to scenes
