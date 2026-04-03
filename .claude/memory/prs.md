@@ -570,7 +570,9 @@
 ## PR #145 — Fix Sonos Browse: play buttons, track menus, album/playlist actions
 - **Branch**: fix/sonos-browse-ux → dev
 - **Created**: 2026-04-03
-- **Status**: open
+- **Status**: merged
+- **Merge date**: 2026-04-03
+- **Branch cleanup**: done
 - **Summary**: Replace unclear icon-only buttons on track rows with Play + three-dot context menu (Play next, Add to queue, Add to favourites). Add Play album/playlist buttons. Make Spotify search albums/playlists actionable. New PUT /sonos/play-uri endpoint. Fix radio playNext API, 44px touch targets, remove truncate, theme-consistent colours.
 - **Files**: 5 files changed — NasBrowseView.tsx, SpotifyBrowseView.tsx, RadioBrowseView.tsx, api.ts, sonos.ts
 

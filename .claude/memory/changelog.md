@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-04-03 — Sonos Browse UX overhaul, album play, art caching (PR #145)
+- **Track row actions**: Replaced icon-only buttons (ListStart, Plus) with Play button + three-dot context menu (Play next, Add to queue, Add to favourites) across NAS, Spotify, Radio browse views and unified search results
+- **Album/playlist play**: Play album button on NAS album detail headers. Play playlist button on Spotify playlist detail. Uses UPnP SOAP AddURIToQueue (bypasses node-sonos-http-api URI mangling), sets transport to queue, seeks to track 1
+- **Spotify search**: Albums and playlists in search results now actionable with Play buttons (were completely inert)
+- **Album art**: NAS track rows now show album cover art instead of generic icon. Art-proxy routes /getaa requests directly to Sonos speaker IP instead of through node-sonos-http-api (fixes 502 errors)
+- **Art caching (2-layer)**: Server-side disk cache (SHA-256 hashed, 1-year immutable headers) + PWA CacheFirst service worker (2000 entries, 1-year TTL). Album art loads instantly after first fetch.
+- **Backend**: New PUT /sonos/play-uri endpoint, clearQueue, addToQueueSOAP, playQueueFromStart, getSpeakerInfoByName methods. Fallback on addToQueue/playNext failure (stopped speaker). Null-filter Spotify search results.
+- **UX fixes**: 44px touch targets on three-dot menus, removed truncate from headers, fairy-500 instead of hardcoded Spotify green, radio playNext uses correct API
+- **Files**: 8 files changed — sonos-client.ts, sonos.ts, NasBrowseView.tsx, SpotifyBrowseView.tsx, RadioBrowseView.tsx, UnifiedSearchResults.tsx, api.ts, vite.config.ts
+
 ## 2026-03-28 — Fix all 41 product audit issues (PR #76)
 - **Schema DDL**: `active` column added to CREATE TABLE for hub_devices, kasa_devices, light_rooms + ALTER TABLE migration guards
 - **Backend reliability**: sync mutex (409), webhookHits leak fix, MotionHandler shutdown(), Sonos shuttingDown flag, deferred pruneOldLogs, LIFX 3-attempt withRetry, PM2 restart_delay

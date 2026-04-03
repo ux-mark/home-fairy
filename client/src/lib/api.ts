@@ -915,6 +915,50 @@ export interface SpotifySearchResult {
   }
 }
 
+export interface SpotifyAlbum {
+  id: string
+  name: string
+  images: SpotifyImage[]
+  artists: Array<{ id: string; name: string }>
+  uri: string
+  external_urls: { spotify: string }
+  release_date: string
+  total_tracks: number
+  album_type: string
+}
+
+export interface SpotifyAlbumTrack {
+  id: string
+  name: string
+  duration_ms: number
+  explicit: boolean
+  uri: string
+  track_number: number
+  artists: Array<{ id: string; name: string }>
+}
+
+export interface SpotifyShow {
+  id: string
+  name: string
+  description: string
+  images: SpotifyImage[]
+  publisher: string
+  uri: string
+  external_urls: { spotify: string }
+  total_episodes: number
+}
+
+export interface SpotifyEpisode {
+  id: string
+  name: string
+  description: string
+  duration_ms: number
+  images: SpotifyImage[]
+  uri: string
+  release_date: string
+  explicit: boolean
+}
+
 // ── User action types ────────────────────────────────────────────────────────
 
 export interface UserAction {
@@ -1650,6 +1694,51 @@ export const api = {
       if (limit !== undefined) params.set('limit', String(limit))
       if (offset !== undefined) params.set('offset', String(offset))
       return fetchApi<SpotifySearchResult>('/spotify/search?' + params.toString())
+    },
+    getSavedAlbums: (limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: Array<{ added_at: string; album: SpotifyAlbum }>; total: number; next: string | null }>(
+        '/spotify/albums' + (qs ? '?' + qs : ''),
+      )
+    },
+    getAlbumTracks: (id: string, limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: SpotifyAlbumTrack[]; total: number; next: string | null }>(
+        '/spotify/albums/' + encodeURIComponent(id) + '/tracks' + (qs ? '?' + qs : ''),
+      )
+    },
+    getSavedShows: (limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: Array<{ added_at: string; show: SpotifyShow }>; total: number; next: string | null }>(
+        '/spotify/shows' + (qs ? '?' + qs : ''),
+      )
+    },
+    getShowEpisodes: (id: string, limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: SpotifyEpisode[]; total: number; next: string | null }>(
+        '/spotify/shows/' + encodeURIComponent(id) + '/episodes' + (qs ? '?' + qs : ''),
+      )
+    },
+    getSavedTracks: (limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: Array<{ added_at: string; track: SpotifyTrack }>; total: number; next: string | null }>(
+        '/spotify/tracks' + (qs ? '?' + qs : ''),
+      )
     },
   },
 

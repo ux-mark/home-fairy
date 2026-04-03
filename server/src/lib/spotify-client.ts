@@ -103,6 +103,50 @@ export interface SpotifySearchResult {
   }
 }
 
+export interface SpotifyAlbum {
+  id: string
+  name: string
+  images: SpotifyImage[]
+  artists: Array<{ id: string; name: string }>
+  uri: string
+  external_urls: { spotify: string }
+  release_date: string
+  total_tracks: number
+  album_type: string
+}
+
+export interface SpotifyAlbumTrack {
+  id: string
+  name: string
+  duration_ms: number
+  explicit: boolean
+  uri: string
+  track_number: number
+  artists: Array<{ id: string; name: string }>
+}
+
+export interface SpotifyShow {
+  id: string
+  name: string
+  description: string
+  images: SpotifyImage[]
+  publisher: string
+  uri: string
+  external_urls: { spotify: string }
+  total_episodes: number
+}
+
+export interface SpotifyEpisode {
+  id: string
+  name: string
+  description: string
+  duration_ms: number
+  images: SpotifyImage[]
+  uri: string
+  release_date: string
+  explicit: boolean
+}
+
 class SpotifyClient {
   private api: AxiosInstance
 
@@ -265,6 +309,91 @@ class SpotifyClient {
     } catch (err) {
       const status = err instanceof AxiosError ? err.response?.status : undefined
       throw new SpotifyApiError('Failed to search Spotify', status)
+    }
+  }
+
+  async getSavedAlbums(limit = 50, offset = 0): Promise<{ items: Array<{ added_at: string; album: SpotifyAlbum }>; total: number; next: string | null }> {
+    const token = await this.getAccessToken()
+    try {
+      const response = await this.api.get<{ items: Array<{ added_at: string; album: SpotifyAlbum }>; total: number; next: string | null }>(
+        '/me/albums',
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { limit, offset },
+        },
+      )
+      return response.data
+    } catch (err) {
+      const status = err instanceof AxiosError ? err.response?.status : undefined
+      throw new SpotifyApiError('Failed to fetch saved albums', status)
+    }
+  }
+
+  async getAlbumTracks(albumId: string, limit = 50, offset = 0): Promise<{ items: SpotifyAlbumTrack[]; total: number; next: string | null }> {
+    const token = await this.getAccessToken()
+    try {
+      const response = await this.api.get<{ items: SpotifyAlbumTrack[]; total: number; next: string | null }>(
+        `/albums/${albumId}/tracks`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { limit, offset },
+        },
+      )
+      return response.data
+    } catch (err) {
+      const status = err instanceof AxiosError ? err.response?.status : undefined
+      throw new SpotifyApiError(`Failed to fetch tracks for album ${albumId}`, status)
+    }
+  }
+
+  async getSavedShows(limit = 50, offset = 0): Promise<{ items: Array<{ added_at: string; show: SpotifyShow }>; total: number; next: string | null }> {
+    const token = await this.getAccessToken()
+    try {
+      const response = await this.api.get<{ items: Array<{ added_at: string; show: SpotifyShow }>; total: number; next: string | null }>(
+        '/me/shows',
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { limit, offset },
+        },
+      )
+      return response.data
+    } catch (err) {
+      const status = err instanceof AxiosError ? err.response?.status : undefined
+      throw new SpotifyApiError('Failed to fetch saved shows', status)
+    }
+  }
+
+  async getShowEpisodes(showId: string, limit = 50, offset = 0): Promise<{ items: SpotifyEpisode[]; total: number; next: string | null }> {
+    const token = await this.getAccessToken()
+    try {
+      const response = await this.api.get<{ items: SpotifyEpisode[]; total: number; next: string | null }>(
+        `/shows/${showId}/episodes`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { limit, offset },
+        },
+      )
+      return response.data
+    } catch (err) {
+      const status = err instanceof AxiosError ? err.response?.status : undefined
+      throw new SpotifyApiError(`Failed to fetch episodes for show ${showId}`, status)
+    }
+  }
+
+  async getSavedTracks(limit = 50, offset = 0): Promise<{ items: Array<{ added_at: string; track: SpotifyTrack }>; total: number; next: string | null }> {
+    const token = await this.getAccessToken()
+    try {
+      const response = await this.api.get<{ items: Array<{ added_at: string; track: SpotifyTrack }>; total: number; next: string | null }>(
+        '/me/tracks',
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { limit, offset },
+        },
+      )
+      return response.data
+    } catch (err) {
+      const status = err instanceof AxiosError ? err.response?.status : undefined
+      throw new SpotifyApiError('Failed to fetch saved tracks', status)
     }
   }
 
