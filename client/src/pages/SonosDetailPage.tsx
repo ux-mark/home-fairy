@@ -426,7 +426,7 @@ export default function SonosDetailPage() {
   if (!speaker) {
     return (
       <div>
-        <BackLink to="/devices" label="All devices" />
+        <BackLink to="/sonos/playing" label="Now Playing" />
         <div className="card rounded-xl border p-5" role="alert">
           <p className="text-sm text-body">Speaker not found.</p>
         </div>
@@ -442,7 +442,7 @@ export default function SonosDetailPage() {
     <div className="space-y-6">
       {/* Header */}
       <header>
-        <BackLink to="/devices" label="All devices" />
+        <BackLink to="/sonos/playing" label="Now Playing" />
         <div className="flex flex-wrap items-start justify-between gap-2">
           <h1 className="text-heading text-lg font-semibold">{speaker}</h1>
           {assignedRoom && (

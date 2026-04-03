@@ -64,7 +64,7 @@ export function MusicQuickAction() {
         <div className="grid grid-cols-3 gap-2">
           {/* Speakers — navigates to /sonos */}
           <button
-            onClick={() => { setPopoverOpen(false); setVolumePopoverOpen(false); navigate('/sonos') }}
+            onClick={() => { setPopoverOpen(false); setVolumePopoverOpen(false); navigate('/sonos/playing') }}
             className={cn(
               'flex min-h-[52px] flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-xs font-medium transition-all',
               'surface text-body hover:brightness-95 dark:hover:brightness-110 active:scale-[0.97]',

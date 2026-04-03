@@ -1,6 +1,7 @@
+import React from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Home, DoorOpen, Sparkles, LayoutGrid, Settings, BarChart3, User } from 'lucide-react'
+import { Home, DoorOpen, Sparkles, LayoutGrid, Settings, BarChart3, User, Play, Search, Heart } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useDashboardSocket } from '@/hooks/useSocket'
@@ -16,13 +17,28 @@ function HomeFairyIcon({ className }: { className?: string }) {
   )
 }
 
-const BASE_NAV_ITEMS = [
+const HOME_NAV_ITEMS = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/rooms', icon: DoorOpen, label: 'Rooms' },
   { to: '/scenes', icon: Sparkles, label: 'Scenes' },
   { to: '/devices', icon: LayoutGrid, label: 'Devices' },
   { to: '/dashboard', icon: BarChart3, label: 'Insights' },
 ] as const
+
+const SONOS_NAV_ITEMS = [
+  { to: '/', icon: Home, label: 'Home' },
+  { to: '/sonos/playing', icon: Play, label: 'Playing' },
+  { to: '/sonos/browse', icon: Search, label: 'Browse' },
+  { to: '/sonos/favourites', icon: Heart, label: 'Favourites' },
+  { to: '/sonos/insights', icon: BarChart3, label: 'Insights' },
+] as const
+
+/** Check if a nav item should appear active for the current path */
+function isNavActive(itemTo: string, pathname: string, isRouterActive: boolean): boolean {
+  // "Playing" should also be active on the bare /sonos path
+  if (itemTo === '/sonos/playing' && pathname === '/sonos') return true
+  return isRouterActive
+}
 
 export default function AppLayout() {
   const location = useLocation()
@@ -37,21 +53,32 @@ export default function AppLayout() {
     queryFn: api.system.getCurrent,
   })
 
-  // Build nav items based on role
+  // Detect Sonos context
+  const isSonosContext = location.pathname.startsWith('/sonos')
+  const activeNavItems = isSonosContext ? SONOS_NAV_ITEMS : HOME_NAV_ITEMS
+
+  // Build nav items based on role (home context only)
   const navItems: { to: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement>>; label: string }[] = [
-    ...BASE_NAV_ITEMS,
-    ...(role === 'admin'
+    ...activeNavItems,
+    ...(!isSonosContext && role === 'admin'
       ? [{ to: '/settings', icon: Settings, label: 'Settings' }]
-      : role === 'user'
+      : !isSonosContext && role === 'user'
         ? [{ to: '/account', icon: User, label: 'Account' }]
         : []),
   ]
 
   // Bottom nav: for admin, exclude settings (it's in the header icon area on mobile)
   // For user, include account in bottom nav
-  const bottomNavItems = role === 'admin'
+  const bottomNavItems = !isSonosContext && role === 'admin'
     ? navItems.filter(item => item.to !== '/settings')
     : navItems
+
+  // Derive page title
+  const pageTitle = navItems.find(
+    n =>
+      n.to === location.pathname ||
+      (n.to !== '/' && location.pathname.startsWith(n.to)),
+  )?.label ?? (isSonosContext ? 'Sonos' : 'Home Fairy')
 
   return (
     <div className="flex min-h-svh flex-col md:flex-row">
@@ -70,24 +97,29 @@ export default function AppLayout() {
           </div>
         )}
         <nav className="flex flex-1 flex-col gap-1 p-3">
-          {navItems.map(({ to, icon: Icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === '/'}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                  isActive
-                    ? 'bg-fairy-500/15 text-fairy-400'
-                    : 'text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]',
-                )
-              }
-            >
-              <Icon className="h-5 w-5" />
-              {label}
-            </NavLink>
+          {navItems.map(({ to, icon: Icon, label }, index) => (
+            <React.Fragment key={to}>
+              {isSonosContext && index === 1 && (
+                <hr className="my-1 border-[var(--border-primary)]" aria-hidden="true" />
+              )}
+              <NavLink
+                to={to}
+                end={to === '/'}
+                className={({ isActive }) => {
+                  const active = isNavActive(to, location.pathname, isActive)
+                  return cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                    active
+                      ? 'bg-fairy-500/15 text-fairy-400'
+                      : 'text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]',
+                  )
+                }}
+              >
+                <Icon className="h-5 w-5" />
+                {label}
+              </NavLink>
+            </React.Fragment>
           ))}
         </nav>
       </aside>
@@ -102,11 +134,7 @@ export default function AppLayout() {
               Home Fairy
             </h1>
             <h2 className="text-heading hidden text-lg font-semibold md:block">
-              {navItems.find(
-                n =>
-                  n.to === location.pathname ||
-                  (n.to !== '/' && location.pathname.startsWith(n.to)),
-              )?.label ?? 'Home Fairy'}
+              {pageTitle}
             </h2>
           </div>
           <div className="flex items-center gap-2">
@@ -162,26 +190,36 @@ export default function AppLayout() {
       {/* Mobile bottom nav */}
       <nav className="chrome fixed inset-x-0 bottom-0 z-40 border-t pb-[env(safe-area-inset-bottom)] md:hidden">
         <div className="flex items-stretch justify-evenly">
-          {bottomNavItems.map(({ to, icon: Icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === '/'}
-              className={({ isActive }) =>
-                cn(
-                  'flex min-h-[60px] flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors',
-                  'focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-fairy-500',
-                  isActive
-                    ? 'text-fairy-400'
-                    : 'text-[var(--text-muted)] active:text-[var(--text-secondary)]',
-                )
-              }
-            >
-              <Icon className="h-5 w-5" />
-              <span className="leading-normal">{label}</span>
-            </NavLink>
+          {bottomNavItems.map(({ to, icon: Icon, label }, index) => (
+            <React.Fragment key={to}>
+              {isSonosContext && index === 1 && (
+                <div className="my-3 w-px bg-[var(--border-primary)]" aria-hidden="true" />
+              )}
+              <NavLink
+                to={to}
+                end={to === '/'}
+                className={({ isActive }) => {
+                  const active = isNavActive(to, location.pathname, isActive)
+                  return cn(
+                    'flex min-h-[60px] flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors',
+                    'focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-fairy-500',
+                    active
+                      ? 'text-fairy-400'
+                      : 'text-[var(--text-muted)] active:text-[var(--text-secondary)]',
+                  )
+                }}
+              >
+                <Icon className="h-5 w-5" />
+                <span className="leading-normal">{label}</span>
+              </NavLink>
+            </React.Fragment>
           ))}
         </div>
+        {isSonosContext && (
+          <div className="text-center pb-1">
+            <span className="text-[10px] font-medium text-[var(--text-muted)]">Sonos</span>
+          </div>
+        )}
       </nav>
 
       <ToastContainer />
