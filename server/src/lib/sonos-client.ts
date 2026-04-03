@@ -960,7 +960,7 @@ class SonosClient {
 
   async playSpotifyUri(speaker: string, spotifyUri: string, action: 'now' | 'queue' | 'next' = 'now'): Promise<void> {
     try {
-      await this.api.get(`/${encodeURIComponent(speaker)}/spotify/${action}/${encodeURIComponent(spotifyUri)}`)
+      await this.api.get(`/${encodeURIComponent(speaker)}/spotify/${action}/${spotifyUri}`)
     } catch (err) {
       this.handleError(err, `playSpotifyUri(${speaker}, ${spotifyUri}, ${action})`)
     }

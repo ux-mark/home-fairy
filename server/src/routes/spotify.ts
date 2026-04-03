@@ -98,6 +98,86 @@ router.get('/playlists/:id/tracks', requireAuth, async (req: Request, res: Respo
   }
 })
 
+// GET /spotify/albums — fetch user's saved albums (requires auth + connected)
+router.get('/albums', requireAuth, async (req: Request, res: Response) => {
+  if (!spotifyClient.isConnected()) {
+    res.status(401).json({ error: 'Spotify not connected' })
+    return
+  }
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : 50
+    const offset = req.query.offset ? Number(req.query.offset) : 0
+    const result = await spotifyClient.getSavedAlbums(limit, offset)
+    res.json(result)
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// GET /spotify/albums/:id/tracks — fetch tracks in an album (requires auth + connected)
+router.get('/albums/:id/tracks', requireAuth, async (req: Request, res: Response) => {
+  if (!spotifyClient.isConnected()) {
+    res.status(401).json({ error: 'Spotify not connected' })
+    return
+  }
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : 50
+    const offset = req.query.offset ? Number(req.query.offset) : 0
+    const result = await spotifyClient.getAlbumTracks(String(req.params.id), limit, offset)
+    res.json(result)
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// GET /spotify/shows — fetch user's saved podcasts (requires auth + connected)
+router.get('/shows', requireAuth, async (req: Request, res: Response) => {
+  if (!spotifyClient.isConnected()) {
+    res.status(401).json({ error: 'Spotify not connected' })
+    return
+  }
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : 50
+    const offset = req.query.offset ? Number(req.query.offset) : 0
+    const result = await spotifyClient.getSavedShows(limit, offset)
+    res.json(result)
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// GET /spotify/shows/:id/episodes — fetch episodes of a show (requires auth + connected)
+router.get('/shows/:id/episodes', requireAuth, async (req: Request, res: Response) => {
+  if (!spotifyClient.isConnected()) {
+    res.status(401).json({ error: 'Spotify not connected' })
+    return
+  }
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : 50
+    const offset = req.query.offset ? Number(req.query.offset) : 0
+    const result = await spotifyClient.getShowEpisodes(String(req.params.id), limit, offset)
+    res.json(result)
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// GET /spotify/tracks — fetch user's saved/liked tracks (requires auth + connected)
+router.get('/tracks', requireAuth, async (req: Request, res: Response) => {
+  if (!spotifyClient.isConnected()) {
+    res.status(401).json({ error: 'Spotify not connected' })
+    return
+  }
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : 50
+    const offset = req.query.offset ? Number(req.query.offset) : 0
+    const result = await spotifyClient.getSavedTracks(limit, offset)
+    res.json(result)
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
 // GET /spotify/search?q= — search Spotify catalogue (requires auth + connected)
 router.get('/search', requireAuth, async (req: Request, res: Response) => {
   const q = req.query.q as string | undefined
