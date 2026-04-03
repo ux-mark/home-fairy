@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Search, X, Music, Radio, Heart, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NasBrowseView } from './NasBrowseView'
+import { SpotifyBrowseView } from './SpotifyBrowseView'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -172,7 +173,10 @@ export function BrowseTab() {
         {activeSource === 'nas' && (
           <NasBrowseView searchQuery={searchQuery} />
         )}
-        {activeSource !== 'all' && activeSource !== 'nas' && (
+        {activeSource === 'spotify' && (
+          <SpotifyBrowseView searchQuery={searchQuery} />
+        )}
+        {activeSource !== 'all' && activeSource !== 'nas' && activeSource !== 'spotify' && (
           <SourcePlaceholder source={SOURCES.find(s => s.id === activeSource)!} />
         )}
       </div>
