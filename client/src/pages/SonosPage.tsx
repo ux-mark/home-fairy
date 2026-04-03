@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Play, Search, Heart } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { NowPlayingTab } from '@/components/sonos/NowPlayingTab'
+import { BrowseTab } from '@/components/sonos/BrowseTab'
 
 // ── Tab definition ────────────────────────────────────────────────────────────
 
@@ -27,15 +28,7 @@ export default function SonosPage() {
         {/* Tab content */}
         <div role="tabpanel" aria-labelledby={`tab-${activeTab}`} id={`panel-${activeTab}`}>
           {activeTab === 'now-playing' && <NowPlayingTab />}
-          {activeTab === 'browse' && (
-            <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
-              <Search className="h-10 w-10 text-caption/40" aria-hidden="true" />
-              <div>
-                <h2 className="text-lg font-semibold text-heading">Browse</h2>
-                <p className="mt-1 max-w-xs text-sm text-caption">Browse music across your library, Spotify, and radio — coming soon.</p>
-              </div>
-            </div>
-          )}
+          {activeTab === 'browse' && <BrowseTab />}
           {activeTab === 'favourites' && (
             <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
               <Heart className="h-10 w-10 text-caption/40" aria-hidden="true" />
