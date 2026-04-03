@@ -408,6 +408,101 @@ router.post('/auto-play/resolve-podcast', async (req: Request, res: Response) =>
   }
 })
 
+// ── Queue management ─────────────────────────────────────────────────────────
+
+const addToQueueSchema = z.object({ uri: z.string().min(1) })
+const playNextSchema = z.object({ uri: z.string().min(1) })
+const reorderQueueSchema = z.object({ from: z.number().int().min(0), to: z.number().int().min(0) })
+
+// GET /queue/:speaker — get current queue
+router.get('/queue/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const queue = await sonosClient.getQueue(speaker)
+    const items = queue.map(item => ({
+      ...item,
+      albumArtUri: rewriteAlbumArtUri(item.albumArtUri),
+    }))
+    res.json(items)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /queue/:speaker/add — add item to queue
+router.post('/queue/:speaker/add', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const parsed = addToQueueSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
+      return
+    }
+    await sonosClient.addToQueue(speaker, parsed.data.uri)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, action: 'add-to-queue' })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /queue/:speaker/playnext — insert item as next track
+router.post('/queue/:speaker/playnext', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const parsed = playNextSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
+      return
+    }
+    await sonosClient.playNext(speaker, parsed.data.uri)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, action: 'play-next' })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// DELETE /queue/:speaker/remove/:index — remove item from queue by index
+router.delete('/queue/:speaker/remove/:index', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const rawIndex = Array.isArray(req.params.index) ? req.params.index[0] : req.params.index
+    const index = parseInt(rawIndex, 10)
+    if (isNaN(index) || index < 0) {
+      res.status(400).json({ error: 'index must be a non-negative integer' })
+      return
+    }
+    await sonosClient.removeFromQueue(speaker, index)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, action: 'remove-from-queue', index })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /queue/:speaker/reorder — move item in queue
+router.post('/queue/:speaker/reorder', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const parsed = reorderQueueSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
+      return
+    }
+    await sonosClient.reorderQueue(speaker, parsed.data.from, parsed.data.to)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, action: 'reorder-queue', from: parsed.data.from, to: parsed.data.to })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
 // POST /play/:speaker — play/resume a speaker
 router.post('/play/:speaker', async (req: Request, res: Response) => {
   try {
