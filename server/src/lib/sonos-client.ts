@@ -491,29 +491,85 @@ class SonosClient {
   }
 
   /**
-   * Resolve a speaker room name to its IP address via node-sonos-http-api zones.
+   * Resolve a speaker room name to its IP and UUID via node-sonos-http-api zones.
    */
-  async getSpeakerIpByName(speakerName: string): Promise<string | null> {
+  async getSpeakerInfoByName(speakerName: string): Promise<{ ip: string; uuid: string } | null> {
     try {
       const { data } = await this.api.get('/zones')
       for (const zone of data as Array<Record<string, unknown>>) {
         for (const member of (zone.members ?? []) as Array<Record<string, unknown>>) {
           if (member.roomName === speakerName) {
+            const uuid = member.uuid as string | undefined
+            // Try to get IP from album art URI
             const state = member.state as Record<string, unknown> | undefined
             const ct = state?.currentTrack as Record<string, unknown> | undefined
             const absUri = ct?.absoluteAlbumArtUri
-            if (typeof absUri === 'string') {
+            if (typeof absUri === 'string' && uuid) {
               const match = absUri.match(/https?:\/\/([\d.]+)/)
-              if (match) return match[1]
+              if (match) return { ip: match[1], uuid }
+            }
+            // Fallback: use any known speaker IP
+            if (uuid) {
+              const ip = await this.getSpeakerIp()
+              if (ip) return { ip, uuid }
             }
           }
         }
       }
-      // Fallback: use any known speaker IP (all speakers can address each other)
-      return this.getSpeakerIp()
-    } catch {
-      return null
+    } catch { /* fall through */ }
+    return null
+  }
+
+  // Backwards-compat wrapper
+  async getSpeakerIpByName(speakerName: string): Promise<string | null> {
+    const info = await this.getSpeakerInfoByName(speakerName)
+    return info?.ip ?? null
+  }
+
+  /**
+   * Switch the speaker to play from its queue starting at track 1.
+   * Uses SOAP to set transport to x-rincon-queue:{UUID}#0, seek to track 1, then play.
+   */
+  async playQueueFromStart(speakerIp: string, speakerUuid: string): Promise<void> {
+    const avTransport = `http://${speakerIp}:1400/MediaRenderer/AVTransport/Control`
+    const headers = {
+      'Content-Type': 'text/xml; charset=utf-8',
     }
+
+    // 1. Set transport to the queue
+    await axios.post(avTransport, `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:SetAVTransportURI xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+      <InstanceID>0</InstanceID>
+      <CurrentURI>x-rincon-queue:${speakerUuid}#0</CurrentURI>
+      <CurrentURIMetaData></CurrentURIMetaData>
+    </u:SetAVTransportURI>
+  </s:Body>
+</s:Envelope>`, { headers: { ...headers, SOAPAction: '"urn:schemas-upnp-org:service:AVTransport:1#SetAVTransportURI"' }, timeout: 10_000 })
+
+    // 2. Seek to track 1
+    await axios.post(avTransport, `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:Seek xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+      <InstanceID>0</InstanceID>
+      <Unit>TRACK_NR</Unit>
+      <Target>1</Target>
+    </u:Seek>
+  </s:Body>
+</s:Envelope>`, { headers: { ...headers, SOAPAction: '"urn:schemas-upnp-org:service:AVTransport:1#Seek"' }, timeout: 10_000 })
+
+    // 3. Play
+    await axios.post(avTransport, `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:Play xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+      <InstanceID>0</InstanceID>
+      <Speed>1</Speed>
+    </u:Play>
+  </s:Body>
+</s:Envelope>`, { headers: { ...headers, SOAPAction: '"urn:schemas-upnp-org:service:AVTransport:1#Play"' }, timeout: 10_000 })
   }
 
   // ── Sonos UPnP browse (genre browsing) ─────────────────────────────────────

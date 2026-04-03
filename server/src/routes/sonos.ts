@@ -1206,10 +1206,10 @@ router.put('/play-uri/:speaker', async (req: Request, res: Response) => {
         res.status(404).json({ error: 'No tracks found in this container' })
         return
       }
-      // Get speaker IP for direct UPnP SOAP calls (bypasses node-sonos-http-api
+      // Get speaker IP + UUID for direct UPnP SOAP calls (bypasses node-sonos-http-api
       // which mangles URIs with special characters like accents and spaces)
-      const speakerIp = await sonosClient.getSpeakerIpByName(speaker)
-      if (!speakerIp) {
+      const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
+      if (!speakerInfo) {
         res.status(424).json({ error: 'Could not resolve speaker IP address' })
         return
       }
@@ -1218,7 +1218,7 @@ router.put('/play-uri/:speaker', async (req: Request, res: Response) => {
       let queued = 0
       for (const track of tracks) {
         try {
-          await sonosClient.addToQueueSOAP(speakerIp, track.uri)
+          await sonosClient.addToQueueSOAP(speakerInfo.ip, track.uri)
           queued++
         } catch (err) {
           console.error(`[sonos] play-uri: SOAP addToQueue failed for "${track.title}": ${err instanceof Error ? err.message : err}`)
@@ -1228,11 +1228,12 @@ router.put('/play-uri/:speaker', async (req: Request, res: Response) => {
         res.status(424).json({ error: 'Could not add any tracks to queue' })
         return
       }
-      await sonosClient.play(speaker)
+      // Switch transport to the queue and start from track 1
+      await sonosClient.playQueueFromStart(speakerInfo.ip, speakerInfo.uuid)
       emit('sonos:playback-update', { speaker })
       const queue = await sonosClient.getQueue(speaker)
       emit('sonos:queue-update', { speaker, action: 'replace', queue })
-      console.log(`[sonos] play-uri: queued ${queued}/${tracks.length} tracks`)
+      console.log(`[sonos] play-uri: queued ${queued}/${tracks.length} tracks, playing from track 1`)
       res.json({ speaker, uri, tracksQueued: queued })
     } else {
       // Direct track URI — set transport and play
