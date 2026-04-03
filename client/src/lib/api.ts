@@ -729,6 +729,12 @@ export interface SonosGenre {
   count?: number
 }
 
+export interface SonosRadioStation {
+  title: string
+  uri: string
+  albumArtUri?: string
+}
+
 export interface SonosLibraryTrack {
   title: string
   artist: string
@@ -1388,6 +1394,8 @@ export const api = {
       fetchApi<SonosLibraryTrack[]>('/sonos/library/genre/' + encodeURIComponent(genre)),
     searchLibrary: (query: string) =>
       fetchApi<SonosLibrarySearchResult>('/sonos/library/search?q=' + encodeURIComponent(query)),
+    getRadioStations: () =>
+      fetchApi<SonosRadioStation[]>('/sonos/radio/stations'),
   },
 
   deviceLinks: {

@@ -555,6 +555,17 @@ router.get('/library/search', async (req: Request, res: Response) => {
   }
 })
 
+// GET /radio/stations — list available radio stations
+router.get('/radio/stations', async (_req: Request, res: Response) => {
+  try {
+    const stations = await sonosClient.getRadioStations()
+    res.json(stations.map(s => ({ ...s, albumArtUri: s.albumArtUri ? rewriteAlbumArtUri(s.albumArtUri) : undefined })))
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
 // POST /play/:speaker — play/resume a speaker
 router.post('/play/:speaker', async (req: Request, res: Response) => {
   try {
