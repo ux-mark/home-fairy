@@ -503,6 +503,58 @@ router.post('/queue/:speaker/reorder', async (req: Request, res: Response) => {
   }
 })
 
+// ── NAS library browsing ──────────────────────────────────────────────────────
+
+// GET /library/genres — list all genres from the local NAS library
+router.get('/library/genres', async (_req: Request, res: Response) => {
+  try {
+    const genres = await sonosClient.getGenres()
+    res.json(genres)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// GET /library/genre/:genre — list tracks for a specific genre
+router.get('/library/genre/:genre', async (req: Request, res: Response) => {
+  try {
+    const genre = Array.isArray(req.params.genre) ? req.params.genre[0] : req.params.genre
+    const tracks = await sonosClient.getGenreTracks(genre)
+    const items = tracks.map(track => ({
+      ...track,
+      albumArtUri: rewriteAlbumArtUri(track.albumArtUri),
+    }))
+    res.json(items)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// GET /library/search?q= — search the local NAS library
+router.get('/library/search', async (req: Request, res: Response) => {
+  const rawQ = req.query.q
+  const q = typeof rawQ === 'string' ? rawQ.trim() : ''
+  if (!q) {
+    res.status(400).json({ error: 'Missing required query parameter: q' })
+    return
+  }
+  try {
+    const result = await sonosClient.searchLibrary(q)
+    const rewriteTracks = (tracks: typeof result.tracks) =>
+      tracks.map(track => ({ ...track, albumArtUri: rewriteAlbumArtUri(track.albumArtUri) }))
+    res.json({
+      artists: rewriteTracks(result.artists),
+      albums: rewriteTracks(result.albums),
+      tracks: rewriteTracks(result.tracks),
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(502).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
 // POST /play/:speaker — play/resume a speaker
 router.post('/play/:speaker', async (req: Request, res: Response) => {
   try {

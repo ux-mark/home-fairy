@@ -724,6 +724,25 @@ export interface SonosFavourite {
   contentClass?: string
 }
 
+export interface SonosGenre {
+  title: string
+  count?: number
+}
+
+export interface SonosLibraryTrack {
+  title: string
+  artist: string
+  album: string
+  albumArtUri: string | undefined
+  uri: string
+}
+
+export interface SonosLibrarySearchResult {
+  artists: SonosLibraryTrack[]
+  albums: SonosLibraryTrack[]
+  tracks: SonosLibraryTrack[]
+}
+
 export interface SonosSpeakerMapping {
   id: number
   room_name: string
@@ -1363,6 +1382,12 @@ export const api = {
     getPlayStatus: () =>
       fetchApi<{ anyPlaying: boolean; allPlaying: boolean; playingCount: number; totalSpeakers: number }>('/sonos/play-status'),
     health: () => fetchApi<{ available: boolean }>('/sonos/health'),
+    getLibraryGenres: () =>
+      fetchApi<SonosGenre[]>('/sonos/library/genres'),
+    getLibraryGenreTracks: (genre: string) =>
+      fetchApi<SonosLibraryTrack[]>('/sonos/library/genre/' + encodeURIComponent(genre)),
+    searchLibrary: (query: string) =>
+      fetchApi<SonosLibrarySearchResult>('/sonos/library/search?q=' + encodeURIComponent(query)),
   },
 
   deviceLinks: {
