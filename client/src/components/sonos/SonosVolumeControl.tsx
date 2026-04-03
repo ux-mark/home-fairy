@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useState } from 'react'
 import * as Slider from '@radix-ui/react-slider'
 import { cn } from '@/lib/utils'
@@ -42,7 +42,19 @@ export function SonosVolumeControl({
 }: SonosVolumeControlProps) {
   // null means "use server value"; non-null means "user is dragging"
   const [dragValue, setDragValue] = useState<number | null>(null)
-  const displayValue = dragValue ?? value
+  // Holds the committed value after pointer-up until the server catches up
+  const [optimisticValue, setOptimisticValue] = useState<number | null>(null)
+  const prevValueRef = useRef(value)
+
+  // Clear optimistic override when the server value changes (success or failure)
+  useEffect(() => {
+    if (value !== prevValueRef.current) {
+      prevValueRef.current = value
+      setOptimisticValue(null)
+    }
+  }, [value])
+
+  const displayValue = dragValue ?? optimisticValue ?? value
 
   const handleValueChange = useCallback(
     (vals: number[]) => {
@@ -55,8 +67,10 @@ export function SonosVolumeControl({
 
   const handleValueCommit = useCallback(
     (vals: number[]) => {
+      const committed = vals[0]
       setDragValue(null)
-      onChange(vals[0])
+      setOptimisticValue(committed)
+      onChange(committed)
     },
     [onChange],
   )

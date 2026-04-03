@@ -374,6 +374,7 @@ export default function SonosDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sonos', 'state', speaker] })
     },
+    onSettled: () => setLiveVolume(null),
     onError: () => toast({ message: 'Failed to set volume', type: 'error' }),
   })
 
@@ -394,7 +395,6 @@ export default function SonosDetailPage() {
         setMuteMutation.mutate(false)
       }
       setLiveVolumeMutation.mutate(value)
-      setLiveVolume(null)
     }, 300)
   }
 
