@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { CheckCircle, AlertCircle, Pencil, Zap, CirclePause, CircleSlash } from 'lucide-react'
 import * as Switch from '@radix-ui/react-switch'
 import { api } from '@/lib/api'
@@ -339,6 +339,77 @@ function AddRuleForm({
   )
 }
 
+// ── Spotify connection ───────────────────────────────────────────────────────
+
+function SpotifyConnectionSection() {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const location = useLocation()
+
+  // Handle ?spotify=connected redirect from OAuth
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    if (params.get('spotify') === 'connected') {
+      toast({ message: 'Spotify connected successfully' })
+      window.history.replaceState({}, '', location.pathname)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const { data: status, isLoading } = useQuery({
+    queryKey: ['spotify', 'status'],
+    queryFn: api.spotify.getStatus,
+    retry: false,
+  })
+
+  const disconnectMutation = useMutation({
+    mutationFn: api.spotify.disconnect,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['spotify', 'status'] })
+      toast({ message: 'Spotify disconnected' })
+    },
+    onError: () => toast({ message: 'Failed to disconnect Spotify', type: 'error' }),
+  })
+
+  return (
+    <Section title="Spotify">
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-caption">
+          <span className="inline-block h-2 w-2 rounded-full bg-[var(--bg-tertiary)]" aria-hidden="true" />
+          Checking Spotify connection...
+        </div>
+      ) : status?.connected ? (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-sm">
+            <CheckCircle className="h-4 w-4 text-green-400" aria-hidden="true" />
+            <span className="text-heading">
+              Connected{status.display_name ? ` as ${status.display_name}` : ''}
+            </span>
+          </div>
+          <button
+            onClick={() => disconnectMutation.mutate()}
+            disabled={disconnectMutation.isPending}
+            className="rounded-lg px-4 py-2 min-h-[44px] border border-[var(--border-secondary)] surface text-heading text-sm hover:brightness-95 dark:hover:brightness-110 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          >
+            {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect Spotify'}
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-caption text-sm">
+            Connect your Spotify account to browse playlists and control playback.
+          </p>
+          <a
+            href="/api/spotify/auth"
+            className="inline-flex items-center rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          >
+            Connect Spotify
+          </a>
+        </div>
+      )}
+    </Section>
+  )
+}
+
 // ── Main MusicSection ────────────────────────────────────────────────────────
 
 export function MusicSection() {
@@ -507,6 +578,9 @@ export function MusicSection() {
       <Section title="Sonos">
         <SonosConnectionStatus />
       </Section>
+
+      {/* Spotify connection */}
+      <SpotifyConnectionSection />
 
       {/* Follow-me toggle */}
       <Section title="Follow-me music">
