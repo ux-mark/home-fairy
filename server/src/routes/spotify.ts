@@ -43,10 +43,20 @@ router.get('/callback', async (req: Request, res: Response) => {
 })
 
 // GET /spotify/status — check if Spotify is connected (requires auth)
-router.get('/status', requireAuth, (_req: Request, res: Response) => {
+router.get('/status', requireAuth, async (_req: Request, res: Response) => {
   try {
-    const connected = spotifyClient.isConnected()
-    res.json({ connected })
+    const status = await spotifyClient.getStatus()
+    res.json(status)
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// POST /spotify/disconnect — remove stored tokens (requires auth)
+router.post('/disconnect', requireAuth, (_req: Request, res: Response) => {
+  try {
+    spotifyClient.disconnect()
+    res.json({ ok: true })
   } catch (err) {
     handleError(res, err)
   }

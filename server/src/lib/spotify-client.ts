@@ -275,6 +275,25 @@ class SpotifyClient {
     return !!row?.refresh_token
   }
 
+  async getStatus(): Promise<{ connected: boolean; display_name?: string }> {
+    if (!this.isConnected()) {
+      return { connected: false }
+    }
+    try {
+      const token = await this.getAccessToken()
+      const response = await this.api.get<{ display_name: string | null; id: string }>(
+        '/me',
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
+      return {
+        connected: true,
+        display_name: response.data.display_name ?? response.data.id,
+      }
+    } catch {
+      return { connected: true }
+    }
+  }
+
   disconnect(): void {
     db.prepare('DELETE FROM spotify_tokens').run()
   }

@@ -844,6 +844,7 @@ export interface SpotifyTrack {
 
 export interface SpotifyStatus {
   connected: boolean
+  display_name?: string
 }
 
 export interface SpotifyPlaylistTrackItem {
@@ -1561,6 +1562,7 @@ export const api = {
 
   spotify: {
     getStatus: () => fetchApi<SpotifyStatus>('/spotify/status'),
+    disconnect: () => fetchApi<{ ok: boolean }>('/spotify/disconnect', { method: 'POST' }),
     getPlaylists: (limit?: number, offset?: number) => {
       const params = new URLSearchParams()
       if (limit !== undefined) params.set('limit', String(limit))
