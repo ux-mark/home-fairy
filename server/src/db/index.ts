@@ -314,6 +314,18 @@ export function initDb(): void {
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS user_favourites (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      source TEXT NOT NULL CHECK(source IN ('sonos','spotify','nas','radio')),
+      source_uri TEXT NOT NULL,
+      title TEXT NOT NULL,
+      album_art_uri TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id, source, source_uri)
+    );
   `)
 
   // Migration: add user tracking columns to scenes
