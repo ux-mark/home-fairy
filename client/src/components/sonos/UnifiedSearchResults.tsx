@@ -449,8 +449,14 @@ function RadioSection({ query, speaker }: { query: string; speaker: string | nul
 
 // ── UnifiedSearchResults ──────────────────────────────────────────────────────
 
-export function UnifiedSearchResults({ searchQuery }: { searchQuery: string }) {
-  const speaker = useFirstSpeaker()
+interface UnifiedSearchResultsProps {
+  searchQuery: string
+  targetSpeaker?: string | null
+}
+
+export function UnifiedSearchResults({ searchQuery, targetSpeaker }: UnifiedSearchResultsProps) {
+  const firstSpeaker = useFirstSpeaker()
+  const speaker = targetSpeaker ?? firstSpeaker
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
 
   if (!debouncedQuery) return null

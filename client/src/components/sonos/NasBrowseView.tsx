@@ -429,10 +429,16 @@ function SearchResults({ query, speaker }: { query: string; speaker: string | nu
 
 // ── NasBrowseView ─────────────────────────────────────────────────────────────
 
-export function NasBrowseView({ searchQuery }: { searchQuery: string }) {
+interface NasBrowseViewProps {
+  searchQuery: string
+  targetSpeaker?: string | null
+}
+
+export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps) {
   const [view, setView] = useState<NasView>('genres')
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null)
-  const speaker = useFirstSpeaker()
+  const firstSpeaker = useFirstSpeaker()
+  const speaker = targetSpeaker ?? firstSpeaker
 
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
   const isSearching = debouncedQuery.length > 0

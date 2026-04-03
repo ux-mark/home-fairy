@@ -506,10 +506,16 @@ function SpotifySearchResults({ query, speaker }: { query: string; speaker: stri
 
 // ── SpotifyBrowseView ─────────────────────────────────────────────────────────
 
-export function SpotifyBrowseView({ searchQuery }: { searchQuery: string }) {
+interface SpotifyBrowseViewProps {
+  searchQuery: string
+  targetSpeaker?: string | null
+}
+
+export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseViewProps) {
   const [view, setView] = useState<SpotifyView>('playlists')
   const [selectedPlaylist, setSelectedPlaylist] = useState<SpotifyPlaylist | null>(null)
-  const speaker = useFirstSpeaker()
+  const firstSpeaker = useFirstSpeaker()
+  const speaker = targetSpeaker ?? firstSpeaker
 
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
   const isSearching = debouncedQuery.length > 0

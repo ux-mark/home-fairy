@@ -159,7 +159,11 @@ function AllSourcesView({ onSelectSource }: { onSelectSource: (s: SourceFilter) 
 
 // ── BrowseTab ─────────────────────────────────────────────────────────────────
 
-export function BrowseTab() {
+interface BrowseTabProps {
+  targetSpeaker?: string
+}
+
+export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
   const [activeSource, setActiveSource] = useState<SourceFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -237,18 +241,18 @@ export function BrowseTab() {
         aria-labelledby={`browse-tab-${activeSource}`}
       >
         {activeSource === 'all' && searchQuery ? (
-          <UnifiedSearchResults searchQuery={searchQuery} />
+          <UnifiedSearchResults searchQuery={searchQuery} targetSpeaker={targetSpeaker} />
         ) : activeSource === 'all' ? (
           <AllSourcesView onSelectSource={setActiveSource} />
         ) : null}
         {activeSource === 'nas' && (
-          <NasBrowseView searchQuery={searchQuery} />
+          <NasBrowseView searchQuery={searchQuery} targetSpeaker={targetSpeaker} />
         )}
         {activeSource === 'spotify' && (
-          <SpotifyBrowseView searchQuery={searchQuery} />
+          <SpotifyBrowseView searchQuery={searchQuery} targetSpeaker={targetSpeaker} />
         )}
         {activeSource === 'radio' && (
-          <RadioBrowseView searchQuery={searchQuery} />
+          <RadioBrowseView searchQuery={searchQuery} targetSpeaker={targetSpeaker} />
         )}
         {activeSource !== 'all' && activeSource !== 'nas' && activeSource !== 'spotify' && activeSource !== 'radio' && (
           <SourcePlaceholder source={SOURCES.find(s => s.id === activeSource)!} />
