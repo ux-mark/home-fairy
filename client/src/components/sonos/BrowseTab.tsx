@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { NasBrowseView } from './NasBrowseView'
 import { SpotifyBrowseView } from './SpotifyBrowseView'
 import { RadioBrowseView } from './RadioBrowseView'
+import { UnifiedSearchResults } from './UnifiedSearchResults'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -168,9 +169,11 @@ export function BrowseTab() {
         role="tabpanel"
         aria-labelledby={`browse-tab-${activeSource}`}
       >
-        {activeSource === 'all' && (
+        {activeSource === 'all' && searchQuery ? (
+          <UnifiedSearchResults searchQuery={searchQuery} />
+        ) : activeSource === 'all' ? (
           <AllSourcesView onSelectSource={setActiveSource} />
-        )}
+        ) : null}
         {activeSource === 'nas' && (
           <NasBrowseView searchQuery={searchQuery} />
         )}
