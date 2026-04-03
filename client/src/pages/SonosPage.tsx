@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Speaker, Music2, ListMusic, Disc3, Radio, AlertTriangle, RefreshCw, Settings } from 'lucide-react'
+import { Speaker, Play, Search, Heart, AlertTriangle, RefreshCw, Settings } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { api, type SonosNowPlayingEntry } from '@/lib/api'
@@ -12,51 +12,13 @@ import { SonosVolumeControl } from '@/components/sonos/SonosVolumeControl'
 
 // ── Tab definition ────────────────────────────────────────────────────────────
 
-type TabId = 'speakers' | 'genres' | 'playlists' | 'albums' | 'radio'
+type TabId = 'now-playing' | 'browse' | 'favourites'
 
 const TABS: Array<{ id: TabId; label: string; Icon: React.ElementType }> = [
-  { id: 'speakers', label: 'Speakers', Icon: Speaker },
-  { id: 'genres', label: 'Genres', Icon: Music2 },
-  { id: 'playlists', label: 'Playlists', Icon: ListMusic },
-  { id: 'albums', label: 'Albums', Icon: Disc3 },
-  { id: 'radio', label: 'Radio', Icon: Radio },
+  { id: 'now-playing', label: 'Now Playing', Icon: Play },
+  { id: 'browse', label: 'Browse', Icon: Search },
+  { id: 'favourites', label: 'Favourites', Icon: Heart },
 ]
-
-// ── Placeholder tab content ───────────────────────────────────────────────────
-
-const PLACEHOLDER_COPY: Record<Exclude<TabId, 'speakers'>, { heading: string; body: string }> = {
-  genres: {
-    heading: 'Genres',
-    body: 'Browse music by genre — coming soon. Use Speakers to browse your favourites.',
-  },
-  playlists: {
-    heading: 'Playlists',
-    body: 'Your Sonos playlists — coming soon. Use Speakers to browse your favourites.',
-  },
-  albums: {
-    heading: 'Albums',
-    body: 'Browse saved albums — coming soon. Use Speakers to browse your favourites.',
-  },
-  radio: {
-    heading: 'Radio',
-    body: 'Your radio stations — coming soon. Use Speakers to browse your favourites.',
-  },
-}
-
-function PlaceholderTab({ id }: { id: Exclude<TabId, 'speakers'> }) {
-  const { heading, body } = PLACEHOLDER_COPY[id]
-  const TabConfig = TABS.find(t => t.id === id)!
-  const Icon = TabConfig.Icon
-  return (
-    <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
-      <Icon className="h-10 w-10 text-caption/40" aria-hidden="true" />
-      <div>
-        <h2 className="text-lg font-semibold text-heading">{heading}</h2>
-        <p className="mt-1 max-w-xs text-sm text-caption">{body}</p>
-      </div>
-    </div>
-  )
-}
 
 // ── Master volume ─────────────────────────────────────────────────────────────
 
@@ -306,7 +268,7 @@ function SpeakersTab() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SonosPage() {
-  const [activeTab, setActiveTab] = useState<TabId>('speakers')
+  const [activeTab, setActiveTab] = useState<TabId>('now-playing')
 
   return (
     <div className="flex min-h-[calc(100svh-57px)] flex-col">
@@ -316,8 +278,25 @@ export default function SonosPage() {
 
         {/* Tab content */}
         <div role="tabpanel" aria-labelledby={`tab-${activeTab}`} id={`panel-${activeTab}`}>
-          {activeTab === 'speakers' && <SpeakersTab />}
-          {activeTab !== 'speakers' && <PlaceholderTab id={activeTab as Exclude<TabId, 'speakers'>} />}
+          {activeTab === 'now-playing' && <SpeakersTab />}
+          {activeTab === 'browse' && (
+            <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
+              <Search className="h-10 w-10 text-caption/40" aria-hidden="true" />
+              <div>
+                <h2 className="text-lg font-semibold text-heading">Browse</h2>
+                <p className="mt-1 max-w-xs text-sm text-caption">Browse music across your library, Spotify, and radio — coming soon.</p>
+              </div>
+            </div>
+          )}
+          {activeTab === 'favourites' && (
+            <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
+              <Heart className="h-10 w-10 text-caption/40" aria-hidden="true" />
+              <div>
+                <h2 className="text-lg font-semibold text-heading">Favourites</h2>
+                <p className="mt-1 max-w-xs text-sm text-caption">Your saved favourites for quick playback — coming soon.</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
