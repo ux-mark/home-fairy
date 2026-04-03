@@ -567,12 +567,31 @@ class SonosClient {
               name,
               artist,
               albumArtUri: absoluteArt,
-              objectId: this.decodeXmlEntities(id),
+              objectId: decodeURIComponent(this.decodeXmlEntities(id)),
             })
           }
         } catch { /* skip artist on error */ }
       }
-      return albums
+      // Merge albums that appear under multiple artists (compilations)
+      const albumMap = new Map<string, SonosGenreAlbum>()
+      const artistsByAlbum = new Map<string, Set<string>>()
+      for (const album of albums) {
+        const existing = albumMap.get(album.name)
+        if (existing) {
+          artistsByAlbum.get(album.name)!.add(album.artist)
+        } else {
+          albumMap.set(album.name, album)
+          artistsByAlbum.set(album.name, new Set([album.artist]))
+        }
+      }
+      // Mark multi-artist albums as "Various Artists"
+      return Array.from(albumMap.values()).map(album => {
+        const artists = artistsByAlbum.get(album.name)!
+        return {
+          ...album,
+          artist: artists.size > 1 ? 'Various Artists' : album.artist,
+        }
+      })
     } catch {
       return []
     }
