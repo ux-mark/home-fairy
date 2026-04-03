@@ -1139,10 +1139,11 @@ router.post('/play-spotify/:speaker', async (req: Request, res: Response) => {
   }
 })
 
-// PUT /sonos/play-uri/:speaker — set and play a URI immediately via setAVTransportURI
+// PUT /sonos/play-uri/:speaker — play a URI or content directory container
 // Accepts: { uri: string }
-// Used for NAS tracks and container URIs (albums) where the URI can be passed
-// directly to the Sonos HTTP API's setavtransporturi action.
+// For direct track URIs (x-file-cifs://...): uses setAVTransportURI + play
+// For content directory IDs (A:ALBUM:..., A:ALBUMARTIST/...): fetches tracks,
+// clears queue, adds all tracks in order, then plays from the start
 router.put('/play-uri/:speaker', async (req: Request, res: Response) => {
   try {
     const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
@@ -1151,10 +1152,30 @@ router.put('/play-uri/:speaker', async (req: Request, res: Response) => {
       res.status(400).json({ error: 'uri is required and must be a non-empty string' })
       return
     }
-    await sonosClient.setAVTransportURI(speaker, uri)
-    await sonosClient.play(speaker)
-    emit('sonos:playback-update', { speaker })
-    res.json({ speaker, uri })
+
+    // Content directory container (album/playlist) — queue all tracks then play
+    if (uri.startsWith('A:') || uri.startsWith('S:') || uri.startsWith('SQ:')) {
+      const tracks = await sonosClient.getGenreAlbumTracks(uri)
+      if (tracks.length === 0) {
+        res.status(404).json({ error: 'No tracks found in this container' })
+        return
+      }
+      await sonosClient.clearQueue(speaker)
+      for (const track of tracks) {
+        await sonosClient.addToQueue(speaker, track.uri)
+      }
+      await sonosClient.play(speaker)
+      emit('sonos:playback-update', { speaker })
+      const queue = await sonosClient.getQueue(speaker)
+      emit('sonos:queue-update', { speaker, action: 'replace', queue })
+      res.json({ speaker, uri, tracksQueued: tracks.length })
+    } else {
+      // Direct track URI — set transport and play
+      await sonosClient.setAVTransportURI(speaker, uri)
+      await sonosClient.play(speaker)
+      emit('sonos:playback-update', { speaker })
+      res.json({ speaker, uri })
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })

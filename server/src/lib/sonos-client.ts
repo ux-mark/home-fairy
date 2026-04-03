@@ -427,6 +427,14 @@ class SonosClient {
     }
   }
 
+  async clearQueue(speaker: string): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/clearqueue`)
+    } catch (err) {
+      this.handleError(err, `clearQueue(${speaker})`)
+    }
+  }
+
   async removeFromQueue(speaker: string, index: number): Promise<void> {
     try {
       await this.api.get(`/${encodeURIComponent(speaker)}/removetrack/${index}`)
