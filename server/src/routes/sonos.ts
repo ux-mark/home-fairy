@@ -84,7 +84,7 @@ function triggerNasAutoBackfill(): void {
     "SELECT COUNT(*) as cnt FROM artist_countries WHERE image_url IS NULL AND spotify_artist_id NOT LIKE 'nas:%'",
   ).get() as { cnt: number }
   const missingNas = db.prepare(
-    "SELECT COUNT(*) as cnt FROM artist_countries WHERE image_url IS NULL AND spotify_artist_id LIKE 'nas:%' AND musicbrainz_id IS NOT NULL",
+    "SELECT COUNT(*) as cnt FROM artist_countries WHERE image_url IS NULL AND spotify_artist_id LIKE 'nas:%'",
   ).get() as { cnt: number }
   if (missing.cnt === 0 && missingNas.cnt === 0) return
 
