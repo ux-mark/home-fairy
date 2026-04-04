@@ -52,7 +52,8 @@ router.get('/callback', async (req: Request, res: Response) => {
 router.get('/status', requireAuth, async (_req: Request, res: Response) => {
   try {
     const status = await spotifyClient.getStatus()
-    res.json(status)
+    const needs_reauth = spotifyClient.isConnected() && !spotifyClient.hasWriteScope()
+    res.json({ ...status, needs_reauth })
   } catch (err) {
     handleError(res, err)
   }
@@ -95,6 +96,52 @@ router.get('/playlists/:id/tracks', requireAuth, async (req: Request, res: Respo
     const offset = req.query.offset ? Number(req.query.offset) : 0
     const result = await spotifyClient.getPlaylistTracks(String(req.params.id), limit, offset)
     res.json(result)
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// POST /spotify/playlists/:id/tracks — add a track to a playlist (requires auth + connected + write scope)
+router.post('/playlists/:id/tracks', requireAuth, async (req: Request, res: Response) => {
+  if (!spotifyClient.isConnected()) {
+    res.status(401).json({ error: 'Spotify not connected' })
+    return
+  }
+  if (!spotifyClient.hasWriteScope()) {
+    res.status(403).json({ error: 'Playlist write access not granted — reconnect Spotify in Settings' })
+    return
+  }
+  const { uri } = req.body ?? {}
+  if (!uri || typeof uri !== 'string') {
+    res.status(400).json({ error: 'uri is required' })
+    return
+  }
+  try {
+    await spotifyClient.addTrackToPlaylist(String(req.params.id), uri)
+    res.json({ success: true })
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// POST /spotify/playlists — create a new Spotify playlist (requires auth + connected + write scope)
+router.post('/playlists', requireAuth, async (req: Request, res: Response) => {
+  if (!spotifyClient.isConnected()) {
+    res.status(401).json({ error: 'Spotify not connected' })
+    return
+  }
+  if (!spotifyClient.hasWriteScope()) {
+    res.status(403).json({ error: 'Playlist write access not granted — reconnect Spotify in Settings' })
+    return
+  }
+  const { name } = req.body ?? {}
+  if (!name || typeof name !== 'string') {
+    res.status(400).json({ error: 'name is required' })
+    return
+  }
+  try {
+    const result = await spotifyClient.createPlaylist(name.trim())
+    res.status(201).json(result)
   } catch (err) {
     handleError(res, err)
   }

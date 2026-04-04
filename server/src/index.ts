@@ -19,6 +19,7 @@ import kasaRoutes from './routes/kasa.js'
 import sonosRoutes from './routes/sonos.js'
 import spotifyRoutes from './routes/spotify.js'
 import favouritesRoutes from './routes/favourites.js'
+import fairylistsRoutes from './routes/fairylists.js'
 import deviceLinksRoutes from './routes/device-links.js'
 import accessLinksRoutes from './routes/access-links.js'
 import accessLinksPublicRoutes from './routes/access-links-public.js'
@@ -123,6 +124,7 @@ app.use('/api/sonos', requireAuth, sonosRoutes)
 // Spotify router: /auth and /callback are public (OAuth flow); protected routes apply requireAuth internally
 app.use('/api/spotify', spotifyRoutes)
 app.use('/api/favourites', requireAuth, favouritesRoutes)
+app.use('/api/fairylists', requireAuth, fairylistsRoutes)
 app.use('/api/device-links', requireAuth, deviceLinksRoutes)
 app.use('/api/access-links', requireAuth, accessLinksRoutes)
 app.use('/api/user-actions', requireAuth, userActionsRouter)

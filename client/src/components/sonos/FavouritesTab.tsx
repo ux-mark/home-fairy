@@ -22,6 +22,8 @@ import type { UserFavourite } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { FavouriteItem } from './FavouriteItem'
+import { FairylistAccordion } from './FairylistAccordion'
+import { FairylistDetail } from './FairylistDetail'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -35,6 +37,9 @@ interface FavouritesTabProps {
 export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesTabProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+
+  // ── Fairylist detail navigation ───────────────────────────────────────────
+  const [fairylistDetailId, setFairylistDetailId] = useState<number | null>(null)
 
   // ── Swipe tray state (only one item open at a time) ───────────────────────
   const [swipedItemId, setSwipedItemId] = useState<number | null>(null)
@@ -206,6 +211,17 @@ export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesT
     )
   }
 
+  // ── Fairylist detail view ─────────────────────────────────────────────────
+  if (fairylistDetailId !== null) {
+    return (
+      <FairylistDetail
+        fairylistId={fairylistDetailId}
+        onBack={() => setFairylistDetailId(null)}
+        effectiveSpeaker={effectiveSpeaker}
+      />
+    )
+  }
+
   // ── States ────────────────────────────────────────────────────────────────
   if (isLoading) {
     return (
@@ -242,29 +258,7 @@ export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesT
     )
   }
 
-  if (!favourites || favourites.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-4 py-20 text-center px-4">
-        <Heart className="h-10 w-10 text-caption/40" aria-hidden="true" />
-        <div>
-          <h2 className="text-lg font-semibold text-heading">No favourites yet</h2>
-          <p className="mt-1 max-w-xs text-sm text-caption">
-            Browse music and add your favourites for quick playback.
-          </p>
-        </div>
-        {onNavigateToBrowse && (
-          <button
-            onClick={onNavigateToBrowse}
-            className="rounded-xl bg-fairy-500 px-5 py-2.5 text-sm font-semibold text-white hover:bg-fairy-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-          >
-            Browse music
-          </button>
-        )}
-      </div>
-    )
-  }
-
-  const sortableIds = favourites.map(f => f.id)
+  const sortableIds = (favourites ?? []).map(f => f.id)
 
   return (
     <div className="flex flex-col gap-0">
@@ -279,32 +273,60 @@ export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesT
 
       {renderSpeakerSelector()}
 
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-          <ul
-            className="divide-y divide-[var(--border-secondary)]"
-            aria-label="Favourites — drag to reorder"
-            onClick={() => setSwipedItemId(null)}
-          >
-            {favourites.map(item => (
-              <FavouriteItem
-                key={item.id}
-                item={item}
-                onPlay={handlePlay}
-                onRemove={handleRemove}
-                onPlayNext={handlePlayNext}
-                onAddToQueue={handleAddToQueue}
-                swipedItemId={swipedItemId}
-                onSwipeOpen={setSwipedItemId}
-              />
-            ))}
-          </ul>
-        </SortableContext>
-      </DndContext>
+      {/* Fairylists section */}
+      <div className="mb-4">
+        <FairylistAccordion
+          onSelectFairylist={setFairylistDetailId}
+          effectiveSpeaker={effectiveSpeaker}
+        />
+      </div>
+
+      {/* Your favourites section */}
+      <h2 className="px-4 pb-2 text-xs font-semibold uppercase tracking-wider text-caption">
+        Your favourites
+      </h2>
+
+      {!favourites || favourites.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 py-10 text-center px-4">
+          <Heart className="h-8 w-8 text-caption/40" aria-hidden="true" />
+          <p className="text-sm text-caption">No favourites yet.</p>
+          {onNavigateToBrowse && (
+            <button
+              onClick={onNavigateToBrowse}
+              className="rounded-xl bg-fairy-500 px-4 py-2 text-sm font-semibold text-white hover:bg-fairy-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            >
+              Browse music
+            </button>
+          )}
+        </div>
+      ) : (
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+            <ul
+              className="divide-y divide-[var(--border-secondary)]"
+              aria-label="Favourites — drag to reorder"
+              onClick={() => setSwipedItemId(null)}
+            >
+              {favourites.map(item => (
+                <FavouriteItem
+                  key={item.id}
+                  item={item}
+                  onPlay={handlePlay}
+                  onRemove={handleRemove}
+                  onPlayNext={handlePlayNext}
+                  onAddToQueue={handleAddToQueue}
+                  swipedItemId={swipedItemId}
+                  onSwipeOpen={setSwipedItemId}
+                />
+              ))}
+            </ul>
+          </SortableContext>
+        </DndContext>
+      )}
 
       {/* Footer CTA */}
       <div className="mt-6 px-4">
