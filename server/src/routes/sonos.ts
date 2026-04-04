@@ -728,6 +728,11 @@ router.get('/library/search', (req: Request, res: Response) => {
   res.json(sonosClient.searchLibrary(q))
 })
 
+// GET /library/songs — list all NAS library tracks sorted alphabetically
+router.get('/library/songs', (_req: Request, res: Response) => {
+  res.json(sonosClient.getAllLibraryTracks())
+})
+
 // GET /radio/stations — list available radio stations
 router.get('/radio/stations', async (_req: Request, res: Response) => {
   try {

@@ -27,6 +27,7 @@ import type {
   SpotifyAlbumTrack,
   SpotifyShow,
   SpotifyEpisode,
+  SpotifyArtist,
 } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -34,8 +35,8 @@ import { cn } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type SpotifyView = 'home' | 'playlist-detail' | 'album-detail' | 'show-detail'
-type BrowseMode = 'playlists' | 'albums' | 'podcasts' | 'songs'
+type SpotifyView = 'home' | 'playlist-detail' | 'album-detail' | 'show-detail' | 'artist-detail'
+type BrowseMode = 'playlists' | 'podcasts' | 'albums' | 'artists' | 'songs'
 type PlaylistSort = 'recent' | 'a-z' | 'z-a'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -238,7 +239,7 @@ function BrowseModeTabs({
       aria-label="Browse by"
       className="mb-4 flex gap-2 overflow-x-auto pb-0.5"
     >
-      {(['playlists', 'albums', 'podcasts', 'songs'] as const).map(m => (
+      {(['playlists', 'podcasts', 'albums', 'artists', 'songs'] as const).map(m => (
         <button
           key={m}
           role="tab"
@@ -253,7 +254,7 @@ function BrowseModeTabs({
               : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
           )}
         >
-          {m === 'playlists' ? 'Playlists' : m === 'albums' ? 'Albums' : m === 'podcasts' ? 'Podcasts' : 'Songs'}
+          {m === 'playlists' ? 'Playlists' : m === 'podcasts' ? 'Podcasts' : m === 'albums' ? 'Albums' : m === 'artists' ? 'Artists' : 'Songs'}
         </button>
       ))}
     </div>
@@ -1139,6 +1140,192 @@ function SongsList({ speaker }: { speaker: string | null }) {
   )
 }
 
+// ── Artist list ───────────────────────────────────────────────────────────────
+
+function ArtistList({ onSelect }: { onSelect: (artist: SpotifyArtist) => void }) {
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['spotify-artists'],
+    queryFn: () => api.spotify.getArtists(),
+    staleTime: 5 * 60_000,
+  })
+
+  if (isLoading) return <ListSkeleton />
+
+  if (isError) {
+    return (
+      <ErrorState
+        title="Could not load artists"
+        message={(error as Error).message ?? 'Failed to load your artists. Try again.'}
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  const artists = data?.items ?? []
+
+  return (
+    <div>
+      {data?.scope_warning && (
+        <div className="mb-4 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-300">
+          <p className="font-medium">Limited results</p>
+          <p className="mt-0.5 text-xs">{data.scope_warning} Go to Settings to reconnect Spotify.</p>
+        </div>
+      )}
+      {artists.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+          <Mic2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-medium text-heading">No artists found</p>
+            <p className="mt-1 max-w-xs text-xs text-caption">
+              Follow artists or listen to music in Spotify to see them here.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <ul className="-mx-4">
+          {artists.map(artist => (
+            <li key={artist.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(artist)}
+                className={cn(
+                  'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+                  'transition-colors hover:bg-[var(--bg-secondary)]',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                  'min-h-[44px]',
+                )}
+              >
+                <CoverArt images={artist.images} size={48} rounded="rounded-full" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
+                  <p className="truncate text-xs text-caption">
+                    {artist.followers.total.toLocaleString()} followers
+                    {artist.genres.length > 0 && ` · ${artist.genres[0]}`}
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ── Artist detail ─────────────────────────────────────────────────────────────
+
+function ArtistDetail({
+  artist,
+  speaker,
+  onBack,
+  onSelectAlbum,
+}: {
+  artist: SpotifyArtist
+  speaker: string | null
+  onBack: () => void
+  onSelectAlbum: (album: SpotifyAlbum) => void
+}) {
+  const { toast } = useToast()
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['spotify-artist-albums', artist.id],
+    queryFn: () => api.spotify.getArtistAlbums(artist.id),
+    staleTime: 5 * 60_000,
+  })
+
+  const playArtist = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, artist.uri, 'now'),
+    onSuccess: () => toast({ message: `Playing ${artist.name}` }),
+    onError: () => toast({ message: 'Failed to play artist', type: 'error' }),
+  })
+
+  const albums = data?.items ?? []
+
+  return (
+    <div>
+      <div className="mb-4 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label="Back to artists"
+          className={cn(
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
+            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          )}
+        >
+          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
+        </button>
+        <CoverArt images={artist.images} size={44} rounded="rounded-full" />
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-lg font-semibold leading-snug text-heading">{artist.name}</h2>
+          <p className="truncate text-xs text-caption">
+            {artist.followers.total.toLocaleString()} followers
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={!speaker || playArtist.isPending}
+          onClick={() => playArtist.mutate()}
+          aria-label={`Play ${artist.name}`}
+          className={cn(
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
+            'text-white transition-colors hover:bg-fairy-400',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'disabled:opacity-40',
+          )}
+        >
+          <Play className="h-5 w-5" aria-hidden="true" />
+        </button>
+      </div>
+
+      {isLoading && <ListSkeleton />}
+
+      {isError && (
+        <ErrorState
+          message={(error as Error).message ?? 'Failed to load albums'}
+          onRetry={() => refetch()}
+        />
+      )}
+
+      {!isLoading && !isError && albums.length === 0 && (
+        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+          <Disc3 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+          <p className="text-sm text-caption">No albums found</p>
+        </div>
+      )}
+
+      {albums.length > 0 && (
+        <ul className="-mx-4">
+          {albums.map(album => (
+            <li key={album.id}>
+              <button
+                type="button"
+                onClick={() => onSelectAlbum(album)}
+                className={cn(
+                  'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+                  'transition-colors hover:bg-[var(--bg-secondary)]',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                  'min-h-[44px]',
+                )}
+              >
+                <CoverArt images={album.images} size={48} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-heading">{album.name}</p>
+                  <p className="truncate text-xs text-caption">
+                    {album.album_type.charAt(0).toUpperCase() + album.album_type.slice(1)} · {album.release_date.slice(0, 4)}
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 // ── Search result helpers ─────────────────────────────────────────────────────
 
 type SpotifySearchAlbum = {
@@ -1351,6 +1538,7 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
   const [selectedPlaylist, setSelectedPlaylist] = useState<SpotifyPlaylist | null>(null)
   const [selectedAlbum, setSelectedAlbum] = useState<SpotifyAlbum | null>(null)
   const [selectedShow, setSelectedShow] = useState<SpotifyShow | null>(null)
+  const [selectedArtist, setSelectedArtist] = useState<SpotifyArtist | null>(null)
 
   const firstSpeaker = useFirstSpeaker()
   const speaker = targetSpeaker ?? firstSpeaker
@@ -1385,11 +1573,27 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
     setView('show-detail')
   }
 
+  function handleSelectArtist(artist: SpotifyArtist) {
+    setSelectedArtist(artist)
+    setView('artist-detail')
+  }
+
+  function handleSelectArtistAlbum(album: SpotifyAlbum) {
+    setSelectedAlbum(album)
+    setView('album-detail')
+  }
+
   function handleBack() {
-    setView('home')
-    setSelectedPlaylist(null)
-    setSelectedAlbum(null)
-    setSelectedShow(null)
+    if (view === 'album-detail' && selectedArtist) {
+      setView('artist-detail')
+      setSelectedAlbum(null)
+    } else {
+      setView('home')
+      setSelectedPlaylist(null)
+      setSelectedAlbum(null)
+      setSelectedShow(null)
+      setSelectedArtist(null)
+    }
   }
 
   if (statusLoading) {
@@ -1432,12 +1636,24 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
     )
   }
 
+  if (view === 'artist-detail' && selectedArtist) {
+    return (
+      <ArtistDetail
+        artist={selectedArtist}
+        speaker={speaker}
+        onBack={handleBack}
+        onSelectAlbum={handleSelectArtistAlbum}
+      />
+    )
+  }
+
   return (
     <div>
       <BrowseModeTabs mode={browseMode} onChangeMode={m => { setBrowseMode(m); setView('home') }} />
       {browseMode === 'playlists' && <PlaylistList onSelect={handleSelectPlaylist} />}
-      {browseMode === 'albums' && <AlbumList onSelect={handleSelectAlbum} />}
       {browseMode === 'podcasts' && <ShowList onSelect={handleSelectShow} />}
+      {browseMode === 'albums' && <AlbumList onSelect={handleSelectAlbum} />}
+      {browseMode === 'artists' && <ArtistList onSelect={handleSelectArtist} />}
       {browseMode === 'songs' && <SongsList speaker={speaker} />}
     </div>
   )

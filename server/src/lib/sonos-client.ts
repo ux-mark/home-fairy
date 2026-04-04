@@ -908,6 +908,12 @@ class SonosClient {
     return { artists: [], albums: [], tracks: matchingTracks }
   }
 
+  getAllLibraryTracks(): SonosLibraryTrack[] {
+    return this.readLibraryCache()
+      .map(t => ({ ...t, albumArtUri: '' }))
+      .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
+  }
+
   async getRadioStations(): Promise<SonosRadioStation[]> {
     // Derive radio stations from Sonos favourites — the /radios endpoint
     // doesn't exist in all node-sonos-http-api versions

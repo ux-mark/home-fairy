@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express'
-import { spotifyClient, SpotifyApiError } from '../lib/spotify-client.js'
+import { spotifyClient, SpotifyApiError, type SpotifyArtist } from '../lib/spotify-client.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 
 const router = Router()
@@ -197,6 +197,78 @@ router.get('/search', requireAuth, async (req: Request, res: Response) => {
     const limit = req.query.limit ? Number(req.query.limit) : 20
     const offset = req.query.offset ? Number(req.query.offset) : 0
     const result = await spotifyClient.search(q, types, limit, offset)
+    res.json(result)
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// GET /spotify/artists — fetch followed + top artists merged (requires auth + connected)
+router.get('/artists', requireAuth, async (req: Request, res: Response) => {
+  if (!spotifyClient.isConnected()) {
+    res.status(401).json({ error: 'Spotify not connected' })
+    return
+  }
+  const artists: SpotifyArtist[] = []
+  const seenIds = new Set<string>()
+  let scope_warning: string | undefined
+
+  try {
+    const followed = await spotifyClient.getFollowedArtists(50)
+    for (const a of followed.artists.items) {
+      if (!seenIds.has(a.id)) {
+        seenIds.add(a.id)
+        artists.push(a)
+      }
+    }
+  } catch (err) {
+    if (err instanceof SpotifyApiError && err.status === 403) {
+      scope_warning = 'Followed artists unavailable — re-authenticate Spotify to grant the user-follow-read scope.'
+    } else {
+      // Non-scope error: propagate
+      handleError(res, err)
+      return
+    }
+  }
+
+  try {
+    const top = await spotifyClient.getTopArtists(50)
+    for (const a of top.items) {
+      if (!seenIds.has(a.id)) {
+        seenIds.add(a.id)
+        artists.push(a)
+      }
+    }
+  } catch (err) {
+    if (err instanceof SpotifyApiError && err.status === 403) {
+      const topWarning = 'Top artists unavailable — re-authenticate Spotify to grant the user-top-read scope.'
+      scope_warning = scope_warning ? `${scope_warning} ${topWarning}` : topWarning
+    } else {
+      handleError(res, err)
+      return
+    }
+  }
+
+  artists.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+
+  const result: { items: SpotifyArtist[]; total: number; scope_warning?: string } = {
+    items: artists,
+    total: artists.length,
+  }
+  if (scope_warning) result.scope_warning = scope_warning
+  res.json(result)
+})
+
+// GET /spotify/artists/:id/albums — fetch albums for an artist (requires auth + connected)
+router.get('/artists/:id/albums', requireAuth, async (req: Request, res: Response) => {
+  if (!spotifyClient.isConnected()) {
+    res.status(401).json({ error: 'Spotify not connected' })
+    return
+  }
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : 50
+    const offset = req.query.offset ? Number(req.query.offset) : 0
+    const result = await spotifyClient.getArtistAlbums(String(req.params.id), limit, offset)
     res.json(result)
   } catch (err) {
     handleError(res, err)
