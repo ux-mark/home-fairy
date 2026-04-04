@@ -763,6 +763,22 @@ export interface SonosGenreAlbum {
   objectId: string
 }
 
+export interface NasEnrichedAlbum extends SonosGenreAlbum {
+  artist_country: {
+    country_code: string | null
+    country_name: string | null
+    sub_region: string | null
+    confidence: string | null
+  } | null
+}
+
+export interface NasEnrichedArtist extends SonosLibraryArtist {
+  country_code: string | null
+  country_name: string | null
+  sub_region: string | null
+  confidence: string | null
+}
+
 export interface SonosRadioStation {
   title: string
   uri: string
@@ -1642,6 +1658,17 @@ export const api = {
       fetchApi<SonosLibraryTrack[]>('/sonos/library/songs'),
     searchLibrary: (query: string) =>
       fetchApi<SonosLibrarySearchResult>('/sonos/library/search?q=' + encodeURIComponent(query)),
+    // NAS artist country enrichment
+    enrichNasArtists: () =>
+      fetchApi<{ status: string; total: number }>('/sonos/library/enrich-artists', { method: 'POST' }),
+    getNasEnrichmentStatus: () =>
+      fetchApi<EnrichmentProgress>('/sonos/library/enrichment-status'),
+    cancelNasEnrichment: () =>
+      fetchApi<{ ok: boolean }>('/sonos/library/enrich-artists/cancel', { method: 'POST' }),
+    getEnrichedNasAlbums: () =>
+      fetchApi<{ items: NasEnrichedAlbum[]; total: number; cached_artists: number; uncached_artists: number }>('/sonos/library/albums/enriched'),
+    getEnrichedNasArtists: () =>
+      fetchApi<{ items: NasEnrichedArtist[]; total: number }>('/sonos/library/artists/enriched'),
     getRadioStations: () =>
       fetchApi<SonosRadioStation[]>('/sonos/radio/stations'),
     getQueue: (speaker: string) =>

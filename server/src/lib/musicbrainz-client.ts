@@ -106,6 +106,7 @@ class MusicBrainzClient {
   private wikidataApi: AxiosInstance
   private mbApi: AxiosInstance
   private progress: EnrichmentProgress = { total: 0, processed: 0, resolved: 0, failed: 0, status: 'idle' }
+  private nasProgress: EnrichmentProgress = { total: 0, processed: 0, resolved: 0, failed: 0, status: 'idle' }
   private cancelled = false
   private mbLastRequest = 0
 
@@ -425,6 +426,108 @@ class MusicBrainzClient {
       console.error('[MusicBrainz] Enrichment failed:', msg)
       this.progress.status = 'error'
       this.progress.error = msg
+    }
+
+    return results
+  }
+
+  // ── NAS enrichment (name-only, no Spotify ID) ────────────────────────────
+
+  getNasProgress(): EnrichmentProgress {
+    return { ...this.nasProgress }
+  }
+
+  async enrichNasArtists(artistNames: string[]): Promise<ArtistCountryResult[]> {
+    if (this.nasProgress.status === 'running') {
+      throw new Error('NAS enrichment already in progress')
+    }
+    // Block if Spotify enrichment is running (shared MusicBrainz rate limit)
+    if (this.progress.status === 'running') {
+      throw new Error('Spotify enrichment is running — wait for it to finish')
+    }
+
+    this.cancelled = false
+    const results: ArtistCountryResult[] = []
+
+    // For NAS artists, first check if the name matches an existing entry (Spotify or prior NAS)
+    const uncached = artistNames.filter(name => {
+      const row = db.prepare(
+        'SELECT spotify_artist_id FROM artist_countries WHERE artist_name = ? COLLATE NOCASE',
+      ).get(name)
+      if (row) return false
+      // Also check NAS-keyed entry
+      const nasRow = db.prepare(
+        'SELECT spotify_artist_id FROM artist_countries WHERE spotify_artist_id = ?',
+      ).get(`nas:${name}`)
+      return !nasRow
+    })
+
+    this.nasProgress = {
+      total: uncached.length,
+      processed: 0,
+      resolved: 0,
+      failed: 0,
+      status: 'running',
+      started_at: new Date().toISOString(),
+    }
+
+    if (uncached.length === 0) {
+      this.nasProgress.status = 'complete'
+      return results
+    }
+
+    try {
+      // NAS uses MusicBrainz name search only (1 req/sec rate limit)
+      // Wikidata doesn't have a reliable name-only batch search for artists
+      for (const name of uncached) {
+        if (this.cancelled) break
+
+        try {
+          const mbArtist = await this.mbSearchByName(name)
+          if (mbArtist) {
+            const country = this.extractCountryFromMbArtist(mbArtist)
+            const result: ArtistCountryResult = {
+              spotify_artist_id: `nas:${name}`,
+              artist_name: name,
+              ...country,
+              source: 'musicbrainz',
+              musicbrainz_id: mbArtist.id,
+              confidence: 'medium',
+            }
+            this.saveResult(result)
+            results.push(result)
+            if (result.country_code) this.nasProgress.resolved++
+          } else {
+            // Not found — save null
+            const result: ArtistCountryResult = {
+              spotify_artist_id: `nas:${name}`,
+              artist_name: name,
+              country_code: null,
+              country_name: null,
+              sub_region: null,
+              source: 'musicbrainz',
+              musicbrainz_id: null,
+              confidence: 'low',
+            }
+            this.saveResult(result)
+            results.push(result)
+            this.nasProgress.failed++
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          console.error(`[MusicBrainz] Failed to enrich NAS artist ${name}:`, msg)
+          this.nasProgress.failed++
+        }
+
+        this.nasProgress.processed++
+      }
+
+      this.nasProgress.status = this.cancelled ? 'idle' : 'complete'
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error('[MusicBrainz] NAS enrichment failed:', msg)
+      this.nasProgress.status = 'error'
+      this.nasProgress.error = msg
     }
 
     return results
