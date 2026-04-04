@@ -7,6 +7,7 @@ import { join } from 'path'
 import { db, getAll, getOne, run } from '../db/index.js'
 import { sonosClient } from '../lib/sonos-client.js'
 import { musicBrainzClient, type ArtistCountryRow } from '../lib/musicbrainz-client.js'
+import { spotifyClient } from '../lib/spotify-client.js'
 import { sonosManager } from '../lib/sonos-manager.js'
 import { emit } from '../lib/socket.js'
 import { findPodcastFeedUrl, getLatestEpisodeUrl } from '../lib/podcast-resolver.js'
@@ -71,6 +72,41 @@ setTimeout(() => ensureSpeakerIp(), 5_000)
  * - External HTTP URLs are also proxied to avoid mixed-content browser blocks
  * - External HTTPS URLs are returned unchanged
  */
+// ── Auto-backfill: lazily fetch missing artist images in background ──────────
+
+let nasImageBackfillRunning = false
+
+function triggerNasAutoBackfill(): void {
+  if (nasImageBackfillRunning) return
+  if (!spotifyClient.isConnected()) return
+
+  const missing = db.prepare(
+    "SELECT COUNT(*) as cnt FROM artist_countries WHERE image_url IS NULL AND spotify_artist_id NOT LIKE 'nas:%'",
+  ).get() as { cnt: number }
+  const missingNas = db.prepare(
+    "SELECT COUNT(*) as cnt FROM artist_countries WHERE image_url IS NULL AND spotify_artist_id LIKE 'nas:%' AND musicbrainz_id IS NOT NULL",
+  ).get() as { cnt: number }
+  if (missing.cnt === 0 && missingNas.cnt === 0) return
+
+  nasImageBackfillRunning = true
+  console.log(`[Backfill] Auto-fetching images for ${missing.cnt} Spotify + ${missingNas.cnt} NAS artists...`)
+
+  musicBrainzClient.backfillImages(spotifyClient)
+    .then(result => {
+      if (result.updated > 0) console.log(`[Backfill] Spotify images: ${result.updated}/${result.total} updated`)
+      return musicBrainzClient.backfillNasImages(spotifyClient)
+    })
+    .then(result => {
+      if (result.updated > 0) console.log(`[Backfill] NAS images: ${result.updated}/${result.total} updated`)
+    })
+    .catch(err => {
+      console.error('[Backfill] Auto-backfill failed:', err instanceof Error ? err.message : String(err))
+    })
+    .finally(() => {
+      nasImageBackfillRunning = false
+    })
+}
+
 function rewriteAlbumArtUri(uri: string | undefined): string | undefined {
   if (!uri) return undefined
 
@@ -1384,6 +1420,7 @@ router.get('/library/albums/enriched', async (_req: Request, res: Response) => {
       cached_artists: withCountry.length,
       uncached_artists: enriched.length - withCountry.length,
     })
+    triggerNasAutoBackfill()
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
@@ -1416,6 +1453,7 @@ router.get('/library/artists/enriched', (_req: Request, res: Response) => {
     })
 
     res.json({ items: enriched, total: enriched.length })
+    triggerNasAutoBackfill()
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })

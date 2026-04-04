@@ -365,11 +365,47 @@ router.post('/backfill-images', requireAuth, async (_req: Request, res: Response
   }
 })
 
+// ── Auto-backfill: lazily fetch missing artist images in background ──────────
+
+let imageBackfillRunning = false
+
+function triggerAutoBackfill(): void {
+  if (imageBackfillRunning) return
+  if (!spotifyClient.isConnected()) return
+
+  // Check if there are artists missing images
+  const missing = db.prepare(
+    "SELECT COUNT(*) as cnt FROM artist_countries WHERE image_url IS NULL AND spotify_artist_id NOT LIKE 'nas:%'",
+  ).get() as { cnt: number }
+  if (missing.cnt === 0) return
+
+  imageBackfillRunning = true
+  console.log(`[Backfill] Auto-fetching images for ${missing.cnt} artists...`)
+
+  musicBrainzClient.backfillImages(spotifyClient)
+    .then(result => {
+      console.log(`[Backfill] Spotify images: ${result.updated}/${result.total} updated`)
+      // Also try NAS artists (slower, but runs in background)
+      return musicBrainzClient.backfillNasImages(spotifyClient)
+    })
+    .then(result => {
+      console.log(`[Backfill] NAS images: ${result.updated}/${result.total} updated`)
+    })
+    .catch(err => {
+      console.error('[Backfill] Auto-backfill failed:', err instanceof Error ? err.message : String(err))
+    })
+    .finally(() => {
+      imageBackfillRunning = false
+    })
+}
+
 // GET /spotify/artist-countries — get all cached artist country data
 router.get('/artist-countries', requireAuth, (_req: Request, res: Response) => {
   try {
     const rows = db.prepare('SELECT * FROM artist_countries ORDER BY artist_name COLLATE NOCASE').all() as ArtistCountryRow[]
     res.json({ items: rows, total: rows.length })
+    // Fire-and-forget: backfill missing images in background
+    triggerAutoBackfill()
   } catch (err) {
     handleError(res, err)
   }
@@ -475,6 +511,8 @@ router.get('/albums/enriched', requireAuth, async (req: Request, res: Response) 
       cached_artists: countryMap.size,
       uncached_artists: artistIds.size - countryMap.size,
     })
+    // Fire-and-forget: backfill missing images in background
+    triggerAutoBackfill()
   } catch (err) {
     handleError(res, err)
   }
