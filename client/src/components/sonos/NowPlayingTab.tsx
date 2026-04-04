@@ -1,3 +1,5 @@
+import { useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Headphones } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -12,7 +14,19 @@ import { SonosGroupCard } from './SonosGroupCard'
  * Solo speakers are rendered as SonosSpeakerCard.
  * Non-coordinator group members are excluded from the solo list.
  */
-export function NowPlayingTab() {
+export function NowPlayingTab({ focusSpeaker }: { focusSpeaker?: string }) {
+  const [, setSearchParams] = useSearchParams()
+
+  // Clear the speaker query param after mount so the URL stays clean
+  useEffect(() => {
+    if (focusSpeaker) {
+      setSearchParams(prev => {
+        prev.delete('speaker')
+        return prev
+      }, { replace: true })
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const {
     data: nowPlaying,
     isLoading,
@@ -129,6 +143,7 @@ export function NowPlayingTab() {
             members={memberEntries}
             onRefresh={handleRefresh}
             allSpeakers={nowPlaying}
+            focusSpeaker={focusSpeaker}
           />
         )
       })}
@@ -144,6 +159,7 @@ export function NowPlayingTab() {
           group={entry.group}
           onRefresh={handleRefresh}
           allSpeakers={nowPlaying}
+          focusSpeaker={focusSpeaker}
         />
       ))}
     </div>
