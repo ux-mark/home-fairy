@@ -1,11 +1,12 @@
-import React, { useState, useMemo } from 'react'
+import { useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Play, Pause, Music, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { X, Play, Pause, Music, Loader2, ChevronDown, ChevronUp, SkipBack, SkipForward, ImageOff, Tv } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { cn } from '@/lib/utils'
-import { api, parseApiError, type SonosNowPlayingEntry } from '@/lib/api'
+import { api, parseApiError, type SonosNowPlayingEntry, type SonosQueueItem } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
-import { SonosNowPlaying } from './SonosNowPlaying'
+import { ArtworkImage } from './ArtworkImage'
 import { FavouriteSelector } from './FavouriteSelector'
 import { ActionPopover } from '@/components/ui/ActionPopover'
 
@@ -16,9 +17,107 @@ interface HomeSpeakerPopoverProps {
   borderColor?: string
 }
 
+// ── Queue accordion (per-speaker, so each can lazy-load independently) ────────
+
+interface QueueAccordionProps {
+  speakerName: string
+  roomName: string
+  isExpanded: boolean
+  onToggle: () => void
+  onClose: () => void
+}
+
+function QueueAccordion({ speakerName, roomName, isExpanded, onToggle, onClose }: QueueAccordionProps) {
+  const navigate = useNavigate()
+
+  const { data: queue = [], isLoading } = useQuery({
+    queryKey: ['sonos', 'queue', speakerName],
+    queryFn: () => api.sonos.getQueue(speakerName),
+    enabled: isExpanded,
+    staleTime: 10_000,
+    retry: false,
+  })
+
+  // Skip index 0 (current track), show next 5
+  const upcoming = queue.slice(1, 6)
+
+  return (
+    <div className="border-t border-[var(--border-color)] mt-1 pt-1">
+      <button
+        onClick={onToggle}
+        aria-expanded={isExpanded}
+        aria-controls={`queue-accordion-${speakerName}`}
+        className={cn(
+          'flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[11px] font-medium text-caption transition-colors',
+          'hover:bg-[var(--bg-tertiary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <span>Queue</span>
+        {isExpanded ? (
+          <ChevronUp className="h-3 w-3" aria-hidden="true" />
+        ) : (
+          <ChevronDown className="h-3 w-3" aria-hidden="true" />
+        )}
+      </button>
+
+      {isExpanded && (
+        <div id={`queue-accordion-${speakerName}`}>
+          {isLoading ? (
+            <div className="space-y-1 px-3 py-1" aria-label="Loading queue">
+              {[0, 1, 2].map(i => (
+                <div key={i} className="flex animate-pulse items-center gap-2">
+                  <div className="h-10 w-10 shrink-0 rounded bg-[var(--bg-tertiary)]" />
+                  <div className="flex-1 space-y-1">
+                    <div className="h-3 w-3/4 rounded bg-[var(--bg-tertiary)]" />
+                    <div className="h-2.5 w-1/2 rounded bg-[var(--bg-tertiary)]" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : upcoming.length === 0 ? (
+            <p className="px-3 py-2 text-xs text-caption">No upcoming tracks</p>
+          ) : (
+            <ul className="space-y-0.5 px-1" role="list" aria-label={`Upcoming tracks for ${roomName}`}>
+              {upcoming.map((track: SonosQueueItem, i: number) => (
+                <li key={`${track.uri}-${i}`} className="flex items-center gap-2 rounded-md px-2 py-1">
+                  <ArtworkImage src={track.albumArtUri} size={40} rounded="rounded" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-medium text-body">{track.title}</p>
+                    <p className="truncate text-[10px] text-caption">{track.artist}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <button
+            onClick={() => {
+              onClose()
+              navigate('/sonos/playing')
+            }}
+            className={cn(
+              'mt-0.5 flex w-full items-center justify-center rounded-md px-3 py-2 text-xs font-medium text-fairy-400 transition-colors',
+              'hover:bg-[var(--bg-tertiary)]',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              'min-h-[44px]',
+            )}
+          >
+            View full queue
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Main popover ──────────────────────────────────────────────────────────────
+
 export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: HomeSpeakerPopoverProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const navigate = useNavigate()
 
   // Dialog state: which speaker is having music chosen for it
   const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null)
@@ -27,8 +126,14 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
   // Track expanded group accordions (keyed by coordinator speakerName)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
+  // Track expanded queue accordions (keyed by speakerName)
+  const [expandedQueues, setExpandedQueues] = useState<Set<string>>(new Set())
+
   // Track which member is being removed
   const [removingMember, setRemovingMember] = useState<string | null>(null)
+
+  // Track speakers whose album art failed to load
+  const [imgFailedSpeakers, setImgFailedSpeakers] = useState<Set<string>>(new Set())
 
   // Now-playing query — only when popover is open
   const { data: nowPlaying = [], isLoading } = useQuery({
@@ -72,6 +177,32 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
     onError: (_err, speaker) => {
       const entry = nowPlaying.find(e => e.speakerName === speaker)
       toast({ message: `Couldn't pause ${entry?.roomName ?? speaker}`, type: 'error' })
+    },
+  })
+
+  // Next track mutation
+  const nextMutation = useMutation({
+    mutationFn: (speaker: string) => api.sonos.next(speaker),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'play-status'] })
+    },
+    onError: (_err, speaker) => {
+      const entry = nowPlaying.find(e => e.speakerName === speaker)
+      toast({ message: `Couldn't skip on ${entry?.roomName ?? speaker}`, type: 'error' })
+    },
+  })
+
+  // Previous track mutation
+  const previousMutation = useMutation({
+    mutationFn: (speaker: string) => api.sonos.previous(speaker),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'play-status'] })
+    },
+    onError: (_err, speaker) => {
+      const entry = nowPlaying.find(e => e.speakerName === speaker)
+      toast({ message: `Couldn't go back on ${entry?.roomName ?? speaker}`, type: 'error' })
     },
   })
 
@@ -156,11 +287,17 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
   function toggleGroupExpanded(coordinatorName: string) {
     setExpandedGroups(prev => {
       const next = new Set(prev)
-      if (next.has(coordinatorName)) {
-        next.delete(coordinatorName)
-      } else {
-        next.add(coordinatorName)
-      }
+      if (next.has(coordinatorName)) next.delete(coordinatorName)
+      else next.add(coordinatorName)
+      return next
+    })
+  }
+
+  function toggleQueueExpanded(speakerName: string) {
+    setExpandedQueues(prev => {
+      const next = new Set(prev)
+      if (next.has(speakerName)) next.delete(speakerName)
+      else next.add(speakerName)
       return next
     })
   }
@@ -170,159 +307,304 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
     leaveMutation.mutate(speakerName)
   }
 
-  // Shared: renders the play/pause or choose-music action button
-  function renderActionButton(
+  function handleChangeSpeaker(speakerName: string) {
+    onClose()
+    navigate(`/sonos/browse?speaker=${encodeURIComponent(speakerName)}`)
+  }
+
+  // ── Choose Music dialog (for stopped speakers with no track) ────────────────
+  function renderChooseMusicDialog(speakerName: string, roomName: string) {
+    return (
+      <Dialog.Root
+        open={activeSpeaker === speakerName}
+        onOpenChange={dialogOpen => {
+          if (dialogOpen) {
+            setActiveSpeaker(speakerName)
+            setSelectedFavourite('')
+          } else {
+            setActiveSpeaker(null)
+            setSelectedFavourite('')
+          }
+        }}
+      >
+        <Dialog.Trigger asChild>
+          <button
+            className={cn(
+              'flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors',
+              'surface text-body hover:brightness-95 dark:hover:brightness-110',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            )}
+            aria-label={`Choose music for ${roomName}`}
+          >
+            <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
+            Choose Music
+          </button>
+        </Dialog.Trigger>
+
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+          <Dialog.Content
+            className={cn(
+              'fixed bottom-0 left-0 right-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-2xl',
+              'bg-[var(--bg-primary)] p-6 shadow-xl',
+              'data-[state=open]:animate-in data-[state=closed]:animate-out',
+              'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
+              'focus:outline-none',
+            )}
+            aria-describedby={undefined}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <Dialog.Title className="text-base font-semibold text-heading">
+                Choose music for {roomName}
+              </Dialog.Title>
+              <Dialog.Close asChild>
+                <button
+                  className={cn(
+                    'flex h-8 w-8 items-center justify-center rounded-lg text-caption transition-colors',
+                    'hover:bg-[var(--bg-secondary)]',
+                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                  )}
+                  aria-label="Close"
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </Dialog.Close>
+            </div>
+
+            <FavouriteSelector
+              id={`home-fav-selector-${speakerName}`}
+              favourites={favourites}
+              value={selectedFavourite}
+              onChange={setSelectedFavourite}
+              includeContinue={false}
+            />
+
+            <div className="mt-4 flex gap-2">
+              <Dialog.Close asChild>
+                <button
+                  className={cn(
+                    'flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors',
+                    'surface text-body hover:brightness-95 dark:hover:brightness-110',
+                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                    'min-h-[44px]',
+                  )}
+                >
+                  Cancel
+                </button>
+              </Dialog.Close>
+              <button
+                onClick={() => {
+                  if (selectedFavourite && activeSpeaker) {
+                    playFavouriteMutation.mutate({
+                      speaker: activeSpeaker,
+                      name: selectedFavourite,
+                    })
+                  }
+                }}
+                disabled={!selectedFavourite || playFavouriteMutation.isPending}
+                className={cn(
+                  'flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors',
+                  'bg-fairy-500 text-white hover:bg-fairy-600 active:bg-fairy-700',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                  'disabled:opacity-50 min-h-[44px]',
+                )}
+              >
+                {playFavouriteMutation.isPending ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    Playing…
+                  </span>
+                ) : (
+                  'Play'
+                )}
+              </button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    )
+  }
+
+  // ── Playing/paused speaker card with track ──────────────────────────────────
+  function renderTrackCard(
     speakerName: string,
     roomName: string,
+    displayLabel: string,
     isPlaying: boolean,
-    isStopped: boolean,
-    hasTrack: boolean,
+    isPaused: boolean,
+    state: SonosNowPlayingEntry['state'],
   ) {
-    const isActionPending =
+    if (!state) return null
+
+    const { currentTrack, inputSource } = state
+    const isTv = inputSource === 'tv'
+    const isLineIn = inputSource === 'line-in'
+    const isMediaStream = !isTv && !isLineIn
+
+    const isPlayPausePending =
       (playMutation.isPending && playMutation.variables === speakerName) ||
       (pauseMutation.isPending && pauseMutation.variables === speakerName)
+    const isNextPending = nextMutation.isPending && nextMutation.variables === speakerName
+    const isPrevPending = previousMutation.isPending && previousMutation.variables === speakerName
 
-    if (isStopped && !hasTrack) {
-      return (
-        <Dialog.Root
-          open={activeSpeaker === speakerName}
-          onOpenChange={dialogOpen => {
-            if (dialogOpen) {
-              setActiveSpeaker(speakerName)
-              setSelectedFavourite('')
-            } else {
-              setActiveSpeaker(null)
-              setSelectedFavourite('')
-            }
-          }}
-        >
-          <Dialog.Trigger asChild>
+    const title = isTv ? 'TV Audio' : (currentTrack.stationName || currentTrack.title || 'Unknown track')
+    const artist = isTv ? null : (currentTrack.artist || null)
+    const album = isTv ? null : (currentTrack.album || null)
+    const subtitle = artist || album
+
+    const imgFailed = imgFailedSpeakers.has(speakerName)
+    const markImgFailed = (name: string) =>
+      setImgFailedSpeakers(prev => new Set([...prev, name]))
+
+    return (
+      <>
+        {/* Art + info row */}
+        <div className="flex gap-3">
+          {/* 80×80 album art */}
+          <div
+            className={cn(
+              'relative h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-[var(--bg-tertiary)]',
+              !isPlaying && 'opacity-70',
+            )}
+            aria-hidden="true"
+          >
+            {isTv || isLineIn ? (
+              <div className="flex h-full w-full items-center justify-center">
+                <Tv className="h-7 w-7 text-caption" aria-hidden="true" />
+              </div>
+            ) : currentTrack.albumArtUri && !imgFailed ? (
+              <img
+                src={currentTrack.albumArtUri}
+                alt=""
+                className="h-full w-full object-cover"
+                onError={() => markImgFailed(speakerName)}
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center">
+                <ImageOff className="h-7 w-7 text-caption" aria-hidden="true" />
+              </div>
+            )}
+            {isPaused && (
+              <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/30">
+                <div className="h-3 w-3 rounded-full bg-white/80" aria-hidden="true" />
+              </div>
+            )}
+          </div>
+
+          {/* Info: room + status, title, artist */}
+          <div className="min-w-0 flex-1 py-0.5">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-sm font-medium text-heading">{displayLabel}</span>
+              <span
+                className={cn(
+                  'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium',
+                  isPlaying && 'bg-emerald-500/15 text-emerald-400',
+                  isPaused && 'bg-amber-500/15 text-amber-400',
+                )}
+              >
+                {isPlaying ? 'Playing' : 'Paused'}
+              </span>
+            </div>
+            <p className="mt-1 line-clamp-2 text-sm font-medium leading-snug text-heading">
+              {title}
+            </p>
+            {subtitle && (
+              <p className="mt-0.5 truncate text-xs leading-tight text-caption">{subtitle}</p>
+            )}
+          </div>
+        </div>
+
+        {/* Button row — full width, aligns with card edges */}
+        <div className="mt-2.5 flex items-center gap-1">
+          {/* Skip back */}
+          {isMediaStream && (
             <button
+              onClick={() => previousMutation.mutate(speakerName)}
+              disabled={isPrevPending}
+              aria-label={`Previous track for ${roomName}`}
+              className={cn(
+                'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors',
+                'surface text-body hover:brightness-95 dark:hover:brightness-110',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                'disabled:opacity-50',
+              )}
+            >
+              {isPrevPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <SkipBack className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+          )}
+
+          {/* Play / Pause */}
+          <button
+            onClick={() => {
+              if (isPlaying) pauseMutation.mutate(speakerName)
+              else playMutation.mutate(speakerName)
+            }}
+            disabled={isPlayPausePending}
+            aria-label={isPlaying ? `Pause ${roomName}` : `Play ${roomName}`}
+            aria-pressed={isPlaying}
+            className={cn(
+              'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              'disabled:opacity-50',
+              isPlaying
+                ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25'
+                : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
+            )}
+          >
+            {isPlayPausePending ? (
+              <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
+            ) : isPlaying ? (
+              <Pause className="h-5 w-5" aria-hidden="true" />
+            ) : (
+              <Play className="h-5 w-5" aria-hidden="true" />
+            )}
+          </button>
+
+          {/* Skip forward */}
+          {isMediaStream && (
+            <button
+              onClick={() => nextMutation.mutate(speakerName)}
+              disabled={isNextPending}
+              aria-label={`Next track for ${roomName}`}
+              className={cn(
+                'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors',
+                'surface text-body hover:brightness-95 dark:hover:brightness-110',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                'disabled:opacity-50',
+              )}
+            >
+              {isNextPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <SkipForward className="h-4 w-4" aria-hidden="true" />
+              )}
+            </button>
+          )}
+
+          {/* Spacer */}
+          <div className="flex-1" />
+
+          {/* Change music — only for media streams (not TV/line-in) */}
+          {isMediaStream && (
+            <button
+              onClick={() => handleChangeSpeaker(speakerName)}
+              aria-label={`Change music for ${roomName}`}
               className={cn(
                 'flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors',
                 'surface text-body hover:brightness-95 dark:hover:brightness-110',
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               )}
-              aria-label={`Choose music for ${roomName}`}
             >
               <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
-              Choose Music
+              Change
             </button>
-          </Dialog.Trigger>
-
-          <Dialog.Portal>
-            <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-            <Dialog.Content
-              className={cn(
-                'fixed bottom-0 left-0 right-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-2xl',
-                'bg-[var(--bg-primary)] p-6 shadow-xl',
-                'data-[state=open]:animate-in data-[state=closed]:animate-out',
-                'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
-                'focus:outline-none',
-              )}
-              aria-describedby={undefined}
-            >
-              <div className="mb-4 flex items-center justify-between">
-                <Dialog.Title className="text-base font-semibold text-heading">
-                  Choose music for {roomName}
-                </Dialog.Title>
-                <Dialog.Close asChild>
-                  <button
-                    className={cn(
-                      'flex h-8 w-8 items-center justify-center rounded-lg text-caption transition-colors',
-                      'hover:bg-[var(--bg-secondary)]',
-                      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                    )}
-                    aria-label="Close"
-                  >
-                    <X className="h-4 w-4" aria-hidden="true" />
-                  </button>
-                </Dialog.Close>
-              </div>
-
-              <FavouriteSelector
-                id={`home-fav-selector-${speakerName}`}
-                favourites={favourites}
-                value={selectedFavourite}
-                onChange={setSelectedFavourite}
-                includeContinue={false}
-              />
-
-              <div className="mt-4 flex gap-2">
-                <Dialog.Close asChild>
-                  <button
-                    className={cn(
-                      'flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors',
-                      'surface text-body hover:brightness-95 dark:hover:brightness-110',
-                      'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                      'min-h-[44px]',
-                    )}
-                  >
-                    Cancel
-                  </button>
-                </Dialog.Close>
-                <button
-                  onClick={() => {
-                    if (selectedFavourite && activeSpeaker) {
-                      playFavouriteMutation.mutate({
-                        speaker: activeSpeaker,
-                        name: selectedFavourite,
-                      })
-                    }
-                  }}
-                  disabled={!selectedFavourite || playFavouriteMutation.isPending}
-                  className={cn(
-                    'flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors',
-                    'bg-fairy-500 text-white hover:bg-fairy-600 active:bg-fairy-700',
-                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                    'disabled:opacity-50 min-h-[44px]',
-                  )}
-                >
-                  {playFavouriteMutation.isPending ? (
-                    <span className="flex items-center justify-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      Playing…
-                    </span>
-                  ) : (
-                    'Play'
-                  )}
-                </button>
-              </div>
-            </Dialog.Content>
-          </Dialog.Portal>
-        </Dialog.Root>
-      )
-    }
-
-    return (
-      <button
-        onClick={() => {
-          if (isPlaying) {
-            pauseMutation.mutate(speakerName)
-          } else {
-            playMutation.mutate(speakerName)
-          }
-        }}
-        disabled={isActionPending}
-        aria-label={isPlaying ? `Pause ${roomName}` : `Play ${roomName}`}
-        aria-pressed={isPlaying}
-        className={cn(
-          'flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg transition-colors',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          'disabled:opacity-50',
-          isPlaying
-            ? 'bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25'
-            : 'surface text-body hover:brightness-95 dark:hover:brightness-110',
-        )}
-      >
-        {isActionPending ? (
-          <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-        ) : isPlaying ? (
-          <Pause className="h-5 w-5" aria-hidden="true" />
-        ) : (
-          <Play className="h-5 w-5" aria-hidden="true" />
-        )}
-      </button>
+          )}
+        </div>
+      </>
     )
   }
 
@@ -337,14 +619,18 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
       <div className="px-3 py-3">
         {/* Loading state */}
         {isLoading && (
-          <div className="space-y-2" aria-label="Loading speakers">
+          <div className="space-y-3" aria-label="Loading speakers">
             {[0, 1].map(i => (
-              <div
-                key={i}
-                className="flex animate-pulse items-center gap-3 rounded-lg p-2"
-              >
-                <div className="h-10 flex-1 rounded-lg bg-[var(--bg-tertiary)]" />
-                <div className="h-10 w-10 rounded-lg bg-[var(--bg-tertiary)]" />
+              <div key={i} className="animate-pulse space-y-2 rounded-xl p-2">
+                <div className="flex gap-3">
+                  <div className="h-20 w-20 shrink-0 rounded-xl bg-[var(--bg-tertiary)]" />
+                  <div className="flex-1 space-y-2 py-1">
+                    <div className="h-3 w-1/3 rounded bg-[var(--bg-tertiary)]" />
+                    <div className="h-4 w-3/4 rounded bg-[var(--bg-tertiary)]" />
+                    <div className="h-3 w-1/2 rounded bg-[var(--bg-tertiary)]" />
+                  </div>
+                </div>
+                <div className="h-10 w-full rounded-lg bg-[var(--bg-tertiary)]" />
               </div>
             ))}
           </div>
@@ -357,7 +643,7 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
 
         {/* Speaker rows */}
         {!isLoading && renderItems.length > 0 && (
-          <ul className="space-y-1" role="list">
+          <ul className="space-y-2" role="list">
             {renderItems.map(item => {
               if (item.type === 'solo') {
                 const entry = item.entry
@@ -367,42 +653,53 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
                 const hasTrack =
                   entry.state &&
                   (entry.state.currentTrack.title || entry.state.currentTrack.stationName)
+                const isTv = entry.state?.inputSource === 'tv'
+                const isLineIn = entry.state?.inputSource === 'line-in'
+                const isMediaStream = !isTv && !isLineIn
+                const showQueue = isMediaStream && (isPlaying || isPaused) && !!hasTrack
 
+                if ((isPlaying || isPaused) && hasTrack && entry.state) {
+                  // Playing or paused with a track — use the new card layout
+                  return (
+                    <li key={entry.speakerName} className="rounded-xl bg-[var(--bg-secondary)] p-3">
+                      {renderTrackCard(
+                        entry.speakerName,
+                        entry.roomName,
+                        entry.roomName,
+                        isPlaying,
+                        isPaused,
+                        entry.state,
+                      )}
+                      {showQueue && (
+                        <QueueAccordion
+                          speakerName={entry.speakerName}
+                          roomName={entry.roomName}
+                          isExpanded={expandedQueues.has(entry.speakerName)}
+                          onToggle={() => toggleQueueExpanded(entry.speakerName)}
+                          onClose={onClose}
+                        />
+                      )}
+                    </li>
+                  )
+                }
+
+                // Stopped / no track — compact row with Choose Music
                 return (
                   <li
                     key={entry.speakerName}
                     className="flex items-center gap-3 rounded-lg p-2"
                   >
-                    {/* Left: room info + now playing */}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
                         <span className="truncate text-sm font-medium text-heading">
                           {entry.roomName}
                         </span>
-                        <span
-                          className={cn(
-                            'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium',
-                            isPlaying && 'bg-emerald-500/15 text-emerald-400',
-                            isPaused && 'bg-amber-500/15 text-amber-400',
-                            isStopped && 'bg-[var(--bg-tertiary)] text-caption',
-                          )}
-                        >
-                          {isPlaying ? 'Playing' : isPaused ? 'Paused' : 'Stopped'}
+                        <span className="shrink-0 rounded-full bg-[var(--bg-tertiary)] px-2 py-0.5 text-[10px] font-medium text-caption">
+                          Stopped
                         </span>
                       </div>
-                      {entry.state && hasTrack && (
-                        <SonosNowPlaying state={entry.state} className="mt-1" />
-                      )}
                     </div>
-
-                    {/* Right: action button */}
-                    {renderActionButton(
-                      entry.speakerName,
-                      entry.roomName,
-                      isPlaying,
-                      isStopped,
-                      !!hasTrack,
-                    )}
+                    {isStopped && !hasTrack && renderChooseMusicDialog(entry.speakerName, entry.roomName)}
                   </li>
                 )
               }
@@ -417,49 +714,57 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
               const hasTrack =
                 coordinator.state &&
                 (coordinator.state.currentTrack.title || coordinator.state.currentTrack.stationName)
+              const isTv = coordinator.state?.inputSource === 'tv'
+              const isLineIn = coordinator.state?.inputSource === 'line-in'
+              const isMediaStream = !isTv && !isLineIn
+              const showQueue = isMediaStream && (isPlaying || isPaused) && !!hasTrack
               const isExpanded = expandedGroups.has(coordinator.speakerName)
 
               return (
                 <li key={coordinator.speakerName}>
-                  {/* Main group row */}
-                  <div className="flex items-center gap-3 rounded-lg p-2">
-                    {/* Left: group info + now playing */}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium text-heading">
-                          {groupLabel}
-                        </span>
-                        <span className="shrink-0 rounded-full bg-[var(--bg-tertiary)] px-1.5 py-0.5 text-[10px] font-medium text-caption">
-                          {allMembers.length}
-                        </span>
-                        <span
-                          className={cn(
-                            'shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium',
-                            isPlaying && 'bg-emerald-500/15 text-emerald-400',
-                            isPaused && 'bg-amber-500/15 text-amber-400',
-                            isStopped && 'bg-[var(--bg-tertiary)] text-caption',
-                          )}
-                        >
-                          {isPlaying ? 'Playing' : isPaused ? 'Paused' : 'Stopped'}
-                        </span>
-                      </div>
-                      {coordinator.state && hasTrack && (
-                        <SonosNowPlaying state={coordinator.state} className="mt-1" />
+                  {(isPlaying || isPaused) && hasTrack && coordinator.state ? (
+                    // Playing/paused group — new card layout
+                    <div className="rounded-xl bg-[var(--bg-secondary)] p-3">
+                      {renderTrackCard(
+                        coordinator.speakerName,
+                        coordinator.roomName,
+                        groupLabel,
+                        isPlaying,
+                        isPaused,
+                        coordinator.state,
+                      )}
+                      {showQueue && (
+                        <QueueAccordion
+                          speakerName={coordinator.speakerName}
+                          roomName={coordinator.roomName}
+                          isExpanded={expandedQueues.has(coordinator.speakerName)}
+                          onToggle={() => toggleQueueExpanded(coordinator.speakerName)}
+                          onClose={onClose}
+                        />
                       )}
                     </div>
-
-                    {/* Right: action button (targets coordinator) */}
-                    {renderActionButton(
-                      coordinator.speakerName,
-                      groupLabel,
-                      isPlaying,
-                      isStopped,
-                      !!hasTrack,
-                    )}
-                  </div>
+                  ) : (
+                    // Stopped group — compact row
+                    <div className="flex items-center gap-3 rounded-lg p-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate text-sm font-medium text-heading">
+                            {groupLabel}
+                          </span>
+                          <span className="shrink-0 rounded-full bg-[var(--bg-tertiary)] px-1.5 py-0.5 text-[10px] font-medium text-caption">
+                            {allMembers.length}
+                          </span>
+                          <span className="shrink-0 rounded-full bg-[var(--bg-tertiary)] px-2 py-0.5 text-[10px] font-medium text-caption">
+                            Stopped
+                          </span>
+                        </div>
+                      </div>
+                      {isStopped && !hasTrack && renderChooseMusicDialog(coordinator.speakerName, groupLabel)}
+                    </div>
+                  )}
 
                   {/* Expandable member accordion */}
-                  <div className="px-2 pb-1">
+                  <div className="px-1 pb-1 pt-0.5">
                     <button
                       onClick={() => toggleGroupExpanded(coordinator.speakerName)}
                       aria-expanded={isExpanded}
@@ -468,6 +773,7 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
                         'flex w-full items-center justify-between rounded-md px-2 py-1 text-[11px] font-medium text-caption transition-colors',
                         'hover:bg-[var(--bg-tertiary)]',
                         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                        'min-h-[44px]',
                       )}
                     >
                       <span>Speakers in this group</span>
@@ -496,7 +802,7 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
                                 disabled={removingMember === member.speakerName}
                                 aria-label={`Remove ${member.roomName} from group`}
                                 className={cn(
-                                  'flex h-6 w-6 shrink-0 items-center justify-center rounded text-caption transition-colors',
+                                  'flex h-8 items-center gap-1 rounded px-2 text-xs text-caption transition-colors',
                                   'hover:bg-red-500/15 hover:text-red-400',
                                   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                                   'disabled:opacity-40',
@@ -507,6 +813,7 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
                                 ) : (
                                   <X className="h-3 w-3" aria-hidden="true" />
                                 )}
+                                Remove
                               </button>
                             )}
                           </li>
