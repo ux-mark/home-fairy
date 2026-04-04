@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useLocation } from 'react-router-dom'
-import { CheckCircle, AlertCircle, Pencil, Zap, CirclePause, CircleSlash } from 'lucide-react'
+import { CheckCircle, AlertCircle, AlertTriangle, Pencil, Zap, CirclePause, CircleSlash } from 'lucide-react'
 import * as Switch from '@radix-ui/react-switch'
 import { api } from '@/lib/api'
 import type { AutoPlayRule, ModeWithTriggers, SonosFavourite } from '@/lib/api'
@@ -385,13 +385,31 @@ function SpotifyConnectionSection() {
               Connected{status.display_name ? ` as ${status.display_name}` : ''}
             </span>
           </div>
-          <button
-            onClick={() => disconnectMutation.mutate()}
-            disabled={disconnectMutation.isPending}
-            className="rounded-lg px-4 py-2 min-h-[44px] border border-[var(--border-secondary)] surface text-heading text-sm hover:brightness-95 dark:hover:brightness-110 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-          >
-            {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect Spotify'}
-          </button>
+          {status.needs_reauth && (
+            <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-sm text-amber-400">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <span>Additional permissions needed. Reconnect Spotify to grant the required access.</span>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <a
+              href="/api/spotify/auth"
+              className={
+                status.needs_reauth
+                  ? 'inline-flex items-center rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500'
+                  : 'inline-flex items-center rounded-lg px-4 py-2 min-h-[44px] border border-[var(--border-secondary)] surface text-heading text-sm hover:brightness-95 dark:hover:brightness-110 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500'
+              }
+            >
+              Reconnect Spotify
+            </a>
+            <button
+              onClick={() => disconnectMutation.mutate()}
+              disabled={disconnectMutation.isPending}
+              className="rounded-lg px-4 py-2 min-h-[44px] border border-[var(--border-secondary)] surface text-heading text-sm hover:brightness-95 dark:hover:brightness-110 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            >
+              {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect Spotify'}
+            </button>
+          </div>
         </div>
       ) : (
         <div className="space-y-3">
