@@ -3,12 +3,16 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ArrowLeft,
+  ChevronDown,
   ChevronRight,
   Disc3,
+  Globe,
   Hash,
   Heart,
   ListEnd,
   ListStart,
+  Loader2,
+  MapPin,
   MoreVertical,
   Music2,
   Play,
@@ -16,7 +20,14 @@ import {
   User,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { SonosLibraryTrack, SonosLibraryArtist, SonosGenre, SonosGenreAlbum } from '@/lib/api'
+import type {
+  SonosLibraryTrack,
+  SonosGenre,
+  SonosGenreAlbum,
+  NasEnrichedAlbum,
+  NasEnrichedArtist,
+  EnrichmentProgress,
+} from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
@@ -301,18 +312,122 @@ function BrowseModeTabs({
   )
 }
 
+// ── NAS enrichment status bar ────────────────────────────────────────────────
+
+function NasEnrichmentStatusBar() {
+  const { data: progress, refetch } = useQuery({
+    queryKey: ['nas-enrichment-status'],
+    queryFn: () => api.sonos.getNasEnrichmentStatus(),
+    staleTime: 2_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 2_000 : false
+    },
+  })
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const enrich = useMutation({
+    mutationFn: () => api.sonos.enrichNasArtists(),
+    onSuccess: (data) => {
+      if (data.status === 'started') {
+        toast({ message: `Enriching ${data.total} artists...` })
+        refetch()
+      } else if (data.status === 'already_running') {
+        toast({ message: 'Enrichment already in progress' })
+      } else if (data.status === 'no_artists') {
+        toast({ message: 'No artists to enrich' })
+      }
+    },
+    onError: () => toast({ message: 'Failed to start enrichment', type: 'error' }),
+  })
+
+  const cancel = useMutation({
+    mutationFn: () => api.sonos.cancelNasEnrichment(),
+    onSuccess: () => {
+      toast({ message: 'Enrichment cancelled' })
+      refetch()
+      queryClient.invalidateQueries({ queryKey: ['nas-enriched-artists'] })
+      queryClient.invalidateQueries({ queryKey: ['nas-enriched-albums'] })
+    },
+  })
+
+  const isRunning = progress?.status === 'running'
+  const pct = progress && progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0
+
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => isRunning ? cancel.mutate() : enrich.mutate()}
+        disabled={enrich.isPending || cancel.isPending}
+        className={cn(
+          'flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[36px]',
+          isRunning
+            ? 'bg-amber-400/10 text-amber-300 hover:bg-amber-400/20'
+            : 'bg-[var(--bg-secondary)] text-caption hover:bg-[var(--bg-tertiary)] hover:text-body',
+        )}
+      >
+        {isRunning ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            {pct}% ({progress.resolved} resolved) — Cancel
+          </>
+        ) : (
+          <>
+            <Globe className="h-3.5 w-3.5" aria-hidden="true" />
+            Enrich countries
+          </>
+        )}
+      </button>
+      {progress?.status === 'complete' && progress.resolved > 0 && (
+        <span className="text-xs text-caption">
+          {progress.resolved} of {progress.total} resolved
+        </span>
+      )}
+    </div>
+  )
+}
+
 // ── Artist list ──────────────────────────────────────────────────────────────
+
+type NasArtistSort = 'a-z' | 'country'
 
 function ArtistList({
   onSelectArtist,
 }: {
   onSelectArtist: (name: string) => void
 }) {
-  const { data: artists, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['sonos-library-artists'],
-    queryFn: api.sonos.getLibraryArtists,
+  const [sort, setSort] = useState<NasArtistSort>('a-z')
+  const [collapsedCountries, setCollapsedCountries] = useState<Set<string>>(new Set())
+  const queryClient = useQueryClient()
+
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['nas-enriched-artists'],
+    queryFn: api.sonos.getEnrichedNasArtists,
     staleTime: 5 * 60_000,
   })
+
+  // Refresh when enrichment completes
+  const { data: enrichStatus } = useQuery({
+    queryKey: ['nas-enrichment-status'],
+    queryFn: () => api.sonos.getNasEnrichmentStatus(),
+    staleTime: 5_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 3_000 : false
+    },
+  })
+
+  const prevStatus = useRef(enrichStatus?.status)
+  useEffect(() => {
+    if (prevStatus.current === 'running' && enrichStatus?.status === 'complete') {
+      queryClient.invalidateQueries({ queryKey: ['nas-enriched-artists'] })
+    }
+    prevStatus.current = enrichStatus?.status
+  }, [enrichStatus?.status, queryClient])
 
   if (isLoading) return <ListSkeleton />
 
@@ -325,7 +440,9 @@ function ArtistList({
     )
   }
 
-  if (!artists || artists.length === 0) {
+  const artists = data?.items ?? []
+
+  if (artists.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
         <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
@@ -339,49 +456,184 @@ function ArtistList({
     )
   }
 
+  const hasCountryData = artists.some(a => a.country_code !== null)
+
+  const toggleCountry = (country: string) => {
+    setCollapsedCountries(prev => {
+      const next = new Set(prev)
+      if (next.has(country)) next.delete(country)
+      else next.add(country)
+      return next
+    })
+  }
+
+  // Group by country
+  const countryGroups = new Map<string, NasEnrichedArtist[]>()
+  for (const a of artists) {
+    const key = a.country_name ?? 'Not Known'
+    if (!countryGroups.has(key)) countryGroups.set(key, [])
+    countryGroups.get(key)!.push(a)
+  }
+  const sortedGroups = Array.from(countryGroups.entries())
+    .map(([country, items]) => ({ country, items }))
+    .sort((a, b) => {
+      if (a.country === 'Not Known') return 1
+      if (b.country === 'Not Known') return -1
+      return a.country.localeCompare(b.country, undefined, { sensitivity: 'base' })
+    })
+
   return (
-    <ul className="-mx-4">
-      {artists.map((artist: SonosLibraryArtist) => (
-        <li key={artist.name}>
-          <button
-            type="button"
-            onClick={() => onSelectArtist(artist.name)}
-            className={cn(
-              'flex w-full items-center gap-3 px-4 py-2.5 text-left',
-              'transition-colors hover:bg-[var(--bg-secondary)]',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              'min-h-[44px]',
+    <div>
+      {hasCountryData && (
+        <div className="mb-3 flex gap-2">
+          {([
+            { value: 'a-z' as const, label: 'A – Z', icon: User },
+            { value: 'country' as const, label: 'Country', icon: MapPin },
+          ]).map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setSort(opt.value)}
+              className={cn(
+                'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                'min-h-[32px]',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                sort === opt.value
+                  ? 'bg-fairy-500 text-white'
+                  : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
+              )}
+            >
+              <opt.icon className="h-3.5 w-3.5" aria-hidden="true" />
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <NasEnrichmentStatusBar />
+
+      {sort === 'country' && hasCountryData ? (
+        <div className="-mx-4">
+          {sortedGroups.map(group => {
+            const isCollapsed = collapsedCountries.has(group.country)
+            return (
+              <div key={group.country}>
+                <button
+                  type="button"
+                  onClick={() => toggleCountry(group.country)}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-4 py-2.5 text-left',
+                    'bg-[var(--bg-secondary)] transition-colors hover:bg-[var(--bg-tertiary)]',
+                    'min-h-[40px]',
+                  )}
+                  aria-expanded={!isCollapsed}
+                >
+                  <MapPin className="h-4 w-4 shrink-0 text-fairy-500" aria-hidden="true" />
+                  <span className="flex-1 text-sm font-semibold text-heading">{group.country}</span>
+                  <span className="text-xs text-caption">{group.items.length}</span>
+                  <ChevronDown
+                    className={cn('h-4 w-4 text-caption/50 transition-transform', isCollapsed && '-rotate-90')}
+                    aria-hidden="true"
+                  />
+                </button>
+                {!isCollapsed && (
+                  <ul>
+                    {group.items.map(artist => (
+                      <NasArtistRow key={artist.name} artist={artist} onSelect={onSelectArtist} showCountry={false} />
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <ul className="-mx-4">
+          {artists.map(artist => (
+            <NasArtistRow key={artist.name} artist={artist} onSelect={onSelectArtist} showCountry={hasCountryData} />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function NasArtistRow({
+  artist,
+  onSelect,
+  showCountry,
+}: {
+  artist: NasEnrichedArtist
+  onSelect: (name: string) => void
+  showCountry: boolean
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(artist.name)}
+        className={cn(
+          'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+          'transition-colors hover:bg-[var(--bg-secondary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--bg-tertiary)]">
+          <User className="h-4 w-4 text-caption/60" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
+          <p className="text-xs text-caption">
+            {artist.albumCount} {artist.albumCount === 1 ? 'album' : 'albums'} · {artist.trackCount} {artist.trackCount === 1 ? 'track' : 'tracks'}
+            {showCountry && artist.country_code && (
+              <span className="text-caption/60"> · {artist.country_code}</span>
             )}
-          >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--bg-tertiary)]">
-              <User className="h-4 w-4 text-caption/60" aria-hidden="true" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
-              <p className="text-xs text-caption">
-                {artist.albumCount} {artist.albumCount === 1 ? 'album' : 'albums'} · {artist.trackCount} {artist.trackCount === 1 ? 'track' : 'tracks'}
-              </p>
-            </div>
-            <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
-          </button>
-        </li>
-      ))}
-    </ul>
+          </p>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+      </button>
+    </li>
   )
 }
 
 // ── Album list ───────────────────────────────────────────────────────────────
+
+type NasAlbumSort = 'a-z' | 'country'
 
 function AlbumList({
   onSelectAlbum,
 }: {
   onSelectAlbum: (album: SonosGenreAlbum) => void
 }) {
-  const { data: albums, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['sonos-library-albums'],
-    queryFn: api.sonos.getLibraryAlbums,
+  const [sort, setSort] = useState<NasAlbumSort>('a-z')
+  const [collapsedCountries, setCollapsedCountries] = useState<Set<string>>(new Set())
+  const queryClient = useQueryClient()
+
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['nas-enriched-albums'],
+    queryFn: api.sonos.getEnrichedNasAlbums,
     staleTime: 5 * 60_000,
   })
+
+  // Refresh when enrichment completes
+  const { data: enrichStatus } = useQuery({
+    queryKey: ['nas-enrichment-status'],
+    queryFn: () => api.sonos.getNasEnrichmentStatus(),
+    staleTime: 5_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 3_000 : false
+    },
+  })
+
+  const prevStatus = useRef(enrichStatus?.status)
+  useEffect(() => {
+    if (prevStatus.current === 'running' && enrichStatus?.status === 'complete') {
+      queryClient.invalidateQueries({ queryKey: ['nas-enriched-albums'] })
+    }
+    prevStatus.current = enrichStatus?.status
+  }, [enrichStatus?.status, queryClient])
 
   if (isLoading) return <ListSkeleton />
 
@@ -394,7 +646,9 @@ function AlbumList({
     )
   }
 
-  if (!albums || albums.length === 0) {
+  const albums = data?.items ?? []
+
+  if (albums.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
         <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
@@ -403,30 +657,144 @@ function AlbumList({
     )
   }
 
+  const hasCountryData = albums.some(a => a.artist_country?.country_code)
+
+  const toggleCountry = (country: string) => {
+    setCollapsedCountries(prev => {
+      const next = new Set(prev)
+      if (next.has(country)) next.delete(country)
+      else next.add(country)
+      return next
+    })
+  }
+
+  // Group by country
+  const countryGroups = new Map<string, NasEnrichedAlbum[]>()
+  for (const a of albums) {
+    const key = a.artist_country?.country_name ?? 'Not Known'
+    if (!countryGroups.has(key)) countryGroups.set(key, [])
+    countryGroups.get(key)!.push(a)
+  }
+  const sortedGroups = Array.from(countryGroups.entries())
+    .map(([country, items]) => ({ country, countryCode: items[0]?.artist_country?.country_code ?? null, items }))
+    .sort((a, b) => {
+      if (a.country === 'Not Known') return 1
+      if (b.country === 'Not Known') return -1
+      return a.country.localeCompare(b.country, undefined, { sensitivity: 'base' })
+    })
+
   return (
-    <ul className="-mx-4">
-      {albums.map((album: SonosGenreAlbum) => (
-        <li key={album.objectId}>
-          <button
-            type="button"
-            onClick={() => onSelectAlbum(album)}
-            className={cn(
-              'flex w-full items-center gap-3 px-4 py-2.5 text-left',
-              'transition-colors hover:bg-[var(--bg-secondary)]',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              'min-h-[44px]',
+    <div>
+      {hasCountryData && (
+        <div className="mb-3 flex gap-2">
+          {([
+            { value: 'a-z' as const, label: 'A – Z', icon: Disc3 },
+            { value: 'country' as const, label: 'Country', icon: MapPin },
+          ]).map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setSort(opt.value)}
+              className={cn(
+                'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                'min-h-[32px]',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                sort === opt.value
+                  ? 'bg-fairy-500 text-white'
+                  : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
+              )}
+            >
+              <opt.icon className="h-3.5 w-3.5" aria-hidden="true" />
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <NasEnrichmentStatusBar />
+
+      {sort === 'country' && hasCountryData ? (
+        <div className="-mx-4">
+          {sortedGroups.map(group => {
+            const isCollapsed = collapsedCountries.has(group.country)
+            return (
+              <div key={group.country}>
+                <button
+                  type="button"
+                  onClick={() => toggleCountry(group.country)}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-4 py-2.5 text-left',
+                    'bg-[var(--bg-secondary)] transition-colors hover:bg-[var(--bg-tertiary)]',
+                    'min-h-[40px]',
+                  )}
+                  aria-expanded={!isCollapsed}
+                >
+                  <MapPin className="h-4 w-4 shrink-0 text-fairy-500" aria-hidden="true" />
+                  <span className="flex-1 text-sm font-semibold text-heading">{group.country}</span>
+                  <span className="text-xs text-caption">{group.items.length}</span>
+                  <ChevronDown
+                    className={cn('h-4 w-4 text-caption/50 transition-transform', isCollapsed && '-rotate-90')}
+                    aria-hidden="true"
+                  />
+                </button>
+                {!isCollapsed && (
+                  <ul>
+                    {group.items.map(album => (
+                      <NasAlbumRow key={album.objectId} album={album} onSelect={onSelectAlbum} showCountry={false} />
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <ul className="-mx-4">
+          {albums.map(album => (
+            <NasAlbumRow key={album.objectId} album={album} onSelect={onSelectAlbum} showCountry={hasCountryData} />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function NasAlbumRow({
+  album,
+  onSelect,
+  showCountry,
+}: {
+  album: NasEnrichedAlbum
+  onSelect: (album: SonosGenreAlbum) => void
+  showCountry: boolean
+}) {
+  const countryCode = album.artist_country?.country_code ?? null
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(album)}
+        className={cn(
+          'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+          'transition-colors hover:bg-[var(--bg-secondary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <AlbumArt uri={album.albumArtUri} size={48} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-heading">{album.name}</p>
+          <p className="truncate text-xs text-caption">
+            {album.artist}
+            {showCountry && countryCode && (
+              <span className="text-caption/60"> · {countryCode}</span>
             )}
-          >
-            <AlbumArt uri={album.albumArtUri} size={48} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-heading">{album.name}</p>
-              <p className="truncate text-xs text-caption">{album.artist}</p>
-            </div>
-            <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
-          </button>
-        </li>
-      ))}
-    </ul>
+          </p>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+      </button>
+    </li>
   )
 }
 

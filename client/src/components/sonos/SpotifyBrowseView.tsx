@@ -5,13 +5,17 @@ import {
   ArrowDown01,
   ArrowDownAZ,
   ArrowLeft,
+  ChevronDown,
   ChevronRight,
   Clock,
   Disc3,
+  Globe,
   Heart,
   ImageOff,
+  Loader2,
   ListEnd,
   ListStart,
+  MapPin,
   Mic2,
   MoreVertical,
   Music2,
@@ -28,6 +32,8 @@ import type {
   SpotifyShow,
   SpotifyEpisode,
   SpotifyArtist,
+  EnrichedAlbumItem,
+  EnrichmentProgress,
 } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -804,12 +810,143 @@ function PlaylistDetail({
 
 // ── Album list ────────────────────────────────────────────────────────────────
 
+type AlbumSort = 'recent' | 'a-z' | 'country'
+
+function EnrichmentStatusBar() {
+  const { data: progress, refetch } = useQuery({
+    queryKey: ['enrichment-status'],
+    queryFn: () => api.spotify.getEnrichmentStatus(),
+    staleTime: 2_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 2_000 : false
+    },
+  })
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const enrich = useMutation({
+    mutationFn: () => api.spotify.enrichArtists(),
+    onSuccess: (data) => {
+      if (data.status === 'started') {
+        toast({ message: `Enriching ${data.total} artists...` })
+        refetch()
+      } else if (data.status === 'already_running') {
+        toast({ message: 'Enrichment already in progress' })
+      } else if (data.status === 'no_artists') {
+        toast({ message: 'No artists to enrich' })
+      }
+    },
+    onError: () => toast({ message: 'Failed to start enrichment', type: 'error' }),
+  })
+
+  const cancel = useMutation({
+    mutationFn: () => api.spotify.cancelEnrichment(),
+    onSuccess: () => {
+      toast({ message: 'Enrichment cancelled' })
+      refetch()
+      queryClient.invalidateQueries({ queryKey: ['spotify-enriched-albums'] })
+    },
+  })
+
+  const isRunning = progress?.status === 'running'
+  const pct = progress && progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0
+
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => isRunning ? cancel.mutate() : enrich.mutate()}
+        disabled={enrich.isPending || cancel.isPending}
+        className={cn(
+          'flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[36px]',
+          isRunning
+            ? 'bg-amber-400/10 text-amber-300 hover:bg-amber-400/20'
+            : 'bg-[var(--bg-secondary)] text-caption hover:bg-[var(--bg-tertiary)] hover:text-body',
+        )}
+      >
+        {isRunning ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            {pct}% ({progress.resolved} resolved) — Cancel
+          </>
+        ) : (
+          <>
+            <Globe className="h-3.5 w-3.5" aria-hidden="true" />
+            Enrich countries
+          </>
+        )}
+      </button>
+      {progress?.status === 'complete' && progress.resolved > 0 && (
+        <span className="text-xs text-caption">
+          {progress.resolved} of {progress.total} resolved
+        </span>
+      )}
+    </div>
+  )
+}
+
+function groupAlbumsByCountry(
+  items: EnrichedAlbumItem[],
+): Array<{ country: string; countryCode: string | null; albums: EnrichedAlbumItem[] }> {
+  const groups = new Map<string, EnrichedAlbumItem[]>()
+
+  for (const item of items) {
+    // Use the first artist's country (primary artist)
+    const primaryCountry = item.artist_countries?.[0]
+    const key = primaryCountry?.country_name ?? 'Not Known'
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(item)
+  }
+
+  // Sort groups: known countries alphabetically, "Not Known" last
+  const sorted = Array.from(groups.entries())
+    .map(([country, albums]) => ({
+      country,
+      countryCode: albums[0]?.artist_countries?.[0]?.country_code ?? null,
+      albums,
+    }))
+    .sort((a, b) => {
+      if (a.country === 'Not Known') return 1
+      if (b.country === 'Not Known') return -1
+      return a.country.localeCompare(b.country, undefined, { sensitivity: 'base' })
+    })
+
+  return sorted
+}
+
 function AlbumList({ onSelect }: { onSelect: (album: SpotifyAlbum) => void }) {
+  const [sort, setSort] = useState<AlbumSort>('recent')
+  const [collapsedCountries, setCollapsedCountries] = useState<Set<string>>(new Set())
+  const queryClient = useQueryClient()
+
   const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['spotify-saved-albums'],
-    queryFn: () => api.spotify.getSavedAlbums(),
+    queryKey: ['spotify-enriched-albums'],
+    queryFn: () => api.spotify.getEnrichedAlbums(),
     staleTime: 5 * 60_000,
   })
+
+  // Refresh enriched data when enrichment completes
+  const { data: enrichStatus } = useQuery({
+    queryKey: ['enrichment-status'],
+    queryFn: () => api.spotify.getEnrichmentStatus(),
+    staleTime: 5_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 3_000 : false
+    },
+  })
+
+  // When enrichment transitions to complete, invalidate albums
+  const prevStatus = useRef(enrichStatus?.status)
+  useEffect(() => {
+    if (prevStatus.current === 'running' && enrichStatus?.status === 'complete') {
+      queryClient.invalidateQueries({ queryKey: ['spotify-enriched-albums'] })
+    }
+    prevStatus.current = enrichStatus?.status
+  }, [enrichStatus?.status, queryClient])
 
   if (isLoading) return <ListSkeleton />
 
@@ -823,9 +960,9 @@ function AlbumList({ onSelect }: { onSelect: (album: SpotifyAlbum) => void }) {
     )
   }
 
-  const albums = (data?.items ?? []).map(item => item.album)
+  const items = data?.items ?? []
 
-  if (albums.length === 0) {
+  if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
         <Disc3 className="h-10 w-10 text-caption/40" aria-hidden="true" />
@@ -839,32 +976,142 @@ function AlbumList({ onSelect }: { onSelect: (album: SpotifyAlbum) => void }) {
     )
   }
 
+  const toggleCountry = (country: string) => {
+    setCollapsedCountries(prev => {
+      const next = new Set(prev)
+      if (next.has(country)) next.delete(country)
+      else next.add(country)
+      return next
+    })
+  }
+
+  // Sort albums
+  const sortedItems = [...items]
+  if (sort === 'a-z') {
+    sortedItems.sort((a, b) => a.album.name.localeCompare(b.album.name, undefined, { sensitivity: 'base' }))
+  }
+
+  const hasCountryData = items.some(item =>
+    item.artist_countries?.some(ac => ac.country_code !== null),
+  )
+
   return (
-    <ul className="-mx-4">
-      {albums.map(album => (
-        <li key={album.id}>
+    <div>
+      {/* Sort + enrichment controls */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {([
+          { value: 'recent' as const, label: 'Recent', icon: Clock },
+          { value: 'a-z' as const, label: 'A – Z', icon: ArrowDownAZ },
+          ...(hasCountryData ? [{ value: 'country' as const, label: 'Country', icon: MapPin }] : []),
+        ]).map(opt => (
           <button
+            key={opt.value}
             type="button"
-            onClick={() => onSelect(album)}
+            onClick={() => setSort(opt.value)}
             className={cn(
-              'flex w-full items-center gap-3 px-4 py-2.5 text-left',
-              'transition-colors hover:bg-[var(--bg-secondary)]',
+              'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+              'min-h-[32px]',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              'min-h-[44px]',
+              sort === opt.value
+                ? 'bg-fairy-500 text-white'
+                : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
             )}
           >
-            <CoverArt images={album.images} size={48} />
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-heading">{album.name}</p>
-              <p className="truncate text-xs text-caption">
-                {album.artists.map(a => a.name).join(', ')}
-              </p>
-            </div>
-            <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+            <opt.icon className="h-3.5 w-3.5" aria-hidden="true" />
+            {opt.label}
           </button>
-        </li>
-      ))}
-    </ul>
+        ))}
+      </div>
+
+      <EnrichmentStatusBar />
+
+      {sort === 'country' ? (
+        // Grouped by country
+        <div className="-mx-4">
+          {groupAlbumsByCountry(sortedItems).map(group => {
+            const isCollapsed = collapsedCountries.has(group.country)
+            return (
+              <div key={group.country}>
+                <button
+                  type="button"
+                  onClick={() => toggleCountry(group.country)}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-4 py-2.5 text-left',
+                    'bg-[var(--bg-secondary)] transition-colors hover:bg-[var(--bg-tertiary)]',
+                    'min-h-[40px]',
+                  )}
+                  aria-expanded={!isCollapsed}
+                >
+                  <MapPin className="h-4 w-4 shrink-0 text-fairy-500" aria-hidden="true" />
+                  <span className="flex-1 text-sm font-semibold text-heading">
+                    {group.country}
+                  </span>
+                  <span className="text-xs text-caption">{group.albums.length}</span>
+                  <ChevronDown
+                    className={cn('h-4 w-4 text-caption/50 transition-transform', isCollapsed && '-rotate-90')}
+                    aria-hidden="true"
+                  />
+                </button>
+                {!isCollapsed && (
+                  <ul>
+                    {group.albums.map(item => (
+                      <AlbumRow key={item.album.id} item={item} onSelect={onSelect} showCountry={false} />
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        // Flat list
+        <ul className="-mx-4">
+          {sortedItems.map(item => (
+            <AlbumRow key={item.album.id} item={item} onSelect={onSelect} showCountry={hasCountryData} />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function AlbumRow({
+  item,
+  onSelect,
+  showCountry,
+}: {
+  item: EnrichedAlbumItem
+  onSelect: (album: SpotifyAlbum) => void
+  showCountry: boolean
+}) {
+  const country = item.artist_countries?.[0]
+  const countryLabel = country?.country_code ?? null
+
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(item.album)}
+        className={cn(
+          'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+          'transition-colors hover:bg-[var(--bg-secondary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <CoverArt images={item.album.images} size={48} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-heading">{item.album.name}</p>
+          <p className="truncate text-xs text-caption">
+            {item.album.artists.map(a => a.name).join(', ')}
+            {showCountry && countryLabel && (
+              <span className="text-caption/60"> · {countryLabel}</span>
+            )}
+          </p>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+      </button>
+    </li>
   )
 }
 

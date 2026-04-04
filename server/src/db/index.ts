@@ -326,6 +326,35 @@ export function initDb(): void {
       created_at TEXT DEFAULT (datetime('now')),
       UNIQUE(user_id, source, source_uri)
     );
+
+    CREATE TABLE IF NOT EXISTS artist_countries (
+      spotify_artist_id TEXT PRIMARY KEY,
+      artist_name TEXT NOT NULL,
+      country_code TEXT,
+      country_name TEXT,
+      sub_region TEXT,
+      source TEXT NOT NULL DEFAULT 'musicbrainz',
+      musicbrainz_id TEXT,
+      confidence TEXT NOT NULL DEFAULT 'high',
+      resolved_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_artist_countries_name
+      ON artist_countries (artist_name COLLATE NOCASE);
+
+    CREATE TABLE IF NOT EXISTS track_countries (
+      spotify_track_id TEXT PRIMARY KEY,
+      track_name TEXT NOT NULL,
+      isrc TEXT,
+      artist_ids TEXT NOT NULL DEFAULT '[]',
+      musicbrainz_recording_id TEXT,
+      resolved_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_track_countries_isrc
+      ON track_countries (isrc) WHERE isrc IS NOT NULL;
   `)
 
   // Migration: add user tracking columns to scenes

@@ -763,6 +763,22 @@ export interface SonosGenreAlbum {
   objectId: string
 }
 
+export interface NasEnrichedAlbum extends SonosGenreAlbum {
+  artist_country: {
+    country_code: string | null
+    country_name: string | null
+    sub_region: string | null
+    confidence: string | null
+  } | null
+}
+
+export interface NasEnrichedArtist extends SonosLibraryArtist {
+  country_code: string | null
+  country_name: string | null
+  sub_region: string | null
+  confidence: string | null
+}
+
 export interface SonosRadioStation {
   title: string
   uri: string
@@ -968,6 +984,44 @@ export interface SpotifyArtist {
   external_urls: { spotify: string }
   followers: { total: number }
   popularity: number
+}
+
+// ── Artist country enrichment types ──────────────────────────────────────────
+
+export interface ArtistCountry {
+  spotify_artist_id: string
+  artist_name: string
+  country_code: string | null
+  country_name: string | null
+  sub_region: string | null
+  source: 'wikidata' | 'musicbrainz' | 'manual'
+  musicbrainz_id: string | null
+  confidence: 'high' | 'medium' | 'low' | null
+  resolved_at?: string
+  updated_at?: string
+}
+
+export interface EnrichmentProgress {
+  total: number
+  processed: number
+  resolved: number
+  failed: number
+  status: 'idle' | 'running' | 'complete' | 'error'
+  started_at?: string
+  error?: string
+}
+
+export interface EnrichedAlbumItem {
+  added_at: string
+  album: SpotifyAlbum
+  artist_countries: Array<{
+    artist_id: string
+    artist_name: string
+    country_code: string | null
+    country_name: string | null
+    sub_region: string | null
+    confidence: string | null
+  }>
 }
 
 // ── User action types ────────────────────────────────────────────────────────
@@ -1604,6 +1658,17 @@ export const api = {
       fetchApi<SonosLibraryTrack[]>('/sonos/library/songs'),
     searchLibrary: (query: string) =>
       fetchApi<SonosLibrarySearchResult>('/sonos/library/search?q=' + encodeURIComponent(query)),
+    // NAS artist country enrichment
+    enrichNasArtists: () =>
+      fetchApi<{ status: string; total: number }>('/sonos/library/enrich-artists', { method: 'POST' }),
+    getNasEnrichmentStatus: () =>
+      fetchApi<EnrichmentProgress>('/sonos/library/enrichment-status'),
+    cancelNasEnrichment: () =>
+      fetchApi<{ ok: boolean }>('/sonos/library/enrich-artists/cancel', { method: 'POST' }),
+    getEnrichedNasAlbums: () =>
+      fetchApi<{ items: NasEnrichedAlbum[]; total: number; cached_artists: number; uncached_artists: number }>('/sonos/library/albums/enriched'),
+    getEnrichedNasArtists: () =>
+      fetchApi<{ items: NasEnrichedArtist[]; total: number }>('/sonos/library/artists/enriched'),
     getRadioStations: () =>
       fetchApi<SonosRadioStation[]>('/sonos/radio/stations'),
     getQueue: (speaker: string) =>
@@ -1769,6 +1834,34 @@ export const api = {
       const qs = params.toString()
       return fetchApi<{ items: SpotifyAlbum[]; total: number; next: string | null }>(
         '/spotify/artists/' + encodeURIComponent(id) + '/albums' + (qs ? '?' + qs : ''),
+      )
+    },
+    // Artist country enrichment
+    enrichArtists: (artistIds?: Array<{ id: string; name: string }>) =>
+      fetchApi<{ status: string; total: number }>('/spotify/enrich-artists', {
+        method: 'POST',
+        body: JSON.stringify(artistIds ? { artist_ids: artistIds } : {}),
+      }),
+    getEnrichmentStatus: () =>
+      fetchApi<EnrichmentProgress>('/spotify/enrichment-status'),
+    cancelEnrichment: () =>
+      fetchApi<{ ok: boolean }>('/spotify/enrich-artists/cancel', { method: 'POST' }),
+    getArtistCountries: () =>
+      fetchApi<{ items: ArtistCountry[]; total: number }>('/spotify/artist-countries'),
+    getArtistCountry: (id: string) =>
+      fetchApi<ArtistCountry>('/spotify/artist-countries/' + encodeURIComponent(id)),
+    updateArtistCountry: (id: string, data: { country_code: string; country_name: string; sub_region?: string; artist_name?: string }) =>
+      fetchApi<ArtistCountry>('/spotify/artist-countries/' + encodeURIComponent(id), {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    getEnrichedAlbums: (limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: EnrichedAlbumItem[]; total: number; next: string | null; cached_artists: number; uncached_artists: number }>(
+        '/spotify/albums/enriched' + (qs ? '?' + qs : ''),
       )
     },
   },

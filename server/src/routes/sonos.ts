@@ -4,8 +4,9 @@ import axios from 'axios'
 import { createHash } from 'crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { getAll, getOne, run } from '../db/index.js'
+import { db, getAll, getOne, run } from '../db/index.js'
 import { sonosClient } from '../lib/sonos-client.js'
+import { musicBrainzClient, type ArtistCountryRow } from '../lib/musicbrainz-client.js'
 import { sonosManager } from '../lib/sonos-manager.js'
 import { emit } from '../lib/socket.js'
 import { findPodcastFeedUrl, getLatestEpisodeUrl } from '../lib/podcast-resolver.js'
@@ -1283,6 +1284,133 @@ router.put('/play-uri/:speaker', async (req: Request, res: Response) => {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`[sonos] play-uri failed: ${msg}`)
     res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// ── NAS Artist Country Enrichment ────────────────────────────────────────────
+
+// POST /library/enrich-artists — kick off background enrichment for NAS artists
+router.post('/library/enrich-artists', async (_req: Request, res: Response) => {
+  const progress = musicBrainzClient.getNasProgress()
+  if (progress.status === 'running') {
+    res.json({ ...progress, status: 'already_running' })
+    return
+  }
+
+  try {
+    const artists = sonosClient.getLibraryArtists()
+    const names = artists.map(a => a.name).filter(n => n.length > 0)
+
+    if (names.length === 0) {
+      res.json({ status: 'no_artists', total: 0 })
+      return
+    }
+
+    // Run enrichment in background
+    musicBrainzClient.enrichNasArtists(names).catch(err => {
+      console.error('[Enrichment] NAS enrichment error:', err instanceof Error ? err.message : String(err))
+    })
+
+    res.json({ status: 'started', total: names.length })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// GET /library/enrichment-status — check NAS enrichment progress
+router.get('/library/enrichment-status', (_req: Request, res: Response) => {
+  res.json(musicBrainzClient.getNasProgress())
+})
+
+// POST /library/enrich-artists/cancel — cancel NAS enrichment
+router.post('/library/enrich-artists/cancel', (_req: Request, res: Response) => {
+  musicBrainzClient.cancel()
+  res.json({ ok: true })
+})
+
+// GET /library/artist-countries — get country data for NAS artists (by name)
+router.get('/library/artist-countries', (_req: Request, res: Response) => {
+  try {
+    // Return all entries: NAS-keyed (nas:) and Spotify-keyed (matching by name)
+    const rows = db.prepare('SELECT * FROM artist_countries ORDER BY artist_name COLLATE NOCASE').all() as ArtistCountryRow[]
+    res.json({ items: rows, total: rows.length })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// GET /library/albums/enriched — NAS albums with country data joined
+router.get('/library/albums/enriched', async (_req: Request, res: Response) => {
+  try {
+    const albums = await sonosClient.browseAlbumsWithArt()
+
+    // Build a name → country lookup from artist_countries table
+    const allCountries = db.prepare('SELECT * FROM artist_countries').all() as ArtistCountryRow[]
+    const countryByName = new Map<string, ArtistCountryRow>()
+    for (const row of allCountries) {
+      // Index by lowercased name for case-insensitive matching
+      const key = row.artist_name.toLowerCase()
+      if (!countryByName.has(key)) countryByName.set(key, row)
+    }
+
+    const enriched = albums.map(album => {
+      const artistKey = album.artist.toLowerCase()
+      const country = countryByName.get(artistKey)
+      return {
+        ...album,
+        albumArtUri: rewriteAlbumArtUri(album.albumArtUri) ?? '',
+        artist_country: country ? {
+          country_code: country.country_code,
+          country_name: country.country_name,
+          sub_region: country.sub_region,
+          confidence: country.confidence,
+        } : null,
+      }
+    })
+
+    const withCountry = enriched.filter(a => a.artist_country?.country_code)
+    res.json({
+      items: enriched,
+      total: enriched.length,
+      cached_artists: withCountry.length,
+      uncached_artists: enriched.length - withCountry.length,
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// GET /library/artists/enriched — NAS artists with country data joined
+router.get('/library/artists/enriched', (_req: Request, res: Response) => {
+  try {
+    const artists = sonosClient.getLibraryArtists()
+
+    // Build name → country lookup
+    const allCountries = db.prepare('SELECT * FROM artist_countries').all() as ArtistCountryRow[]
+    const countryByName = new Map<string, ArtistCountryRow>()
+    for (const row of allCountries) {
+      const key = row.artist_name.toLowerCase()
+      if (!countryByName.has(key)) countryByName.set(key, row)
+    }
+
+    const enriched = artists.map(artist => {
+      const country = countryByName.get(artist.name.toLowerCase())
+      return {
+        ...artist,
+        country_code: country?.country_code ?? null,
+        country_name: country?.country_name ?? null,
+        sub_region: country?.sub_region ?? null,
+        confidence: country?.confidence ?? null,
+      }
+    })
+
+    res.json({ items: enriched, total: enriched.length })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
   }
 })
 

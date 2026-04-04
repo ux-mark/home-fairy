@@ -1,5 +1,7 @@
 import { Router, type Request, type Response } from 'express'
 import { spotifyClient, SpotifyApiError, type SpotifyArtist } from '../lib/spotify-client.js'
+import { musicBrainzClient, type ArtistCountryRow } from '../lib/musicbrainz-client.js'
+import { db } from '../db/index.js'
 import { requireAuth } from '../middleware/requireAuth.js'
 
 const router = Router()
@@ -270,6 +272,184 @@ router.get('/artists/:id/albums', requireAuth, async (req: Request, res: Respons
     const offset = req.query.offset ? Number(req.query.offset) : 0
     const result = await spotifyClient.getArtistAlbums(String(req.params.id), limit, offset)
     res.json(result)
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// ── Artist Country Enrichment ────────────────────────────────────────────────
+
+// POST /spotify/enrich-artists — kick off background enrichment for uncached artists
+router.post('/enrich-artists', requireAuth, async (req: Request, res: Response) => {
+  const progress = musicBrainzClient.getProgress()
+  if (progress.status === 'running') {
+    res.json({ ...progress, status: 'already_running' })
+    return
+  }
+
+  try {
+    let artists: Array<{ id: string; name: string }> = []
+
+    if (req.body?.artist_ids?.length) {
+      artists = req.body.artist_ids
+    } else if (spotifyClient.isConnected()) {
+      // Collect all unique artists from saved albums
+      const seenIds = new Set<string>()
+      let offset = 0
+      const limit = 50
+      let hasMore = true
+
+      while (hasMore) {
+        const page = await spotifyClient.getSavedAlbums(limit, offset)
+        for (const item of page.items) {
+          for (const artist of item.album.artists) {
+            if (!seenIds.has(artist.id)) {
+              seenIds.add(artist.id)
+              artists.push({ id: artist.id, name: artist.name })
+            }
+          }
+        }
+        offset += limit
+        hasMore = page.next !== null && page.items.length === limit
+      }
+    }
+
+    if (artists.length === 0) {
+      res.json({ status: 'no_artists', total: 0 })
+      return
+    }
+
+    // Run enrichment in background (don't await)
+    musicBrainzClient.enrichArtists(artists).catch(err => {
+      console.error('[Enrichment] Background enrichment error:', err instanceof Error ? err.message : String(err))
+    })
+
+    res.json({ status: 'started', total: artists.length })
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// GET /spotify/enrichment-status — check enrichment progress
+router.get('/enrichment-status', requireAuth, (_req: Request, res: Response) => {
+  res.json(musicBrainzClient.getProgress())
+})
+
+// POST /spotify/enrich-artists/cancel — cancel running enrichment
+router.post('/enrich-artists/cancel', requireAuth, (_req: Request, res: Response) => {
+  musicBrainzClient.cancel()
+  res.json({ ok: true })
+})
+
+// GET /spotify/artist-countries — get all cached artist country data
+router.get('/artist-countries', requireAuth, (_req: Request, res: Response) => {
+  try {
+    const rows = db.prepare('SELECT * FROM artist_countries ORDER BY artist_name COLLATE NOCASE').all() as ArtistCountryRow[]
+    res.json({ items: rows, total: rows.length })
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// GET /spotify/artist-countries/:id — get country for a specific artist
+router.get('/artist-countries/:id', requireAuth, (req: Request, res: Response) => {
+  try {
+    const row = db.prepare('SELECT * FROM artist_countries WHERE spotify_artist_id = ?').get(String(req.params.id)) as ArtistCountryRow | undefined
+    if (!row) {
+      res.status(404).json({ error: 'Artist country data not found' })
+      return
+    }
+    res.json(row)
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// PUT /spotify/artist-countries/:id — manual override
+router.put('/artist-countries/:id', requireAuth, (req: Request, res: Response) => {
+  const { country_code, country_name, sub_region } = req.body ?? {}
+  if (!country_code || !country_name) {
+    res.status(400).json({ error: 'country_code and country_name are required' })
+    return
+  }
+  try {
+    const existing = db.prepare('SELECT spotify_artist_id, artist_name FROM artist_countries WHERE spotify_artist_id = ?')
+      .get(String(req.params.id)) as { spotify_artist_id: string; artist_name: string } | undefined
+
+    if (existing) {
+      db.prepare(`
+        UPDATE artist_countries
+        SET country_code = ?, country_name = ?, sub_region = ?, source = 'manual', confidence = 'high', updated_at = datetime('now')
+        WHERE spotify_artist_id = ?
+      `).run(country_code, country_name, sub_region ?? null, String(req.params.id))
+    } else {
+      db.prepare(`
+        INSERT INTO artist_countries (spotify_artist_id, artist_name, country_code, country_name, sub_region, source, confidence)
+        VALUES (?, ?, ?, ?, ?, 'manual', 'high')
+      `).run(String(req.params.id), req.body.artist_name ?? 'Unknown', country_code, country_name, sub_region ?? null)
+    }
+
+    const updated = db.prepare('SELECT * FROM artist_countries WHERE spotify_artist_id = ?').get(String(req.params.id))
+    res.json(updated)
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// GET /spotify/albums/enriched — saved albums with country data joined
+router.get('/albums/enriched', requireAuth, async (req: Request, res: Response) => {
+  if (!spotifyClient.isConnected()) {
+    res.status(401).json({ error: 'Spotify not connected' })
+    return
+  }
+  try {
+    const limit = req.query.limit ? Number(req.query.limit) : 50
+    const offset = req.query.offset ? Number(req.query.offset) : 0
+    const albumData = await spotifyClient.getSavedAlbums(limit, offset)
+
+    // Collect all unique artist IDs
+    const artistIds = new Set<string>()
+    for (const item of albumData.items) {
+      for (const artist of item.album.artists) {
+        artistIds.add(artist.id)
+      }
+    }
+
+    // Batch-fetch country data from cache
+    const countryMap = new Map<string, ArtistCountryRow>()
+    if (artistIds.size > 0) {
+      const placeholders = Array.from(artistIds).map(() => '?').join(',')
+      const rows = db.prepare(
+        `SELECT * FROM artist_countries WHERE spotify_artist_id IN (${placeholders})`,
+      ).all(...artistIds) as ArtistCountryRow[]
+      for (const row of rows) {
+        countryMap.set(row.spotify_artist_id, row)
+      }
+    }
+
+    // Enrich albums with country data
+    const enrichedItems = albumData.items.map(item => ({
+      ...item,
+      artist_countries: item.album.artists.map(a => {
+        const c = countryMap.get(a.id)
+        return {
+          artist_id: a.id,
+          artist_name: a.name,
+          country_code: c?.country_code ?? null,
+          country_name: c?.country_name ?? null,
+          sub_region: c?.sub_region ?? null,
+          confidence: c?.confidence ?? null,
+        }
+      }),
+    }))
+
+    res.json({
+      items: enrichedItems,
+      total: albumData.total,
+      next: albumData.next,
+      cached_artists: countryMap.size,
+      uncached_artists: artistIds.size - countryMap.size,
+    })
   } catch (err) {
     handleError(res, err)
   }
