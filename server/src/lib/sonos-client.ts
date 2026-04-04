@@ -800,10 +800,21 @@ class SonosClient {
         start += batchSize
         if (start >= total || containers.length === 0) break
       }
+      // Populate album art cache for use by getArtistTracks etc.
+      for (const a of allAlbums) {
+        if (a.albumArtUri) {
+          this.albumArtCache.set(`${a.artist}\0${a.name}`, a.albumArtUri)
+        }
+      }
       return allAlbums
     } catch {
       return []
     }
+  }
+
+  /** Look up cached album art URI by artist + album name */
+  private lookupAlbumArt(artist: string, album: string): string {
+    return this.albumArtCache.get(`${artist}\0${album}`) ?? ''
   }
 
   async browseAlbumTracks(objectId: string): Promise<SonosLibraryTrack[]> {
@@ -815,6 +826,8 @@ class SonosClient {
 
   private libraryCache: NasLibraryTrack[] | null = null
   private libraryCacheMtime: number = 0
+  /** artist+album → albumArtUri lookup, populated by browseAlbumsWithArt */
+  private albumArtCache = new Map<string, string>()
 
   private readLibraryCache(): NasLibraryTrack[] {
     const cachePath = join(homedir(), 'node-sonos-http-api', 'cache', 'library.json')
@@ -889,13 +902,13 @@ class SonosClient {
   getArtistTracks(artist: string): SonosLibraryTrack[] {
     return this.readLibraryCache()
       .filter(t => t.artist === artist)
-      .map(t => ({ ...t, albumArtUri: '' }))
+      .map(t => ({ ...t, albumArtUri: this.lookupAlbumArt(t.artist, t.album) }))
   }
 
   getAlbumTracks(artist: string, album: string): SonosLibraryTrack[] {
     return this.readLibraryCache()
       .filter(t => t.artist === artist && t.album === album)
-      .map(t => ({ ...t, albumArtUri: '' }))
+      .map(t => ({ ...t, albumArtUri: this.lookupAlbumArt(t.artist, t.album) }))
   }
 
   searchLibrary(query: string): SonosLibrarySearchResult {
@@ -904,13 +917,13 @@ class SonosClient {
     const matchingTracks = tracks
       .filter(t => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q) || t.album.toLowerCase().includes(q))
       .slice(0, 50)
-      .map(t => ({ ...t, albumArtUri: '' }))
+      .map(t => ({ ...t, albumArtUri: this.lookupAlbumArt(t.artist, t.album) }))
     return { artists: [], albums: [], tracks: matchingTracks }
   }
 
   getAllLibraryTracks(): SonosLibraryTrack[] {
     return this.readLibraryCache()
-      .map(t => ({ ...t, albumArtUri: '' }))
+      .map(t => ({ ...t, albumArtUri: this.lookupAlbumArt(t.artist, t.album) }))
       .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
   }
 

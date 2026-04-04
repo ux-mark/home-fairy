@@ -696,7 +696,8 @@ router.get('/library/albums', async (_req: Request, res: Response) => {
 // GET /library/artist/:name — list tracks for an artist
 router.get('/library/artist/:name', (req: Request, res: Response) => {
   const name = Array.isArray(req.params.name) ? req.params.name[0] : req.params.name
-  res.json(sonosClient.getArtistTracks(name))
+  const tracks = sonosClient.getArtistTracks(name)
+  res.json(tracks.map(t => ({ ...t, albumArtUri: rewriteAlbumArtUri(t.albumArtUri) ?? '' })))
 })
 
 // GET /library/album-tracks?objectId= — list tracks for an album by UPnP objectId
@@ -726,12 +727,17 @@ router.get('/library/search', (req: Request, res: Response) => {
     res.status(400).json({ error: 'Missing required query parameter: q' })
     return
   }
-  res.json(sonosClient.searchLibrary(q))
+  const result = sonosClient.searchLibrary(q)
+  res.json({
+    ...result,
+    tracks: result.tracks.map(t => ({ ...t, albumArtUri: rewriteAlbumArtUri(t.albumArtUri) ?? '' })),
+  })
 })
 
 // GET /library/songs — list all NAS library tracks sorted alphabetically
 router.get('/library/songs', (_req: Request, res: Response) => {
-  res.json(sonosClient.getAllLibraryTracks())
+  const tracks = sonosClient.getAllLibraryTracks()
+  res.json(tracks.map(t => ({ ...t, albumArtUri: rewriteAlbumArtUri(t.albumArtUri) ?? '' })))
 })
 
 // GET /radio/stations — list available radio stations
