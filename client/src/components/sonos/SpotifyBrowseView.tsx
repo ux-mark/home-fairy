@@ -1974,13 +1974,19 @@ function SpotifyCountryArtistList({
       onBack={onBack}
       renderArtistRow={(artist) => {
         const spotifyArtist = spotifyArtistMap.get(artist.id) ?? spotifyArtistMap.get(artist.name.toLowerCase())
+        const artistForNav: SpotifyArtist = spotifyArtist ?? {
+          id: artist.id,
+          name: artist.name,
+          images: artist.image_url ? [{ url: artist.image_url, height: null, width: null }] : [],
+          genres: [],
+          uri: `spotify:artist:${artist.id}`,
+          external_urls: { spotify: `https://open.spotify.com/artist/${artist.id}` },
+        }
         return (
           <li key={artist.id}>
             <button
               type="button"
-              onClick={() => {
-                if (spotifyArtist) onSelectArtist(spotifyArtist)
-              }}
+              onClick={() => onSelectArtist(artistForNav)}
               className={cn(
                 'flex w-full items-center gap-3 px-4 py-2.5 text-left',
                 'transition-colors hover:bg-[var(--bg-secondary)]',
@@ -2078,8 +2084,15 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
   }
 
   function handleBack() {
-    if (view === 'album-detail' && selectedArtist) {
+    if (view === 'album-detail' && selectedCountry && selectedArtist) {
       setView('artist-detail')
+      setSelectedAlbum(null)
+    } else if (view === 'album-detail' && selectedArtist) {
+      setView('artist-detail')
+      setSelectedAlbum(null)
+    } else if (view === 'artist-detail' && selectedCountry) {
+      setView('country-artists')
+      setSelectedArtist(null)
       setSelectedAlbum(null)
     } else {
       setView('home')
