@@ -38,11 +38,12 @@ import type {
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
+import { CountryList, CountryArtistList, type CountryArtistItem } from './CountryBrowse'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type SpotifyView = 'home' | 'playlist-detail' | 'album-detail' | 'show-detail' | 'artist-detail'
-type BrowseMode = 'playlists' | 'podcasts' | 'albums' | 'artists' | 'songs'
+type SpotifyView = 'home' | 'playlist-detail' | 'album-detail' | 'show-detail' | 'artist-detail' | 'country-artists'
+type BrowseMode = 'playlists' | 'countries' | 'podcasts' | 'albums' | 'artists' | 'songs'
 type PlaylistSort = 'recent' | 'a-z' | 'z-a'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -245,7 +246,7 @@ function BrowseModeTabs({
       aria-label="Browse by"
       className="mb-4 flex gap-2 overflow-x-auto pb-0.5"
     >
-      {(['playlists', 'podcasts', 'albums', 'artists', 'songs'] as const).map(m => (
+      {(['playlists', 'countries', 'podcasts', 'albums', 'artists', 'songs'] as const).map(m => (
         <button
           key={m}
           role="tab"
@@ -260,7 +261,7 @@ function BrowseModeTabs({
               : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
           )}
         >
-          {m === 'playlists' ? 'Playlists' : m === 'podcasts' ? 'Podcasts' : m === 'albums' ? 'Albums' : m === 'artists' ? 'Artists' : 'Songs'}
+          {m === 'playlists' ? 'Playlists' : m === 'countries' ? 'Countries' : m === 'podcasts' ? 'Podcasts' : m === 'albums' ? 'Albums' : m === 'artists' ? 'Artists' : 'Songs'}
         </button>
       ))}
     </div>
@@ -896,7 +897,9 @@ function groupAlbumsByCountry(
   for (const item of items) {
     // Use the first artist's country (primary artist)
     const primaryCountry = item.artist_countries?.[0]
-    const key = primaryCountry?.country_name ?? 'Not Known'
+    const cc = primaryCountry?.country_code
+    const hasValidCode = typeof cc === 'string' && /^[A-Z]{2}$/.test(cc)
+    const key = hasValidCode ? (primaryCountry?.country_name ?? cc!) : 'Not Known'
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(item)
   }
@@ -1772,6 +1775,152 @@ function SpotifySearchResults({ query, speaker }: { query: string; speaker: stri
   )
 }
 
+// ── SpotifyCountryList ────────────────────────────────────────────────────────
+
+function SpotifyCountryList({
+  onSelectCountry,
+}: {
+  onSelectCountry: (code: string, name: string) => void
+}) {
+  const queryClient = useQueryClient()
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['spotify-artist-countries'],
+    queryFn: () => api.spotify.getArtistCountries(),
+    staleTime: 5 * 60_000,
+  })
+
+  const { data: enrichStatus } = useQuery({
+    queryKey: ['enrichment-status'],
+    queryFn: () => api.spotify.getEnrichmentStatus(),
+    staleTime: 5_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 3_000 : false
+    },
+  })
+
+  const prevStatus = useRef(enrichStatus?.status)
+  useEffect(() => {
+    if (prevStatus.current === 'running' && enrichStatus?.status === 'complete') {
+      queryClient.invalidateQueries({ queryKey: ['spotify-artist-countries'] })
+    }
+    prevStatus.current = enrichStatus?.status
+  }, [enrichStatus?.status, queryClient])
+
+  const artists: CountryArtistItem[] = (data?.items ?? []).map(a => ({
+    id: a.spotify_artist_id,
+    name: a.artist_name,
+    country_code: a.country_code,
+    country_name: a.country_name,
+    sub_region: a.sub_region,
+  }))
+
+  return (
+    <CountryList
+      artists={artists}
+      isLoading={isLoading}
+      isError={isError}
+      error={error as Error | null}
+      onRetry={() => refetch()}
+      onSelectCountry={onSelectCountry}
+      enrichmentStatusBar={<EnrichmentStatusBar />}
+    />
+  )
+}
+
+// ── SpotifyCountryArtistList ──────────────────────────────────────────────────
+
+function SpotifyCountryArtistList({
+  countryCode,
+  countryName,
+  onSelectArtist,
+  onBack,
+}: {
+  countryCode: string
+  countryName: string
+  onSelectArtist: (artist: SpotifyArtist) => void
+  onBack: () => void
+}) {
+  const { data: countryData, isLoading: countryLoading, isError: countryIsError, error: countryError, refetch: refetchCountry } = useQuery({
+    queryKey: ['spotify-artist-countries'],
+    queryFn: () => api.spotify.getArtistCountries(),
+    staleTime: 5 * 60_000,
+  })
+
+  const { data: artistsData } = useQuery({
+    queryKey: ['spotify-artists'],
+    queryFn: () => api.spotify.getArtists(),
+    staleTime: 5 * 60_000,
+  })
+
+  const artists: CountryArtistItem[] = (countryData?.items ?? []).map(a => ({
+    id: a.spotify_artist_id,
+    name: a.artist_name,
+    country_code: a.country_code,
+    country_name: a.country_name,
+    sub_region: a.sub_region,
+  }))
+
+  // Build a lookup of Spotify artist objects for rich rendering
+  const spotifyArtistMap = new Map<string, SpotifyArtist>()
+  for (const a of artistsData?.items ?? []) {
+    spotifyArtistMap.set(a.id, a)
+    spotifyArtistMap.set(a.name.toLowerCase(), a)
+  }
+
+  return (
+    <CountryArtistList
+      countryCode={countryCode}
+      countryName={countryName}
+      artists={artists}
+      isLoading={countryLoading}
+      isError={countryIsError}
+      error={countryError as Error | null}
+      onRetry={() => refetchCountry()}
+      onBack={onBack}
+      renderArtistRow={(artist) => {
+        const spotifyArtist = spotifyArtistMap.get(artist.id) ?? spotifyArtistMap.get(artist.name.toLowerCase())
+        return (
+          <li key={artist.id}>
+            <button
+              type="button"
+              onClick={() => {
+                if (spotifyArtist) onSelectArtist(spotifyArtist)
+              }}
+              className={cn(
+                'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+                'transition-colors hover:bg-[var(--bg-secondary)]',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                'min-h-[44px]',
+                !spotifyArtist && 'opacity-50',
+              )}
+              disabled={!spotifyArtist}
+            >
+              {spotifyArtist ? (
+                <CoverArt images={spotifyArtist.images} size={48} rounded="rounded-full" />
+              ) : (
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--bg-tertiary)]">
+                  <Music2 className="h-4 w-4 text-caption/60" aria-hidden="true" />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
+                {spotifyArtist && (
+                  <p className="truncate text-xs text-caption">
+                    {spotifyArtist.followers.total.toLocaleString()} followers
+                    {spotifyArtist.genres.length > 0 && ` · ${spotifyArtist.genres[0]}`}
+                  </p>
+                )}
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+            </button>
+          </li>
+        )
+      }}
+    />
+  )
+}
+
 // ── SpotifyBrowseView ─────────────────────────────────────────────────────────
 
 interface SpotifyBrowseViewProps {
@@ -1786,6 +1935,7 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
   const [selectedAlbum, setSelectedAlbum] = useState<SpotifyAlbum | null>(null)
   const [selectedShow, setSelectedShow] = useState<SpotifyShow | null>(null)
   const [selectedArtist, setSelectedArtist] = useState<SpotifyArtist | null>(null)
+  const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
 
   const firstSpeaker = useFirstSpeaker()
   const speaker = targetSpeaker ?? firstSpeaker
@@ -1830,6 +1980,11 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
     setView('album-detail')
   }
 
+  function handleSelectCountry(code: string, name: string) {
+    setSelectedCountry({ code, name })
+    setView('country-artists')
+  }
+
   function handleBack() {
     if (view === 'album-detail' && selectedArtist) {
       setView('artist-detail')
@@ -1840,6 +1995,7 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
       setSelectedAlbum(null)
       setSelectedShow(null)
       setSelectedArtist(null)
+      setSelectedCountry(null)
     }
   }
 
@@ -1894,10 +2050,22 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
     )
   }
 
+  if (view === 'country-artists' && selectedCountry) {
+    return (
+      <SpotifyCountryArtistList
+        countryCode={selectedCountry.code}
+        countryName={selectedCountry.name}
+        onSelectArtist={handleSelectArtist}
+        onBack={handleBack}
+      />
+    )
+  }
+
   return (
     <div>
       <BrowseModeTabs mode={browseMode} onChangeMode={m => { setBrowseMode(m); setView('home') }} />
       {browseMode === 'playlists' && <PlaylistList onSelect={handleSelectPlaylist} />}
+      {browseMode === 'countries' && <SpotifyCountryList onSelectCountry={handleSelectCountry} />}
       {browseMode === 'podcasts' && <ShowList onSelect={handleSelectShow} />}
       {browseMode === 'albums' && <AlbumList onSelect={handleSelectAlbum} />}
       {browseMode === 'artists' && <ArtistList onSelect={handleSelectArtist} />}
