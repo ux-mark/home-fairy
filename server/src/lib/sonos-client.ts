@@ -666,12 +666,16 @@ class SonosClient {
     return null
   }
 
+  private xmlEscape(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+  }
+
   private async browseUPnP(speakerIp: string, objectId: string, start = 0, count = 200): Promise<string> {
     const body = `<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
   <s:Body>
     <u:Browse xmlns:u="urn:schemas-upnp-org:service:ContentDirectory:1">
-      <ObjectID>${objectId}</ObjectID>
+      <ObjectID>${this.xmlEscape(objectId)}</ObjectID>
       <BrowseFlag>BrowseDirectChildren</BrowseFlag>
       <Filter>*</Filter>
       <StartingIndex>${start}</StartingIndex>
@@ -746,7 +750,7 @@ class SonosClient {
               name,
               artist,
               albumArtUri: absoluteArt,
-              objectId: decodeURIComponent(this.decodeXmlEntities(id)),
+              objectId: this.decodeXmlEntities(id),
             })
           }
         } catch { /* skip artist on error */ }
@@ -799,7 +803,8 @@ class SonosClient {
           uri: uri ? this.decodeXmlEntities(uri[1]) : '',
         }
       })
-    } catch {
+    } catch (err) {
+      console.error('[browseAlbumTracks] UPnP browse failed for objectId:', objectId, err)
       return []
     }
   }
@@ -820,7 +825,7 @@ class SonosClient {
         title: name,
         artist: creator ? this.decodeXmlEntities(creator[1]) : '',
         albumArtUri: absoluteArt,
-        objectId: decodeURIComponent(this.decodeXmlEntities(id)),
+        objectId: this.decodeXmlEntities(id),
       }
     }).filter(c => c.title !== 'All')
   }
