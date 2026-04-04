@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Play, Pause, Music, Loader2, Link2, Radio, SkipBack, SkipForward, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -19,6 +19,7 @@ interface SonosSpeakerCardProps {
   onRefresh: () => void
   group?: SonosGroupInfo | null
   allSpeakers: SonosNowPlayingEntry[]
+  focusSpeaker?: string
 }
 
 export function SonosSpeakerCard({
@@ -29,12 +30,21 @@ export function SonosSpeakerCard({
   onRefresh,
   group,
   allSpeakers,
+  focusSpeaker,
 }: SonosSpeakerCardProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [musicDialogOpen, setMusicDialogOpen] = useState(false)
-  const [queueExpanded, setQueueExpanded] = useState(false)
+  const isFocused = focusSpeaker === speakerName
+  const [queueExpanded, setQueueExpanded] = useState(isFocused)
   const [groupManagerOpen, setGroupManagerOpen] = useState(false)
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (isFocused && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [isFocused])
 
   const invalidateNowPlaying = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
@@ -95,7 +105,7 @@ export function SonosSpeakerCard({
     : []
 
   return (
-    <div className="card rounded-xl border p-4 transition-colors" style={{ borderColor: 'var(--border-primary)' }}>
+    <div ref={cardRef} className="card rounded-xl border p-4 transition-colors" style={{ borderColor: 'var(--border-primary)' }}>
       {/* Header: room name + group button + playback badge */}
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">

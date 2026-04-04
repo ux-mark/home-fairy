@@ -95,7 +95,7 @@ function QueueAccordion({ speakerName, roomName, isExpanded, onToggle, onClose }
           <button
             onClick={() => {
               onClose()
-              navigate('/sonos/playing')
+              navigate(`/sonos/playing?speaker=${encodeURIComponent(speakerName)}`)
             }}
             className={cn(
               'mt-0.5 flex w-full items-center justify-center rounded-md px-3 py-2 text-xs font-medium text-fairy-400 transition-colors',

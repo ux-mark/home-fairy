@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Play, Pause, Music, Loader2, X, ChevronDown, ChevronUp, SkipBack, SkipForward, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -16,6 +16,7 @@ interface SonosGroupCardProps {
   members: SonosNowPlayingEntry[]
   onRefresh: () => void
   allSpeakers: SonosNowPlayingEntry[]
+  focusSpeaker?: string
 }
 
 function MemberRow({
@@ -55,14 +56,23 @@ function MemberRow({
   )
 }
 
-export function SonosGroupCard({ coordinator, members, onRefresh, allSpeakers }: SonosGroupCardProps) {
+export function SonosGroupCard({ coordinator, members, onRefresh, allSpeakers, focusSpeaker }: SonosGroupCardProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [musicDialogOpen, setMusicDialogOpen] = useState(false)
   const [membersExpanded, setMembersExpanded] = useState(false)
-  const [queueExpanded, setQueueExpanded] = useState(false)
+  const allGroupNames = [coordinator.speakerName, ...members.map(m => m.speakerName)]
+  const isFocused = focusSpeaker != null && allGroupNames.includes(focusSpeaker)
+  const [queueExpanded, setQueueExpanded] = useState(isFocused)
   const [groupManagerOpen, setGroupManagerOpen] = useState(false)
   const [removingMember, setRemovingMember] = useState<string | null>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (isFocused && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [isFocused])
 
   const coordinatorName = coordinator.speakerName
   const coordinatorRoom = coordinator.roomName
@@ -149,6 +159,7 @@ export function SonosGroupCard({ coordinator, members, onRefresh, allSpeakers }:
 
   return (
     <div
+      ref={cardRef}
       className="card rounded-xl border p-4 transition-colors"
       style={{ borderColor: 'var(--border-primary)' }}
       aria-label={`Speaker group: ${groupLabel}`}
