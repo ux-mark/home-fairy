@@ -908,6 +908,36 @@ export interface SpotifyStatus {
   connected: boolean
   configured: boolean
   display_name?: string
+  needs_reauth?: boolean
+}
+
+export interface Fairylist {
+  id: number
+  name: string
+  created_by: string
+  created_at: string
+  item_count: number
+}
+
+export interface FairylistItem {
+  id: number
+  fairylist_id: number
+  source: 'sonos' | 'spotify' | 'nas' | 'radio'
+  source_uri: string
+  title: string
+  artist: string | null
+  album_art_uri: string | null
+  sort_order: number
+  added_by: string
+  added_at: string
+}
+
+export interface AddFairylistItemInput {
+  source: 'sonos' | 'spotify' | 'nas' | 'radio'
+  source_uri: string
+  title: string
+  artist?: string
+  album_art_uri?: string
 }
 
 export interface SpotifyPlaylistTrackItem {
@@ -1899,6 +1929,22 @@ export const api = {
         '/spotify/albums/enriched' + (qs ? '?' + qs : ''),
       )
     },
+    addToPlaylist: (playlistId: string, uri: string) =>
+      fetchApi<unknown>('/spotify/playlists/' + playlistId + '/tracks', { method: 'POST', body: JSON.stringify({ uri }) }),
+    createPlaylist: (name: string) =>
+      fetchApi<{ id: string; name: string; tracks: { total: number } }>('/spotify/playlists', { method: 'POST', body: JSON.stringify({ name }) }),
+  },
+
+  fairylists: {
+    list: () => fetchApi<Fairylist[]>('/fairylists'),
+    get: (id: number) => fetchApi<{ fairylist: Fairylist; items: FairylistItem[] }>('/fairylists/' + id),
+    create: (name: string) => fetchApi<Fairylist>('/fairylists', { method: 'POST', body: JSON.stringify({ name }) }),
+    rename: (id: number, name: string) => fetchApi<Fairylist>('/fairylists/' + id, { method: 'PUT', body: JSON.stringify({ name }) }),
+    remove: (id: number) => fetchApi<unknown>('/fairylists/' + id, { method: 'DELETE' }),
+    addItem: (id: number, data: AddFairylistItemInput) => fetchApi<FairylistItem>('/fairylists/' + id + '/items', { method: 'POST', body: JSON.stringify(data) }),
+    removeItem: (fairylistId: number, itemId: number) => fetchApi<unknown>('/fairylists/' + fairylistId + '/items/' + itemId, { method: 'DELETE' }),
+    reorder: (id: number, ids: number[]) => fetchApi<unknown>('/fairylists/' + id + '/items/reorder', { method: 'PUT', body: JSON.stringify({ ids }) }),
+    play: (id: number, speaker: string) => fetchApi<unknown>('/fairylists/' + id + '/play/' + encodeURIComponent(speaker), { method: 'POST' }),
   },
 
   favourites: {

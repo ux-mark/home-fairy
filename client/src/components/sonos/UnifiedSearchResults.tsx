@@ -175,6 +175,15 @@ function NasTrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: st
           >
             <Play className="h-4 w-4" aria-hidden="true" />
           </button>
+          <button
+            type="button"
+            disabled={addToFavourites.isPending}
+            onClick={() => addToFavourites.mutate()}
+            aria-label={`Add ${track.title} to favourites`}
+            className={actionBtn}
+          >
+            <Heart className="h-4 w-4" aria-hidden="true" />
+          </button>
           <div className="shrink-0">
             <button
               ref={menuBtnRef}
@@ -338,6 +347,15 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
             className={actionBtn}
           >
             <Play className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            disabled={addToFavourites.isPending}
+            onClick={() => addToFavourites.mutate()}
+            aria-label={`Add ${track.name} to favourites`}
+            className={actionBtn}
+          >
+            <Heart className="h-4 w-4" aria-hidden="true" />
           </button>
           <div className="shrink-0">
             <button

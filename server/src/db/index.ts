@@ -356,6 +356,30 @@ export function initDb(): void {
 
     CREATE INDEX IF NOT EXISTS idx_track_countries_isrc
       ON track_countries (isrc) WHERE isrc IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS fairylists (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS fairylist_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fairylist_id INTEGER NOT NULL REFERENCES fairylists(id) ON DELETE CASCADE,
+      source TEXT NOT NULL CHECK(source IN ('sonos','spotify','nas','radio')),
+      source_uri TEXT NOT NULL,
+      title TEXT NOT NULL,
+      artist TEXT,
+      album_art_uri TEXT,
+      sort_order INTEGER DEFAULT 0,
+      added_by TEXT NOT NULL,
+      added_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(fairylist_id, source, source_uri)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_fairylist_items_list
+      ON fairylist_items (fairylist_id, sort_order);
   `)
 
   // Migration: add user tracking columns to scenes

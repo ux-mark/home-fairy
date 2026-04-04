@@ -13,6 +13,8 @@ const SPOTIFY_SCOPES = [
   'user-library-read',
   'user-follow-read',
   'user-top-read',
+  'playlist-modify-public',
+  'playlist-modify-private',
 ].join(' ')
 
 export class SpotifyApiError extends Error {
@@ -509,6 +511,48 @@ class SpotifyClient {
       }
     }
     return results
+  }
+
+  async addTrackToPlaylist(playlistId: string, trackUri: string): Promise<void> {
+    const token = await this.getAccessToken()
+    try {
+      await this.api.post(
+        `/playlists/${playlistId}/tracks`,
+        { uris: [trackUri] },
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
+    } catch (err) {
+      const status = err instanceof AxiosError ? err.response?.status : undefined
+      throw new SpotifyApiError(`Failed to add track to playlist ${playlistId}`, status)
+    }
+  }
+
+  async createPlaylist(name: string): Promise<{ id: string; name: string; tracks: { total: number } }> {
+    const token = await this.getAccessToken()
+    try {
+      // Get user ID first
+      const me = await this.api.get<{ id: string }>(
+        '/me',
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
+      const response = await this.api.post<{ id: string; name: string; tracks: { total: number } }>(
+        `/users/${me.data.id}/playlists`,
+        { name, public: false },
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
+      return response.data
+    } catch (err) {
+      const status = err instanceof AxiosError ? err.response?.status : undefined
+      throw new SpotifyApiError('Failed to create playlist', status)
+    }
+  }
+
+  hasWriteScope(): boolean {
+    const row = db.prepare('SELECT scope FROM spotify_tokens WHERE id = 1').get() as
+      | Pick<SpotifyTokenRow, 'scope'>
+      | undefined
+    if (!row?.scope) return false
+    return row.scope.includes('playlist-modify-public')
   }
 
   isConfigured(): boolean {
