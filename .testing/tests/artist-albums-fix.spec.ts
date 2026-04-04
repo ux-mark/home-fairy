@@ -203,9 +203,16 @@ test('Country artist with Spotify ID loads albums page', async ({ page }) => {
   await page.getByText('Mumford & Sons').click()
   await page.waitForLoadState('networkidle')
 
-  // Albums should load — verify both album names appear
+  // Albums should load — verify album names appear in NAS-style layout
   await expect(page.getByText('Sigh No More')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText('Babel')).toBeVisible()
+
+  // Verify NAS-style layout: track counts visible, no follower counts
+  await expect(page.getByText(/12 tracks/).first()).toBeVisible()
+  await expect(page.getByText(/followers/)).not.toBeVisible()
+
+  // Verify simple header: artist name visible, no album artwork images
+  await expect(page.getByRole('heading', { name: 'Mumford & Sons' })).toBeVisible()
 
   await page.screenshot({ path: '.testing/results/artist-albums-01-spotify-artist.png', fullPage: true })
 })

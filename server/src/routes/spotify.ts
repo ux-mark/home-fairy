@@ -333,7 +333,14 @@ router.get('/artists/:id/albums', requireAuth, async (req: Request, res: Respons
     const limit = req.query.limit ? Number(req.query.limit) : 50
     const offset = req.query.offset ? Number(req.query.offset) : 0
     const result = await spotifyClient.getArtistAlbums(artistId, limit, offset)
-    res.json(result)
+
+    // Filter to albums where this artist is the primary (first-listed) artist
+    // This removes compilations, "appears on", and feature albums
+    const filtered = result.items.filter(album =>
+      album.artists.length > 0 && album.artists[0].id === artistId,
+    )
+
+    res.json({ ...result, items: filtered, total: filtered.length })
   } catch (err) {
     handleError(res, err)
   }
