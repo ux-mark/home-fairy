@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   DndContext,
@@ -23,7 +23,6 @@ import {
   ChevronDown,
   ChevronUp,
   GripVertical,
-  ImageOff,
   ListStart,
   Music2,
   X,
@@ -34,6 +33,7 @@ import { getSocket } from '@/hooks/useSocket'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
+import { ArtworkImage } from './ArtworkImage'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -42,28 +42,6 @@ export interface InlineQueueProps {
   currentTrackUri: string | null
   expanded: boolean
   onToggle: () => void
-}
-
-// ── Album art with fallback ───────────────────────────────────────────────────
-
-function QueueAlbumArt({ uri }: { uri?: string }) {
-  const [failed, setFailed] = useState(false)
-  return (
-    <div className="h-10 w-10 shrink-0 overflow-hidden rounded-md bg-[var(--bg-tertiary)]">
-      {uri && !failed ? (
-        <img
-          src={uri}
-          alt=""
-          className="h-full w-full object-cover"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center">
-          <ImageOff className="h-4 w-4 text-slate-500" aria-hidden="true" />
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ── Sortable queue item ───────────────────────────────────────────────────────
@@ -121,7 +99,7 @@ function SortableQueueItem({
         <GripVertical className="h-4 w-4" aria-hidden="true" />
       </button>
 
-      <QueueAlbumArt uri={item.albumArtUri} />
+      <ArtworkImage src={item.albumArtUri} size={40} />
 
       {/* Track info */}
       <div className="min-w-0 flex-1">

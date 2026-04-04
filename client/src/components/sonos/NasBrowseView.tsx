@@ -29,6 +29,7 @@ import type {
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
+import { ArtworkImage } from './ArtworkImage'
 import { CountryList, CountryArtistList, isValidIsoCode, type CountryArtistItem } from './CountryBrowse'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -60,32 +61,6 @@ function useDebounce<T>(value: T, delay: number): T {
   }, [value, delay])
 
   return debounced
-}
-
-// ── Album art thumbnail ───────────────────────────────────────────────────────
-
-function AlbumArt({ uri, size = 40 }: { uri?: string; size?: number }) {
-  const [failed, setFailed] = useState(false)
-  return (
-    <div
-      className="shrink-0 overflow-hidden rounded-md bg-[var(--bg-tertiary)]"
-      style={{ width: size, height: size }}
-    >
-      {uri && !failed ? (
-        <img
-          src={uri}
-          alt=""
-          loading="lazy"
-          className="h-full w-full object-cover"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center">
-          <Disc3 className="h-4 w-4 text-caption/40" aria-hidden="true" />
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ── Track row ─────────────────────────────────────────────────────────────────
@@ -132,7 +107,7 @@ function TrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: strin
 
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <AlbumArt uri={track.albumArtUri} />
+      <ArtworkImage src={track.albumArtUri} size={40} fallback="disc" />
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{track.title || 'Unknown track'}</p>
@@ -386,7 +361,54 @@ function NasEnrichmentStatusBar() {
           {progress.resolved} of {progress.total} resolved
         </span>
       )}
+      <NasBackfillArtworkButton disabled={isRunning} />
     </div>
+  )
+}
+
+function NasBackfillArtworkButton({ disabled }: { disabled: boolean }) {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+
+  const backfill = useMutation({
+    mutationFn: () => api.spotify.backfillImages(),
+    onSuccess: (data) => {
+      if (data.total_updated > 0) {
+        toast({ message: `Updated ${data.total_updated} artist images` })
+        queryClient.invalidateQueries({ queryKey: ['nas-enriched-artists'] })
+        queryClient.invalidateQueries({ queryKey: ['nas-enriched-albums'] })
+      } else {
+        toast({ message: 'All artist images are up to date' })
+      }
+    },
+    onError: () => toast({ message: 'Failed to fetch artwork', type: 'error' }),
+  })
+
+  return (
+    <button
+      type="button"
+      onClick={() => backfill.mutate()}
+      disabled={backfill.isPending || disabled}
+      className={cn(
+        'flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+        'min-h-[36px]',
+        'bg-[var(--bg-secondary)] text-caption hover:bg-[var(--bg-tertiary)] hover:text-body',
+        backfill.isPending && 'opacity-50',
+      )}
+    >
+      {backfill.isPending ? (
+        <>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+          Fetching artwork...
+        </>
+      ) : (
+        <>
+          <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+          Fetch artwork
+        </>
+      )}
+    </button>
   )
 }
 
@@ -579,9 +601,7 @@ function NasArtistRow({
           'min-h-[44px]',
         )}
       >
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--bg-tertiary)]">
-          <User className="h-4 w-4 text-caption/60" aria-hidden="true" />
-        </div>
+        <ArtworkImage src={artist.image_url} size={40} rounded="rounded-full" fallback="user" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
           <p className="text-xs text-caption">
@@ -784,7 +804,7 @@ function NasAlbumRow({
           'min-h-[44px]',
         )}
       >
-        <AlbumArt uri={album.albumArtUri} size={48} />
+        <ArtworkImage src={album.albumArtUri} size={48} fallback="disc" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-heading">{album.name}</p>
           <p className="truncate text-xs text-caption">
@@ -938,7 +958,7 @@ function AlbumDetail({
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
-        <AlbumArt uri={album.albumArtUri} size={44} />
+        <ArtworkImage src={album.albumArtUri} size={44} fallback="disc" />
         <div className="min-w-0 flex-1">
           <h2 className="text-lg font-semibold leading-snug text-heading">{album.name}</h2>
           <p className="text-xs text-caption">{album.artist}</p>

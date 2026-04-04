@@ -468,6 +468,29 @@ class SpotifyClient {
     }
   }
 
+  async getArtistsByIds(ids: string[]): Promise<SpotifyArtist[]> {
+    if (ids.length === 0) return []
+    const token = await this.getAccessToken()
+    const results: SpotifyArtist[] = []
+    for (let i = 0; i < ids.length; i += 50) {
+      const batch = ids.slice(i, i + 50)
+      try {
+        const response = await this.api.get<{ artists: (SpotifyArtist | null)[] }>(
+          '/artists',
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            params: { ids: batch.join(',') },
+          },
+        )
+        results.push(...response.data.artists.filter((a): a is SpotifyArtist => a !== null))
+      } catch (err) {
+        const status = err instanceof AxiosError ? err.response?.status : undefined
+        throw new SpotifyApiError('Failed to fetch artists by IDs', status)
+      }
+    }
+    return results
+  }
+
   isConfigured(): boolean {
     return !!(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET)
   }

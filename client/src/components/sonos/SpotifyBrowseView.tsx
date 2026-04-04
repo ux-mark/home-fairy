@@ -11,7 +11,6 @@ import {
   Disc3,
   Globe,
   Heart,
-  ImageOff,
   Loader2,
   ListEnd,
   ListStart,
@@ -39,6 +38,7 @@ import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
 import { CountryList, CountryArtistList, type CountryArtistItem } from './CountryBrowse'
+import { ArtworkImage } from './ArtworkImage'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -85,37 +85,6 @@ function formatDate(dateStr: string): string {
   } catch {
     return dateStr
   }
-}
-
-// ── Cover art ─────────────────────────────────────────────────────────────────
-
-function CoverArt({ images, size = 40, rounded = 'rounded-md' }: {
-  images?: Array<{ url: string; height: number | null; width: number | null }>
-  size?: number
-  rounded?: string
-}) {
-  const [failed, setFailed] = useState(false)
-  const url = images?.[0]?.url
-  return (
-    <div
-      className={cn('shrink-0 overflow-hidden bg-[var(--bg-tertiary)]', rounded)}
-      style={{ width: size, height: size }}
-    >
-      {url && !failed ? (
-        <img
-          src={url}
-          alt=""
-          loading="lazy"
-          className="h-full w-full object-cover"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center">
-          <ImageOff className="h-4 w-4 text-caption/40" aria-hidden="true" />
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ── Skeleton helpers ─────────────────────────────────────────────────────────
@@ -389,7 +358,7 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
 
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <CoverArt images={track.album.images} size={40} />
+      <ArtworkImage images={track.album.images} size={40} />
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{track.name}</p>
@@ -569,7 +538,7 @@ function EpisodeRow({
 
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <CoverArt images={episode.images} size={48} />
+      <ArtworkImage images={episode.images} size={48} />
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{episode.name}</p>
@@ -699,7 +668,7 @@ function PlaylistList({ onSelect }: { onSelect: (playlist: SpotifyPlaylist) => v
               'min-h-[44px]',
             )}
           >
-            <CoverArt images={playlist.images} size={48} />
+            <ArtworkImage images={playlist.images} size={48} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-heading">{playlist.name}</p>
               <p className="text-xs text-caption">
@@ -759,7 +728,7 @@ function PlaylistDetail({
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
-        <CoverArt images={playlist.images} size={44} />
+        <ArtworkImage images={playlist.images} size={44} />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg font-semibold leading-snug text-heading">{playlist.name}</h2>
           <p className="text-xs text-caption">
@@ -850,6 +819,21 @@ function EnrichmentStatusBar() {
     },
   })
 
+  const backfill = useMutation({
+    mutationFn: () => api.spotify.backfillImages(),
+    onSuccess: (data) => {
+      if (data.total_updated > 0) {
+        toast({ message: `Updated ${data.total_updated} artist images` })
+        queryClient.invalidateQueries({ queryKey: ['spotify-artist-countries'] })
+        queryClient.invalidateQueries({ queryKey: ['spotify-enriched-albums'] })
+        queryClient.invalidateQueries({ queryKey: ['spotify-artists'] })
+      } else {
+        toast({ message: 'All artist images are up to date' })
+      }
+    },
+    onError: () => toast({ message: 'Failed to fetch artwork', type: 'error' }),
+  })
+
   const isRunning = progress?.status === 'running'
   const pct = progress && progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0
 
@@ -885,6 +869,30 @@ function EnrichmentStatusBar() {
           {progress.resolved} of {progress.total} resolved
         </span>
       )}
+      <button
+        type="button"
+        onClick={() => backfill.mutate()}
+        disabled={backfill.isPending || isRunning}
+        className={cn(
+          'flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[36px]',
+          'bg-[var(--bg-secondary)] text-caption hover:bg-[var(--bg-tertiary)] hover:text-body',
+          backfill.isPending && 'opacity-50',
+        )}
+      >
+        {backfill.isPending ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            Fetching artwork...
+          </>
+        ) : (
+          <>
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            Fetch artwork
+          </>
+        )}
+      </button>
     </div>
   )
 }
@@ -1102,7 +1110,7 @@ function AlbumRow({
           'min-h-[44px]',
         )}
       >
-        <CoverArt images={item.album.images} size={48} />
+        <ArtworkImage images={item.album.images} size={48} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-heading">{item.album.name}</p>
           <p className="truncate text-xs text-caption">
@@ -1159,7 +1167,7 @@ function AlbumDetail({
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
-        <CoverArt images={album.images} size={44} />
+        <ArtworkImage images={album.images} size={44} />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg font-semibold leading-snug text-heading">{album.name}</h2>
           <p className="truncate text-xs text-caption">
@@ -1260,7 +1268,7 @@ function ShowList({ onSelect }: { onSelect: (show: SpotifyShow) => void }) {
               'min-h-[44px]',
             )}
           >
-            <CoverArt images={show.images} size={48} />
+            <ArtworkImage images={show.images} size={48} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-heading">{show.name}</p>
               <p className="truncate text-xs text-caption">
@@ -1310,7 +1318,7 @@ function ShowDetail({
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
-        <CoverArt images={show.images} size={44} />
+        <ArtworkImage images={show.images} size={44} />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg font-semibold leading-snug text-heading">{show.name}</h2>
           <p className="truncate text-xs text-caption">{show.publisher}</p>
@@ -1445,7 +1453,7 @@ function ArtistList({ onSelect }: { onSelect: (artist: SpotifyArtist) => void })
                   'min-h-[44px]',
                 )}
               >
-                <CoverArt images={artist.images} size={48} rounded="rounded-full" />
+                <ArtworkImage images={artist.images} size={48} rounded="rounded-full" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
                   <p className="truncate text-xs text-caption">
@@ -1506,7 +1514,7 @@ function ArtistDetail({
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
-        <CoverArt images={artist.images} size={44} rounded="rounded-full" />
+        <ArtworkImage images={artist.images} size={44} rounded="rounded-full" />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg font-semibold leading-snug text-heading">{artist.name}</h2>
           <p className="truncate text-xs text-caption">
@@ -1559,7 +1567,7 @@ function ArtistDetail({
                   'min-h-[44px]',
                 )}
               >
-                <CoverArt images={album.images} size={48} />
+                <ArtworkImage images={album.images} size={48} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-heading">{album.name}</p>
                   <p className="truncate text-xs text-caption">
@@ -1625,7 +1633,7 @@ function SearchPlaylistRow({
 
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <CoverArt images={playlist.images} size={40} />
+      <ArtworkImage images={playlist.images} size={40} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{playlist.name}</p>
         <p className="truncate text-xs text-caption">
@@ -1688,7 +1696,7 @@ function SearchAlbumRow({
 
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <CoverArt images={album.images} size={40} />
+      <ArtworkImage images={album.images} size={40} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{album.name}</p>
         <p className="truncate text-xs text-caption">
@@ -1896,13 +1904,12 @@ function SpotifyCountryArtistList({
               )}
               disabled={!spotifyArtist}
             >
-              {spotifyArtist ? (
-                <CoverArt images={spotifyArtist.images} size={48} rounded="rounded-full" />
-              ) : (
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[var(--bg-tertiary)]">
-                  <Music2 className="h-4 w-4 text-caption/60" aria-hidden="true" />
-                </div>
-              )}
+              <ArtworkImage
+                images={spotifyArtist?.images}
+                size={48}
+                rounded="rounded-full"
+                fallback="user"
+              />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
                 {spotifyArtist && (

@@ -28,7 +28,7 @@ export default defineConfig({
             options: {
               cacheName: 'album-art-cache',
               expiration: {
-                maxEntries: 2000,
+                maxEntries: 5000,
                 maxAgeSeconds: 365 * 24 * 60 * 60, // 1 year
               },
               cacheableResponse: {

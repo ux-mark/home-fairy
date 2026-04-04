@@ -341,6 +341,30 @@ router.post('/enrich-artists/cancel', requireAuth, (_req: Request, res: Response
   res.json({ ok: true })
 })
 
+// POST /spotify/backfill-images — populate image_url for all enriched artists
+router.post('/backfill-images', requireAuth, async (_req: Request, res: Response) => {
+  try {
+    if (!spotifyClient.isConnected()) {
+      res.status(401).json({ error: 'Spotify not connected' })
+      return
+    }
+
+    // Backfill Spotify artists (fast — batch API, no rate limit)
+    const spotifyResult = await musicBrainzClient.backfillImages(spotifyClient)
+
+    // Backfill NAS artists (slow — MusicBrainz rate limited at 1 req/sec)
+    const nasResult = await musicBrainzClient.backfillNasImages(spotifyClient)
+
+    res.json({
+      spotify: spotifyResult,
+      nas: nasResult,
+      total_updated: spotifyResult.updated + nasResult.updated,
+    })
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
 // GET /spotify/artist-countries — get all cached artist country data
 router.get('/artist-countries', requireAuth, (_req: Request, res: Response) => {
   try {
@@ -439,6 +463,7 @@ router.get('/albums/enriched', requireAuth, async (req: Request, res: Response) 
           country_name: c?.country_name ?? null,
           sub_region: c?.sub_region ?? null,
           confidence: c?.confidence ?? null,
+          image_url: c?.image_url ?? null,
         }
       }),
     }))

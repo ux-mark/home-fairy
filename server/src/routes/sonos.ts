@@ -92,8 +92,8 @@ function rewriteAlbumArtUri(uri: string | undefined): string | undefined {
     return `/api/sonos/art-proxy?url=${encodeURIComponent(uri)}`
   }
 
-  // External HTTPS CDN — return as-is
-  return uri
+  // External HTTPS — proxy for disk caching + PWA offline
+  return `/api/sonos/art-proxy?url=${encodeURIComponent(uri)}`
 }
 
 // GET /art-proxy — server-side proxy for album art images from internal Sonos IPs
@@ -1366,6 +1366,7 @@ router.get('/library/albums/enriched', async (_req: Request, res: Response) => {
           country_name: country.country_name,
           sub_region: country.sub_region,
           confidence: country.confidence,
+          image_url: country.image_url ?? null,
         } : null,
       }
     })
@@ -1404,6 +1405,7 @@ router.get('/library/artists/enriched', (_req: Request, res: Response) => {
         country_name: country?.country_name ?? null,
         sub_region: country?.sub_region ?? null,
         confidence: country?.confidence ?? null,
+        image_url: country?.image_url ?? null,
       }
     })
 

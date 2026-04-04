@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   HardDrive,
   Heart,
-  ImageOff,
   ListEnd,
   ListStart,
   MoreVertical,
@@ -22,6 +21,7 @@ import type {
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
+import { ArtworkImage } from './ArtworkImage'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -47,31 +47,6 @@ function useDebounce<T>(value: T, delay: number): T {
   }, [value, delay])
 
   return debounced
-}
-
-// ── Album art ─────────────────────────────────────────────────────────────────
-
-function AlbumArt({ uri, size = 40 }: { uri?: string; size?: number }) {
-  const [failed, setFailed] = useState(false)
-  return (
-    <div
-      className="shrink-0 overflow-hidden rounded-md bg-[var(--bg-tertiary)]"
-      style={{ width: size, height: size }}
-    >
-      {uri && !failed ? (
-        <img
-          src={uri}
-          alt=""
-          className="h-full w-full object-cover"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center">
-          <ImageOff className="h-4 w-4 text-slate-500" aria-hidden="true" />
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ── Shared action button style ────────────────────────────────────────────────
@@ -188,7 +163,7 @@ function NasTrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: st
 
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <AlbumArt uri={track.albumArtUri} />
+      <ArtworkImage src={track.albumArtUri} fallback="disc" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{track.title || 'Unknown track'}</p>
         <p className="truncate text-xs text-caption">
@@ -308,7 +283,7 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
 
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <AlbumArt uri={artUri} />
+      <ArtworkImage src={artUri} fallback="disc" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{track.name}</p>
         <p className="truncate text-xs text-caption">
@@ -422,7 +397,7 @@ function RadioStationRow({
 
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <AlbumArt uri={station.albumArtUri} />
+      <ArtworkImage src={station.albumArtUri} fallback="disc" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{station.title}</p>
       </div>
