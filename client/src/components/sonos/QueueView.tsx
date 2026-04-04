@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import {
   DndContext,
   closestCenter,
@@ -24,14 +25,15 @@ import {
   ImageOff,
   ListStart,
   Music2,
-  X,
+  Trash2,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { SonosQueueItem } from '@/lib/api'
+import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
 import { getSocket } from '@/hooks/useSocket'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { SortableOverlay } from '@/components/ui/SortableOverlay'
+import { QueueHeader } from './QueueHeader'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -40,6 +42,8 @@ interface QueueViewProps {
   open: boolean
   onClose: () => void
   currentTrackUri: string | null
+  /** Current playback state — used for QueueHeader mode buttons */
+  playbackState?: SonosPlaybackState | null
 }
 
 // ── Sortable queue item ───────────────────────────────────────────────────────
@@ -51,6 +55,7 @@ interface SortableQueueItemProps {
   onRemove: (index: number) => void
   onPlayNext: (uri: string) => void
   isFirst: boolean
+  speaker: string
 }
 
 function SortableQueueItem({
@@ -60,8 +65,10 @@ function SortableQueueItem({
   onRemove,
   onPlayNext,
   isFirst,
+  speaker,
 }: SortableQueueItemProps) {
   const [imgFailed, setImgFailed] = useState(false)
+  const navigate = useNavigate()
 
   const {
     attributes,
@@ -75,6 +82,12 @@ function SortableQueueItem({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+  }
+
+  function handleTitleClick() {
+    if (item.uri) {
+      navigate(`/sonos/track?uri=${encodeURIComponent(item.uri)}&speaker=${encodeURIComponent(speaker)}`)
+    }
   }
 
   return (
@@ -117,8 +130,12 @@ function SortableQueueItem({
         )}
       </div>
 
-      {/* Track info */}
-      <div className="min-w-0 flex-1">
+      {/* Track info — tappable */}
+      <button
+        onClick={handleTitleClick}
+        className="min-w-0 flex-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded"
+        aria-label={`View details for ${item.title}`}
+      >
         <div className="flex items-center gap-2">
           <p
             className={[
@@ -137,7 +154,7 @@ function SortableQueueItem({
         <p className="truncate text-xs text-caption">
           {[item.artist, item.album].filter(Boolean).join(' · ')}
         </p>
-      </div>
+      </button>
 
       {/* Actions */}
       <div className="flex shrink-0 items-center gap-1">
@@ -152,13 +169,14 @@ function SortableQueueItem({
           </button>
         )}
 
-        {/* Remove */}
+        {/* Remove — bin icon + text, destructive pattern */}
         <button
           onClick={() => onRemove(index)}
-          className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 hover:text-red-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          className="flex h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-red-400/70 hover:text-red-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           aria-label={`Remove ${item.title} from queue`}
         >
-          <X className="h-4 w-4" aria-hidden="true" />
+          <Trash2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+          Remove
         </button>
       </div>
     </li>
@@ -167,7 +185,7 @@ function SortableQueueItem({
 
 // ── QueueView ─────────────────────────────────────────────────────────────────
 
-export function QueueView({ speaker, open, onClose, currentTrackUri }: QueueViewProps) {
+export function QueueView({ speaker, open, onClose, currentTrackUri, playbackState }: QueueViewProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -315,34 +333,43 @@ export function QueueView({ speaker, open, onClose, currentTrackUri }: QueueView
     const sortableIds = queue.map((item, i) => item.uri + ':' + i)
 
     return (
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-          <ul
-            className="divide-y divide-[var(--border-secondary)]"
-            aria-label="Queue — drag to reorder"
-          >
-            {queue.map((item, i) => {
-              const isCurrentTrack =
-                currentTrackUri ? item.uri === currentTrackUri : i === 0
-              return (
-                <SortableQueueItem
-                  key={item.uri + ':' + i}
-                  item={item}
-                  index={i}
-                  isCurrentTrack={isCurrentTrack}
-                  onRemove={handleRemove}
-                  onPlayNext={handlePlayNext}
-                  isFirst={i === 0}
-                />
-              )
-            })}
-          </ul>
-        </SortableContext>
-      </DndContext>
+      <>
+        {/* Queue header — shuffle, repeat all, clear */}
+        <QueueHeader
+          speaker={speaker}
+          currentPlayMode={playbackState?.currentPlayMode}
+          onModeChange={() => {}}
+        />
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+            <ul
+              className="divide-y divide-[var(--border-secondary)]"
+              aria-label="Queue — drag to reorder"
+            >
+              {queue.map((item, i) => {
+                const isCurrentTrack =
+                  currentTrackUri ? item.uri === currentTrackUri : i === 0
+                return (
+                  <SortableQueueItem
+                    key={item.uri + ':' + i}
+                    item={item}
+                    index={i}
+                    isCurrentTrack={isCurrentTrack}
+                    onRemove={handleRemove}
+                    onPlayNext={handlePlayNext}
+                    isFirst={i === 0}
+                    speaker={speaker}
+                  />
+                )
+              })}
+            </ul>
+          </SortableContext>
+        </DndContext>
+      </>
     )
   }
 
