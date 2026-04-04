@@ -652,44 +652,28 @@ class MusicBrainzClient {
     return { updated, total: rows.length }
   }
 
-  /** Backfill images for NAS artists by looking up their Spotify IDs via MusicBrainz */
-  async backfillNasImages(spotifyClient: { getArtistsByIds: (ids: string[]) => Promise<Array<{ id: string; images: Array<{ url: string }> }>> }): Promise<{ updated: number; total: number }> {
-    // Get NAS artists without images that have a MusicBrainz ID
+  /** Backfill images for NAS artists using Spotify search (fast, no rate limit) */
+  async backfillNasImages(spotifyClient: { searchArtist: (name: string) => Promise<{ id: string; images: Array<{ url: string }> } | null> }): Promise<{ updated: number; total: number }> {
     const rows = db.prepare(
-      "SELECT spotify_artist_id, artist_name, musicbrainz_id FROM artist_countries WHERE image_url IS NULL AND spotify_artist_id LIKE 'nas:%' AND musicbrainz_id IS NOT NULL",
-    ).all() as Array<{ spotify_artist_id: string; artist_name: string; musicbrainz_id: string }>
+      "SELECT spotify_artist_id, artist_name FROM artist_countries WHERE image_url IS NULL AND spotify_artist_id LIKE 'nas:%'",
+    ).all() as Array<{ spotify_artist_id: string; artist_name: string }>
 
-    if (rows.length === 0) return { updated: 0, total: rows.length }
+    if (rows.length === 0) return { updated: 0, total: 0 }
 
-    // Phase 1: Discover Spotify IDs from MusicBrainz URL relations (rate limited)
-    const spotifyIds = new Map<string, string>() // nas key -> spotify ID
-    for (const row of rows) {
-      const spotifyId = await this.mbGetSpotifyId(row.musicbrainz_id)
-      if (spotifyId) {
-        spotifyIds.set(row.spotify_artist_id, spotifyId)
-      }
-    }
-
-    if (spotifyIds.size === 0) return { updated: 0, total: rows.length }
-
-    // Phase 2: Batch fetch Spotify artist images
-    const allSpotifyIds = Array.from(spotifyIds.values())
-    const artists = await spotifyClient.getArtistsByIds(allSpotifyIds)
-
-    const imageMap = new Map<string, string>()
-    for (const a of artists) {
-      const url = a.images?.[1]?.url ?? a.images?.[0]?.url
-      if (url) imageMap.set(a.id, url)
-    }
-
-    // Phase 3: Update DB
     let updated = 0
     const stmt = db.prepare('UPDATE artist_countries SET image_url = ?, updated_at = datetime(\'now\') WHERE spotify_artist_id = ?')
-    for (const [nasKey, spotifyId] of spotifyIds) {
-      const url = imageMap.get(spotifyId)
-      if (url) {
-        stmt.run(url, nasKey)
-        updated++
+
+    // Spotify search has no hard rate limit but be polite — small delay between requests
+    for (const row of rows) {
+      try {
+        const artist = await spotifyClient.searchArtist(row.artist_name)
+        const url = artist?.images?.[1]?.url ?? artist?.images?.[0]?.url
+        if (url) {
+          stmt.run(url, row.spotify_artist_id)
+          updated++
+        }
+      } catch {
+        // Search failed for this artist — skip
       }
     }
 

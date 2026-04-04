@@ -325,6 +325,19 @@ class SpotifyClient {
     }
   }
 
+  async searchArtist(name: string): Promise<SpotifyArtist | null> {
+    const token = await this.getAccessToken()
+    try {
+      const response = await this.api.get<{ artists?: { items: SpotifyArtist[] } }>('/search', {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { q: `artist:"${name}"`, type: 'artist', limit: 1 },
+      })
+      return response.data.artists?.items?.[0] ?? null
+    } catch {
+      return null
+    }
+  }
+
   async getSavedAlbums(limit = 50, offset = 0): Promise<{ items: Array<{ added_at: string; album: SpotifyAlbum }>; total: number; next: string | null }> {
     const token = await this.getAccessToken()
     try {
