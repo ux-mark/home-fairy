@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, createPortal } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -254,12 +254,29 @@ function TrackMenu({
   disabled: boolean
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const menuBtnRef = useRef<HTMLButtonElement>(null)
   return (
-    <div className="relative shrink-0">
+    <div className="shrink-0">
       <button
+        ref={menuBtnRef}
         type="button"
         disabled={disabled}
-        onClick={() => setMenuOpen(v => !v)}
+        onClick={() => {
+          if (menuOpen) {
+            setMenuOpen(false)
+          } else {
+            if (menuBtnRef.current) {
+              const rect = menuBtnRef.current.getBoundingClientRect()
+              const showAbove = rect.bottom + 160 > window.innerHeight
+              setMenuPos({
+                top: showAbove ? rect.top - 160 - 4 : rect.bottom + 4,
+                right: window.innerWidth - rect.right,
+              })
+            }
+            setMenuOpen(true)
+          }
+        }}
         onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
         aria-label={`More options for ${label}`}
         aria-haspopup="menu"
@@ -273,10 +290,11 @@ function TrackMenu({
       >
         <MoreVertical className="h-4 w-4" aria-hidden="true" />
       </button>
-      {menuOpen && (
+      {menuOpen && menuPos && createPortal(
         <ul
           role="menu"
-          className="absolute right-0 top-full z-50 mt-1 min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
+          style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
+          className="z-[200] min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
         >
           <li role="none">
             <button
@@ -308,7 +326,8 @@ function TrackMenu({
               Add to favourites
             </button>
           </li>
-        </ul>
+        </ul>,
+        document.body,
       )}
     </div>
   )
