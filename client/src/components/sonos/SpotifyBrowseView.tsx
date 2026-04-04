@@ -36,6 +36,7 @@ import type {
 } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { CountryList, CountryArtistList, type CountryArtistItem } from './CountryBrowse'
 import { ArtworkImage } from './ArtworkImage'
@@ -1457,7 +1458,7 @@ function ArtistList({ onSelect }: { onSelect: (artist: SpotifyArtist) => void })
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
                   <p className="truncate text-xs text-caption">
-                    {artist.followers.total.toLocaleString()} followers
+                    {artist.followers !== undefined && `${artist.followers.total.toLocaleString()} followers`}
                     {artist.genres.length > 0 && ` · ${artist.genres[0]}`}
                   </p>
                 </div>
@@ -1517,9 +1518,11 @@ function ArtistDetail({
         <ArtworkImage images={artist.images} size={44} rounded="rounded-full" />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg font-semibold leading-snug text-heading">{artist.name}</h2>
-          <p className="truncate text-xs text-caption">
-            {artist.followers.total.toLocaleString()} followers
-          </p>
+          {artist.followers !== undefined && (
+            <p className="truncate text-xs text-caption">
+              {artist.followers.total.toLocaleString()} followers
+            </p>
+          )}
         </div>
         <button
           type="button"
@@ -1595,25 +1598,13 @@ type SpotifySearchAlbum = {
   external_urls: { spotify: string }
 }
 
-function SearchResultPlaylists({
-  playlists,
-  speaker,
-}: {
-  playlists: SpotifyPlaylist[]
-  speaker: string | null
-}) {
-  return (
-    <section aria-label="Playlists">
-      <h3 className="px-4 pb-2 pt-3 text-xs font-semibold uppercase tracking-wide text-caption">
-        Playlists
-      </h3>
-      <ul>
-        {playlists.map(pl => (
-          <SearchPlaylistRow key={pl.id} playlist={pl} speaker={speaker} />
-        ))}
-      </ul>
-    </section>
-  )
+type SpotifySearchArtistItem = {
+  id: string
+  name: string
+  images: Array<{ url: string; height: number | null; width: number | null }>
+  genres: string[]
+  uri: string
+  external_urls: { spotify: string }
 }
 
 function SearchPlaylistRow({
@@ -1655,27 +1646,6 @@ function SearchPlaylistRow({
         <Play className="h-4 w-4" aria-hidden="true" />
       </button>
     </li>
-  )
-}
-
-function SearchResultAlbums({
-  albums,
-  speaker,
-}: {
-  albums: SpotifySearchAlbum[]
-  speaker: string | null
-}) {
-  return (
-    <section aria-label="Albums">
-      <h3 className="px-4 pb-2 pt-3 text-xs font-semibold uppercase tracking-wide text-caption">
-        Albums
-      </h3>
-      <ul>
-        {albums.map((album, i) => (
-          <SearchAlbumRow key={album.id + ':album:' + i} album={album} speaker={speaker} />
-        ))}
-      </ul>
-    </section>
   )
 }
 
@@ -1721,9 +1691,56 @@ function SearchAlbumRow({
   )
 }
 
+function SearchArtistRow({
+  artist,
+  onSelect,
+}: {
+  artist: SpotifySearchArtistItem
+  onSelect: (artist: SpotifyArtist) => void
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(artist as SpotifyArtist)}
+        className={cn(
+          'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+          'transition-colors hover:bg-[var(--bg-secondary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <ArtworkImage images={artist.images} size={40} rounded="rounded-full" fallback="user" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
+          {artist.genres.length > 0 && (
+            <p className="truncate text-xs text-caption">
+              {artist.genres.slice(0, 2).join(', ')}
+            </p>
+          )}
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+      </button>
+    </li>
+  )
+}
+
 // ── Spotify search results ────────────────────────────────────────────────────
 
-function SpotifySearchResults({ query, speaker }: { query: string; speaker: string | null }) {
+function SpotifySearchResults({
+  query,
+  speaker,
+  onSelectArtist,
+}: {
+  query: string
+  speaker: string | null
+  onSelectArtist: (artist: SpotifyArtist) => void
+}) {
+  const [artistsOpen, setArtistsOpen] = useState(true)
+  const [tracksOpen, setTracksOpen] = useState(true)
+  const [albumsOpen, setAlbumsOpen] = useState(true)
+  const [playlistsOpen, setPlaylistsOpen] = useState(true)
+
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['spotify-search', query],
     queryFn: () => api.spotify.search(query),
@@ -1745,7 +1762,8 @@ function SpotifySearchResults({ query, speaker }: { query: string; speaker: stri
   const trackItems = (data?.tracks?.items ?? []).filter((t): t is SpotifyTrack => t !== null)
   const playlistItems = (data?.playlists?.items ?? []).filter((p): p is SpotifyPlaylist => p !== null)
   const albumItems = (data?.albums?.items ?? []).filter((a): a is SpotifySearchAlbum => a !== null)
-  const totalResults = trackItems.length + playlistItems.length + albumItems.length
+  const artistItems = (data?.artists?.items ?? []).filter((a): a is SpotifySearchArtistItem => a !== null)
+  const totalResults = trackItems.length + playlistItems.length + albumItems.length + artistItems.length
 
   if (totalResults === 0) {
     return (
@@ -1760,24 +1778,70 @@ function SpotifySearchResults({ query, speaker }: { query: string; speaker: stri
   }
 
   return (
-    <div className="-mx-4">
+    <div className="flex flex-col gap-3">
+      {artistItems.length > 0 && (
+        <Accordion
+          id="spotify-search-artists"
+          title="Artists"
+          open={artistsOpen}
+          onToggle={() => setArtistsOpen(v => !v)}
+          count={artistItems.length}
+          card={false}
+        >
+          <ul className="-mx-4">
+            {artistItems.map(artist => (
+              <SearchArtistRow key={artist.id} artist={artist} onSelect={onSelectArtist} />
+            ))}
+          </ul>
+        </Accordion>
+      )}
       {trackItems.length > 0 && (
-        <section aria-label="Tracks">
-          <h3 className="px-4 pb-2 pt-3 text-xs font-semibold uppercase tracking-wide text-caption">
-            Tracks
-          </h3>
-          <ul>
+        <Accordion
+          id="spotify-search-tracks"
+          title="Tracks"
+          open={tracksOpen}
+          onToggle={() => setTracksOpen(v => !v)}
+          count={trackItems.length}
+          card={false}
+        >
+          <ul className="-mx-4">
             {trackItems.map((track, i) => (
               <SpotifyTrackRow key={track.id + ':track:' + i} track={track} speaker={speaker} />
             ))}
           </ul>
-        </section>
-      )}
-      {playlistItems.length > 0 && (
-        <SearchResultPlaylists playlists={playlistItems} speaker={speaker} />
+        </Accordion>
       )}
       {albumItems.length > 0 && (
-        <SearchResultAlbums albums={albumItems} speaker={speaker} />
+        <Accordion
+          id="spotify-search-albums"
+          title="Albums"
+          open={albumsOpen}
+          onToggle={() => setAlbumsOpen(v => !v)}
+          count={albumItems.length}
+          card={false}
+        >
+          <ul className="-mx-4">
+            {albumItems.map((album, i) => (
+              <SearchAlbumRow key={album.id + ':album:' + i} album={album} speaker={speaker} />
+            ))}
+          </ul>
+        </Accordion>
+      )}
+      {playlistItems.length > 0 && (
+        <Accordion
+          id="spotify-search-playlists"
+          title="Playlists"
+          open={playlistsOpen}
+          onToggle={() => setPlaylistsOpen(v => !v)}
+          count={playlistItems.length}
+          card={false}
+        >
+          <ul className="-mx-4">
+            {playlistItems.map(pl => (
+              <SearchPlaylistRow key={pl.id} playlist={pl} speaker={speaker} />
+            ))}
+          </ul>
+        </Accordion>
       )}
     </div>
   )
@@ -1915,7 +1979,7 @@ function SpotifyCountryArtistList({
                 <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
                 {spotifyArtist && (
                   <p className="truncate text-xs text-caption">
-                    {spotifyArtist.followers.total.toLocaleString()} followers
+                    {spotifyArtist.followers !== undefined && `${spotifyArtist.followers.total.toLocaleString()} followers`}
                     {spotifyArtist.genres.length > 0 && ` · ${spotifyArtist.genres[0]}`}
                   </p>
                 )}
@@ -2026,7 +2090,13 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
   }
 
   if (isSearching) {
-    return <SpotifySearchResults query={debouncedQuery} speaker={speaker} />
+    return (
+      <SpotifySearchResults
+        query={debouncedQuery}
+        speaker={speaker}
+        onSelectArtist={handleSelectArtist}
+      />
+    )
   }
 
   if (view === 'playlist-detail' && selectedPlaylist) {

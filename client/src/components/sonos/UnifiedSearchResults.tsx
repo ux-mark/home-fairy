@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
+  ChevronRight,
   HardDrive,
   Heart,
   ListEnd,
@@ -15,11 +16,14 @@ import {
 import { api } from '@/lib/api'
 import type {
   SonosLibraryTrack,
+  SonosSearchArtist,
+  SonosSearchAlbum,
   SonosRadioStation,
   SpotifyTrack,
 } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from './ArtworkImage'
 
@@ -98,23 +102,6 @@ function SectionError({ message, onRetry }: { message: string; onRetry: () => vo
         <RefreshCw className="h-3 w-3" aria-hidden="true" />
         Retry
       </button>
-    </div>
-  )
-}
-
-// ── Section heading ───────────────────────────────────────────────────────────
-
-function SectionHeading({
-  icon: Icon,
-  label,
-}: {
-  icon: React.ElementType
-  label: string
-}) {
-  return (
-    <div className="flex items-center gap-2 px-4 pb-2 pt-4">
-      <Icon className="h-3.5 w-3.5 text-caption/70" aria-hidden="true" />
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-caption">{label}</h3>
     </div>
   )
 }
@@ -457,9 +444,62 @@ function RadioStationRow({
   )
 }
 
+// ── NAS search artist row ─────────────────────────────────────────────────────
+
+function NasSearchArtistRow({ artist }: { artist: SonosSearchArtist }) {
+  return (
+    <li className="flex items-center gap-3 px-4 py-2.5">
+      <ArtworkImage src={artist.albumArtUri} size={40} rounded="rounded-full" fallback="user" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
+        <p className="text-xs text-caption">
+          {artist.trackCount} {artist.trackCount === 1 ? 'track' : 'tracks'}
+        </p>
+      </div>
+      <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+    </li>
+  )
+}
+
+// ── NAS search album row ──────────────────────────────────────────────────────
+
+function NasSearchAlbumRow({ album, speaker }: { album: SonosSearchAlbum; speaker: string | null }) {
+  const { toast } = useToast()
+
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.playUri(
+      speaker!,
+      `A:ALBUMARTIST/${album.artist}/${album.name}`,
+    ),
+    onSuccess: () => toast({ message: `Playing "${album.name}"` }),
+    onError: () => toast({ message: 'Failed to play album', type: 'error' }),
+  })
+
+  return (
+    <li className="flex items-center gap-3 px-4 py-2.5">
+      <ArtworkImage src={album.albumArtUri} size={40} fallback="disc" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-heading">{album.name}</p>
+        <p className="truncate text-xs text-caption">{album.artist}</p>
+      </div>
+      <button
+        type="button"
+        disabled={!speaker || playNow.isPending}
+        onClick={() => playNow.mutate()}
+        aria-label={`Play album ${album.name}`}
+        className={actionBtn}
+      >
+        <Play className="h-4 w-4" aria-hidden="true" />
+      </button>
+    </li>
+  )
+}
+
 // ── NAS section ───────────────────────────────────────────────────────────────
 
 function NasSection({ query, speaker }: { query: string; speaker: string | null }) {
+  const [nasOpen, setNasOpen] = useState(true)
+
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['sonos-library-search', query],
     queryFn: () => api.sonos.searchLibrary(query),
@@ -467,15 +507,25 @@ function NasSection({ query, speaker }: { query: string; speaker: string | null 
     enabled: query.length > 0,
   })
 
-  const allTracks = [
-    ...(data?.artists ?? []),
-    ...(data?.albums ?? []),
-    ...(data?.tracks ?? []),
-  ]
+  const artists = data?.artists ?? []
+  const albums = data?.albums ?? []
+  const tracks = data?.tracks ?? []
+  const totalCount = artists.length + albums.length + tracks.length
 
   return (
-    <section aria-label="NAS Library results">
-      <SectionHeading icon={HardDrive} label="NAS Library" />
+    <Accordion
+      id="unified-nas"
+      title={
+        <span className="inline-flex items-center gap-1.5">
+          <HardDrive className="h-3.5 w-3.5 text-caption/70" aria-hidden="true" />
+          NAS Library
+        </span>
+      }
+      open={nasOpen}
+      onToggle={() => setNasOpen(v => !v)}
+      count={isLoading ? undefined : totalCount}
+      card={false}
+    >
       {isLoading && <SectionSkeleton />}
       {isError && (
         <SectionError
@@ -483,23 +533,43 @@ function NasSection({ query, speaker }: { query: string; speaker: string | null 
           onRetry={() => refetch()}
         />
       )}
-      {!isLoading && !isError && allTracks.length === 0 && (
-        <p className="px-4 py-3 text-xs text-caption">No NAS results for &ldquo;{query}&rdquo;</p>
+      {!isLoading && !isError && totalCount === 0 && (
+        <p className="py-3 text-xs text-caption">No NAS results for &ldquo;{query}&rdquo;</p>
       )}
-      {allTracks.length > 0 && (
-        <ul>
-          {allTracks.map((track, i) => (
-            <NasTrackRow key={track.uri + ':' + i} track={track} speaker={speaker} />
-          ))}
-        </ul>
+      {!isLoading && !isError && totalCount > 0 && (
+        <div className="-mx-4">
+          {artists.length > 0 && (
+            <ul>
+              {artists.map(artist => (
+                <NasSearchArtistRow key={artist.name} artist={artist} />
+              ))}
+            </ul>
+          )}
+          {albums.length > 0 && (
+            <ul>
+              {albums.map((album, i) => (
+                <NasSearchAlbumRow key={album.name + ':' + album.artist + ':' + i} album={album} speaker={speaker} />
+              ))}
+            </ul>
+          )}
+          {tracks.length > 0 && (
+            <ul>
+              {tracks.map((track, i) => (
+                <NasTrackRow key={track.uri + ':' + i} track={track} speaker={speaker} />
+              ))}
+            </ul>
+          )}
+        </div>
       )}
-    </section>
+    </Accordion>
   )
 }
 
 // ── Spotify section ───────────────────────────────────────────────────────────
 
 function SpotifySection({ query, speaker }: { query: string; speaker: string | null }) {
+  const [spotifyOpen, setSpotifyOpen] = useState(true)
+
   const {
     data: statusData,
     isError: statusIsError,
@@ -521,8 +591,19 @@ function SpotifySection({ query, speaker }: { query: string; speaker: string | n
   const trackItems = (data?.tracks?.items ?? []).filter((t): t is SpotifyTrack => t !== null)
 
   return (
-    <section aria-label="Spotify results">
-      <SectionHeading icon={Music2} label="Spotify" />
+    <Accordion
+      id="unified-spotify"
+      title={
+        <span className="inline-flex items-center gap-1.5">
+          <Music2 className="h-3.5 w-3.5 text-caption/70" aria-hidden="true" />
+          Spotify
+        </span>
+      }
+      open={spotifyOpen}
+      onToggle={() => setSpotifyOpen(v => !v)}
+      count={isLoading ? undefined : trackItems.length}
+      card={false}
+    >
       {statusIsError && (
         <SectionError
           message="Spotify unavailable — check your internet connection"
@@ -530,7 +611,7 @@ function SpotifySection({ query, speaker }: { query: string; speaker: string | n
         />
       )}
       {!statusIsError && !statusData?.connected && (
-        <p className="px-4 py-3 text-xs text-caption">
+        <p className="py-3 text-xs text-caption">
           Connect Spotify in Settings to see results here
         </p>
       )}
@@ -542,22 +623,24 @@ function SpotifySection({ query, speaker }: { query: string; speaker: string | n
         />
       )}
       {!statusIsError && statusData?.connected && !isLoading && !isError && trackItems.length === 0 && (
-        <p className="px-4 py-3 text-xs text-caption">No Spotify results for &ldquo;{query}&rdquo;</p>
+        <p className="py-3 text-xs text-caption">No Spotify results for &ldquo;{query}&rdquo;</p>
       )}
       {trackItems.length > 0 && (
-        <ul>
+        <ul className="-mx-4">
           {trackItems.map((track, i) => (
             <SpotifyTrackRow key={track.id + ':' + i} track={track} speaker={speaker} />
           ))}
         </ul>
       )}
-    </section>
+    </Accordion>
   )
 }
 
 // ── Radio section ─────────────────────────────────────────────────────────────
 
 function RadioSection({ query, speaker }: { query: string; speaker: string | null }) {
+  const [radioOpen, setRadioOpen] = useState(true)
+
   const { data: stations, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['sonos-radio-stations'],
     queryFn: api.sonos.getRadioStations,
@@ -569,8 +652,19 @@ function RadioSection({ query, speaker }: { query: string; speaker: string | nul
     : []
 
   return (
-    <section aria-label="Radio results">
-      <SectionHeading icon={Radio} label="Radio" />
+    <Accordion
+      id="unified-radio"
+      title={
+        <span className="inline-flex items-center gap-1.5">
+          <Radio className="h-3.5 w-3.5 text-caption/70" aria-hidden="true" />
+          Radio
+        </span>
+      }
+      open={radioOpen}
+      onToggle={() => setRadioOpen(v => !v)}
+      count={isLoading ? undefined : filtered.length}
+      card={false}
+    >
       {isLoading && <SectionSkeleton />}
       {isError && (
         <SectionError
@@ -579,16 +673,16 @@ function RadioSection({ query, speaker }: { query: string; speaker: string | nul
         />
       )}
       {!isLoading && !isError && filtered.length === 0 && (
-        <p className="px-4 py-3 text-xs text-caption">No radio stations match &ldquo;{query}&rdquo;</p>
+        <p className="py-3 text-xs text-caption">No radio stations match &ldquo;{query}&rdquo;</p>
       )}
       {filtered.length > 0 && (
-        <ul>
+        <ul className="-mx-4">
           {filtered.map((station, i) => (
             <RadioStationRow key={station.uri + ':' + i} station={station} speaker={speaker} />
           ))}
         </ul>
       )}
-    </section>
+    </Accordion>
   )
 }
 
@@ -607,7 +701,7 @@ export function UnifiedSearchResults({ searchQuery, targetSpeaker }: UnifiedSear
   if (!debouncedQuery) return null
 
   return (
-    <div className="-mx-4">
+    <div className="flex flex-col gap-2">
       <NasSection query={debouncedQuery} speaker={speaker} />
       <SpotifySection query={debouncedQuery} speaker={speaker} />
       <RadioSection query={debouncedQuery} speaker={speaker} />

@@ -131,9 +131,22 @@ export interface SonosLibraryTrack {
   uri: string
 }
 
+export interface SonosSearchArtist {
+  name: string
+  trackCount: number
+  albumArtUri: string | undefined
+}
+
+export interface SonosSearchAlbum {
+  name: string
+  artist: string
+  trackCount: number
+  albumArtUri: string | undefined
+}
+
 export interface SonosLibrarySearchResult {
-  artists: SonosLibraryTrack[]
-  albums: SonosLibraryTrack[]
+  artists: SonosSearchArtist[]
+  albums: SonosSearchAlbum[]
   tracks: SonosLibraryTrack[]
 }
 
@@ -927,11 +940,59 @@ class SonosClient {
     await this.ensureAlbumArtCache()
     const tracks = this.readLibraryCache()
     const q = query.toLowerCase()
-    const matchingTracks = tracks
+    const matching = tracks
       .filter(t => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q) || t.album.toLowerCase().includes(q))
+
+    // Build deduplicated artists from matching tracks
+    const artistMap = new Map<string, { trackCount: number; albumArtUri: string | undefined }>()
+    for (const t of matching) {
+      if (!t.artist) continue
+      const existing = artistMap.get(t.artist)
+      if (existing) {
+        existing.trackCount++
+      } else {
+        artistMap.set(t.artist, {
+          trackCount: 1,
+          albumArtUri: this.lookupAlbumArt(t.artist, t.album),
+        })
+      }
+    }
+    const artists: SonosSearchArtist[] = Array.from(artistMap.entries())
+      .map(([name, { trackCount, albumArtUri }]) => ({ name, trackCount, albumArtUri }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 20)
+
+    // Build deduplicated albums from matching tracks
+    const albumMap = new Map<string, { artist: string; trackCount: number; albumArtUri: string | undefined }>()
+    for (const t of matching) {
+      if (!t.album) continue
+      const key = `${t.artist}\0${t.album}`
+      const existing = albumMap.get(key)
+      if (existing) {
+        existing.trackCount++
+      } else {
+        albumMap.set(key, {
+          artist: t.artist,
+          trackCount: 1,
+          albumArtUri: this.lookupAlbumArt(t.artist, t.album),
+        })
+      }
+    }
+    const albums: SonosSearchAlbum[] = Array.from(albumMap.entries())
+      .map(([key, { artist, trackCount, albumArtUri }]) => ({
+        name: key.split('\0')[1],
+        artist,
+        trackCount,
+        albumArtUri,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 20)
+
+    const matchingTracks = matching
       .slice(0, 50)
       .map(t => ({ ...t, albumArtUri: this.lookupAlbumArt(t.artist, t.album) }))
-    return { artists: [], albums: [], tracks: matchingTracks }
+
+    return { artists, albums, tracks: matchingTracks }
   }
 
   async getAllLibraryTracks(): Promise<SonosLibraryTrack[]> {

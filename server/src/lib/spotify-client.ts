@@ -103,6 +103,13 @@ export interface SpotifySearchResult {
     offset: number
     limit: number
   }
+  artists?: {
+    items: SpotifyArtist[]
+    total: number
+    next: string | null
+    offset: number
+    limit: number
+  }
 }
 
 export interface SpotifyAlbum {
@@ -156,8 +163,8 @@ export interface SpotifyArtist {
   genres: string[]
   uri: string
   external_urls: { spotify: string }
-  followers: { total: number }
-  popularity: number
+  followers?: { total: number }
+  popularity?: number
 }
 
 class SpotifyClient {
@@ -308,7 +315,7 @@ class SpotifyClient {
 
   async search(
     query: string,
-    types: Array<'track' | 'playlist' | 'album'> = ['track', 'playlist'],
+    types: Array<'track' | 'playlist' | 'album' | 'artist'> = ['track', 'playlist', 'artist'],
     limit = 20,
     offset = 0,
   ): Promise<SpotifySearchResult> {

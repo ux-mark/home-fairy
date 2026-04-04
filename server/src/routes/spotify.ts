@@ -194,7 +194,7 @@ router.get('/search', requireAuth, async (req: Request, res: Response) => {
   try {
     const rawTypes = req.query.types as string | undefined
     const types = rawTypes
-      ? (rawTypes.split(',').filter(t => ['track', 'playlist', 'album'].includes(t)) as Array<'track' | 'playlist' | 'album'>)
+      ? (rawTypes.split(',').filter(t => ['track', 'playlist', 'album', 'artist'].includes(t)) as Array<'track' | 'playlist' | 'album' | 'artist'>)
       : undefined
     const limit = req.query.limit ? Number(req.query.limit) : 20
     const offset = req.query.offset ? Number(req.query.offset) : 0

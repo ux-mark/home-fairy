@@ -795,9 +795,22 @@ export interface SonosLibraryTrack {
   uri: string
 }
 
+export interface SonosSearchArtist {
+  name: string
+  trackCount: number
+  albumArtUri: string | undefined
+}
+
+export interface SonosSearchAlbum {
+  name: string
+  artist: string
+  trackCount: number
+  albumArtUri: string | undefined
+}
+
 export interface SonosLibrarySearchResult {
-  artists: SonosLibraryTrack[]
-  albums: SonosLibraryTrack[]
+  artists: SonosSearchArtist[]
+  albums: SonosSearchAlbum[]
   tracks: SonosLibraryTrack[]
 }
 
@@ -931,6 +944,20 @@ export interface SpotifySearchResult {
     offset: number
     limit: number
   }
+  artists?: {
+    items: Array<{
+      id: string
+      name: string
+      images: SpotifyImage[]
+      genres: string[]
+      uri: string
+      external_urls: { spotify: string }
+    }>
+    total: number
+    next: string | null
+    offset: number
+    limit: number
+  }
 }
 
 export interface SpotifyAlbum {
@@ -984,8 +1011,8 @@ export interface SpotifyArtist {
   genres: string[]
   uri: string
   external_urls: { spotify: string }
-  followers: { total: number }
-  popularity: number
+  followers?: { total: number }
+  popularity?: number
 }
 
 // ── Artist country enrichment types ──────────────────────────────────────────
