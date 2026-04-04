@@ -9,6 +9,7 @@ export interface ArtistCountryResult {
   country_code: string | null
   country_name: string | null
   sub_region: string | null
+  image_url: string | null
   source: 'wikidata' | 'musicbrainz' | 'manual'
   musicbrainz_id: string | null
   confidence: 'high' | 'medium' | 'low'
@@ -234,6 +235,7 @@ class MusicBrainzClient {
           country_code: countryCode,
           country_name: countryName,
           sub_region: subRegion,
+          image_url: null,
           source: 'wikidata',
           musicbrainz_id: null,
           confidence: countryCode ? 'high' : 'low',
@@ -285,6 +287,24 @@ class MusicBrainzClient {
     return null
   }
 
+  /** Look up MusicBrainz artist to find Spotify URL relation */
+  private async mbGetSpotifyId(mbid: string): Promise<string | null> {
+    try {
+      const data = await this.mbGet<{
+        relations?: Array<{ type: string; url?: { resource: string } }>
+      }>(`/artist/${mbid}`, { inc: 'url-rels' })
+
+      for (const rel of data.relations ?? []) {
+        const url = rel.url?.resource
+        if (url?.includes('open.spotify.com/artist/')) {
+          const match = url.match(/artist\/([a-zA-Z0-9]+)/)
+          if (match) return match[1]
+        }
+      }
+    } catch { /* artist not found or rate limit */ }
+    return null
+  }
+
   private extractCountryFromMbArtist(artist: MbArtist): {
     country_code: string | null
     country_name: string | null
@@ -324,6 +344,7 @@ class MusicBrainzClient {
         spotify_artist_id: spotifyId,
         artist_name: name,
         ...country,
+        image_url: null,
         source: 'musicbrainz',
         musicbrainz_id: mbArtist.id,
         confidence: 'high',
@@ -340,6 +361,7 @@ class MusicBrainzClient {
         spotify_artist_id: spotifyId,
         artist_name: name,
         ...country,
+        image_url: null,
         source: 'musicbrainz',
         musicbrainz_id: mbSearch.id,
         confidence: 'medium',
@@ -355,6 +377,7 @@ class MusicBrainzClient {
       country_code: null,
       country_name: null,
       sub_region: null,
+      image_url: null,
       source: 'musicbrainz',
       musicbrainz_id: null,
       confidence: 'low',
@@ -432,6 +455,7 @@ class MusicBrainzClient {
               spotify_artist_id: a.id,
               artist_name: a.name,
               ...country,
+              image_url: null,
               source: 'musicbrainz',
               musicbrainz_id: mbArtist.id,
               confidence: 'high',
@@ -450,6 +474,7 @@ class MusicBrainzClient {
               spotify_artist_id: a.id,
               artist_name: a.name,
               ...country,
+              image_url: null,
               source: 'musicbrainz',
               musicbrainz_id: mbSearch.id,
               confidence: 'medium',
@@ -467,6 +492,7 @@ class MusicBrainzClient {
             country_code: null,
             country_name: null,
             sub_region: null,
+            image_url: null,
             source: 'musicbrainz',
             musicbrainz_id: null,
             confidence: 'low',
@@ -551,6 +577,7 @@ class MusicBrainzClient {
               spotify_artist_id: `nas:${name}`,
               artist_name: name,
               ...country,
+              image_url: null,
               source: 'musicbrainz',
               musicbrainz_id: mbArtist.id,
               confidence: 'medium',
@@ -566,6 +593,7 @@ class MusicBrainzClient {
               country_code: null,
               country_name: null,
               sub_region: null,
+              image_url: null,
               source: 'musicbrainz',
               musicbrainz_id: null,
               confidence: 'low',
@@ -594,19 +622,78 @@ class MusicBrainzClient {
     return results
   }
 
+  // ── Image backfill ───────────────────────────────────────────────────────
+
+  /** Backfill image_url for all artists missing images using Spotify batch API */
+  async backfillImages(spotifyClient: { getArtistsByIds: (ids: string[]) => Promise<Array<{ id: string; images: Array<{ url: string }> }>> }): Promise<{ updated: number; total: number }> {
+    // Get all Spotify-keyed artists without images
+    const rows = db.prepare(
+      "SELECT spotify_artist_id, artist_name FROM artist_countries WHERE image_url IS NULL AND spotify_artist_id NOT LIKE 'nas:%'",
+    ).all() as Array<{ spotify_artist_id: string; artist_name: string }>
+
+    if (rows.length === 0) return { updated: 0, total: 0 }
+
+    const ids = rows.map(r => r.spotify_artist_id)
+    const artists = await spotifyClient.getArtistsByIds(ids)
+
+    const imageMap = new Map<string, string>()
+    for (const a of artists) {
+      const url = a.images?.[1]?.url ?? a.images?.[0]?.url
+      if (url) imageMap.set(a.id, url)
+    }
+
+    let updated = 0
+    const stmt = db.prepare('UPDATE artist_countries SET image_url = ?, updated_at = datetime(\'now\') WHERE spotify_artist_id = ?')
+    for (const [id, url] of imageMap) {
+      stmt.run(url, id)
+      updated++
+    }
+
+    return { updated, total: rows.length }
+  }
+
+  /** Backfill images for NAS artists using Spotify search (fast, no rate limit) */
+  async backfillNasImages(spotifyClient: { searchArtist: (name: string) => Promise<{ id: string; images: Array<{ url: string }> } | null> }): Promise<{ updated: number; total: number }> {
+    const rows = db.prepare(
+      "SELECT spotify_artist_id, artist_name FROM artist_countries WHERE image_url IS NULL AND spotify_artist_id LIKE 'nas:%'",
+    ).all() as Array<{ spotify_artist_id: string; artist_name: string }>
+
+    if (rows.length === 0) return { updated: 0, total: 0 }
+
+    let updated = 0
+    const stmt = db.prepare('UPDATE artist_countries SET image_url = ?, updated_at = datetime(\'now\') WHERE spotify_artist_id = ?')
+
+    // Spotify search has no hard rate limit but be polite — small delay between requests
+    for (const row of rows) {
+      try {
+        const artist = await spotifyClient.searchArtist(row.artist_name)
+        const url = artist?.images?.[1]?.url ?? artist?.images?.[0]?.url
+        if (url) {
+          stmt.run(url, row.spotify_artist_id)
+          updated++
+        }
+      } catch {
+        // Search failed for this artist — skip
+      }
+    }
+
+    return { updated, total: rows.length }
+  }
+
   // ── DB persistence ───────────────────────────────────────────────────────
 
   private saveResult(result: ArtistCountryResult): void {
     db.prepare(`
       INSERT OR REPLACE INTO artist_countries
-        (spotify_artist_id, artist_name, country_code, country_name, sub_region, source, musicbrainz_id, confidence, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        (spotify_artist_id, artist_name, country_code, country_name, sub_region, image_url, source, musicbrainz_id, confidence, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     `).run(
       result.spotify_artist_id,
       result.artist_name,
       result.country_code,
       result.country_name,
       result.sub_region,
+      result.image_url,
       result.source,
       result.musicbrainz_id,
       result.confidence,

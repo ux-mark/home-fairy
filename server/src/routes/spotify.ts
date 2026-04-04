@@ -341,11 +341,71 @@ router.post('/enrich-artists/cancel', requireAuth, (_req: Request, res: Response
   res.json({ ok: true })
 })
 
+// POST /spotify/backfill-images — populate image_url for all enriched artists
+router.post('/backfill-images', requireAuth, async (_req: Request, res: Response) => {
+  try {
+    if (!spotifyClient.isConnected()) {
+      res.status(401).json({ error: 'Spotify not connected' })
+      return
+    }
+
+    // Backfill Spotify artists (fast — batch API, no rate limit)
+    const spotifyResult = await musicBrainzClient.backfillImages(spotifyClient)
+
+    // Backfill NAS artists (slow — MusicBrainz rate limited at 1 req/sec)
+    const nasResult = await musicBrainzClient.backfillNasImages(spotifyClient)
+
+    res.json({
+      spotify: spotifyResult,
+      nas: nasResult,
+      total_updated: spotifyResult.updated + nasResult.updated,
+    })
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// ── Auto-backfill: lazily fetch missing artist images in background ──────────
+
+let imageBackfillRunning = false
+
+function triggerAutoBackfill(): void {
+  if (imageBackfillRunning) return
+  if (!spotifyClient.isConnected()) return
+
+  // Check if there are artists missing images
+  const missing = db.prepare(
+    "SELECT COUNT(*) as cnt FROM artist_countries WHERE image_url IS NULL AND spotify_artist_id NOT LIKE 'nas:%'",
+  ).get() as { cnt: number }
+  if (missing.cnt === 0) return
+
+  imageBackfillRunning = true
+  console.log(`[Backfill] Auto-fetching images for ${missing.cnt} artists...`)
+
+  musicBrainzClient.backfillImages(spotifyClient)
+    .then(result => {
+      console.log(`[Backfill] Spotify images: ${result.updated}/${result.total} updated`)
+      // Also try NAS artists (slower, but runs in background)
+      return musicBrainzClient.backfillNasImages(spotifyClient)
+    })
+    .then(result => {
+      console.log(`[Backfill] NAS images: ${result.updated}/${result.total} updated`)
+    })
+    .catch(err => {
+      console.error('[Backfill] Auto-backfill failed:', err instanceof Error ? err.message : String(err))
+    })
+    .finally(() => {
+      imageBackfillRunning = false
+    })
+}
+
 // GET /spotify/artist-countries — get all cached artist country data
 router.get('/artist-countries', requireAuth, (_req: Request, res: Response) => {
   try {
     const rows = db.prepare('SELECT * FROM artist_countries ORDER BY artist_name COLLATE NOCASE').all() as ArtistCountryRow[]
     res.json({ items: rows, total: rows.length })
+    // Fire-and-forget: backfill missing images in background
+    triggerAutoBackfill()
   } catch (err) {
     handleError(res, err)
   }
@@ -439,6 +499,7 @@ router.get('/albums/enriched', requireAuth, async (req: Request, res: Response) 
           country_name: c?.country_name ?? null,
           sub_region: c?.sub_region ?? null,
           confidence: c?.confidence ?? null,
+          image_url: c?.image_url ?? null,
         }
       }),
     }))
@@ -450,6 +511,8 @@ router.get('/albums/enriched', requireAuth, async (req: Request, res: Response) 
       cached_artists: countryMap.size,
       uncached_artists: artistIds.size - countryMap.size,
     })
+    // Fire-and-forget: backfill missing images in background
+    triggerAutoBackfill()
   } catch (err) {
     handleError(res, err)
   }

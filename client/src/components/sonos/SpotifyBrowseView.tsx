@@ -11,7 +11,6 @@ import {
   Disc3,
   Globe,
   Heart,
-  ImageOff,
   Loader2,
   ListEnd,
   ListStart,
@@ -38,11 +37,13 @@ import type {
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
+import { CountryList, CountryArtistList, type CountryArtistItem } from './CountryBrowse'
+import { ArtworkImage } from './ArtworkImage'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type SpotifyView = 'home' | 'playlist-detail' | 'album-detail' | 'show-detail' | 'artist-detail'
-type BrowseMode = 'playlists' | 'podcasts' | 'albums' | 'artists' | 'songs'
+type SpotifyView = 'home' | 'playlist-detail' | 'album-detail' | 'show-detail' | 'artist-detail' | 'country-artists'
+type BrowseMode = 'playlists' | 'countries' | 'podcasts' | 'albums' | 'artists' | 'songs'
 type PlaylistSort = 'recent' | 'a-z' | 'z-a'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -84,37 +85,6 @@ function formatDate(dateStr: string): string {
   } catch {
     return dateStr
   }
-}
-
-// ── Cover art ─────────────────────────────────────────────────────────────────
-
-function CoverArt({ images, size = 40, rounded = 'rounded-md' }: {
-  images?: Array<{ url: string; height: number | null; width: number | null }>
-  size?: number
-  rounded?: string
-}) {
-  const [failed, setFailed] = useState(false)
-  const url = images?.[0]?.url
-  return (
-    <div
-      className={cn('shrink-0 overflow-hidden bg-[var(--bg-tertiary)]', rounded)}
-      style={{ width: size, height: size }}
-    >
-      {url && !failed ? (
-        <img
-          src={url}
-          alt=""
-          loading="lazy"
-          className="h-full w-full object-cover"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center">
-          <ImageOff className="h-4 w-4 text-caption/40" aria-hidden="true" />
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ── Skeleton helpers ─────────────────────────────────────────────────────────
@@ -245,7 +215,7 @@ function BrowseModeTabs({
       aria-label="Browse by"
       className="mb-4 flex gap-2 overflow-x-auto pb-0.5"
     >
-      {(['playlists', 'podcasts', 'albums', 'artists', 'songs'] as const).map(m => (
+      {(['playlists', 'countries', 'podcasts', 'albums', 'artists', 'songs'] as const).map(m => (
         <button
           key={m}
           role="tab"
@@ -260,7 +230,7 @@ function BrowseModeTabs({
               : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
           )}
         >
-          {m === 'playlists' ? 'Playlists' : m === 'podcasts' ? 'Podcasts' : m === 'albums' ? 'Albums' : m === 'artists' ? 'Artists' : 'Songs'}
+          {m === 'playlists' ? 'Playlists' : m === 'countries' ? 'Countries' : m === 'podcasts' ? 'Podcasts' : m === 'albums' ? 'Albums' : m === 'artists' ? 'Artists' : 'Songs'}
         </button>
       ))}
     </div>
@@ -388,7 +358,7 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
 
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <CoverArt images={track.album.images} size={40} />
+      <ArtworkImage images={track.album.images} size={40} />
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{track.name}</p>
@@ -568,7 +538,7 @@ function EpisodeRow({
 
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <CoverArt images={episode.images} size={48} />
+      <ArtworkImage images={episode.images} size={48} />
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{episode.name}</p>
@@ -698,7 +668,7 @@ function PlaylistList({ onSelect }: { onSelect: (playlist: SpotifyPlaylist) => v
               'min-h-[44px]',
             )}
           >
-            <CoverArt images={playlist.images} size={48} />
+            <ArtworkImage images={playlist.images} size={48} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-heading">{playlist.name}</p>
               <p className="text-xs text-caption">
@@ -758,7 +728,7 @@ function PlaylistDetail({
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
-        <CoverArt images={playlist.images} size={44} />
+        <ArtworkImage images={playlist.images} size={44} />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg font-semibold leading-snug text-heading">{playlist.name}</h2>
           <p className="text-xs text-caption">
@@ -849,6 +819,21 @@ function EnrichmentStatusBar() {
     },
   })
 
+  const backfill = useMutation({
+    mutationFn: () => api.spotify.backfillImages(),
+    onSuccess: (data) => {
+      if (data.total_updated > 0) {
+        toast({ message: `Updated ${data.total_updated} artist images` })
+        queryClient.invalidateQueries({ queryKey: ['spotify-artist-countries'] })
+        queryClient.invalidateQueries({ queryKey: ['spotify-enriched-albums'] })
+        queryClient.invalidateQueries({ queryKey: ['spotify-artists'] })
+      } else {
+        toast({ message: 'All artist images are up to date' })
+      }
+    },
+    onError: () => toast({ message: 'Failed to fetch artwork', type: 'error' }),
+  })
+
   const isRunning = progress?.status === 'running'
   const pct = progress && progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0
 
@@ -884,6 +869,30 @@ function EnrichmentStatusBar() {
           {progress.resolved} of {progress.total} resolved
         </span>
       )}
+      <button
+        type="button"
+        onClick={() => backfill.mutate()}
+        disabled={backfill.isPending || isRunning}
+        className={cn(
+          'flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[36px]',
+          'bg-[var(--bg-secondary)] text-caption hover:bg-[var(--bg-tertiary)] hover:text-body',
+          backfill.isPending && 'opacity-50',
+        )}
+      >
+        {backfill.isPending ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            Fetching artwork...
+          </>
+        ) : (
+          <>
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            Fetch artwork
+          </>
+        )}
+      </button>
     </div>
   )
 }
@@ -896,7 +905,9 @@ function groupAlbumsByCountry(
   for (const item of items) {
     // Use the first artist's country (primary artist)
     const primaryCountry = item.artist_countries?.[0]
-    const key = primaryCountry?.country_name ?? 'Not Known'
+    const cc = primaryCountry?.country_code
+    const hasValidCode = typeof cc === 'string' && /^[A-Z]{2}$/.test(cc)
+    const key = hasValidCode ? (primaryCountry?.country_name ?? cc!) : 'Not Known'
     if (!groups.has(key)) groups.set(key, [])
     groups.get(key)!.push(item)
   }
@@ -1099,7 +1110,7 @@ function AlbumRow({
           'min-h-[44px]',
         )}
       >
-        <CoverArt images={item.album.images} size={48} />
+        <ArtworkImage images={item.album.images} size={48} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-heading">{item.album.name}</p>
           <p className="truncate text-xs text-caption">
@@ -1156,7 +1167,7 @@ function AlbumDetail({
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
-        <CoverArt images={album.images} size={44} />
+        <ArtworkImage images={album.images} size={44} />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg font-semibold leading-snug text-heading">{album.name}</h2>
           <p className="truncate text-xs text-caption">
@@ -1257,7 +1268,7 @@ function ShowList({ onSelect }: { onSelect: (show: SpotifyShow) => void }) {
               'min-h-[44px]',
             )}
           >
-            <CoverArt images={show.images} size={48} />
+            <ArtworkImage images={show.images} size={48} />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-heading">{show.name}</p>
               <p className="truncate text-xs text-caption">
@@ -1307,7 +1318,7 @@ function ShowDetail({
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
-        <CoverArt images={show.images} size={44} />
+        <ArtworkImage images={show.images} size={44} />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg font-semibold leading-snug text-heading">{show.name}</h2>
           <p className="truncate text-xs text-caption">{show.publisher}</p>
@@ -1442,7 +1453,7 @@ function ArtistList({ onSelect }: { onSelect: (artist: SpotifyArtist) => void })
                   'min-h-[44px]',
                 )}
               >
-                <CoverArt images={artist.images} size={48} rounded="rounded-full" />
+                <ArtworkImage images={artist.images} size={48} rounded="rounded-full" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
                   <p className="truncate text-xs text-caption">
@@ -1503,7 +1514,7 @@ function ArtistDetail({
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
-        <CoverArt images={artist.images} size={44} rounded="rounded-full" />
+        <ArtworkImage images={artist.images} size={44} rounded="rounded-full" />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-lg font-semibold leading-snug text-heading">{artist.name}</h2>
           <p className="truncate text-xs text-caption">
@@ -1556,7 +1567,7 @@ function ArtistDetail({
                   'min-h-[44px]',
                 )}
               >
-                <CoverArt images={album.images} size={48} />
+                <ArtworkImage images={album.images} size={48} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-heading">{album.name}</p>
                   <p className="truncate text-xs text-caption">
@@ -1622,7 +1633,7 @@ function SearchPlaylistRow({
 
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <CoverArt images={playlist.images} size={40} />
+      <ArtworkImage images={playlist.images} size={40} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{playlist.name}</p>
         <p className="truncate text-xs text-caption">
@@ -1685,7 +1696,7 @@ function SearchAlbumRow({
 
   return (
     <li className="flex items-center gap-3 px-4 py-2.5">
-      <CoverArt images={album.images} size={40} />
+      <ArtworkImage images={album.images} size={40} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{album.name}</p>
         <p className="truncate text-xs text-caption">
@@ -1772,6 +1783,152 @@ function SpotifySearchResults({ query, speaker }: { query: string; speaker: stri
   )
 }
 
+// ── SpotifyCountryList ────────────────────────────────────────────────────────
+
+function SpotifyCountryList({
+  onSelectCountry,
+}: {
+  onSelectCountry: (code: string, name: string) => void
+}) {
+  const queryClient = useQueryClient()
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['spotify-artist-countries'],
+    queryFn: () => api.spotify.getArtistCountries(),
+    staleTime: 5 * 60_000,
+  })
+
+  const { data: enrichStatus } = useQuery({
+    queryKey: ['enrichment-status'],
+    queryFn: () => api.spotify.getEnrichmentStatus(),
+    staleTime: 5_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 3_000 : false
+    },
+  })
+
+  const prevStatus = useRef(enrichStatus?.status)
+  useEffect(() => {
+    if (prevStatus.current === 'running' && enrichStatus?.status === 'complete') {
+      queryClient.invalidateQueries({ queryKey: ['spotify-artist-countries'] })
+    }
+    prevStatus.current = enrichStatus?.status
+  }, [enrichStatus?.status, queryClient])
+
+  const artists: CountryArtistItem[] = (data?.items ?? []).map(a => ({
+    id: a.spotify_artist_id,
+    name: a.artist_name,
+    country_code: a.country_code,
+    country_name: a.country_name,
+    sub_region: a.sub_region,
+    image_url: a.image_url,
+  }))
+
+  return (
+    <CountryList
+      artists={artists}
+      isLoading={isLoading}
+      isError={isError}
+      error={error as Error | null}
+      onRetry={() => refetch()}
+      onSelectCountry={onSelectCountry}
+      enrichmentStatusBar={<EnrichmentStatusBar />}
+    />
+  )
+}
+
+// ── SpotifyCountryArtistList ──────────────────────────────────────────────────
+
+function SpotifyCountryArtistList({
+  countryCode,
+  countryName,
+  onSelectArtist,
+  onBack,
+}: {
+  countryCode: string
+  countryName: string
+  onSelectArtist: (artist: SpotifyArtist) => void
+  onBack: () => void
+}) {
+  const { data: countryData, isLoading: countryLoading, isError: countryIsError, error: countryError, refetch: refetchCountry } = useQuery({
+    queryKey: ['spotify-artist-countries'],
+    queryFn: () => api.spotify.getArtistCountries(),
+    staleTime: 5 * 60_000,
+  })
+
+  const { data: artistsData } = useQuery({
+    queryKey: ['spotify-artists'],
+    queryFn: () => api.spotify.getArtists(),
+    staleTime: 5 * 60_000,
+  })
+
+  const artists: CountryArtistItem[] = (countryData?.items ?? []).map(a => ({
+    id: a.spotify_artist_id,
+    name: a.artist_name,
+    country_code: a.country_code,
+    country_name: a.country_name,
+    sub_region: a.sub_region,
+    image_url: a.image_url,
+  }))
+
+  // Build a lookup of Spotify artist objects for rich rendering
+  const spotifyArtistMap = new Map<string, SpotifyArtist>()
+  for (const a of artistsData?.items ?? []) {
+    spotifyArtistMap.set(a.id, a)
+    spotifyArtistMap.set(a.name.toLowerCase(), a)
+  }
+
+  return (
+    <CountryArtistList
+      countryCode={countryCode}
+      countryName={countryName}
+      artists={artists}
+      isLoading={countryLoading}
+      isError={countryIsError}
+      error={countryError as Error | null}
+      onRetry={() => refetchCountry()}
+      onBack={onBack}
+      renderArtistRow={(artist) => {
+        const spotifyArtist = spotifyArtistMap.get(artist.id) ?? spotifyArtistMap.get(artist.name.toLowerCase())
+        return (
+          <li key={artist.id}>
+            <button
+              type="button"
+              onClick={() => {
+                if (spotifyArtist) onSelectArtist(spotifyArtist)
+              }}
+              className={cn(
+                'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+                'transition-colors hover:bg-[var(--bg-secondary)]',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                'min-h-[44px]',
+              )}
+            >
+              <ArtworkImage
+                src={artist.image_url}
+                images={!artist.image_url ? spotifyArtist?.images : undefined}
+                size={48}
+                rounded="rounded-full"
+                fallback="user"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
+                {spotifyArtist && (
+                  <p className="truncate text-xs text-caption">
+                    {spotifyArtist.followers.total.toLocaleString()} followers
+                    {spotifyArtist.genres.length > 0 && ` · ${spotifyArtist.genres[0]}`}
+                  </p>
+                )}
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+            </button>
+          </li>
+        )
+      }}
+    />
+  )
+}
+
 // ── SpotifyBrowseView ─────────────────────────────────────────────────────────
 
 interface SpotifyBrowseViewProps {
@@ -1786,6 +1943,7 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
   const [selectedAlbum, setSelectedAlbum] = useState<SpotifyAlbum | null>(null)
   const [selectedShow, setSelectedShow] = useState<SpotifyShow | null>(null)
   const [selectedArtist, setSelectedArtist] = useState<SpotifyArtist | null>(null)
+  const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
 
   const firstSpeaker = useFirstSpeaker()
   const speaker = targetSpeaker ?? firstSpeaker
@@ -1830,6 +1988,11 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
     setView('album-detail')
   }
 
+  function handleSelectCountry(code: string, name: string) {
+    setSelectedCountry({ code, name })
+    setView('country-artists')
+  }
+
   function handleBack() {
     if (view === 'album-detail' && selectedArtist) {
       setView('artist-detail')
@@ -1840,6 +2003,7 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
       setSelectedAlbum(null)
       setSelectedShow(null)
       setSelectedArtist(null)
+      setSelectedCountry(null)
     }
   }
 
@@ -1894,10 +2058,22 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
     )
   }
 
+  if (view === 'country-artists' && selectedCountry) {
+    return (
+      <SpotifyCountryArtistList
+        countryCode={selectedCountry.code}
+        countryName={selectedCountry.name}
+        onSelectArtist={handleSelectArtist}
+        onBack={handleBack}
+      />
+    )
+  }
+
   return (
     <div>
       <BrowseModeTabs mode={browseMode} onChangeMode={m => { setBrowseMode(m); setView('home') }} />
       {browseMode === 'playlists' && <PlaylistList onSelect={handleSelectPlaylist} />}
+      {browseMode === 'countries' && <SpotifyCountryList onSelectCountry={handleSelectCountry} />}
       {browseMode === 'podcasts' && <ShowList onSelect={handleSelectShow} />}
       {browseMode === 'albums' && <AlbumList onSelect={handleSelectAlbum} />}
       {browseMode === 'artists' && <ArtistList onSelect={handleSelectArtist} />}

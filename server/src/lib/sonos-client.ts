@@ -800,10 +800,31 @@ class SonosClient {
         start += batchSize
         if (start >= total || containers.length === 0) break
       }
+      // Populate album art cache for use by getArtistTracks etc.
+      for (const a of allAlbums) {
+        if (a.albumArtUri) {
+          this.albumArtCache.set(`${a.artist}\0${a.name}`, a.albumArtUri)
+        }
+      }
       return allAlbums
     } catch {
       return []
     }
+  }
+
+  /** Ensure album art cache is populated (lazy — runs once on first lookup) */
+  private albumArtCacheReady: Promise<void> | null = null
+  private ensureAlbumArtCache(): Promise<void> {
+    if (this.albumArtCache.size > 0) return Promise.resolve()
+    if (!this.albumArtCacheReady) {
+      this.albumArtCacheReady = this.browseAlbumsWithArt().then(() => { this.albumArtCacheReady = null })
+    }
+    return this.albumArtCacheReady
+  }
+
+  /** Look up cached album art URI by artist + album name */
+  private lookupAlbumArt(artist: string, album: string): string {
+    return this.albumArtCache.get(`${artist}\0${album}`) ?? ''
   }
 
   async browseAlbumTracks(objectId: string): Promise<SonosLibraryTrack[]> {
@@ -815,6 +836,8 @@ class SonosClient {
 
   private libraryCache: NasLibraryTrack[] | null = null
   private libraryCacheMtime: number = 0
+  /** artist+album → albumArtUri lookup, populated by browseAlbumsWithArt */
+  private albumArtCache = new Map<string, string>()
 
   private readLibraryCache(): NasLibraryTrack[] {
     const cachePath = join(homedir(), 'node-sonos-http-api', 'cache', 'library.json')
@@ -886,31 +909,35 @@ class SonosClient {
       .sort((a, b) => a.name.localeCompare(b.name))
   }
 
-  getArtistTracks(artist: string): SonosLibraryTrack[] {
+  async getArtistTracks(artist: string): Promise<SonosLibraryTrack[]> {
+    await this.ensureAlbumArtCache()
     return this.readLibraryCache()
       .filter(t => t.artist === artist)
-      .map(t => ({ ...t, albumArtUri: '' }))
+      .map(t => ({ ...t, albumArtUri: this.lookupAlbumArt(t.artist, t.album) }))
   }
 
-  getAlbumTracks(artist: string, album: string): SonosLibraryTrack[] {
+  async getAlbumTracks(artist: string, album: string): Promise<SonosLibraryTrack[]> {
+    await this.ensureAlbumArtCache()
     return this.readLibraryCache()
       .filter(t => t.artist === artist && t.album === album)
-      .map(t => ({ ...t, albumArtUri: '' }))
+      .map(t => ({ ...t, albumArtUri: this.lookupAlbumArt(t.artist, t.album) }))
   }
 
-  searchLibrary(query: string): SonosLibrarySearchResult {
+  async searchLibrary(query: string): Promise<SonosLibrarySearchResult> {
+    await this.ensureAlbumArtCache()
     const tracks = this.readLibraryCache()
     const q = query.toLowerCase()
     const matchingTracks = tracks
       .filter(t => t.title.toLowerCase().includes(q) || t.artist.toLowerCase().includes(q) || t.album.toLowerCase().includes(q))
       .slice(0, 50)
-      .map(t => ({ ...t, albumArtUri: '' }))
+      .map(t => ({ ...t, albumArtUri: this.lookupAlbumArt(t.artist, t.album) }))
     return { artists: [], albums: [], tracks: matchingTracks }
   }
 
-  getAllLibraryTracks(): SonosLibraryTrack[] {
+  async getAllLibraryTracks(): Promise<SonosLibraryTrack[]> {
+    await this.ensureAlbumArtCache()
     return this.readLibraryCache()
-      .map(t => ({ ...t, albumArtUri: '' }))
+      .map(t => ({ ...t, albumArtUri: this.lookupAlbumArt(t.artist, t.album) }))
       .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
   }
 

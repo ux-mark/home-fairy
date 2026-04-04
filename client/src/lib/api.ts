@@ -769,6 +769,7 @@ export interface NasEnrichedAlbum extends SonosGenreAlbum {
     country_name: string | null
     sub_region: string | null
     confidence: string | null
+    image_url?: string | null
   } | null
 }
 
@@ -777,6 +778,7 @@ export interface NasEnrichedArtist extends SonosLibraryArtist {
   country_name: string | null
   sub_region: string | null
   confidence: string | null
+  image_url?: string | null
 }
 
 export interface SonosRadioStation {
@@ -994,6 +996,7 @@ export interface ArtistCountry {
   country_code: string | null
   country_name: string | null
   sub_region: string | null
+  image_url?: string | null
   source: 'wikidata' | 'musicbrainz' | 'manual'
   musicbrainz_id: string | null
   confidence: 'high' | 'medium' | 'low' | null
@@ -1021,6 +1024,7 @@ export interface EnrichedAlbumItem {
     country_name: string | null
     sub_region: string | null
     confidence: string | null
+    image_url?: string | null
   }>
 }
 
@@ -1846,6 +1850,10 @@ export const api = {
       fetchApi<EnrichmentProgress>('/spotify/enrichment-status'),
     cancelEnrichment: () =>
       fetchApi<{ ok: boolean }>('/spotify/enrich-artists/cancel', { method: 'POST' }),
+    backfillImages: () =>
+      fetchApi<{ spotify: { updated: number; total: number }; nas: { updated: number; total: number }; total_updated: number }>('/spotify/backfill-images', {
+        method: 'POST',
+      }),
     getArtistCountries: () =>
       fetchApi<{ items: ArtistCountry[]; total: number }>('/spotify/artist-countries'),
     getArtistCountry: (id: string) =>

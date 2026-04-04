@@ -333,6 +333,7 @@ export function initDb(): void {
       country_code TEXT,
       country_name TEXT,
       sub_region TEXT,
+      image_url TEXT,
       source TEXT NOT NULL DEFAULT 'musicbrainz',
       musicbrainz_id TEXT,
       confidence TEXT NOT NULL DEFAULT 'high',
@@ -547,6 +548,12 @@ export function initDb(): void {
       updateLabel.run(row.new_label, row.device_id)
       console.log(`[db] Synced device_rooms label: "${row.old_label}" → "${row.new_label}" (device ${row.device_id})`)
     }
+  }
+
+  // Migration: add image_url to artist_countries
+  const artistCountryCols = db.prepare("PRAGMA table_info('artist_countries')").all() as { name: string }[]
+  if (!artistCountryCols.map(c => c.name).includes('image_url')) {
+    db.exec('ALTER TABLE artist_countries ADD COLUMN image_url TEXT DEFAULT NULL')
   }
 
   // Seed defaults for a fresh database

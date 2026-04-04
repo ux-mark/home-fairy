@@ -7,6 +7,7 @@ import { join } from 'path'
 import { db, getAll, getOne, run } from '../db/index.js'
 import { sonosClient } from '../lib/sonos-client.js'
 import { musicBrainzClient, type ArtistCountryRow } from '../lib/musicbrainz-client.js'
+import { spotifyClient } from '../lib/spotify-client.js'
 import { sonosManager } from '../lib/sonos-manager.js'
 import { emit } from '../lib/socket.js'
 import { findPodcastFeedUrl, getLatestEpisodeUrl } from '../lib/podcast-resolver.js'
@@ -71,6 +72,41 @@ setTimeout(() => ensureSpeakerIp(), 5_000)
  * - External HTTP URLs are also proxied to avoid mixed-content browser blocks
  * - External HTTPS URLs are returned unchanged
  */
+// ── Auto-backfill: lazily fetch missing artist images in background ──────────
+
+let nasImageBackfillRunning = false
+
+function triggerNasAutoBackfill(): void {
+  if (nasImageBackfillRunning) return
+  if (!spotifyClient.isConnected()) return
+
+  const missing = db.prepare(
+    "SELECT COUNT(*) as cnt FROM artist_countries WHERE image_url IS NULL AND spotify_artist_id NOT LIKE 'nas:%'",
+  ).get() as { cnt: number }
+  const missingNas = db.prepare(
+    "SELECT COUNT(*) as cnt FROM artist_countries WHERE image_url IS NULL AND spotify_artist_id LIKE 'nas:%'",
+  ).get() as { cnt: number }
+  if (missing.cnt === 0 && missingNas.cnt === 0) return
+
+  nasImageBackfillRunning = true
+  console.log(`[Backfill] Auto-fetching images for ${missing.cnt} Spotify + ${missingNas.cnt} NAS artists...`)
+
+  musicBrainzClient.backfillImages(spotifyClient)
+    .then(result => {
+      if (result.updated > 0) console.log(`[Backfill] Spotify images: ${result.updated}/${result.total} updated`)
+      return musicBrainzClient.backfillNasImages(spotifyClient)
+    })
+    .then(result => {
+      if (result.updated > 0) console.log(`[Backfill] NAS images: ${result.updated}/${result.total} updated`)
+    })
+    .catch(err => {
+      console.error('[Backfill] Auto-backfill failed:', err instanceof Error ? err.message : String(err))
+    })
+    .finally(() => {
+      nasImageBackfillRunning = false
+    })
+}
+
 function rewriteAlbumArtUri(uri: string | undefined): string | undefined {
   if (!uri) return undefined
 
@@ -92,8 +128,8 @@ function rewriteAlbumArtUri(uri: string | undefined): string | undefined {
     return `/api/sonos/art-proxy?url=${encodeURIComponent(uri)}`
   }
 
-  // External HTTPS CDN — return as-is
-  return uri
+  // External HTTPS — proxy for disk caching + PWA offline
+  return `/api/sonos/art-proxy?url=${encodeURIComponent(uri)}`
 }
 
 // GET /art-proxy — server-side proxy for album art images from internal Sonos IPs
@@ -694,9 +730,10 @@ router.get('/library/albums', async (_req: Request, res: Response) => {
 })
 
 // GET /library/artist/:name — list tracks for an artist
-router.get('/library/artist/:name', (req: Request, res: Response) => {
+router.get('/library/artist/:name', async (req: Request, res: Response) => {
   const name = Array.isArray(req.params.name) ? req.params.name[0] : req.params.name
-  res.json(sonosClient.getArtistTracks(name))
+  const tracks = await sonosClient.getArtistTracks(name)
+  res.json(tracks.map(t => ({ ...t, albumArtUri: rewriteAlbumArtUri(t.albumArtUri) ?? '' })))
 })
 
 // GET /library/album-tracks?objectId= — list tracks for an album by UPnP objectId
@@ -719,19 +756,24 @@ router.get('/library/album-tracks', async (req: Request, res: Response) => {
 })
 
 // GET /library/search?q= — search the NAS library
-router.get('/library/search', (req: Request, res: Response) => {
+router.get('/library/search', async (req: Request, res: Response) => {
   const rawQ = req.query.q
   const q = typeof rawQ === 'string' ? rawQ.trim() : ''
   if (!q) {
     res.status(400).json({ error: 'Missing required query parameter: q' })
     return
   }
-  res.json(sonosClient.searchLibrary(q))
+  const result = await sonosClient.searchLibrary(q)
+  res.json({
+    ...result,
+    tracks: result.tracks.map(t => ({ ...t, albumArtUri: rewriteAlbumArtUri(t.albumArtUri) ?? '' })),
+  })
 })
 
 // GET /library/songs — list all NAS library tracks sorted alphabetically
-router.get('/library/songs', (_req: Request, res: Response) => {
-  res.json(sonosClient.getAllLibraryTracks())
+router.get('/library/songs', async (_req: Request, res: Response) => {
+  const tracks = await sonosClient.getAllLibraryTracks()
+  res.json(tracks.map(t => ({ ...t, albumArtUri: rewriteAlbumArtUri(t.albumArtUri) ?? '' })))
 })
 
 // GET /radio/stations — list available radio stations
@@ -1366,6 +1408,7 @@ router.get('/library/albums/enriched', async (_req: Request, res: Response) => {
           country_name: country.country_name,
           sub_region: country.sub_region,
           confidence: country.confidence,
+          image_url: country.image_url ?? null,
         } : null,
       }
     })
@@ -1377,6 +1420,7 @@ router.get('/library/albums/enriched', async (_req: Request, res: Response) => {
       cached_artists: withCountry.length,
       uncached_artists: enriched.length - withCountry.length,
     })
+    triggerNasAutoBackfill()
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
@@ -1404,10 +1448,12 @@ router.get('/library/artists/enriched', (_req: Request, res: Response) => {
         country_name: country?.country_name ?? null,
         sub_region: country?.sub_region ?? null,
         confidence: country?.confidence ?? null,
+        image_url: country?.image_url ?? null,
       }
     })
 
     res.json({ items: enriched, total: enriched.length })
+    triggerNasAutoBackfill()
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })

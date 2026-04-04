@@ -325,6 +325,19 @@ class SpotifyClient {
     }
   }
 
+  async searchArtist(name: string): Promise<SpotifyArtist | null> {
+    const token = await this.getAccessToken()
+    try {
+      const response = await this.api.get<{ artists?: { items: SpotifyArtist[] } }>('/search', {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { q: `artist:"${name}"`, type: 'artist', limit: 1 },
+      })
+      return response.data.artists?.items?.[0] ?? null
+    } catch {
+      return null
+    }
+  }
+
   async getSavedAlbums(limit = 50, offset = 0): Promise<{ items: Array<{ added_at: string; album: SpotifyAlbum }>; total: number; next: string | null }> {
     const token = await this.getAccessToken()
     try {
@@ -466,6 +479,29 @@ class SpotifyClient {
       const status = err instanceof AxiosError ? err.response?.status : undefined
       throw new SpotifyApiError(`Failed to fetch albums for artist ${artistId}`, status)
     }
+  }
+
+  async getArtistsByIds(ids: string[]): Promise<SpotifyArtist[]> {
+    if (ids.length === 0) return []
+    const token = await this.getAccessToken()
+    const results: SpotifyArtist[] = []
+    for (let i = 0; i < ids.length; i += 50) {
+      const batch = ids.slice(i, i + 50)
+      try {
+        const response = await this.api.get<{ artists: (SpotifyArtist | null)[] }>(
+          '/artists',
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            params: { ids: batch.join(',') },
+          },
+        )
+        results.push(...response.data.artists.filter((a): a is SpotifyArtist => a !== null))
+      } catch (err) {
+        const status = err instanceof AxiosError ? err.response?.status : undefined
+        throw new SpotifyApiError('Failed to fetch artists by IDs', status)
+      }
+    }
+    return results
   }
 
   isConfigured(): boolean {
