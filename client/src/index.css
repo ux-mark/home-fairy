@@ -17,6 +17,17 @@
   --color-slate-950: #020617;
 }
 
+/* ── Equalizer animation ─────────────────────────────────────────────────── */
+
+@keyframes equalizer-bar {
+  0%, 100% { height: 4px; }
+  50% { height: 14px; }
+}
+
+.animate-equalizer {
+  animation: equalizer-bar 0.7s ease-in-out infinite;
+}
+
 /* ── Theme variables ─────────────────────────────────────────────────────── */
 
 :root {

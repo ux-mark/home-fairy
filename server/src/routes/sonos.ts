@@ -591,6 +591,111 @@ router.post('/queue/:speaker/playnext', async (req: Request, res: Response) => {
   }
 })
 
+// POST /queue/:speaker/add-album — add all tracks of an album/playlist to queue
+const addAlbumSchema = z.object({
+  uri: z.string().min(1),
+  source: z.enum(['spotify', 'nas']),
+})
+
+router.post('/queue/:speaker/add-album', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const parsed = addAlbumSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
+      return
+    }
+    const { uri, source } = parsed.data
+
+    if (source === 'spotify') {
+      await sonosClient.playSpotifyUri(speaker, uri, 'queue')
+      emit('sonos:playback-update', { speaker })
+      res.json({ speaker, action: 'add-album-to-queue' })
+      return
+    }
+
+    // NAS: fetch all tracks and add to queue via SOAP
+    const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
+    if (!speakerInfo) {
+      res.status(404).json({ error: `Speaker not found: ${speaker}` })
+      return
+    }
+
+    const tracks = await sonosClient.getGenreAlbumTracks(uri)
+    if (tracks.length === 0) {
+      res.status(404).json({ error: 'No tracks found for this album' })
+      return
+    }
+
+    let queued = 0
+    for (const track of tracks) {
+      try {
+        await sonosClient.addToQueueSOAP(speakerInfo.ip, track.uri)
+        queued++
+      } catch (err) {
+        console.error(`[sonos] add-album: failed to add "${track.title}": ${err instanceof Error ? err.message : err}`)
+      }
+    }
+
+    emit('sonos:playback-update', { speaker })
+    const queue = await sonosClient.getQueue(speaker)
+    emit('sonos:queue-update', { speaker, action: 'add', queue })
+    res.json({ speaker, action: 'add-album-to-queue', tracksQueued: queued })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /queue/:speaker/playnext-album — insert album tracks after current track
+router.post('/queue/:speaker/playnext-album', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const parsed = addAlbumSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
+      return
+    }
+    const { uri, source } = parsed.data
+
+    if (source === 'spotify') {
+      await sonosClient.playSpotifyUri(speaker, uri, 'next')
+      emit('sonos:playback-update', { speaker })
+      res.json({ speaker, action: 'playnext-album' })
+      return
+    }
+
+    // NAS: fetch tracks and add in reverse order so track 1 lands right after current
+    const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
+    if (!speakerInfo) {
+      res.status(404).json({ error: `Speaker not found: ${speaker}` })
+      return
+    }
+
+    const tracks = await sonosClient.getGenreAlbumTracks(uri)
+    if (tracks.length === 0) {
+      res.status(404).json({ error: 'No tracks found for this album' })
+      return
+    }
+
+    for (const track of [...tracks].reverse()) {
+      try {
+        await sonosClient.playNextSOAP(speakerInfo.ip, track.uri)
+      } catch (err) {
+        console.error(`[sonos] playnext-album: failed for "${track.title}": ${err instanceof Error ? err.message : err}`)
+      }
+    }
+
+    emit('sonos:playback-update', { speaker })
+    const queue = await sonosClient.getQueue(speaker)
+    emit('sonos:queue-update', { speaker, action: 'playnext', queue })
+    res.json({ speaker, action: 'playnext-album' })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
 // DELETE /queue/:speaker/remove/:index — remove item from queue by index
 router.delete('/queue/:speaker/remove/:index', async (req: Request, res: Response) => {
   try {
@@ -626,6 +731,19 @@ router.post('/queue/:speaker/reorder', async (req: Request, res: Response) => {
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'reorder', queue })
     res.json({ speaker, action: 'reorder-queue', from: parsed.data.from, to: parsed.data.to })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// DELETE /queue/:speaker/clear — clear the entire queue
+router.delete('/queue/:speaker/clear', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    await sonosClient.clearQueue(speaker)
+    emit('sonos:queue-update', { speaker, action: 'clear', queue: [] })
+    res.json({ speaker, action: 'clear-queue' })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
@@ -868,16 +986,29 @@ router.post('/shuffle/:speaker', async (req: Request, res: Response) => {
   }
 })
 
-// POST /repeat/:speaker — enable or disable repeat
-const repeatSchema = z.object({ enabled: z.boolean() })
+// POST /repeat/:speaker — enable or disable repeat (optionally with mode: 'off' | 'all' | 'one')
+const repeatSchema = z.object({
+  enabled: z.boolean(),
+  mode: z.enum(['off', 'all', 'one']).optional(),
+})
 
 router.post('/repeat/:speaker', async (req: Request, res: Response) => {
   try {
     const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
-    const { enabled } = repeatSchema.parse(req.body)
-    await sonosClient.repeat(speaker, enabled)
+    const { enabled, mode } = repeatSchema.parse(req.body)
+    let resolvedMode: 'off' | 'all' | 'one'
+    if (mode === 'one') {
+      await sonosClient.repeatOne(speaker)
+      resolvedMode = 'one'
+    } else if (mode === 'all' || (!mode && enabled)) {
+      await sonosClient.repeat(speaker, true)
+      resolvedMode = 'all'
+    } else {
+      await sonosClient.repeat(speaker, false)
+      resolvedMode = 'off'
+    }
     emit('sonos:playback-update', { speaker })
-    res.json({ speaker, repeat: enabled })
+    res.json({ speaker, repeat: enabled, mode: resolvedMode })
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: err.errors })
