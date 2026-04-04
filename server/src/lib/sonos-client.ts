@@ -812,6 +812,16 @@ class SonosClient {
     }
   }
 
+  /** Ensure album art cache is populated (lazy — runs once on first lookup) */
+  private albumArtCacheReady: Promise<void> | null = null
+  private ensureAlbumArtCache(): Promise<void> {
+    if (this.albumArtCache.size > 0) return Promise.resolve()
+    if (!this.albumArtCacheReady) {
+      this.albumArtCacheReady = this.browseAlbumsWithArt().then(() => { this.albumArtCacheReady = null })
+    }
+    return this.albumArtCacheReady
+  }
+
   /** Look up cached album art URI by artist + album name */
   private lookupAlbumArt(artist: string, album: string): string {
     return this.albumArtCache.get(`${artist}\0${album}`) ?? ''
@@ -899,19 +909,22 @@ class SonosClient {
       .sort((a, b) => a.name.localeCompare(b.name))
   }
 
-  getArtistTracks(artist: string): SonosLibraryTrack[] {
+  async getArtistTracks(artist: string): Promise<SonosLibraryTrack[]> {
+    await this.ensureAlbumArtCache()
     return this.readLibraryCache()
       .filter(t => t.artist === artist)
       .map(t => ({ ...t, albumArtUri: this.lookupAlbumArt(t.artist, t.album) }))
   }
 
-  getAlbumTracks(artist: string, album: string): SonosLibraryTrack[] {
+  async getAlbumTracks(artist: string, album: string): Promise<SonosLibraryTrack[]> {
+    await this.ensureAlbumArtCache()
     return this.readLibraryCache()
       .filter(t => t.artist === artist && t.album === album)
       .map(t => ({ ...t, albumArtUri: this.lookupAlbumArt(t.artist, t.album) }))
   }
 
-  searchLibrary(query: string): SonosLibrarySearchResult {
+  async searchLibrary(query: string): Promise<SonosLibrarySearchResult> {
+    await this.ensureAlbumArtCache()
     const tracks = this.readLibraryCache()
     const q = query.toLowerCase()
     const matchingTracks = tracks
@@ -921,7 +934,8 @@ class SonosClient {
     return { artists: [], albums: [], tracks: matchingTracks }
   }
 
-  getAllLibraryTracks(): SonosLibraryTrack[] {
+  async getAllLibraryTracks(): Promise<SonosLibraryTrack[]> {
+    await this.ensureAlbumArtCache()
     return this.readLibraryCache()
       .map(t => ({ ...t, albumArtUri: this.lookupAlbumArt(t.artist, t.album) }))
       .sort((a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: 'base' }))
