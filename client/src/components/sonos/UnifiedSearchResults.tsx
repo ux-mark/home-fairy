@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -6,6 +7,7 @@ import {
   HardDrive,
   Heart,
   ListEnd,
+  ListPlus,
   ListStart,
   MoreVertical,
   Music2,
@@ -26,6 +28,8 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from './ArtworkImage'
+import { AddToFairylistDialog } from './AddToFairylistDialog'
+import { AddToSpotifyPlaylistDialog } from './AddToSpotifyPlaylistDialog'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -112,6 +116,9 @@ function NasTrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: st
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const menuBtnRef = useRef<HTMLButtonElement>(null)
+  const [fairylistDialogOpen, setFairylistDialogOpen] = useState(false)
 
   const playNow = useMutation({
     mutationFn: () => api.sonos.playUri(speaker!, track.uri),
@@ -149,77 +156,117 @@ function NasTrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: st
   })
 
   return (
-    <li className="flex items-center gap-3 px-4 py-2.5">
-      <ArtworkImage src={track.albumArtUri} fallback="disc" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">{track.title || 'Unknown track'}</p>
-        <p className="truncate text-xs text-caption">
-          {[track.artist, track.album].filter(Boolean).join(' · ')}
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-1">
-        <button
-          type="button"
-          disabled={!speaker || playNow.isPending}
-          onClick={() => playNow.mutate()}
-          aria-label={`Play ${track.title}`}
-          className={actionBtn}
-        >
-          <Play className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <div className="relative shrink-0">
+    <>
+      <li className="flex items-center gap-3 px-4 py-2.5">
+        <ArtworkImage src={track.albumArtUri} fallback="disc" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-heading">{track.title || 'Unknown track'}</p>
+          <p className="truncate text-xs text-caption">
+            {[track.artist, track.album].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
-            disabled={!speaker}
-            onClick={() => setMenuOpen(v => !v)}
-            onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
-            aria-label={`More options for ${track.title}`}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
+            disabled={!speaker || playNow.isPending}
+            onClick={() => playNow.mutate()}
+            aria-label={`Play ${track.title}`}
             className={actionBtn}
           >
-            <MoreVertical className="h-4 w-4" aria-hidden="true" />
+            <Play className="h-4 w-4" aria-hidden="true" />
           </button>
-          {menuOpen && (
-            <ul
-              role="menu"
-              className="absolute right-0 top-full z-50 mt-1 min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
+          <div className="shrink-0">
+            <button
+              ref={menuBtnRef}
+              type="button"
+              disabled={!speaker}
+              onClick={() => {
+                if (menuOpen) {
+                  setMenuOpen(false)
+                } else {
+                  if (menuBtnRef.current) {
+                    const rect = menuBtnRef.current.getBoundingClientRect()
+                    const showAbove = rect.bottom + 200 > window.innerHeight
+                    setMenuPos({
+                      top: showAbove ? rect.top - 200 - 4 : rect.bottom + 4,
+                      right: window.innerWidth - rect.right,
+                    })
+                  }
+                  setMenuOpen(true)
+                }
+              }}
+              onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
+              aria-label={`More options for ${track.title}`}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              className={actionBtn}
             >
-              <li role="none">
-                <button
-                  role="menuitem"
-                  onClick={() => { setMenuOpen(false); playNext.mutate() }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                >
-                  <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  Play next
-                </button>
-              </li>
-              <li role="none">
-                <button
-                  role="menuitem"
-                  onClick={() => { setMenuOpen(false); addToQueue.mutate() }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                >
-                  <ListEnd className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  Add to queue
-                </button>
-              </li>
-              <li role="none">
-                <button
-                  role="menuitem"
-                  onClick={() => { setMenuOpen(false); addToFavourites.mutate() }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                >
-                  <Heart className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  Add to favourites
-                </button>
-              </li>
-            </ul>
-          )}
+              <MoreVertical className="h-4 w-4" aria-hidden="true" />
+            </button>
+            {menuOpen && menuPos && createPortal(
+              <ul
+                role="menu"
+                style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
+                className="z-[200] min-w-[180px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
+              >
+                <li role="none">
+                  <button
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); playNext.mutate() }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                  >
+                    <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Play next
+                  </button>
+                </li>
+                <li role="none">
+                  <button
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); addToQueue.mutate() }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                  >
+                    <ListEnd className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Add to queue
+                  </button>
+                </li>
+                <li role="none">
+                  <button
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); addToFavourites.mutate() }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                  >
+                    <Heart className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Add to favourites
+                  </button>
+                </li>
+                <li role="none">
+                  <button
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); setFairylistDialogOpen(true) }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                  >
+                    <ListPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Add to Fairylist
+                  </button>
+                </li>
+              </ul>,
+              document.body,
+            )}
+          </div>
         </div>
-      </div>
-    </li>
+      </li>
+      <AddToFairylistDialog
+        open={fairylistDialogOpen}
+        onOpenChange={setFairylistDialogOpen}
+        track={{
+          source: 'nas',
+          source_uri: track.uri,
+          title: track.title || 'Unknown track',
+          artist: track.artist || undefined,
+          album_art_uri: track.albumArtUri,
+        }}
+      />
+    </>
   )
 }
 
@@ -229,6 +276,10 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const menuBtnRef = useRef<HTMLButtonElement>(null)
+  const [fairylistDialogOpen, setFairylistDialogOpen] = useState(false)
+  const [spotifyPlaylistDialogOpen, setSpotifyPlaylistDialogOpen] = useState(false)
 
   const playNow = useMutation({
     mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'now'),
@@ -269,77 +320,133 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
   const artUri = track.album.images?.[0]?.url
 
   return (
-    <li className="flex items-center gap-3 px-4 py-2.5">
-      <ArtworkImage src={artUri} fallback="disc" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">{track.name}</p>
-        <p className="truncate text-xs text-caption">
-          {[artistNames, track.album.name].filter(Boolean).join(' · ')}
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-1">
-        <button
-          type="button"
-          disabled={!speaker || playNow.isPending}
-          onClick={() => playNow.mutate()}
-          aria-label={`Play ${track.name}`}
-          className={actionBtn}
-        >
-          <Play className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <div className="relative shrink-0">
+    <>
+      <li className="flex items-center gap-3 px-4 py-2.5">
+        <ArtworkImage src={artUri} fallback="disc" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-heading">{track.name}</p>
+          <p className="truncate text-xs text-caption">
+            {[artistNames, track.album.name].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
-            disabled={!speaker}
-            onClick={() => setMenuOpen(v => !v)}
-            onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
-            aria-label={`More options for ${track.name}`}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
+            disabled={!speaker || playNow.isPending}
+            onClick={() => playNow.mutate()}
+            aria-label={`Play ${track.name}`}
             className={actionBtn}
           >
-            <MoreVertical className="h-4 w-4" aria-hidden="true" />
+            <Play className="h-4 w-4" aria-hidden="true" />
           </button>
-          {menuOpen && (
-            <ul
-              role="menu"
-              className="absolute right-0 top-full z-50 mt-1 min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
+          <div className="shrink-0">
+            <button
+              ref={menuBtnRef}
+              type="button"
+              disabled={!speaker}
+              onClick={() => {
+                if (menuOpen) {
+                  setMenuOpen(false)
+                } else {
+                  if (menuBtnRef.current) {
+                    const rect = menuBtnRef.current.getBoundingClientRect()
+                    const showAbove = rect.bottom + 240 > window.innerHeight
+                    setMenuPos({
+                      top: showAbove ? rect.top - 240 - 4 : rect.bottom + 4,
+                      right: window.innerWidth - rect.right,
+                    })
+                  }
+                  setMenuOpen(true)
+                }
+              }}
+              onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
+              aria-label={`More options for ${track.name}`}
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
+              className={actionBtn}
             >
-              <li role="none">
-                <button
-                  role="menuitem"
-                  onClick={() => { setMenuOpen(false); playNext.mutate() }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                >
-                  <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  Play next
-                </button>
-              </li>
-              <li role="none">
-                <button
-                  role="menuitem"
-                  onClick={() => { setMenuOpen(false); addToQueue.mutate() }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                >
-                  <ListEnd className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  Add to queue
-                </button>
-              </li>
-              <li role="none">
-                <button
-                  role="menuitem"
-                  onClick={() => { setMenuOpen(false); addToFavourites.mutate() }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                >
-                  <Heart className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  Add to favourites
-                </button>
-              </li>
-            </ul>
-          )}
+              <MoreVertical className="h-4 w-4" aria-hidden="true" />
+            </button>
+            {menuOpen && menuPos && createPortal(
+              <ul
+                role="menu"
+                style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
+                className="z-[200] min-w-[200px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
+              >
+                <li role="none">
+                  <button
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); playNext.mutate() }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                  >
+                    <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Play next
+                  </button>
+                </li>
+                <li role="none">
+                  <button
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); addToQueue.mutate() }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                  >
+                    <ListEnd className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Add to queue
+                  </button>
+                </li>
+                <li role="none">
+                  <button
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); addToFavourites.mutate() }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                  >
+                    <Heart className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Add to favourites
+                  </button>
+                </li>
+                <li role="none">
+                  <button
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); setFairylistDialogOpen(true) }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                  >
+                    <ListPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Add to Fairylist
+                  </button>
+                </li>
+                <li role="none">
+                  <button
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); setSpotifyPlaylistDialogOpen(true) }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                  >
+                    <Music2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Add to Spotify Playlist
+                  </button>
+                </li>
+              </ul>,
+              document.body,
+            )}
+          </div>
         </div>
-      </div>
-    </li>
+      </li>
+      <AddToFairylistDialog
+        open={fairylistDialogOpen}
+        onOpenChange={setFairylistDialogOpen}
+        track={{
+          source: 'spotify',
+          source_uri: track.uri,
+          title: track.name,
+          artist: track.artists.map(a => a.name).join(', '),
+          album_art_uri: track.album.images?.[0]?.url,
+        }}
+      />
+      <AddToSpotifyPlaylistDialog
+        open={spotifyPlaylistDialogOpen}
+        onOpenChange={setSpotifyPlaylistDialogOpen}
+        trackUri={track.uri}
+        trackName={track.name}
+      />
+    </>
   )
 }
 
@@ -355,6 +462,8 @@ function RadioStationRow({
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const menuBtnRef = useRef<HTMLButtonElement>(null)
 
   const play = useMutation({
     mutationFn: () => api.sonos.playFavourite(speaker!, station.title),
@@ -398,11 +507,26 @@ function RadioStationRow({
         >
           <Play className="h-4 w-4" aria-hidden="true" />
         </button>
-        <div className="relative shrink-0">
+        <div className="shrink-0">
           <button
+            ref={menuBtnRef}
             type="button"
             disabled={!speaker}
-            onClick={() => setMenuOpen(v => !v)}
+            onClick={() => {
+              if (menuOpen) {
+                setMenuOpen(false)
+              } else {
+                if (menuBtnRef.current) {
+                  const rect = menuBtnRef.current.getBoundingClientRect()
+                  const showAbove = rect.bottom + 120 > window.innerHeight
+                  setMenuPos({
+                    top: showAbove ? rect.top - 120 - 4 : rect.bottom + 4,
+                    right: window.innerWidth - rect.right,
+                  })
+                }
+                setMenuOpen(true)
+              }
+            }}
             onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
             aria-label={`More options for ${station.title}`}
             aria-haspopup="menu"
@@ -411,10 +535,11 @@ function RadioStationRow({
           >
             <MoreVertical className="h-4 w-4" aria-hidden="true" />
           </button>
-          {menuOpen && (
+          {menuOpen && menuPos && createPortal(
             <ul
               role="menu"
-              className="absolute right-0 top-full z-50 mt-1 min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
+              style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
+              className="z-[200] min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
             >
               <li role="none">
                 <button
@@ -436,7 +561,8 @@ function RadioStationRow({
                   Add to favourites
                 </button>
               </li>
-            </ul>
+            </ul>,
+            document.body,
           )}
         </div>
       </div>

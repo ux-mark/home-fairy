@@ -178,7 +178,9 @@ export function FavouriteItem({
 }: FavouriteItemProps) {
   const [imgFailed, setImgFailed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
   const [showBottomSheet, setShowBottomSheet] = useState(false)
+  const menuBtnRef = useRef<HTMLButtonElement>(null)
   // liveX only meaningful during an active gesture; at rest, position is derived
   // from isSwipeOpen so no effect-based sync is needed
   const [liveX, setLiveX] = useState(0)
@@ -427,9 +429,24 @@ export function FavouriteItem({
           </button>
 
           {/* Context menu — keyboard/mouse fallback for swipe actions */}
-          <div className="relative shrink-0">
+          <div className="shrink-0">
             <button
-              onClick={() => setMenuOpen(v => !v)}
+              ref={menuBtnRef}
+              onClick={() => {
+                if (menuOpen) {
+                  setMenuOpen(false)
+                } else {
+                  if (menuBtnRef.current) {
+                    const rect = menuBtnRef.current.getBoundingClientRect()
+                    const showAbove = rect.bottom + 160 > window.innerHeight
+                    setMenuPos({
+                      top: showAbove ? rect.top - 160 - 4 : rect.bottom + 4,
+                      right: window.innerWidth - rect.right,
+                    })
+                  }
+                  setMenuOpen(true)
+                }
+              }}
               onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
               className="flex h-11 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:text-slate-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               aria-label={`More options for ${item.title}`}
@@ -443,10 +460,11 @@ export function FavouriteItem({
               </span>
             </button>
 
-            {menuOpen && (
+            {menuOpen && menuPos && createPortal(
               <ul
                 role="menu"
-                className="absolute right-0 top-full z-50 mt-1 min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
+                style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
+                className="z-[200] min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
               >
                 <li role="none">
                   <button
@@ -478,7 +496,8 @@ export function FavouriteItem({
                     Remove
                   </button>
                 </li>
-              </ul>
+              </ul>,
+              document.body,
             )}
           </div>
         </div>

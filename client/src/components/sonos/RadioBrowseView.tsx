@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -107,6 +108,8 @@ function StationRow({
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
+  const menuBtnRef = useRef<HTMLButtonElement>(null)
 
   const play = useMutation({
     mutationFn: () => api.sonos.playFavourite(speaker!, station.title),
@@ -160,11 +163,26 @@ function StationRow({
         </button>
 
         {/* Three-dot menu */}
-        <div className="relative shrink-0">
+        <div className="shrink-0">
           <button
+            ref={menuBtnRef}
             type="button"
             disabled={!speaker}
-            onClick={() => setMenuOpen(v => !v)}
+            onClick={() => {
+              if (menuOpen) {
+                setMenuOpen(false)
+              } else {
+                if (menuBtnRef.current) {
+                  const rect = menuBtnRef.current.getBoundingClientRect()
+                  const showAbove = rect.bottom + 120 > window.innerHeight
+                  setMenuPos({
+                    top: showAbove ? rect.top - 120 - 4 : rect.bottom + 4,
+                    right: window.innerWidth - rect.right,
+                  })
+                }
+                setMenuOpen(true)
+              }
+            }}
             onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
             aria-label={`More options for ${station.title}`}
             aria-haspopup="menu"
@@ -179,10 +197,11 @@ function StationRow({
             <MoreVertical className="h-4 w-4" aria-hidden="true" />
           </button>
 
-          {menuOpen && (
+          {menuOpen && menuPos && createPortal(
             <ul
               role="menu"
-              className="absolute right-0 top-full z-50 mt-1 min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
+              style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
+              className="z-[200] min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
             >
               <li role="none">
                 <button
@@ -204,7 +223,8 @@ function StationRow({
                   Add to favourites
                 </button>
               </li>
-            </ul>
+            </ul>,
+            document.body,
           )}
         </div>
       </div>
