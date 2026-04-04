@@ -76,28 +76,82 @@ interface MbUrlRelation {
   }>
 }
 
-// ── Country code → name mapping (common codes) ──────────────────────────────
+// ── Country code → name mapping (full ISO 3166-1 alpha-2) ───────────────────
 
 const COUNTRY_NAMES: Record<string, string> = {
-  US: 'United States', GB: 'United Kingdom', CA: 'Canada', AU: 'Australia',
-  DE: 'Germany', FR: 'France', JP: 'Japan', KR: 'South Korea', SE: 'Sweden',
-  NO: 'Norway', DK: 'Denmark', FI: 'Finland', IE: 'Ireland', NL: 'Netherlands',
-  BE: 'Belgium', AT: 'Austria', CH: 'Switzerland', IT: 'Italy', ES: 'Spain',
-  PT: 'Portugal', BR: 'Brazil', MX: 'Mexico', AR: 'Argentina', CO: 'Colombia',
-  CL: 'Chile', NZ: 'New Zealand', ZA: 'South Africa', NG: 'Nigeria',
-  GH: 'Ghana', KE: 'Kenya', IN: 'India', CN: 'China', TW: 'Taiwan',
-  HK: 'Hong Kong', SG: 'Singapore', TH: 'Thailand', PH: 'Philippines',
-  ID: 'Indonesia', MY: 'Malaysia', VN: 'Vietnam', RU: 'Russia', UA: 'Ukraine',
-  PL: 'Poland', CZ: 'Czech Republic', RO: 'Romania', HU: 'Hungary',
-  HR: 'Croatia', RS: 'Serbia', BG: 'Bulgaria', GR: 'Greece', TR: 'Turkey',
-  IL: 'Israel', EG: 'Egypt', MA: 'Morocco', JM: 'Jamaica', TT: 'Trinidad and Tobago',
-  BB: 'Barbados', CU: 'Cuba', PR: 'Puerto Rico', IS: 'Iceland', LU: 'Luxembourg',
-  LT: 'Lithuania', LV: 'Latvia', EE: 'Estonia', SI: 'Slovenia', SK: 'Slovakia',
-  MT: 'Malta', CY: 'Cyprus',
+  // Africa
+  DZ: 'Algeria', AO: 'Angola', BJ: 'Benin', BW: 'Botswana', BF: 'Burkina Faso',
+  BI: 'Burundi', CV: 'Cape Verde', CM: 'Cameroon', CF: 'Central African Republic',
+  TD: 'Chad', KM: 'Comoros', CG: 'Congo', CD: 'DR Congo', CI: "Côte d'Ivoire",
+  DJ: 'Djibouti', EG: 'Egypt', GQ: 'Equatorial Guinea', ER: 'Eritrea',
+  SZ: 'Eswatini', ET: 'Ethiopia', GA: 'Gabon', GM: 'Gambia', GH: 'Ghana',
+  GN: 'Guinea', GW: 'Guinea-Bissau', KE: 'Kenya', LS: 'Lesotho', LR: 'Liberia',
+  LY: 'Libya', MG: 'Madagascar', MW: 'Malawi', ML: 'Mali', MR: 'Mauritania',
+  MU: 'Mauritius', YT: 'Mayotte', MA: 'Morocco', MZ: 'Mozambique', NA: 'Namibia',
+  NE: 'Niger', NG: 'Nigeria', RE: 'Réunion', RW: 'Rwanda', ST: 'São Tomé and Príncipe',
+  SN: 'Senegal', SC: 'Seychelles', SL: 'Sierra Leone', SO: 'Somalia',
+  ZA: 'South Africa', GS: 'South Georgia and the South Sandwich Islands',
+  SS: 'South Sudan', SD: 'Sudan', TZ: 'Tanzania', TG: 'Togo', TN: 'Tunisia',
+  UG: 'Uganda', EH: 'Western Sahara', ZM: 'Zambia', ZW: 'Zimbabwe',
+  // Americas
+  AI: 'Anguilla', AG: 'Antigua and Barbuda', AR: 'Argentina', AW: 'Aruba',
+  BS: 'Bahamas', BB: 'Barbados', BZ: 'Belize', BM: 'Bermuda', BO: 'Bolivia',
+  BQ: 'Bonaire, Sint Eustatius and Saba', BR: 'Brazil', VG: 'British Virgin Islands',
+  CA: 'Canada', KY: 'Cayman Islands', CL: 'Chile', CO: 'Colombia', CR: 'Costa Rica',
+  CU: 'Cuba', CW: 'Curaçao', DM: 'Dominica', DO: 'Dominican Republic',
+  EC: 'Ecuador', SV: 'El Salvador', FK: 'Falkland Islands', GF: 'French Guiana',
+  GD: 'Grenada', GP: 'Guadeloupe', GT: 'Guatemala', GY: 'Guyana', HT: 'Haiti',
+  HN: 'Honduras', JM: 'Jamaica', MQ: 'Martinique', MX: 'Mexico', MS: 'Montserrat',
+  NI: 'Nicaragua', PA: 'Panama', PY: 'Paraguay', PE: 'Peru', PR: 'Puerto Rico',
+  BL: 'Saint Barthélemy', KN: 'Saint Kitts and Nevis', LC: 'Saint Lucia',
+  MF: 'Saint Martin', PM: 'Saint Pierre and Miquelon', VC: 'Saint Vincent and the Grenadines',
+  SX: 'Sint Maarten', SR: 'Suriname', TT: 'Trinidad and Tobago',
+  TC: 'Turks and Caicos Islands', US: 'United States', UM: 'US Minor Outlying Islands',
+  VI: 'US Virgin Islands', UY: 'Uruguay', VE: 'Venezuela',
+  // Antarctica
+  AQ: 'Antarctica', BV: 'Bouvet Island', TF: 'French Southern Territories',
+  HM: 'Heard Island and McDonald Islands', SJ: 'Svalbard and Jan Mayen',
+  // Asia
+  AF: 'Afghanistan', AM: 'Armenia', AZ: 'Azerbaijan', BH: 'Bahrain',
+  BD: 'Bangladesh', BT: 'Bhutan', IO: 'British Indian Ocean Territory', BN: 'Brunei',
+  KH: 'Cambodia', CN: 'China', CX: 'Christmas Island', CC: 'Cocos (Keeling) Islands',
+  GE: 'Georgia', HK: 'Hong Kong', IN: 'India', ID: 'Indonesia', IR: 'Iran',
+  IQ: 'Iraq', IL: 'Israel', JP: 'Japan', JO: 'Jordan', KZ: 'Kazakhstan',
+  KW: 'Kuwait', KG: 'Kyrgyzstan', LA: 'Laos', LB: 'Lebanon', MO: 'Macao',
+  MY: 'Malaysia', MV: 'Maldives', MN: 'Mongolia', MM: 'Myanmar', NP: 'Nepal',
+  KP: 'North Korea', OM: 'Oman', PK: 'Pakistan', PS: 'Palestine', PH: 'Philippines',
+  QA: 'Qatar', SA: 'Saudi Arabia', SG: 'Singapore', KR: 'South Korea',
+  LK: 'Sri Lanka', SY: 'Syria', TW: 'Taiwan', TJ: 'Tajikistan', TH: 'Thailand',
+  TL: 'Timor-Leste', TR: 'Turkey', TM: 'Turkmenistan', AE: 'United Arab Emirates',
+  UZ: 'Uzbekistan', VN: 'Vietnam', YE: 'Yemen',
+  // Europe
+  AX: 'Åland Islands', AL: 'Albania', AD: 'Andorra', AT: 'Austria', BY: 'Belarus',
+  BE: 'Belgium', BA: 'Bosnia and Herzegovina', BG: 'Bulgaria', HR: 'Croatia',
+  CY: 'Cyprus', CZ: 'Czech Republic', DK: 'Denmark', EE: 'Estonia', FO: 'Faroe Islands',
+  FI: 'Finland', FR: 'France', DE: 'Germany', GI: 'Gibraltar', GR: 'Greece',
+  GL: 'Greenland', GG: 'Guernsey', VA: 'Holy See', HU: 'Hungary', IS: 'Iceland',
+  IE: 'Ireland', IM: 'Isle of Man', IT: 'Italy', JE: 'Jersey', XK: 'Kosovo',
+  LV: 'Latvia', LI: 'Liechtenstein', LT: 'Lithuania', LU: 'Luxembourg',
+  MT: 'Malta', MD: 'Moldova', MC: 'Monaco', ME: 'Montenegro', NL: 'Netherlands',
+  MK: 'North Macedonia', NO: 'Norway', PL: 'Poland', PT: 'Portugal', RO: 'Romania',
+  RU: 'Russia', SM: 'San Marino', RS: 'Serbia', SK: 'Slovakia', SI: 'Slovenia',
+  ES: 'Spain', SE: 'Sweden', CH: 'Switzerland', UA: 'Ukraine', GB: 'United Kingdom',
+  // Oceania
+  AS: 'American Samoa', AU: 'Australia', CK: 'Cook Islands', FJ: 'Fiji',
+  PF: 'French Polynesia', GU: 'Guam', KI: 'Kiribati', MH: 'Marshall Islands',
+  FM: 'Micronesia', NR: 'Nauru', NC: 'New Caledonia', NZ: 'New Zealand',
+  NU: 'Niue', NF: 'Norfolk Island', MP: 'Northern Mariana Islands', PW: 'Palau',
+  PG: 'Papua New Guinea', PN: 'Pitcairn', WS: 'Samoa', SB: 'Solomon Islands',
+  TK: 'Tokelau', TO: 'Tonga', TV: 'Tuvalu', VU: 'Vanuatu', WF: 'Wallis and Futuna',
 }
 
 function countryCodeToName(code: string): string {
   return COUNTRY_NAMES[code.toUpperCase()] ?? code.toUpperCase()
+}
+
+/** Returns true if `code` is a valid 2-letter ISO 3166-1 alpha-2 country code */
+function isValidCountryCode(code: string | null | undefined): code is string {
+  return typeof code === 'string' && code.length === 2 && code.toUpperCase() in COUNTRY_NAMES
 }
 
 // ── Client ───────────────────────────────────────────────────────────────────
@@ -167,7 +221,11 @@ class MusicBrainzClient {
         if (results.has(sid)) continue
 
         const countryCode = b.countryCode?.value?.toUpperCase() ?? null
-        const countryName = b.countryLabel?.value ?? (countryCode ? countryCodeToName(countryCode) : null)
+        // Only accept results with a valid ISO country code — Wikidata P27/P495
+        // can return sub-national entities (e.g. "England") without a P297 code
+        const countryName = countryCode
+          ? (b.countryLabel?.value ?? countryCodeToName(countryCode))
+          : null
         const subRegion = b.regionLabel?.value ?? null
 
         results.set(sid, {
@@ -178,7 +236,7 @@ class MusicBrainzClient {
           sub_region: subRegion,
           source: 'wikidata',
           musicbrainz_id: null,
-          confidence: 'high',
+          confidence: countryCode ? 'high' : 'low',
         })
       }
     } catch (err) {
@@ -236,9 +294,12 @@ class MusicBrainzClient {
       ?? artist.area?.['iso-3166-1-codes']?.[0]
       ?? null
 
+    // Only accept valid ISO 3166-1 alpha-2 codes — reject area names without codes
+    // to avoid regions/cities leaking in as country names
+    const upperCode = code?.toUpperCase() ?? null
     return {
-      country_code: code?.toUpperCase() ?? null,
-      country_name: code ? countryCodeToName(code) : (artist.area?.name ?? null),
+      country_code: upperCode,
+      country_name: upperCode ? countryCodeToName(upperCode) : null,
       sub_region: artist['begin-area']?.name ?? null,
     }
   }

@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Disc3,
   Globe,
-  Hash,
   Heart,
   ListEnd,
   ListStart,
@@ -22,7 +21,6 @@ import {
 import { api } from '@/lib/api'
 import type {
   SonosLibraryTrack,
-  SonosGenre,
   SonosGenreAlbum,
   NasEnrichedAlbum,
   NasEnrichedArtist,
@@ -34,8 +32,8 @@ import { cn } from '@/lib/utils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type NasView = 'home' | 'artist-detail' | 'album-detail' | 'genre-albums' | 'genre-album-tracks'
-type BrowseMode = 'genres' | 'albums' | 'artists' | 'songs'
+type NasView = 'home' | 'artist-detail' | 'album-detail' | 'country-artists'
+type BrowseMode = 'countries' | 'albums' | 'artists' | 'songs'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -61,6 +59,15 @@ function useDebounce<T>(value: T, delay: number): T {
   }, [value, delay])
 
   return debounced
+}
+
+/** Convert ISO 3166-1 alpha-2 code to flag emoji via regional indicator symbols */
+function countryCodeToFlag(code: string): string {
+  return code
+    .toUpperCase()
+    .split('')
+    .map(c => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65))
+    .join('')
 }
 
 // ── Album art thumbnail ───────────────────────────────────────────────────────
@@ -290,7 +297,7 @@ function BrowseModeTabs({
       aria-label="Browse by"
       className="mb-4 flex gap-2 overflow-x-auto pb-0.5"
     >
-      {(['genres', 'albums', 'artists', 'songs'] as const).map(m => (
+      {(['countries', 'albums', 'artists', 'songs'] as const).map(m => (
         <button
           key={m}
           role="tab"
@@ -305,7 +312,7 @@ function BrowseModeTabs({
               : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
           )}
         >
-          {m === 'genres' ? 'Genres' : m === 'albums' ? 'Albums' : m === 'artists' ? 'Artists' : 'Songs'}
+          {m === 'countries' ? 'Countries' : m === 'albums' ? 'Albums' : m === 'artists' ? 'Artists' : 'Songs'}
         </button>
       ))}
     </div>
@@ -470,7 +477,8 @@ function ArtistList({
   // Group by country
   const countryGroups = new Map<string, NasEnrichedArtist[]>()
   for (const a of artists) {
-    const key = a.country_name ?? 'Not Known'
+    const hasValidCode = a.country_code && /^[A-Z]{2}$/.test(a.country_code)
+    const key = hasValidCode ? (a.country_name ?? a.country_code!) : 'Not Known'
     if (!countryGroups.has(key)) countryGroups.set(key, [])
     countryGroups.get(key)!.push(a)
   }
@@ -671,7 +679,9 @@ function AlbumList({
   // Group by country
   const countryGroups = new Map<string, NasEnrichedAlbum[]>()
   for (const a of albums) {
-    const key = a.artist_country?.country_name ?? 'Not Known'
+    const cc = a.artist_country?.country_code
+    const hasValidCode = cc && /^[A-Z]{2}$/.test(cc)
+    const key = hasValidCode ? (a.artist_country?.country_name ?? cc) : 'Not Known'
     if (!countryGroups.has(key)) countryGroups.set(key, [])
     countryGroups.get(key)!.push(a)
   }
@@ -984,121 +994,117 @@ function AlbumDetail({
   )
 }
 
-// ── Genre list ───────────────────────────────────────────────────────────────
+// ── Country list (replaces Genres as top-level NAS navigation) ──────────────
 
-function GenreList({
-  onSelectGenre,
+interface CountryEntry {
+  code: string
+  name: string
+  flag: string
+  artistCount: number
+}
+
+function CountryList({
+  onSelectCountry,
 }: {
-  onSelectGenre: (genre: string) => void
+  onSelectCountry: (code: string, name: string) => void
 }) {
-  const { data: genres, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['sonos-library-genres'],
-    queryFn: api.sonos.getLibraryGenres,
+  const queryClient = useQueryClient()
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['nas-enriched-artists'],
+    queryFn: api.sonos.getEnrichedNasArtists,
     staleTime: 5 * 60_000,
   })
+
+  // Refresh when enrichment completes
+  const { data: enrichStatus } = useQuery({
+    queryKey: ['nas-enrichment-status'],
+    queryFn: () => api.sonos.getNasEnrichmentStatus(),
+    staleTime: 5_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 3_000 : false
+    },
+  })
+
+  const prevStatus = useRef(enrichStatus?.status)
+  useEffect(() => {
+    if (prevStatus.current === 'running' && enrichStatus?.status === 'complete') {
+      queryClient.invalidateQueries({ queryKey: ['nas-enriched-artists'] })
+    }
+    prevStatus.current = enrichStatus?.status
+  }, [enrichStatus?.status, queryClient])
 
   if (isLoading) return <ListSkeleton />
 
   if (isError) {
     return (
       <ErrorState
-        message={(error as Error).message ?? 'Failed to load genres'}
+        message={(error as Error).message ?? 'Failed to load countries'}
         onRetry={() => refetch()}
       />
     )
   }
 
-  if (!genres || genres.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-        <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
-        <div>
-          <p className="text-sm font-medium text-heading">No genres found</p>
-          <p className="mt-1 max-w-xs text-xs text-caption">
-            Your music library may not have genre metadata, or it hasn't been indexed yet.
-          </p>
-        </div>
-      </div>
-    )
+  const artists = data?.items ?? []
+
+  // Build country list from enriched artists (only those with valid 2-letter ISO codes)
+  const countryMap = new Map<string, { name: string; count: number }>()
+  for (const a of artists) {
+    if (!a.country_code || !/^[A-Z]{2}$/.test(a.country_code)) continue
+    const existing = countryMap.get(a.country_code)
+    if (existing) {
+      existing.count++
+    } else {
+      countryMap.set(a.country_code, { name: a.country_name ?? a.country_code, count: 1 })
+    }
   }
 
-  return (
-    <ul className="-mx-4">
-      {genres.map((genre: SonosGenre) => (
-        <li key={genre.title}>
-          <button
-            type="button"
-            onClick={() => onSelectGenre(genre.title)}
-            className={cn(
-              'flex w-full items-center gap-3 px-4 py-2.5 text-left',
-              'transition-colors hover:bg-[var(--bg-secondary)]',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              'min-h-[44px]',
-            )}
-          >
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-tertiary)]">
-              <Hash className="h-4 w-4 text-caption/60" aria-hidden="true" />
-            </div>
-            <p className="min-w-0 flex-1 truncate text-sm font-medium text-heading">{genre.title}</p>
-            <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
-          </button>
-        </li>
-      ))}
-    </ul>
-  )
-}
+  const countries: CountryEntry[] = Array.from(countryMap.entries())
+    .map(([code, { name, count }]) => ({
+      code,
+      name,
+      flag: countryCodeToFlag(code),
+      artistCount: count,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
 
-// ── Genre album list ─────────────────────────────────────────────────────────
-
-function GenreAlbumList({
-  genre,
-  onSelectAlbum,
-  onBack,
-}: {
-  genre: string
-  onSelectAlbum: (album: SonosGenreAlbum) => void
-  onBack: () => void
-}) {
-  const { data: albums, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['sonos-genre-albums', genre],
-    queryFn: () => api.sonos.getGenreAlbums(genre),
-    staleTime: 5 * 60_000,
-  })
+  const hasCountryData = countries.length > 0
 
   return (
     <div>
-      <div className="mb-4 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back to genres"
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
-        >
-          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <h2 className="truncate text-lg font-semibold text-heading">{genre}</h2>
-      </div>
+      <NasEnrichmentStatusBar />
 
-      {isLoading && <ListSkeleton />}
-
-      {isError && (
-        <ErrorState
-          message={(error as Error).message ?? 'Failed to load albums'}
-          onRetry={() => refetch()}
-        />
+      {!hasCountryData && artists.length > 0 && (
+        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+          <Globe className="h-10 w-10 text-caption/40" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-medium text-heading">No country data yet</p>
+            <p className="mt-1 max-w-xs text-xs text-caption">
+              Use the "Enrich countries" button above to look up artist origins via MusicBrainz.
+            </p>
+          </div>
+        </div>
       )}
 
-      {!isLoading && !isError && albums && albums.length > 0 && (
+      {!hasCountryData && artists.length === 0 && (
+        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+          <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-medium text-heading">No music found</p>
+            <p className="mt-1 max-w-xs text-xs text-caption">
+              Your NAS library hasn't been indexed yet. Make sure a music library share is configured in the Sonos app.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {hasCountryData && (
         <ul className="-mx-4">
-          {albums.map((album: SonosGenreAlbum) => (
-            <li key={album.objectId}>
+          {countries.map(country => (
+            <li key={country.code}>
               <button
                 type="button"
-                onClick={() => onSelectAlbum(album)}
+                onClick={() => onSelectCountry(country.code, country.name)}
                 className={cn(
                   'flex w-full items-center gap-3 px-4 py-2.5 text-left',
                   'transition-colors hover:bg-[var(--bg-secondary)]',
@@ -1106,10 +1112,14 @@ function GenreAlbumList({
                   'min-h-[44px]',
                 )}
               >
-                <AlbumArt uri={album.albumArtUri} size={48} />
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center text-2xl" role="img" aria-label={country.name}>
+                  {country.flag}
+                </span>
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-heading">{album.name}</p>
-                  <p className="truncate text-xs text-caption">{album.artist}</p>
+                  <p className="truncate text-sm font-medium text-heading">{country.name}</p>
+                  <p className="text-xs text-caption">
+                    {country.artistCount} {country.artistCount === 1 ? 'artist' : 'artists'}
+                  </p>
                 </div>
                 <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
               </button>
@@ -1117,40 +1127,58 @@ function GenreAlbumList({
           ))}
         </ul>
       )}
-
-      {!isLoading && !isError && (!albums || albums.length === 0) && (
-        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-          <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
-          <p className="text-sm text-caption">No albums found in {genre}</p>
-        </div>
-      )}
     </div>
   )
 }
 
-// ── Genre album tracks ───────────────────────────────────────────────────────
+// ── Country artist list (drill-in from country) ─────────────────────────────
 
-function GenreAlbumTracks({
-  album,
-  speaker,
+function CountryArtistList({
+  countryCode,
+  countryName,
+  onSelectArtist,
   onBack,
 }: {
-  album: SonosGenreAlbum
-  speaker: string | null
+  countryCode: string
+  countryName: string
+  onSelectArtist: (name: string) => void
   onBack: () => void
 }) {
-  const { toast } = useToast()
-  const { data: tracks, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['sonos-genre-album-tracks', album.objectId],
-    queryFn: () => api.sonos.getGenreAlbumTracks(album.objectId),
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['nas-enriched-artists'],
+    queryFn: api.sonos.getEnrichedNasArtists,
     staleTime: 5 * 60_000,
   })
 
-  const playAlbum = useMutation({
-    mutationFn: () => api.sonos.playUri(speaker!, album.objectId),
-    onSuccess: () => toast({ message: `Playing "${album.name}"` }),
-    onError: () => toast({ message: 'Failed to play album', type: 'error' }),
-  })
+  const artists = (data?.items ?? []).filter(a => a.country_code === countryCode)
+  const flag = countryCodeToFlag(countryCode)
+
+  const [collapsedRegions, setCollapsedRegions] = useState<Set<string>>(new Set())
+
+  const toggleRegion = (region: string) => {
+    setCollapsedRegions(prev => {
+      const next = new Set(prev)
+      if (next.has(region)) next.delete(region)
+      else next.add(region)
+      return next
+    })
+  }
+
+  // Group by sub_region
+  const regionGroups = new Map<string, NasEnrichedArtist[]>()
+  for (const a of artists) {
+    const key = a.sub_region ?? 'General'
+    if (!regionGroups.has(key)) regionGroups.set(key, [])
+    regionGroups.get(key)!.push(a)
+  }
+  const sortedRegions = Array.from(regionGroups.entries())
+    .map(([region, items]) => ({ region, items }))
+    .sort((a, b) => {
+      if (a.region === 'General') return 1
+      if (b.region === 'General') return -1
+      return a.region.localeCompare(b.region, undefined, { sensitivity: 'base' })
+    })
+  const hasSubRegions = sortedRegions.length > 1 || (sortedRegions.length === 1 && sortedRegions[0].region !== 'General')
 
   return (
     <div>
@@ -1158,7 +1186,7 @@ function GenreAlbumTracks({
         <button
           type="button"
           onClick={onBack}
-          aria-label="Back to albums"
+          aria-label="Back to countries"
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
             'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
@@ -1167,53 +1195,75 @@ function GenreAlbumTracks({
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
-        <AlbumArt uri={album.albumArtUri} size={44} />
-        <div className="min-w-0 flex-1">
-          <h2 className="text-lg font-semibold leading-snug text-heading">{album.name}</h2>
-          <p className="text-xs text-caption">{album.artist}</p>
-        </div>
-        <button
-          type="button"
-          disabled={!speaker || playAlbum.isPending}
-          onClick={() => playAlbum.mutate()}
-          aria-label={`Play album ${album.name}`}
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
-            'text-white transition-colors hover:bg-fairy-400',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'disabled:opacity-40',
-          )}
-        >
-          <Play className="h-5 w-5" aria-hidden="true" />
-        </button>
+        <span className="text-2xl" role="img" aria-hidden="true">{flag}</span>
+        <h2 className="truncate text-lg font-semibold text-heading">{countryName}</h2>
+        <span className="text-xs text-caption">{artists.length} {artists.length === 1 ? 'artist' : 'artists'}</span>
       </div>
 
-      {isLoading && <ListSkeleton count={5} />}
+      {isLoading && <ListSkeleton />}
 
       {isError && (
         <ErrorState
-          message={(error as Error).message ?? 'Failed to load tracks'}
+          message={(error as Error).message ?? 'Failed to load artists'}
           onRetry={() => refetch()}
         />
       )}
 
-      {!isLoading && !isError && tracks && tracks.length > 0 && (
+      {!isLoading && !isError && artists.length > 0 && hasSubRegions && (
+        <div className="-mx-4">
+          {sortedRegions.map(group => {
+            const isCollapsed = collapsedRegions.has(group.region)
+            return (
+              <div key={group.region}>
+                <button
+                  type="button"
+                  onClick={() => toggleRegion(group.region)}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-4 py-2.5 text-left',
+                    'bg-[var(--bg-secondary)] transition-colors hover:bg-[var(--bg-tertiary)]',
+                    'min-h-[40px]',
+                  )}
+                  aria-expanded={!isCollapsed}
+                >
+                  <MapPin className="h-4 w-4 shrink-0 text-fairy-500" aria-hidden="true" />
+                  <span className="flex-1 text-sm font-semibold text-heading">{group.region}</span>
+                  <span className="text-xs text-caption">{group.items.length}</span>
+                  <ChevronDown
+                    className={cn('h-4 w-4 text-caption/50 transition-transform', isCollapsed && '-rotate-90')}
+                    aria-hidden="true"
+                  />
+                </button>
+                {!isCollapsed && (
+                  <ul>
+                    {group.items.map(artist => (
+                      <NasArtistRow key={artist.name} artist={artist} onSelect={onSelectArtist} showCountry={false} />
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {!isLoading && !isError && artists.length > 0 && !hasSubRegions && (
         <ul className="-mx-4">
-          {tracks.map((track, i) => (
-            <TrackRow key={track.uri + ':' + i} track={track} speaker={speaker} />
+          {artists.map(artist => (
+            <NasArtistRow key={artist.name} artist={artist} onSelect={onSelectArtist} showCountry={false} />
           ))}
         </ul>
       )}
 
-      {!isLoading && !isError && (!tracks || tracks.length === 0) && (
+      {!isLoading && !isError && artists.length === 0 && (
         <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
           <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
-          <p className="text-sm text-caption">No tracks found</p>
+          <p className="text-sm text-caption">No artists found from {countryName}</p>
         </div>
       )}
     </div>
   )
 }
+
 
 // ── Songs list ───────────────────────────────────────────────────────────────
 
@@ -1306,11 +1356,10 @@ interface NasBrowseViewProps {
 
 export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps) {
   const [view, setView] = useState<NasView>('home')
-  const [browseMode, setBrowseMode] = useState<BrowseMode>('genres')
+  const [browseMode, setBrowseMode] = useState<BrowseMode>('countries')
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null)
   const [selectedAlbum, setSelectedAlbum] = useState<SonosGenreAlbum | null>(null)
-  const [selectedGenre, setSelectedGenre] = useState<string | null>(null)
-  const [selectedGenreAlbum, setSelectedGenreAlbum] = useState<SonosGenreAlbum | null>(null)
+  const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
   const firstSpeaker = useFirstSpeaker()
   const speaker = targetSpeaker ?? firstSpeaker
 
@@ -1327,29 +1376,27 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
     setView('album-detail')
   }
 
-  function handleSelectGenre(genre: string) {
-    setSelectedGenre(genre)
-    setView('genre-albums')
-  }
-
-  function handleSelectGenreAlbum(album: SonosGenreAlbum) {
-    setSelectedGenreAlbum(album)
-    setView('genre-album-tracks')
+  function handleSelectCountry(code: string, name: string) {
+    setSelectedCountry({ code, name })
+    setView('country-artists')
   }
 
   function handleBack() {
-    if (view === 'genre-album-tracks') {
-      setView('genre-albums')
-      setSelectedGenreAlbum(null)
+    if (view === 'country-artists') {
+      setView('home')
+      setSelectedCountry(null)
     } else if (view === 'album-detail' && selectedArtist) {
       setView('artist-detail')
+      setSelectedAlbum(null)
+    } else if (view === 'artist-detail' && selectedCountry) {
+      setView('country-artists')
+      setSelectedArtist(null)
       setSelectedAlbum(null)
     } else {
       setView('home')
       setSelectedArtist(null)
       setSelectedAlbum(null)
-      setSelectedGenre(null)
-      setSelectedGenreAlbum(null)
+      setSelectedCountry(null)
     }
   }
 
@@ -1357,21 +1404,12 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
     return <SearchResults query={debouncedQuery} speaker={speaker} />
   }
 
-  if (view === 'genre-album-tracks' && selectedGenreAlbum) {
+  if (view === 'country-artists' && selectedCountry) {
     return (
-      <GenreAlbumTracks
-        album={selectedGenreAlbum}
-        speaker={speaker}
-        onBack={handleBack}
-      />
-    )
-  }
-
-  if (view === 'genre-albums' && selectedGenre) {
-    return (
-      <GenreAlbumList
-        genre={selectedGenre}
-        onSelectAlbum={handleSelectGenreAlbum}
+      <CountryArtistList
+        countryCode={selectedCountry.code}
+        countryName={selectedCountry.name}
+        onSelectArtist={handleSelectArtist}
         onBack={handleBack}
       />
     )
@@ -1401,7 +1439,7 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
   return (
     <div>
       <BrowseModeTabs mode={browseMode} onChangeMode={setBrowseMode} />
-      {browseMode === 'genres' && <GenreList onSelectGenre={handleSelectGenre} />}
+      {browseMode === 'countries' && <CountryList onSelectCountry={handleSelectCountry} />}
       {browseMode === 'albums' && <AlbumList onSelectAlbum={handleSelectAlbum} />}
       {browseMode === 'artists' && <ArtistList onSelectArtist={handleSelectArtist} />}
       {browseMode === 'songs' && <SongsList speaker={speaker} />}
