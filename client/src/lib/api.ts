@@ -1753,6 +1753,10 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ from, to }),
       }),
+    clearQueue: (speaker: string) =>
+      fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/clear`, {
+        method: 'DELETE',
+      }),
     playUri: (speaker: string, uri: string) =>
       fetchApi<{ speaker: string; uri: string }>(
         `/sonos/play-uri/${encodeURIComponent(speaker)}`,
@@ -1774,16 +1778,32 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ enabled }),
       }),
-    repeat: (speaker: string, enabled: boolean) =>
+    repeat: (speaker: string, enabled: boolean, mode?: 'off' | 'all' | 'one') =>
       fetchApi<void>(`/sonos/repeat/${encodeURIComponent(speaker)}`, {
         method: 'POST',
-        body: JSON.stringify({ enabled }),
+        body: JSON.stringify({ enabled, ...(mode ? { mode } : {}) }),
       }),
     seek: (speaker: string, seconds: number) =>
       fetchApi<void>(`/sonos/seek/${encodeURIComponent(speaker)}`, {
         method: 'POST',
         body: JSON.stringify({ seconds }),
       }),
+    addAlbumToQueue: (speaker: string, uri: string, source: 'spotify' | 'nas') =>
+      fetchApi<{ speaker: string; action: string }>(
+        `/sonos/queue/${encodeURIComponent(speaker)}/add-album`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ uri, source }),
+        },
+      ),
+    playAlbumNext: (speaker: string, uri: string, source: 'spotify' | 'nas') =>
+      fetchApi<{ speaker: string; action: string }>(
+        `/sonos/queue/${encodeURIComponent(speaker)}/playnext-album`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ uri, source }),
+        },
+      ),
   },
 
   deviceLinks: {

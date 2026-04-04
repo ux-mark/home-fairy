@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useState } from 'react'
 import * as Slider from '@radix-ui/react-slider'
+import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface SonosVolumeControlProps {
@@ -16,6 +17,13 @@ interface SonosVolumeControlProps {
   className?: string
   /** Whether the control is disabled */
   disabled?: boolean
+  /**
+   * When true, replaces the slider thumb with an X button at the thumb position.
+   * Used by VolumeGroupPopover to signal that the group popover is open.
+   */
+  isPopoverOpen?: boolean
+  /** Called when the X thumb overlay is clicked (should close the popover) */
+  onClosePopover?: () => void
 }
 
 /**
@@ -39,6 +47,8 @@ export function SonosVolumeControl({
   label,
   className,
   disabled = false,
+  isPopoverOpen = false,
+  onClosePopover,
 }: SonosVolumeControlProps) {
   // null means "use server value"; non-null means "user is dragging"
   const [dragValue, setDragValue] = useState<number | null>(null)
@@ -81,37 +91,64 @@ export function SonosVolumeControl({
       // Prevent text selection and long-press popups on iOS Safari during drag
       style={{ userSelect: 'none', WebkitTouchCallout: 'none' } as React.CSSProperties}
     >
-      <Slider.Root
-        className={cn(
-          'relative flex flex-1 touch-none select-none items-center',
-          'focus-within:outline-none',
-          disabled && 'opacity-50',
-        )}
-        min={0}
-        max={100}
-        step={1}
-        value={[displayValue]}
-        onValueChange={handleValueChange}
-        onValueCommit={handleValueCommit}
-        disabled={disabled}
-        aria-label={label}
-      >
-        <Slider.Track className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
-          <Slider.Range className="absolute h-full bg-fairy-500" />
-        </Slider.Track>
-        <Slider.Thumb
+      {/* Slider wrapper — relative so the X overlay can be positioned within it */}
+      <div className="relative flex flex-1 items-center">
+        <Slider.Root
           className={cn(
-            'relative block h-7 w-7 rounded-full bg-white shadow-md ring-2 ring-fairy-500/50',
-            'before:absolute before:inset-[-8px] before:content-[""]',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'transition-shadow hover:ring-fairy-500',
-            'cursor-grab active:cursor-grabbing',
+            'relative flex w-full touch-none select-none items-center',
+            'focus-within:outline-none',
+            (disabled || isPopoverOpen) && 'opacity-50',
           )}
-          // Promote thumb to its own compositor layer for GPU-accelerated dragging
-          style={{ willChange: 'transform', transform: 'translateZ(0)' }}
+          min={0}
+          max={100}
+          step={1}
+          value={[displayValue]}
+          onValueChange={handleValueChange}
+          onValueCommit={handleValueCommit}
+          disabled={disabled || isPopoverOpen}
           aria-label={label}
-        />
-      </Slider.Root>
+        >
+          <Slider.Track className="relative h-2.5 flex-1 overflow-hidden rounded-full bg-[var(--bg-tertiary)]">
+            <Slider.Range className="absolute h-full bg-fairy-500" />
+          </Slider.Track>
+          {/* Hide the real thumb when popover is open — X overlay takes its place */}
+          <Slider.Thumb
+            className={cn(
+              'relative block h-7 w-7 rounded-full bg-white shadow-md ring-2 ring-fairy-500/50',
+              'before:absolute before:inset-[-8px] before:content-[""]',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              'transition-shadow hover:ring-fairy-500',
+              'cursor-grab active:cursor-grabbing',
+              isPopoverOpen && 'opacity-0 pointer-events-none',
+            )}
+            style={{ willChange: 'transform', transform: 'translateZ(0)' }}
+            aria-label={label}
+          />
+        </Slider.Root>
+
+        {/* X overlay — positioned at the thumb location, replaces the thumb while popover is open */}
+        {isPopoverOpen && (
+          <button
+            onClick={onClosePopover}
+            aria-label="Close group volume controls"
+            className={cn(
+              'absolute top-1/2 -translate-y-1/2',
+              'flex h-7 w-7 items-center justify-center rounded-full',
+              'bg-[var(--bg-secondary)] text-body shadow-md ring-2 ring-fairy-500/50',
+              'hover:bg-[var(--bg-tertiary)] transition-colors',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            )}
+            // Position the X at the thumb location: accounts for 28px thumb width
+            style={{
+              left: `calc(${displayValue}% - ${displayValue * 0.28}px + 14px)`,
+              transform: 'translateX(-50%) translateY(-50%)',
+            }}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+
       <span
         className="w-9 shrink-0 text-right text-xs tabular-nums text-caption"
         aria-live="polite"

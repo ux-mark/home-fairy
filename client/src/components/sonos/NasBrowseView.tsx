@@ -15,6 +15,7 @@ import {
   MapPin,
   MoreVertical,
   Music2,
+  Pause,
   Play,
   RefreshCw,
   User,
@@ -35,6 +36,8 @@ import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from './ArtworkImage'
 import { CountryList, CountryArtistList, isValidIsoCode, type CountryArtistItem } from './CountryBrowse'
+import { ActiveTrackIndicator } from './ActiveTrackIndicator'
+import { AlbumPlaylistMenu } from './AlbumPlaylistMenu'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -67,9 +70,32 @@ function useDebounce<T>(value: T, delay: number): T {
   return debounced
 }
 
+function useNowPlayingTrack(speaker: string | null) {
+  const { data: nowPlaying } = useQuery({
+    queryKey: ['sonos', 'now-playing'],
+    queryFn: api.sonos.getNowPlaying,
+    refetchInterval: 5_000,
+    staleTime: 4_000,
+    enabled: !!speaker,
+  })
+  if (!speaker || !nowPlaying) return null
+  const entry = nowPlaying.find(e => e.speakerName === speaker || e.roomName === speaker)
+  return entry?.state ?? null
+}
+
 // ── Track row ─────────────────────────────────────────────────────────────────
 
-function TrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: string | null }) {
+function TrackRow({
+  track,
+  speaker,
+  isActive = false,
+  isPlaying = false,
+}: {
+  track: SonosLibraryTrack
+  speaker: string | null
+  isActive?: boolean
+  isPlaying?: boolean
+}) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -112,8 +138,15 @@ function TrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: strin
   })
 
   return (
-    <li className="flex items-center gap-3 px-4 py-2.5">
-      <ArtworkImage src={track.albumArtUri} size={40} fallback="disc" />
+    <li className={cn('flex items-center gap-3 px-4 py-2.5', isActive && 'bg-fairy-500/10')}>
+      <div className="relative shrink-0">
+        <ArtworkImage src={track.albumArtUri} size={40} fallback="disc" />
+        {isActive && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black/40">
+            <ActiveTrackIndicator isActive={isActive} isPlaying={isPlaying} />
+          </div>
+        )}
+      </div>
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{track.title || 'Unknown track'}</p>
@@ -966,6 +999,16 @@ function AlbumDetail({
     onError: () => toast({ message: 'Failed to play album', type: 'error' }),
   })
 
+  const pauseAlbum = useMutation({
+    mutationFn: () => api.sonos.pause(speaker!),
+    onSuccess: () => { /* state updates via polling */ },
+    onError: () => toast({ message: 'Failed to pause', type: 'error' }),
+  })
+
+  const nowPlayingState = useNowPlayingTrack(speaker)
+  const isPlaying = nowPlayingState?.playbackState === 'PLAYING'
+  const currentUri = nowPlayingState?.currentTrack?.uri
+
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
@@ -986,11 +1029,18 @@ function AlbumDetail({
           <h2 className="text-lg font-semibold leading-snug text-heading">{album.name}</h2>
           <p className="text-xs text-caption">{album.artist}</p>
         </div>
+        <AlbumPlaylistMenu
+          uri={album.objectId}
+          title={album.name}
+          artUri={album.albumArtUri}
+          source="nas"
+          speaker={speaker}
+        />
         <button
           type="button"
-          disabled={!speaker || playAlbum.isPending}
-          onClick={() => playAlbum.mutate()}
-          aria-label={`Play album ${album.name}`}
+          disabled={!speaker || playAlbum.isPending || pauseAlbum.isPending}
+          onClick={() => isPlaying ? pauseAlbum.mutate() : playAlbum.mutate()}
+          aria-label={isPlaying ? `Pause ${album.name}` : `Play album ${album.name}`}
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
             'text-white transition-colors hover:bg-fairy-400',
@@ -998,7 +1048,10 @@ function AlbumDetail({
             'disabled:opacity-40',
           )}
         >
-          <Play className="h-5 w-5" aria-hidden="true" />
+          {isPlaying
+            ? <Pause className="h-5 w-5" aria-hidden="true" />
+            : <Play className="h-5 w-5" aria-hidden="true" />
+          }
         </button>
       </div>
 
@@ -1014,7 +1067,13 @@ function AlbumDetail({
       {!isLoading && !isError && tracks && tracks.length > 0 && (
         <ul className="-mx-4">
           {tracks.map((track, i) => (
-            <TrackRow key={track.uri + ':' + i} track={track} speaker={speaker} />
+            <TrackRow
+              key={track.uri + ':' + i}
+              track={track}
+              speaker={speaker}
+              isActive={!!currentUri && currentUri === track.uri}
+              isPlaying={isPlaying}
+            />
           ))}
         </ul>
       )}

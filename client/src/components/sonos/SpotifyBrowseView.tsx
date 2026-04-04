@@ -19,6 +19,7 @@ import {
   Mic2,
   MoreVertical,
   Music2,
+  Pause,
   Play,
   RefreshCw,
 } from 'lucide-react'
@@ -41,6 +42,8 @@ import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { CountryList, CountryArtistList, type CountryArtistItem } from './CountryBrowse'
 import { ArtworkImage } from './ArtworkImage'
+import { ActiveTrackIndicator } from './ActiveTrackIndicator'
+import { AlbumPlaylistMenu } from './AlbumPlaylistMenu'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -72,6 +75,19 @@ function useDebounce<T>(value: T, delay: number): T {
   }, [value, delay])
 
   return debounced
+}
+
+function useNowPlayingTrack(speaker: string | null) {
+  const { data: nowPlaying } = useQuery({
+    queryKey: ['sonos', 'now-playing'],
+    queryFn: api.sonos.getNowPlaying,
+    refetchInterval: 5_000,
+    staleTime: 4_000,
+    enabled: !!speaker,
+  })
+  if (!speaker || !nowPlaying) return null
+  const entry = nowPlaying.find(e => e.speakerName === speaker || e.roomName === speaker)
+  return entry?.state ?? null
 }
 
 function formatDuration(ms: number): string {
@@ -336,7 +352,17 @@ function TrackMenu({
 
 // ── Spotify track row ─────────────────────────────────────────────────────────
 
-function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: string | null }) {
+function SpotifyTrackRow({
+  track,
+  speaker,
+  isActive = false,
+  isPlaying = false,
+}: {
+  track: SpotifyTrack
+  speaker: string | null
+  isActive?: boolean
+  isPlaying?: boolean
+}) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -378,8 +404,15 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
   const artistNames = track.artists.map(a => a.name).join(', ')
 
   return (
-    <li className="flex items-center gap-3 px-4 py-2.5">
-      <ArtworkImage images={track.album.images} size={40} />
+    <li className={cn('flex items-center gap-3 px-4 py-2.5', isActive && 'bg-fairy-500/10')}>
+      <div className="relative shrink-0">
+        <ArtworkImage images={track.album.images} size={40} />
+        {isActive && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black/40">
+            <ActiveTrackIndicator isActive={isActive} isPlaying={isPlaying} />
+          </div>
+        )}
+      </div>
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{track.name}</p>
@@ -423,9 +456,13 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
 function SpotifyAlbumTrackRow({
   track,
   speaker,
+  isActive = false,
+  isPlaying = false,
 }: {
   track: SpotifyAlbumTrack
   speaker: string | null
+  isActive?: boolean
+  isPlaying?: boolean
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
@@ -467,13 +504,20 @@ function SpotifyAlbumTrackRow({
   const artistNames = track.artists.map(a => a.name).join(', ')
 
   return (
-    <li className="flex items-center gap-3 px-4 py-2.5">
-      <span
-        className="w-6 shrink-0 text-right text-xs tabular-nums text-caption/50"
-        aria-label={`Track ${track.track_number}`}
-      >
-        {track.track_number}
-      </span>
+    <li className={cn('flex items-center gap-3 px-4 py-2.5', isActive && 'bg-fairy-500/10')}>
+      <div className="w-6 shrink-0 flex items-center justify-end">
+        {isActive
+          ? <ActiveTrackIndicator isActive={isActive} isPlaying={isPlaying} />
+          : (
+            <span
+              className="text-right text-xs tabular-nums text-caption/50"
+              aria-label={`Track ${track.track_number}`}
+            >
+              {track.track_number}
+            </span>
+          )
+        }
+      </div>
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{track.name}</p>
@@ -729,6 +773,16 @@ function PlaylistDetail({
     onError: () => toast({ message: 'Failed to play playlist', type: 'error' }),
   })
 
+  const pausePlaylist = useMutation({
+    mutationFn: () => api.sonos.pause(speaker!),
+    onSuccess: () => { /* state updates via polling */ },
+    onError: () => toast({ message: 'Failed to pause', type: 'error' }),
+  })
+
+  const nowPlayingState = useNowPlayingTrack(speaker)
+  const isPlaying = nowPlayingState?.playbackState === 'PLAYING'
+  const currentUri = nowPlayingState?.currentTrack?.uri
+
   const tracks = (data?.items ?? [])
     .map((item: SpotifyPlaylistTrackItem) => item.track)
     .filter((t): t is SpotifyTrack => t !== null)
@@ -756,11 +810,18 @@ function PlaylistDetail({
             {playlist.tracks.total} {playlist.tracks.total === 1 ? 'track' : 'tracks'}
           </p>
         </div>
+        <AlbumPlaylistMenu
+          uri={playlist.uri}
+          title={playlist.name}
+          artUri={playlist.images?.[0]?.url}
+          source="spotify"
+          speaker={speaker}
+        />
         <button
           type="button"
-          disabled={!speaker || playPlaylist.isPending}
-          onClick={() => playPlaylist.mutate()}
-          aria-label={`Play playlist ${playlist.name}`}
+          disabled={!speaker || playPlaylist.isPending || pausePlaylist.isPending}
+          onClick={() => isPlaying ? pausePlaylist.mutate() : playPlaylist.mutate()}
+          aria-label={isPlaying ? `Pause ${playlist.name}` : `Play playlist ${playlist.name}`}
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
             'text-white transition-colors hover:bg-fairy-400',
@@ -768,7 +829,10 @@ function PlaylistDetail({
             'disabled:opacity-40',
           )}
         >
-          <Play className="h-5 w-5" aria-hidden="true" />
+          {isPlaying
+            ? <Pause className="h-5 w-5" aria-hidden="true" />
+            : <Play className="h-5 w-5" aria-hidden="true" />
+          }
         </button>
       </div>
 
@@ -791,7 +855,13 @@ function PlaylistDetail({
       {tracks.length > 0 && (
         <ul className="-mx-4">
           {tracks.map((track, i) => (
-            <SpotifyTrackRow key={track.id + ':' + i} track={track} speaker={speaker} />
+            <SpotifyTrackRow
+              key={track.id + ':' + i}
+              track={track}
+              speaker={speaker}
+              isActive={!!currentUri && currentUri === track.uri}
+              isPlaying={isPlaying}
+            />
           ))}
         </ul>
       )}
@@ -1171,6 +1241,16 @@ function AlbumDetail({
     onError: () => toast({ message: 'Failed to play album', type: 'error' }),
   })
 
+  const pauseAlbum = useMutation({
+    mutationFn: () => api.sonos.pause(speaker!),
+    onSuccess: () => { /* state updates via polling */ },
+    onError: () => toast({ message: 'Failed to pause', type: 'error' }),
+  })
+
+  const nowPlayingState = useNowPlayingTrack(speaker)
+  const isPlaying = nowPlayingState?.playbackState === 'PLAYING'
+  const currentUri = nowPlayingState?.currentTrack?.uri
+
   const tracks = data?.items ?? []
 
   return (
@@ -1195,11 +1275,18 @@ function AlbumDetail({
             {album.artists.map(a => a.name).join(', ')}
           </p>
         </div>
+        <AlbumPlaylistMenu
+          uri={album.uri}
+          title={album.name}
+          artUri={album.images?.[0]?.url}
+          source="spotify"
+          speaker={speaker}
+        />
         <button
           type="button"
-          disabled={!speaker || playAlbum.isPending}
-          onClick={() => playAlbum.mutate()}
-          aria-label={`Play album ${album.name}`}
+          disabled={!speaker || playAlbum.isPending || pauseAlbum.isPending}
+          onClick={() => isPlaying ? pauseAlbum.mutate() : playAlbum.mutate()}
+          aria-label={isPlaying ? `Pause ${album.name}` : `Play album ${album.name}`}
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
             'text-white transition-colors hover:bg-fairy-400',
@@ -1207,7 +1294,10 @@ function AlbumDetail({
             'disabled:opacity-40',
           )}
         >
-          <Play className="h-5 w-5" aria-hidden="true" />
+          {isPlaying
+            ? <Pause className="h-5 w-5" aria-hidden="true" />
+            : <Play className="h-5 w-5" aria-hidden="true" />
+          }
         </button>
       </div>
 
@@ -1230,7 +1320,13 @@ function AlbumDetail({
       {tracks.length > 0 && (
         <ul className="-mx-4">
           {tracks.map((track, i) => (
-            <SpotifyAlbumTrackRow key={track.id + ':' + i} track={track} speaker={speaker} />
+            <SpotifyAlbumTrackRow
+              key={track.id + ':' + i}
+              track={track}
+              speaker={speaker}
+              isActive={!!currentUri && currentUri === track.uri}
+              isPlaying={isPlaying}
+            />
           ))}
         </ul>
       )}

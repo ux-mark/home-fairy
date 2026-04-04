@@ -1,5 +1,6 @@
 import { useMutation } from '@tanstack/react-query'
-import { Shuffle, SkipBack, Play, Pause, SkipForward, Repeat, Loader2 } from 'lucide-react'
+import { Shuffle, SkipBack, Play, Pause, SkipForward, Repeat, Repeat1, Music, Loader2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
@@ -10,33 +11,41 @@ interface PlaybackControlsProps {
   state: SonosPlaybackState
   /** Called after each successful mutation so the caller can refetch */
   onInvalidate: () => void
+  /** Show the Change music button (default: true) */
+  showChange?: boolean
 }
 
-/** Parse currentPlayMode into shuffle/repeat flags.
+/** Parse currentPlayMode into shuffle/repeatAll/repeatOne flags.
  *
- * Sonos play modes: NORMAL, SHUFFLE_NOREPEAT, SHUFFLE, REPEAT_ALL, REPEAT_ONE
- * node-sonos-http-api may also return SHUFFLE_REPEAT_ALL.
+ * Sonos play modes: NORMAL, SHUFFLE_NOREPEAT, SHUFFLE, REPEAT_ALL, REPEAT_ONE, SHUFFLE_REPEAT_ALL
  */
-function parsePlayMode(mode: string | undefined): { shuffle: boolean; repeat: boolean } {
-  if (!mode) return { shuffle: false, repeat: false }
+function parsePlayMode(mode: string | undefined): { shuffle: boolean; repeatAll: boolean; repeatOne: boolean } {
+  if (!mode) return { shuffle: false, repeatAll: false, repeatOne: false }
   const upper = mode.toUpperCase()
   const shuffle = upper.includes('SHUFFLE')
-  const repeat = upper.includes('REPEAT_ALL') || upper === 'REPEAT' || (upper.includes('REPEAT') && !upper.includes('NOREPEAT') && !upper.includes('REPEAT_ONE'))
-  return { shuffle, repeat }
+  const repeatOne = upper === 'REPEAT_ONE' || upper === 'SHUFFLE_REPEAT_ONE'
+  const repeatAll =
+    !repeatOne &&
+    (upper.includes('REPEAT_ALL') ||
+      upper === 'REPEAT' ||
+      (upper.includes('REPEAT') && !upper.includes('NOREPEAT') && !upper.includes('REPEAT_ONE')))
+  return { shuffle, repeatAll, repeatOne }
 }
 
 /**
- * Playback control row: shuffle | skip-back | play/pause | skip-forward | repeat
+ * Playback control row: shuffle | skip-back | play/pause | skip-forward | repeat-one | change
  *
  * - Shuffle and repeat buttons show highlighted state based on currentPlayMode.
  * - Skip/shuffle/repeat are disabled for TV and line-in sources.
+ * - Change navigates to /sonos/browse instead of opening a bottom sheet.
  */
-export function PlaybackControls({ speaker, state, onInvalidate }: PlaybackControlsProps) {
+export function PlaybackControls({ speaker, state, onInvalidate, showChange = true }: PlaybackControlsProps) {
   const { toast } = useToast()
+  const navigate = useNavigate()
 
   const isPlaying = state.playbackState === 'PLAYING'
   const isLineSource = state.inputSource === 'tv' || state.inputSource === 'line-in'
-  const { shuffle: shuffleActive, repeat: repeatActive } = parsePlayMode(state.currentPlayMode)
+  const { shuffle: shuffleActive, repeatAll: _repeatAllActive, repeatOne: repeatOneActive } = parsePlayMode(state.currentPlayMode)
 
   const playMutation = useMutation({
     mutationFn: () => api.sonos.play(speaker),
@@ -68,10 +77,13 @@ export function PlaybackControls({ speaker, state, onInvalidate }: PlaybackContr
     onError: () => toast({ message: 'Could not toggle shuffle', type: 'error' }),
   })
 
-  const repeatMutation = useMutation({
-    mutationFn: () => api.sonos.repeat(speaker, !repeatActive),
+  const repeatOneMutation = useMutation({
+    mutationFn: () =>
+      repeatOneActive
+        ? api.sonos.repeat(speaker, false, 'off')
+        : api.sonos.repeat(speaker, true, 'one'),
     onSuccess: onInvalidate,
-    onError: () => toast({ message: 'Could not toggle repeat', type: 'error' }),
+    onError: () => toast({ message: 'Could not toggle repeat one', type: 'error' }),
   })
 
   const playPausePending = playMutation.isPending || pauseMutation.isPending
@@ -167,24 +179,46 @@ export function PlaybackControls({ speaker, state, onInvalidate }: PlaybackContr
         )}
       </button>
 
-      {/* Repeat */}
+      {/* Repeat one */}
       <button
-        onClick={() => repeatMutation.mutate()}
-        disabled={isLineSource || repeatMutation.isPending}
-        aria-label={repeatActive ? 'Disable repeat' : 'Enable repeat'}
-        aria-pressed={repeatActive}
+        onClick={() => repeatOneMutation.mutate()}
+        disabled={isLineSource || repeatOneMutation.isPending}
+        aria-label={repeatOneActive ? 'Disable repeat one' : 'Repeat one track'}
+        aria-pressed={repeatOneActive}
         className={cn(
           'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          isLineSource || repeatMutation.isPending
+          isLineSource || repeatOneMutation.isPending
             ? 'cursor-not-allowed opacity-40 text-caption'
-            : repeatActive
+            : repeatOneActive
               ? 'text-fairy-400'
               : 'text-caption hover:text-body',
         )}
       >
-        <Repeat className="h-5 w-5" aria-hidden="true" />
+        {repeatOneMutation.isPending ? (
+          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+        ) : (
+          <Repeat1 className="h-5 w-5" aria-hidden="true" />
+        )}
       </button>
+
+      {/* Change music — navigates to Browse tab */}
+      {showChange && (
+        <button
+          onClick={() => navigate('/sonos/browse')}
+          className={cn(
+            'flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors',
+            'surface text-body hover:brightness-95 dark:hover:brightness-110',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          )}
+          aria-label="Change music"
+        >
+          <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
+          Change
+        </button>
+      )}
     </div>
   )
 }
+
+export { Repeat as RepeatAllIcon }
