@@ -906,7 +906,7 @@ function ArtistDetail({
             <section key={albumName} aria-label={albumName}>
               <button
                 type="button"
-                onClick={() => onSelectAlbum({ name: albumName, artist, albumArtUri: '', objectId: `A:ALBUMARTIST/${artist}/${albumName}` })}
+                onClick={() => onSelectAlbum({ name: albumName, artist, albumArtUri: '', objectId: `A:ALBUMARTIST/${encodeURIComponent(artist)}/${encodeURIComponent(albumName)}` })}
                 className={cn(
                   'flex w-full items-center gap-2 px-4 pb-1 pt-4 text-left',
                   'transition-colors hover:bg-[var(--bg-secondary)]',
@@ -926,7 +926,7 @@ function ArtistDetail({
                   <li className="px-4 py-2">
                     <button
                       type="button"
-                      onClick={() => onSelectAlbum({ name: albumName, artist, albumArtUri: '', objectId: `A:ALBUMARTIST/${artist}/${albumName}` })}
+                      onClick={() => onSelectAlbum({ name: albumName, artist, albumArtUri: '', objectId: `A:ALBUMARTIST/${encodeURIComponent(artist)}/${encodeURIComponent(albumName)}` })}
                       className="text-xs font-medium text-fairy-400 hover:text-fairy-300"
                     >
                       Show all {albumTracks.length} tracks
@@ -1221,7 +1221,7 @@ function SearchAlbumRow({
             name: album.name,
             artist: album.artist,
             albumArtUri: album.albumArtUri ?? '',
-            objectId: `A:ALBUMARTIST/${album.artist}/${album.name}`,
+            objectId: `A:ALBUMARTIST/${encodeURIComponent(album.artist)}/${encodeURIComponent(album.name)}`,
           })
         }
         className={cn(
