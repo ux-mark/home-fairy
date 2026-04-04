@@ -21,6 +21,8 @@ import {
 import { api } from '@/lib/api'
 import type {
   SonosLibraryTrack,
+  SonosSearchArtist,
+  SonosSearchAlbum,
   SonosGenreAlbum,
   NasEnrichedAlbum,
   NasEnrichedArtist,
@@ -28,6 +30,7 @@ import type {
 } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from './ArtworkImage'
 import { CountryList, CountryArtistList, isValidIsoCode, type CountryArtistItem } from './CountryBrowse'
@@ -1146,9 +1149,96 @@ function SongsList({ speaker }: { speaker: string | null }) {
   )
 }
 
+// ── Search result artist row ──────────────────────────────────────────────────
+
+function SearchArtistRow({
+  artist,
+  onSelect,
+}: {
+  artist: SonosSearchArtist
+  onSelect: (name: string) => void
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(artist.name)}
+        className={cn(
+          'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+          'transition-colors hover:bg-[var(--bg-secondary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <ArtworkImage src={artist.albumArtUri} size={40} rounded="rounded-full" fallback="user" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
+          <p className="text-xs text-caption">
+            {artist.trackCount} {artist.trackCount === 1 ? 'track' : 'tracks'}
+          </p>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+      </button>
+    </li>
+  )
+}
+
+// ── Search result album row ───────────────────────────────────────────────────
+
+function SearchAlbumRow({
+  album,
+  onSelect,
+}: {
+  album: SonosSearchAlbum
+  onSelect: (album: SonosGenreAlbum) => void
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() =>
+          onSelect({
+            name: album.name,
+            artist: album.artist,
+            albumArtUri: album.albumArtUri ?? '',
+            objectId: `A:ALBUMARTIST/${album.artist}/${album.name}`,
+          })
+        }
+        className={cn(
+          'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+          'transition-colors hover:bg-[var(--bg-secondary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <ArtworkImage src={album.albumArtUri} size={40} fallback="disc" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-heading">{album.name}</p>
+          <p className="truncate text-xs text-caption">{album.artist}</p>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+      </button>
+    </li>
+  )
+}
+
 // ── Search results view ───────────────────────────────────────────────────────
 
-function SearchResults({ query, speaker }: { query: string; speaker: string | null }) {
+function SearchResults({
+  query,
+  speaker,
+  onSelectArtist,
+  onSelectAlbum,
+}: {
+  query: string
+  speaker: string | null
+  onSelectArtist: (name: string) => void
+  onSelectAlbum: (album: SonosGenreAlbum) => void
+}) {
+  const [artistsOpen, setArtistsOpen] = useState(true)
+  const [albumsOpen, setAlbumsOpen] = useState(true)
+  const [songsOpen, setSongsOpen] = useState(true)
+
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['sonos-library-search', query],
     queryFn: () => api.sonos.searchLibrary(query),
@@ -1167,7 +1257,10 @@ function SearchResults({ query, speaker }: { query: string; speaker: string | nu
     )
   }
 
-  const totalResults = (data?.tracks?.length ?? 0)
+  const artists = data?.artists ?? []
+  const albums = data?.albums ?? []
+  const tracks = data?.tracks ?? []
+  const totalResults = artists.length + albums.length + tracks.length
 
   if (!data || totalResults === 0) {
     return (
@@ -1182,11 +1275,56 @@ function SearchResults({ query, speaker }: { query: string; speaker: string | nu
   }
 
   return (
-    <ul className="-mx-4">
-      {data.tracks.map((track, i) => (
-        <TrackRow key={track.uri + ':' + i} track={track} speaker={speaker} />
-      ))}
-    </ul>
+    <div className="flex flex-col gap-3">
+      {artists.length > 0 && (
+        <Accordion
+          id="nas-search-artists"
+          title="Artists"
+          open={artistsOpen}
+          onToggle={() => setArtistsOpen(v => !v)}
+          count={artists.length}
+          card={false}
+        >
+          <ul className="-mx-4">
+            {artists.map(artist => (
+              <SearchArtistRow key={artist.name} artist={artist} onSelect={onSelectArtist} />
+            ))}
+          </ul>
+        </Accordion>
+      )}
+      {albums.length > 0 && (
+        <Accordion
+          id="nas-search-albums"
+          title="Albums"
+          open={albumsOpen}
+          onToggle={() => setAlbumsOpen(v => !v)}
+          count={albums.length}
+          card={false}
+        >
+          <ul className="-mx-4">
+            {albums.map((album, i) => (
+              <SearchAlbumRow key={album.name + ':' + album.artist + ':' + i} album={album} onSelect={onSelectAlbum} />
+            ))}
+          </ul>
+        </Accordion>
+      )}
+      {tracks.length > 0 && (
+        <Accordion
+          id="nas-search-songs"
+          title="Songs"
+          open={songsOpen}
+          onToggle={() => setSongsOpen(v => !v)}
+          count={tracks.length}
+          card={false}
+        >
+          <ul className="-mx-4">
+            {tracks.map((track, i) => (
+              <TrackRow key={track.uri + ':' + i} track={track} speaker={speaker} />
+            ))}
+          </ul>
+        </Accordion>
+      )}
+    </div>
   )
 }
 
@@ -1244,7 +1382,14 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
   }
 
   if (isSearching) {
-    return <SearchResults query={debouncedQuery} speaker={speaker} />
+    return (
+      <SearchResults
+        query={debouncedQuery}
+        speaker={speaker}
+        onSelectArtist={handleSelectArtist}
+        onSelectAlbum={handleSelectAlbum}
+      />
+    )
   }
 
   if (view === 'country-artists' && selectedCountry) {
