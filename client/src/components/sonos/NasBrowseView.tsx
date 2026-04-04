@@ -1044,6 +1044,7 @@ function NasCountryList({
     country_code: a.country_code,
     country_name: a.country_name,
     sub_region: a.sub_region,
+    image_url: a.image_url,
   }))
 
   return (
@@ -1082,6 +1083,7 @@ function NasCountryArtistList({
     country_code: a.country_code,
     country_name: a.country_name,
     sub_region: a.sub_region,
+    image_url: a.image_url,
   }))
 
   return (

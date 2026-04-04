@@ -1821,6 +1821,7 @@ function SpotifyCountryList({
     country_code: a.country_code,
     country_name: a.country_name,
     sub_region: a.sub_region,
+    image_url: a.image_url,
   }))
 
   return (
@@ -1867,6 +1868,7 @@ function SpotifyCountryArtistList({
     country_code: a.country_code,
     country_name: a.country_name,
     sub_region: a.sub_region,
+    image_url: a.image_url,
   }))
 
   // Build a lookup of Spotify artist objects for rich rendering
@@ -1900,12 +1902,11 @@ function SpotifyCountryArtistList({
                 'transition-colors hover:bg-[var(--bg-secondary)]',
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
                 'min-h-[44px]',
-                !spotifyArtist && 'opacity-50',
               )}
-              disabled={!spotifyArtist}
             >
               <ArtworkImage
-                images={spotifyArtist?.images}
+                src={artist.image_url}
+                images={!artist.image_url ? spotifyArtist?.images : undefined}
                 size={48}
                 rounded="rounded-full"
                 fallback="user"

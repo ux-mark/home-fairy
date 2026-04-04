@@ -19,6 +19,7 @@ export interface CountryArtistItem {
   country_code: string | null
   country_name: string | null
   sub_region: string | null
+  image_url?: string | null
 }
 
 interface CountryEntry {
