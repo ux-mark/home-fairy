@@ -1,8 +1,12 @@
 import { useRef, useEffect, useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
 import { Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { api } from '@/lib/api'
+import { useToast } from '@/hooks/useToast'
 import type { SonosPlaybackState, SonosNowPlayingEntry } from '@/lib/api'
 import { UnifiedPlaybackCard } from './UnifiedPlaybackCard'
+import { VolumeGroupPopover } from './VolumeGroupPopover'
 import { GroupManager } from './GroupManager'
 
 interface SonosGroupCardProps {
@@ -14,6 +18,7 @@ interface SonosGroupCardProps {
 }
 
 export function SonosGroupCard({ coordinator, members, onRefresh, allSpeakers, focusSpeaker }: SonosGroupCardProps) {
+  const { toast } = useToast()
   const allGroupNames = [coordinator.speakerName, ...members.map(m => m.speakerName)]
   const isFocused = focusSpeaker != null && allGroupNames.includes(focusSpeaker)
   const [groupManagerOpen, setGroupManagerOpen] = useState(false)
@@ -28,6 +33,11 @@ export function SonosGroupCard({ coordinator, members, onRefresh, allSpeakers, f
   const coordinatorName = coordinator.speakerName
   const coordinatorRoom = coordinator.roomName
   const state: SonosPlaybackState | null = coordinator.state
+
+  const volumeMutation = useMutation({
+    mutationFn: (level: number) => api.sonos.setVolume(coordinatorName, level),
+    onError: () => toast({ message: `Couldn't update group volume`, type: 'error' }),
+  })
 
   const isPlaying = state?.playbackState === 'PLAYING'
   const isPaused = state?.playbackState === 'PAUSED_PLAYBACK'
@@ -84,7 +94,7 @@ export function SonosGroupCard({ coordinator, members, onRefresh, allSpeakers, f
         </span>
       </div>
 
-      {/* Unified playback card — card variant, no volume (volume is Playing-only) */}
+      {/* Unified playback card — card variant */}
       <UnifiedPlaybackCard
         speaker={coordinatorName}
         roomName={coordinatorRoom}
@@ -98,6 +108,19 @@ export function SonosGroupCard({ coordinator, members, onRefresh, allSpeakers, f
         queueLimit={5}
         showGroupSpeakers={true}
       />
+
+      {/* Volume control — with group popover for member volumes */}
+      <div className="mt-3">
+        <p className="mb-1.5 text-xs font-medium text-caption">Volume</p>
+        <VolumeGroupPopover
+          speaker={coordinatorName}
+          value={state?.volume ?? 0}
+          onChange={level => volumeMutation.mutate(level)}
+          group={groupInfo}
+          allSpeakers={allSpeakers}
+          label="Group volume"
+        />
+      </div>
 
       {/* Group manager */}
       <GroupManager

@@ -2,8 +2,12 @@ import { useRef, useEffect, useState } from 'react'
 import { Link2, Radio, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { SonosPlaybackState, SonosGroupInfo, SonosNowPlayingEntry } from '@/lib/api'
+import { SonosVolumeControl } from './SonosVolumeControl'
 import { UnifiedPlaybackCard } from './UnifiedPlaybackCard'
 import { GroupManager } from './GroupManager'
+import { useMutation } from '@tanstack/react-query'
+import { api } from '@/lib/api'
+import { useToast } from '@/hooks/useToast'
 
 interface SonosSpeakerCardProps {
   roomName: string
@@ -26,6 +30,7 @@ export function SonosSpeakerCard({
   allSpeakers,
   focusSpeaker,
 }: SonosSpeakerCardProps) {
+  const { toast } = useToast()
   const isFocused = focusSpeaker === speakerName
   const [groupManagerOpen, setGroupManagerOpen] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -35,6 +40,11 @@ export function SonosSpeakerCard({
       cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }, [isFocused])
+
+  const volumeMutation = useMutation({
+    mutationFn: (level: number) => api.sonos.setVolume(speakerName, level),
+    onError: () => toast({ message: `Couldn't update volume for ${roomName}`, type: 'error' }),
+  })
 
   const isPlaying = state?.playbackState === 'PLAYING'
   const isPaused = state?.playbackState === 'PAUSED_PLAYBACK'
@@ -92,7 +102,7 @@ export function SonosSpeakerCard({
         </span>
       </div>
 
-      {/* Unified playback card — card variant, no volume (volume is Playing-only) */}
+      {/* Unified playback card — card variant, no volume (handled below separately) */}
       <UnifiedPlaybackCard
         speaker={speakerName}
         roomName={roomName}
@@ -107,6 +117,18 @@ export function SonosSpeakerCard({
         queueLimit={5}
         showGroupSpeakers={true}
       />
+
+      {/* Volume control — kept separate per original design */}
+      <div className="mt-3">
+        <p className="mb-1.5 text-xs font-medium text-caption">Volume</p>
+        <SonosVolumeControl
+          value={state?.volume ?? 0}
+          onChange={level => volumeMutation.mutate(level)}
+          label={`${roomName} volume`}
+          disabled={!!error}
+          loading={volumeMutation.isPending}
+        />
+      </div>
 
       {/* Group manager bottom sheet */}
       <GroupManager
