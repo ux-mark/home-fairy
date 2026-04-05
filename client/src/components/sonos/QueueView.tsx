@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   DndContext,
@@ -28,7 +28,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
-import { getSocket } from '@/hooks/useSocket'
+import { useQueueSync } from '@/hooks/useQueueSync'
 import { useToast } from '@/hooks/useToast'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -244,32 +244,10 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
 
   const queueKey = ['sonos', 'queue', speaker]
 
-  const {
-    data: queue,
-    isLoading,
-    isError,
-    refetch,
-  } = useQuery({
-    queryKey: queueKey,
-    queryFn: () => api.sonos.getQueue(speaker),
-    refetchInterval: 30_000,
-    staleTime: 29_000,
+  const { queue, isLoading, isError, refetch } = useQueueSync({
+    speaker,
     enabled: open && !!speaker,
-    retry: 1,
   })
-
-  useEffect(() => {
-    if (!open || !speaker) return
-    const s = getSocket()
-    function handleQueueUpdate(event: { speaker: string; action: string; queue: SonosQueueItem[] }) {
-      if (event.speaker !== speaker) return
-      queryClient.setQueryData<SonosQueueItem[]>(queueKey, event.queue)
-    }
-    s.on('sonos:queue-update', handleQueueUpdate)
-    return () => {
-      s.off('sonos:queue-update', handleQueueUpdate)
-    }
-  }, [open, speaker, queryClient]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),

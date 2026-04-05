@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Search, X, Music, Radio, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
@@ -152,19 +153,9 @@ interface BrowseTabProps {
 export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
   const [activeSource, setActiveSource] = useState<SourceFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
-  const [pendingNasArtist, setPendingNasArtist] = useState<string | null>(null)
-  const [pendingNasAlbum, setPendingNasAlbum] = useState<SonosGenreAlbum | null>(null)
-  const [pendingSpotifyAlbum, setPendingSpotifyAlbum] = useState<SpotifyAlbum | null>(null)
-  const [pendingSpotifyArtist, setPendingSpotifyArtist] = useState<SpotifyArtist | null>(null)
-  const [pendingSpotifyPlaylist, setPendingSpotifyPlaylist] = useState<SpotifyPlaylist | null>(null)
+  const navigate = useNavigate()
 
-  function clearPending() {
-    setPendingNasArtist(null)
-    setPendingNasAlbum(null)
-    setPendingSpotifyAlbum(null)
-    setPendingSpotifyArtist(null)
-    setPendingSpotifyPlaylist(null)
-  }
+  const speakerQuery = targetSpeaker ? `?speaker=${encodeURIComponent(targetSpeaker)}` : ''
 
   return (
     <div className="flex flex-col gap-4">
@@ -217,7 +208,7 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
               role="tab"
               aria-selected={isActive}
               aria-controls={`browse-panel-${id}`}
-              onClick={() => { setActiveSource(id); clearPending() }}
+              onClick={() => setActiveSource(id)}
               className={cn(
                 'shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors',
                 'min-h-[36px]',
@@ -244,34 +235,27 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
             searchQuery={searchQuery}
             targetSpeaker={targetSpeaker}
             onSelectNasArtist={(name) => {
-              clearPending()
-              setPendingNasArtist(name)
               setSearchQuery('')
-              setActiveSource('nas')
+              navigate(`/sonos/browse/nas/artist/${encodeURIComponent(name)}${speakerQuery}`)
             }}
-            onSelectNasAlbum={(album) => {
-              clearPending()
-              setPendingNasAlbum(album)
+            onSelectNasAlbum={(album: SonosGenreAlbum) => {
               setSearchQuery('')
-              setActiveSource('nas')
+              navigate(
+                `/sonos/browse/nas/album/${encodeURIComponent(album.artist)}/${encodeURIComponent(album.name)}${speakerQuery}`,
+                { state: { objectId: album.objectId } },
+              )
             }}
-            onSelectSpotifyAlbum={(album) => {
-              clearPending()
-              setPendingSpotifyAlbum(album)
+            onSelectSpotifyAlbum={(album: SpotifyAlbum) => {
               setSearchQuery('')
-              setActiveSource('spotify')
+              navigate(`/sonos/browse/spotify/album/${encodeURIComponent(album.id)}${speakerQuery}`)
             }}
-            onSelectSpotifyArtist={(artist) => {
-              clearPending()
-              setPendingSpotifyArtist(artist)
+            onSelectSpotifyArtist={(artist: SpotifyArtist) => {
               setSearchQuery('')
-              setActiveSource('spotify')
+              navigate(`/sonos/browse/spotify/artist/${encodeURIComponent(artist.id)}${speakerQuery}`)
             }}
-            onSelectSpotifyPlaylist={(playlist) => {
-              clearPending()
-              setPendingSpotifyPlaylist(playlist)
+            onSelectSpotifyPlaylist={(playlist: SpotifyPlaylist) => {
               setSearchQuery('')
-              setActiveSource('spotify')
+              navigate(`/sonos/browse/spotify/playlist/${encodeURIComponent(playlist.id)}${speakerQuery}`)
             }}
           />
         ) : activeSource === 'all' ? (
@@ -281,17 +265,12 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
           <NasBrowseView
             searchQuery={searchQuery}
             targetSpeaker={targetSpeaker}
-            initialArtist={pendingNasArtist}
-            initialAlbum={pendingNasAlbum}
           />
         )}
         {activeSource === 'spotify' && (
           <SpotifyBrowseView
             searchQuery={searchQuery}
             targetSpeaker={targetSpeaker}
-            initialAlbum={pendingSpotifyAlbum}
-            initialArtist={pendingSpotifyArtist}
-            initialPlaylist={pendingSpotifyPlaylist}
           />
         )}
         {activeSource === 'radio' && (

@@ -26,6 +26,7 @@ import type {
   EnrichmentProgress,
 } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
+import { useFirstSpeaker, useDebounce, useNowPlayingTrack } from '@/hooks/useBrowseShared'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
@@ -40,45 +41,6 @@ import { MusicListItem } from './MusicListItem'
 
 type NasView = 'home' | 'artist-detail' | 'album-detail' | 'country-artists'
 type BrowseMode = 'countries' | 'albums' | 'artists' | 'songs'
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function useFirstSpeaker() {
-  const { data: zones } = useQuery({
-    queryKey: ['sonos-zones'],
-    queryFn: api.sonos.getZones,
-    staleTime: 30_000,
-  })
-  return zones?.[0]?.members?.[0]?.roomName ?? zones?.[0]?.coordinator?.roomName ?? null
-}
-
-function useDebounce<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (timerRef.current !== null) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => setDebounced(value), delay)
-    return () => {
-      if (timerRef.current !== null) clearTimeout(timerRef.current)
-    }
-  }, [value, delay])
-
-  return debounced
-}
-
-function useNowPlayingTrack(speaker: string | null) {
-  const { data: nowPlaying } = useQuery({
-    queryKey: ['sonos', 'now-playing'],
-    queryFn: api.sonos.getNowPlaying,
-    refetchInterval: 5_000,
-    staleTime: 4_000,
-    enabled: !!speaker,
-  })
-  if (!speaker || !nowPlaying) return null
-  const entry = nowPlaying.find(e => e.speakerName === speaker || e.roomName === speaker)
-  return entry?.state ?? null
-}
 
 // ── Track row ─────────────────────────────────────────────────────────────────
 
@@ -1435,11 +1397,9 @@ function SearchResults({
 interface NasBrowseViewProps {
   searchQuery: string
   targetSpeaker?: string | null
-  initialArtist?: string | null
-  initialAlbum?: SonosGenreAlbum | null
 }
 
-export function NasBrowseView({ searchQuery, targetSpeaker, initialArtist, initialAlbum }: NasBrowseViewProps) {
+export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps) {
   const [view, setView] = useState<NasView>('home')
   const [browseMode, setBrowseMode] = useState<BrowseMode>('countries')
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null)
@@ -1450,20 +1410,6 @@ export function NasBrowseView({ searchQuery, targetSpeaker, initialArtist, initi
 
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
   const isSearching = debouncedQuery.length > 0
-
-  useEffect(() => {
-    if (initialArtist) {
-      setSelectedArtist(initialArtist)
-      setView('artist-detail')
-    }
-  }, [initialArtist])
-
-  useEffect(() => {
-    if (initialAlbum) {
-      setSelectedAlbum(initialAlbum)
-      setView('album-detail')
-    }
-  }, [initialAlbum])
 
   function handleSelectArtist(name: string) {
     setSelectedArtist(name)
