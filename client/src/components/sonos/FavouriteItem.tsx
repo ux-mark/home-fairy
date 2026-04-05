@@ -582,7 +582,7 @@ export function FavouriteItem({
           source: item.source,
           source_uri: item.source_uri,
           title: item.title,
-          album_art_uri: item.album_art_uri,
+          album_art_uri: item.album_art_uri ?? undefined,
         }}
       />
 

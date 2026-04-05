@@ -108,11 +108,12 @@ function SortableItemRow({
   })
 
   const playNext = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (item.source === 'spotify') {
-        return api.sonos.playSpotify(speaker!, item.source_uri, 'next')
+        await api.sonos.playSpotify(speaker!, item.source_uri, 'next')
+      } else {
+        await api.sonos.playNext(speaker!, item.source_uri)
       }
-      return api.sonos.playNext(speaker!, item.source_uri)
     },
     onSuccess: () => {
       toast({ message: `"${item.title}" will play next` })
@@ -122,11 +123,12 @@ function SortableItemRow({
   })
 
   const addToQueue = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       if (item.source === 'spotify') {
-        return api.sonos.playSpotify(speaker!, item.source_uri, 'queue')
+        await api.sonos.playSpotify(speaker!, item.source_uri, 'queue')
+      } else {
+        await api.sonos.addToQueue(speaker!, item.source_uri)
       }
-      return api.sonos.addToQueue(speaker!, item.source_uri)
     },
     onSuccess: () => {
       toast({ message: `Added "${item.title}" to queue` })
@@ -140,7 +142,7 @@ function SortableItemRow({
       source: item.source as 'sonos' | 'spotify' | 'nas' | 'radio',
       source_uri: item.source_uri,
       title: item.title,
-      album_art_uri: item.album_art_uri,
+      album_art_uri: item.album_art_uri ?? undefined,
     }),
     onSuccess: () => toast({ message: `Added "${item.title}" to favourites` }),
     onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
@@ -219,8 +221,8 @@ function SortableItemRow({
             source: item.source as 'sonos' | 'spotify' | 'nas' | 'radio',
             source_uri: item.source_uri,
             title: item.title,
-            artist: item.artist,
-            album_art_uri: item.album_art_uri,
+            artist: item.artist ?? undefined,
+            album_art_uri: item.album_art_uri ?? undefined,
           }}
           spotifyTrack={item.source === 'spotify' ? { trackUri: item.source_uri, trackName: item.title } : undefined}
         />
