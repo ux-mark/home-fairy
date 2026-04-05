@@ -169,7 +169,7 @@ function SortableQueueItem({
           </button>
         )}
 
-        {/* Remove */}
+        {/* Remove — bin icon + text, destructive pattern */}
         <button
           onClick={() => onRemove(index)}
           className="flex h-11 w-11 items-center justify-center rounded-lg text-red-400/70 hover:text-red-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
