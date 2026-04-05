@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -21,37 +21,12 @@ import type {
   SpotifyPlaylist,
 } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
+import { useFirstSpeaker, useDebounce } from '@/hooks/useBrowseShared'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from './ArtworkImage'
 import { MusicListItem } from './MusicListItem'
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function useFirstSpeaker() {
-  const { data: zones } = useQuery({
-    queryKey: ['sonos-zones'],
-    queryFn: api.sonos.getZones,
-    staleTime: 30_000,
-  })
-  return zones?.[0]?.members?.[0]?.roomName ?? zones?.[0]?.coordinator?.roomName ?? null
-}
-
-function useDebounce<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (timerRef.current !== null) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => setDebounced(value), delay)
-    return () => {
-      if (timerRef.current !== null) clearTimeout(timerRef.current)
-    }
-  }, [value, delay])
-
-  return debounced
-}
 
 // ── Skeleton ─────────────────────────────────────────────────────────────────
 

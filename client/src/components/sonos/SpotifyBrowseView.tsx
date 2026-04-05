@@ -32,6 +32,7 @@ import type {
   EnrichmentProgress,
 } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
+import { useFirstSpeaker, useDebounce, useNowPlayingTrack } from '@/hooks/useBrowseShared'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
@@ -49,43 +50,6 @@ type BrowseMode = 'playlists' | 'countries' | 'podcasts' | 'albums' | 'artists' 
 type PlaylistSort = 'recent' | 'a-z' | 'z-a'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-
-function useFirstSpeaker() {
-  const { data: zones } = useQuery({
-    queryKey: ['sonos-zones'],
-    queryFn: api.sonos.getZones,
-    staleTime: 30_000,
-  })
-  return zones?.[0]?.members?.[0]?.roomName ?? zones?.[0]?.coordinator?.roomName ?? null
-}
-
-function useDebounce<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (timerRef.current !== null) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => setDebounced(value), delay)
-    return () => {
-      if (timerRef.current !== null) clearTimeout(timerRef.current)
-    }
-  }, [value, delay])
-
-  return debounced
-}
-
-function useNowPlayingTrack(speaker: string | null) {
-  const { data: nowPlaying } = useQuery({
-    queryKey: ['sonos', 'now-playing'],
-    queryFn: api.sonos.getNowPlaying,
-    refetchInterval: 5_000,
-    staleTime: 4_000,
-    enabled: !!speaker,
-  })
-  if (!speaker || !nowPlaying) return null
-  const entry = nowPlaying.find(e => e.speakerName === speaker || e.roomName === speaker)
-  return entry?.state ?? null
-}
 
 function formatDuration(ms: number): string {
   const totalSecs = Math.round(ms / 1000)
@@ -2259,12 +2223,9 @@ function SpotifyCountryArtistList({
 interface SpotifyBrowseViewProps {
   searchQuery: string
   targetSpeaker?: string | null
-  initialAlbum?: SpotifyAlbum | null
-  initialArtist?: SpotifyArtist | null
-  initialPlaylist?: SpotifyPlaylist | null
 }
 
-export function SpotifyBrowseView({ searchQuery, targetSpeaker, initialAlbum, initialArtist, initialPlaylist }: SpotifyBrowseViewProps) {
+export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseViewProps) {
   const [view, setView] = useState<SpotifyView>('home')
   const [browseMode, setBrowseMode] = useState<BrowseMode>('playlists')
   const [selectedPlaylist, setSelectedPlaylist] = useState<SpotifyPlaylist | null>(null)
@@ -2278,27 +2239,6 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker, initialAlbum, in
 
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
   const isSearching = debouncedQuery.length > 0
-
-  useEffect(() => {
-    if (initialAlbum) {
-      setSelectedAlbum(initialAlbum)
-      setView('album-detail')
-    }
-  }, [initialAlbum])
-
-  useEffect(() => {
-    if (initialArtist) {
-      setSelectedArtist(initialArtist)
-      setView('artist-detail')
-    }
-  }, [initialArtist])
-
-  useEffect(() => {
-    if (initialPlaylist) {
-      setSelectedPlaylist(initialPlaylist)
-      setView('playlist-detail')
-    }
-  }, [initialPlaylist])
 
   const {
     data: statusData,

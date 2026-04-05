@@ -1,5 +1,4 @@
-import { useEffect } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
   DndContext,
@@ -32,7 +31,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
-import { getSocket } from '@/hooks/useSocket'
+import { useQueueSync } from '@/hooks/useQueueSync'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
@@ -62,7 +61,6 @@ interface SortableQueueItemProps {
   isCurrentTrack: boolean
   onRemove: (index: number) => void
   onPlayNext: (uri: string) => void
-  isFirst: boolean
   speaker: string
 }
 
@@ -72,7 +70,6 @@ function SortableQueueItem({
   isCurrentTrack,
   onRemove,
   onPlayNext,
-  isFirst: _isFirst,
   speaker,
 }: SortableQueueItemProps) {
   const navigate = useNavigate()
@@ -225,32 +222,10 @@ export function InlineQueue({
 
   const queueKey = ['sonos', 'queue', speaker]
 
-  const {
-    data: queue,
-    isLoading,
-    isError,
-    refetch,
-  } = useQuery({
-    queryKey: queueKey,
-    queryFn: () => api.sonos.getQueue(speaker),
-    refetchInterval: expanded ? 30_000 : false,
-    staleTime: 29_000,
+  const { queue, isLoading, isError, refetch } = useQueueSync({
+    speaker,
     enabled: expanded && !!speaker,
-    retry: 1,
   })
-
-  useEffect(() => {
-    if (!expanded || !speaker) return
-    const s = getSocket()
-    function handleQueueUpdate(event: { speaker: string; action: string; queue: SonosQueueItem[] }) {
-      if (event.speaker !== speaker) return
-      queryClient.setQueryData<SonosQueueItem[]>(queueKey, event.queue)
-    }
-    s.on('sonos:queue-update', handleQueueUpdate)
-    return () => {
-      s.off('sonos:queue-update', handleQueueUpdate)
-    }
-  }, [expanded, speaker, queryClient]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -420,7 +395,6 @@ export function InlineQueue({
                         isCurrentTrack={isCurrentTrack}
                         onRemove={handleRemove}
                         onPlayNext={handlePlayNext}
-                        isFirst={i === 0}
                         speaker={speaker}
                       />
                     )

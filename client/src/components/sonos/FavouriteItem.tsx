@@ -7,6 +7,7 @@ import type { UserFavourite } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { AddToFairylistDialog } from './AddToFairylistDialog'
 import { AddToSpotifyPlaylistDialog } from './AddToSpotifyPlaylistDialog'
+import { useSwipeGesture } from '@/hooks/useSwipeGesture'
 
 // ── Source badge ──────────────────────────────────────────────────────────────
 
@@ -211,12 +212,7 @@ export function FavouriteItem({
   const [fairylistOpen, setFairylistOpen] = useState(false)
   const [spotifyPlaylistOpen, setSpotifyPlaylistOpen] = useState(false)
   const menuBtnRef = useRef<HTMLButtonElement>(null)
-  // liveX only meaningful during an active gesture; at rest, position is derived
-  // from isSwipeOpen so no effect-based sync is needed
-  const [liveX, setLiveX] = useState(0)
-  const [isGesturing, setIsGesturing] = useState(false)
   const isSwipeOpen = swipedItemId === item.id
-  const translateX = isGesturing ? liveX : (isSwipeOpen ? -TRAY_WIDTH : 0)
 
   const {
     attributes,
@@ -228,57 +224,16 @@ export function FavouriteItem({
   } = useSortable({ id: item.id })
 
   const contentRef = useRef<HTMLDivElement>(null)
-  const touchStartRef = useRef<{ x: number; y: number } | null>(null)
-  const gestureTypeRef = useRef<'none' | 'horizontal' | 'vertical'>('none')
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Ref mirrors isGesturing for use inside the native event handler closure
-  const isGesturingRef = useRef(false)
 
-  // Non-passive touchmove listener so we can preventDefault during horizontal swipe
-  useEffect(() => {
-    const el = contentRef.current
-    if (!el) return
-
-    function onTouchMove(e: TouchEvent) {
-      if (!touchStartRef.current) return
-
-      const touch = e.touches[0]
-      const dx = touch.clientX - touchStartRef.current.x
-      const dy = touch.clientY - touchStartRef.current.y
-      const absDx = Math.abs(dx)
-      const absDy = Math.abs(dy)
-
-      // Cancel long-press on any significant movement
-      if ((absDx > 5 || absDy > 5) && longPressTimerRef.current) {
-        clearTimeout(longPressTimerRef.current)
-        longPressTimerRef.current = null
-      }
-
-      // Determine gesture direction (first one to exceed threshold wins)
-      if (gestureTypeRef.current === 'none') {
-        if (absDx > 5 && absDx >= absDy) {
-          gestureTypeRef.current = 'horizontal'
-          isGesturingRef.current = true
-          setIsGesturing(true)
-        } else if (absDy > 5 && absDy > absDx) {
-          gestureTypeRef.current = 'vertical'
-        }
-      }
-
-      // Horizontal swipe: follow finger, clamped to tray bounds
-      if (gestureTypeRef.current === 'horizontal') {
-        e.preventDefault()
-        // swipedItemId and item.id are captured from the effect closure,
-        // which re-runs whenever swipedItemId changes
-        const baseX = swipedItemId === item.id ? -TRAY_WIDTH : 0
-        const newX = Math.max(-TRAY_WIDTH, Math.min(0, baseX + dx))
-        setLiveX(newX)
-      }
-    }
-
-    el.addEventListener('touchmove', onTouchMove, { passive: false })
-    return () => el.removeEventListener('touchmove', onTouchMove)
-  }, [item.id, swipedItemId])
+  const { translateX: swipeTranslateX, isGesturing, handleTouchStart, handleTouchEnd } = useSwipeGesture({
+    ref: contentRef,
+    trayWidth: TRAY_WIDTH,
+    isOpen: isSwipeOpen,
+    hasOtherOpen: swipedItemId !== null && swipedItemId !== item.id,
+    onSwipeOpen: () => onSwipeOpen(item.id),
+    onCloseOther: () => onSwipeOpen(null),
+    onLongPress: () => setShowBottomSheet(true),
+  })
 
   const dndStyle = {
     transform: CSS.Transform.toString(transform),
@@ -286,62 +241,6 @@ export function FavouriteItem({
   }
 
   const badge = SOURCE_BADGE[item.source]
-
-  // ── Touch handlers (synthetic, on content layer) ──────────────────────────
-
-  function handleTouchStart(e: React.TouchEvent) {
-    // Don't intercept touches that begin on the drag handle
-    if ((e.target as HTMLElement).closest('[data-drag-handle]')) return
-
-    // Close any other item's tray when we start a gesture here
-    if (swipedItemId !== null && swipedItemId !== item.id) {
-      onSwipeOpen(null)
-    }
-
-    const touch = e.touches[0]
-    touchStartRef.current = { x: touch.clientX, y: touch.clientY }
-    gestureTypeRef.current = 'none'
-    // Seed liveX so drag starts from the item's current resting position
-    setLiveX(isSwipeOpen ? -TRAY_WIDTH : 0)
-
-    // Long-press fires after 500 ms of stillness
-    longPressTimerRef.current = setTimeout(() => {
-      if (gestureTypeRef.current === 'none') {
-        if (typeof navigator !== 'undefined' && navigator.vibrate) {
-          navigator.vibrate(50)
-        }
-        setShowBottomSheet(true)
-      }
-    }, 500)
-  }
-
-  function handleTouchEnd(e: React.TouchEvent) {
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current)
-      longPressTimerRef.current = null
-    }
-
-    if (gestureTypeRef.current === 'horizontal' && touchStartRef.current) {
-      const changedTouch = e.changedTouches[0]
-      const dx = changedTouch.clientX - touchStartRef.current.x
-      const baseX = isSwipeOpen ? -TRAY_WIDTH : 0
-      const finalX = baseX + dx
-
-      // Snap: open if past halfway, else close
-      if (finalX < -(TRAY_WIDTH / 2)) {
-        onSwipeOpen(item.id)
-        setLiveX(-TRAY_WIDTH)
-      } else {
-        onSwipeOpen(null)
-        setLiveX(0)
-      }
-    }
-
-    isGesturingRef.current = false
-    setIsGesturing(false)
-    touchStartRef.current = null
-    gestureTypeRef.current = 'none'
-  }
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -393,7 +292,7 @@ export function FavouriteItem({
           ref={contentRef}
           className="relative flex items-center gap-3 px-4 py-2.5 bg-[var(--bg-primary)]"
           style={{
-            transform: `translateX(${translateX}px)`,
+            transform: `translateX(${swipeTranslateX}px)`,
             transition: isGesturing ? 'none' : 'transform 0.2s ease-out',
             willChange: 'transform',
           }}
@@ -582,7 +481,7 @@ export function FavouriteItem({
           source: item.source,
           source_uri: item.source_uri,
           title: item.title,
-          album_art_uri: item.album_art_uri,
+          album_art_uri: item.album_art_uri ?? undefined,
         }}
       />
 
