@@ -83,7 +83,7 @@ export function useFairylistEditor({
     onError: () => toast({ message: 'Could not delete Fairylist', type: 'error' }),
   })
 
-  const removeMutation = useMutation({
+  const removeMutation = useMutation<unknown, unknown, number, { prev?: FairylistData }>({
     mutationFn: (itemId: number) => api.fairylists.removeItem(fairylistId, itemId),
     onMutate: async (itemId) => {
       await queryClient.cancelQueries({ queryKey: detailKey })
