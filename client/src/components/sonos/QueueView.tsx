@@ -23,17 +23,18 @@ import {
   AlertTriangle,
   GripVertical,
   ImageOff,
-  ListStart,
   Music2,
-  Trash2,
+  Play,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
 import { getSocket } from '@/hooks/useSocket'
 import { useToast } from '@/hooks/useToast'
+import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { SortableOverlay } from '@/components/ui/SortableOverlay'
 import { QueueHeader } from './QueueHeader'
+import { MusicItemMenu } from './MusicItemMenu'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -64,11 +65,13 @@ function SortableQueueItem({
   isCurrentTrack,
   onRemove,
   onPlayNext,
-  isFirst,
+  isFirst: _isFirst,
   speaker,
 }: SortableQueueItemProps) {
   const [imgFailed, setImgFailed] = useState(false)
   const navigate = useNavigate()
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
 
   const {
     attributes,
@@ -83,6 +86,40 @@ function SortableQueueItem({
     transform: CSS.Transform.toString(transform),
     transition,
   }
+
+  const source = item.uri?.startsWith('spotify:') ? 'spotify' : 'nas'
+
+  const playNow = useMutation({
+    mutationFn: () => {
+      if (item.uri?.startsWith('spotify:')) {
+        return api.sonos.playSpotify(speaker, item.uri, 'now')
+      }
+      return api.sonos.playUri(speaker, item.uri)
+    },
+    onSuccess: () => toast({ message: `Playing "${item.title}"` }),
+    onError: () => toast({ message: 'Failed to play', type: 'error' }),
+  })
+
+  const addToQueueMut = useMutation({
+    mutationFn: () => api.sonos.addToQueue(speaker, item.uri),
+    onSuccess: () => {
+      toast({ message: `Added "${item.title}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const addToFavourites = useMutation({
+    mutationFn: () =>
+      api.favourites.add({
+        source,
+        source_uri: item.uri,
+        title: item.title,
+        album_art_uri: item.albumArtUri ?? undefined,
+      }),
+    onSuccess: () => toast({ message: `Added "${item.title}" to favourites` }),
+    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
+  })
 
   function handleTitleClick() {
     if (item.uri) {
@@ -158,25 +195,42 @@ function SortableQueueItem({
 
       {/* Actions */}
       <div className="flex shrink-0 items-center gap-1">
-        {/* Play Next — not shown for the currently-playing first item */}
-        {!isFirst && (
-          <button
-            onClick={() => onPlayNext(item.uri)}
-            className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 hover:text-slate-200 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-            aria-label={`Play ${item.title} next`}
-          >
-            <ListStart className="h-4 w-4" aria-hidden="true" />
-          </button>
-        )}
-
-        {/* Remove — bin icon + text, destructive pattern */}
+        {/* Play now — icon-only acceptable for universally-recognised play symbol */}
         <button
-          onClick={() => onRemove(index)}
-          className="flex h-11 w-11 items-center justify-center rounded-lg text-red-400/70 hover:text-red-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-          aria-label={`Remove ${item.title} from queue`}
+          type="button"
+          disabled={playNow.isPending}
+          onClick={() => playNow.mutate()}
+          aria-label={`Play ${item.title}`}
+          className={cn(
+            'flex h-11 w-11 items-center justify-center rounded-lg',
+            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'disabled:opacity-40',
+          )}
         >
-          <Trash2 className="h-4 w-4" aria-hidden="true" />
+          <Play className="h-4 w-4" aria-hidden="true" />
         </button>
+
+        <MusicItemMenu
+          label={item.title}
+          onPlayNext={() => onPlayNext(item.uri)}
+          onAddToQueue={() => addToQueueMut.mutate()}
+          onAddToFavourites={() => addToFavourites.mutate()}
+          onRemove={() => onRemove(index)}
+          removeLabel="Remove from queue"
+          fairylistTrack={{
+            source,
+            source_uri: item.uri,
+            title: item.title,
+            artist: item.artist,
+            album_art_uri: item.albumArtUri ?? undefined,
+          }}
+          spotifyTrack={
+            item.uri?.startsWith('spotify:')
+              ? { trackUri: item.uri, trackName: item.title }
+              : undefined
+          }
+        />
       </div>
     </li>
   )

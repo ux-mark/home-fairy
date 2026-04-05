@@ -1,15 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
-import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ChevronRight,
   HardDrive,
-  Heart,
-  ListEnd,
-  ListPlus,
-  ListStart,
-  MoreVertical,
   Music2,
   Play,
   Radio,
@@ -28,8 +22,8 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from './ArtworkImage'
-import { AddToFairylistDialog } from './AddToFairylistDialog'
-import { AddToSpotifyPlaylistDialog } from './AddToSpotifyPlaylistDialog'
+import { MusicItemMenu } from './MusicItemMenu'
+import { MusicListItem } from './MusicListItem'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -115,10 +109,6 @@ function SectionError({ message, onRetry }: { message: string; onRetry: () => vo
 function NasTrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: string | null }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
-  const menuBtnRef = useRef<HTMLButtonElement>(null)
-  const [fairylistDialogOpen, setFairylistDialogOpen] = useState(false)
 
   const playNow = useMutation({
     mutationFn: () => api.sonos.playUri(speaker!, track.uri),
@@ -156,126 +146,40 @@ function NasTrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: st
   })
 
   return (
-    <>
-      <li className="flex items-center gap-3 px-4 py-2.5">
-        <ArtworkImage src={track.albumArtUri} fallback="disc" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-heading">{track.title || 'Unknown track'}</p>
-          <p className="truncate text-xs text-caption">
-            {[track.artist, track.album].filter(Boolean).join(' · ')}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            disabled={!speaker || playNow.isPending}
-            onClick={() => playNow.mutate()}
-            aria-label={`Play ${track.title}`}
-            className={actionBtn}
-          >
-            <Play className="h-4 w-4" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            disabled={addToFavourites.isPending}
-            onClick={() => addToFavourites.mutate()}
-            aria-label={`Add ${track.title} to favourites`}
-            className={actionBtn}
-          >
-            <Heart className="h-4 w-4" aria-hidden="true" />
-          </button>
-          <div className="shrink-0">
-            <button
-              ref={menuBtnRef}
-              type="button"
-              disabled={!speaker}
-              onClick={() => {
-                if (menuOpen) {
-                  setMenuOpen(false)
-                } else {
-                  if (menuBtnRef.current) {
-                    const rect = menuBtnRef.current.getBoundingClientRect()
-                    const showAbove = rect.bottom + 200 > window.innerHeight
-                    setMenuPos({
-                      top: showAbove ? rect.top - 200 - 4 : rect.bottom + 4,
-                      right: window.innerWidth - rect.right,
-                    })
-                  }
-                  setMenuOpen(true)
-                }
-              }}
-              onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
-              aria-label={`More options for ${track.title}`}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              className={actionBtn}
-            >
-              <MoreVertical className="h-4 w-4" aria-hidden="true" />
-            </button>
-            {menuOpen && menuPos && createPortal(
-              <ul
-                role="menu"
-                style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
-                className="z-[200] min-w-[180px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
-              >
-                <li role="none">
-                  <button
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); playNext.mutate() }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                  >
-                    <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    Play next
-                  </button>
-                </li>
-                <li role="none">
-                  <button
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); addToQueue.mutate() }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                  >
-                    <ListEnd className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    Add to queue
-                  </button>
-                </li>
-                <li role="none">
-                  <button
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); addToFavourites.mutate() }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                  >
-                    <Heart className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    Add to favourites
-                  </button>
-                </li>
-                <li role="none">
-                  <button
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); setFairylistDialogOpen(true) }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                  >
-                    <ListPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    Add to Fairylist
-                  </button>
-                </li>
-              </ul>,
-              document.body,
-            )}
-          </div>
-        </div>
-      </li>
-      <AddToFairylistDialog
-        open={fairylistDialogOpen}
-        onOpenChange={setFairylistDialogOpen}
-        track={{
-          source: 'nas',
-          source_uri: track.uri,
-          title: track.title || 'Unknown track',
-          artist: track.artist || undefined,
-          album_art_uri: track.albumArtUri,
-        }}
-      />
-    </>
+    <li className="flex items-center gap-3 px-4 py-2.5">
+      <ArtworkImage src={track.albumArtUri} fallback="disc" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-heading">{track.title || 'Unknown track'}</p>
+        <p className="truncate text-xs text-caption">
+          {[track.artist, track.album].filter(Boolean).join(' · ')}
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          disabled={!speaker || playNow.isPending}
+          onClick={() => playNow.mutate()}
+          aria-label={`Play ${track.title}`}
+          className={actionBtn}
+        >
+          <Play className="h-4 w-4" aria-hidden="true" />
+        </button>
+        <MusicItemMenu
+          label={track.title || 'Unknown track'}
+          disabled={!speaker}
+          onPlayNext={() => playNext.mutate()}
+          onAddToQueue={() => addToQueue.mutate()}
+          onAddToFavourites={() => addToFavourites.mutate()}
+          fairylistTrack={{
+            source: 'nas',
+            source_uri: track.uri,
+            title: track.title || 'Unknown track',
+            artist: track.artist,
+            album_art_uri: track.albumArtUri,
+          }}
+        />
+      </div>
+    </li>
   )
 }
 
@@ -284,11 +188,6 @@ function NasTrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: st
 function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: string | null }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
-  const menuBtnRef = useRef<HTMLButtonElement>(null)
-  const [fairylistDialogOpen, setFairylistDialogOpen] = useState(false)
-  const [spotifyPlaylistDialogOpen, setSpotifyPlaylistDialogOpen] = useState(false)
 
   const playNow = useMutation({
     mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'now'),
@@ -329,142 +228,41 @@ function SpotifyTrackRow({ track, speaker }: { track: SpotifyTrack; speaker: str
   const artUri = track.album.images?.[0]?.url
 
   return (
-    <>
-      <li className="flex items-center gap-3 px-4 py-2.5">
-        <ArtworkImage src={artUri} fallback="disc" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-heading">{track.name}</p>
-          <p className="truncate text-xs text-caption">
-            {[artistNames, track.album.name].filter(Boolean).join(' · ')}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            disabled={!speaker || playNow.isPending}
-            onClick={() => playNow.mutate()}
-            aria-label={`Play ${track.name}`}
-            className={actionBtn}
-          >
-            <Play className="h-4 w-4" aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            disabled={addToFavourites.isPending}
-            onClick={() => addToFavourites.mutate()}
-            aria-label={`Add ${track.name} to favourites`}
-            className={actionBtn}
-          >
-            <Heart className="h-4 w-4" aria-hidden="true" />
-          </button>
-          <div className="shrink-0">
-            <button
-              ref={menuBtnRef}
-              type="button"
-              disabled={!speaker}
-              onClick={() => {
-                if (menuOpen) {
-                  setMenuOpen(false)
-                } else {
-                  if (menuBtnRef.current) {
-                    const rect = menuBtnRef.current.getBoundingClientRect()
-                    const showAbove = rect.bottom + 240 > window.innerHeight
-                    setMenuPos({
-                      top: showAbove ? rect.top - 240 - 4 : rect.bottom + 4,
-                      right: window.innerWidth - rect.right,
-                    })
-                  }
-                  setMenuOpen(true)
-                }
-              }}
-              onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
-              aria-label={`More options for ${track.name}`}
-              aria-haspopup="menu"
-              aria-expanded={menuOpen}
-              className={actionBtn}
-            >
-              <MoreVertical className="h-4 w-4" aria-hidden="true" />
-            </button>
-            {menuOpen && menuPos && createPortal(
-              <ul
-                role="menu"
-                style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
-                className="z-[200] min-w-[200px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
-              >
-                <li role="none">
-                  <button
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); playNext.mutate() }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                  >
-                    <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    Play next
-                  </button>
-                </li>
-                <li role="none">
-                  <button
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); addToQueue.mutate() }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                  >
-                    <ListEnd className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    Add to queue
-                  </button>
-                </li>
-                <li role="none">
-                  <button
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); addToFavourites.mutate() }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                  >
-                    <Heart className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    Add to favourites
-                  </button>
-                </li>
-                <li role="none">
-                  <button
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); setFairylistDialogOpen(true) }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                  >
-                    <ListPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    Add to Fairylist
-                  </button>
-                </li>
-                <li role="none">
-                  <button
-                    role="menuitem"
-                    onClick={() => { setMenuOpen(false); setSpotifyPlaylistDialogOpen(true) }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                  >
-                    <Music2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    Add to Spotify Playlist
-                  </button>
-                </li>
-              </ul>,
-              document.body,
-            )}
-          </div>
-        </div>
-      </li>
-      <AddToFairylistDialog
-        open={fairylistDialogOpen}
-        onOpenChange={setFairylistDialogOpen}
-        track={{
-          source: 'spotify',
-          source_uri: track.uri,
-          title: track.name,
-          artist: track.artists.map(a => a.name).join(', '),
-          album_art_uri: track.album.images?.[0]?.url,
-        }}
-      />
-      <AddToSpotifyPlaylistDialog
-        open={spotifyPlaylistDialogOpen}
-        onOpenChange={setSpotifyPlaylistDialogOpen}
-        trackUri={track.uri}
-        trackName={track.name}
-      />
-    </>
+    <li className="flex items-center gap-3 px-4 py-2.5">
+      <ArtworkImage src={artUri} fallback="disc" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-heading">{track.name}</p>
+        <p className="truncate text-xs text-caption">
+          {[artistNames, track.album.name].filter(Boolean).join(' · ')}
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          disabled={!speaker || playNow.isPending}
+          onClick={() => playNow.mutate()}
+          aria-label={`Play ${track.name}`}
+          className={actionBtn}
+        >
+          <Play className="h-4 w-4" aria-hidden="true" />
+        </button>
+        <MusicItemMenu
+          label={track.name}
+          disabled={!speaker}
+          onPlayNext={() => playNext.mutate()}
+          onAddToQueue={() => addToQueue.mutate()}
+          onAddToFavourites={() => addToFavourites.mutate()}
+          fairylistTrack={{
+            source: 'spotify',
+            source_uri: track.uri,
+            title: track.name,
+            artist: track.artists.map(a => a.name).join(', '),
+            album_art_uri: track.album.images?.[0]?.url,
+          }}
+          spotifyTrack={{ trackUri: track.uri, trackName: track.name }}
+        />
+      </div>
+    </li>
   )
 }
 
@@ -479,9 +277,6 @@ function RadioStationRow({
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
-  const menuBtnRef = useRef<HTMLButtonElement>(null)
 
   const play = useMutation({
     mutationFn: () => api.sonos.playFavourite(speaker!, station.title),
@@ -496,6 +291,15 @@ function RadioStationRow({
       queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
     },
     onError: () => toast({ message: `Failed to queue ${station.title}`, type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.addToQueue(speaker!, station.uri),
+    onSuccess: () => {
+      toast({ message: `Added "${station.title}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
 
   const addToFavourites = useMutation({
@@ -525,64 +329,19 @@ function RadioStationRow({
         >
           <Play className="h-4 w-4" aria-hidden="true" />
         </button>
-        <div className="shrink-0">
-          <button
-            ref={menuBtnRef}
-            type="button"
-            disabled={!speaker}
-            onClick={() => {
-              if (menuOpen) {
-                setMenuOpen(false)
-              } else {
-                if (menuBtnRef.current) {
-                  const rect = menuBtnRef.current.getBoundingClientRect()
-                  const showAbove = rect.bottom + 120 > window.innerHeight
-                  setMenuPos({
-                    top: showAbove ? rect.top - 120 - 4 : rect.bottom + 4,
-                    right: window.innerWidth - rect.right,
-                  })
-                }
-                setMenuOpen(true)
-              }
-            }}
-            onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
-            aria-label={`More options for ${station.title}`}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            className={actionBtn}
-          >
-            <MoreVertical className="h-4 w-4" aria-hidden="true" />
-          </button>
-          {menuOpen && menuPos && createPortal(
-            <ul
-              role="menu"
-              style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
-              className="z-[200] min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
-            >
-              <li role="none">
-                <button
-                  role="menuitem"
-                  onClick={() => { setMenuOpen(false); playNext.mutate() }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                >
-                  <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  Play next
-                </button>
-              </li>
-              <li role="none">
-                <button
-                  role="menuitem"
-                  onClick={() => { setMenuOpen(false); addToFavourites.mutate() }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                >
-                  <Heart className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  Add to favourites
-                </button>
-              </li>
-            </ul>,
-            document.body,
-          )}
-        </div>
+        <MusicItemMenu
+          label={station.title}
+          disabled={!speaker}
+          onPlayNext={() => playNext.mutate()}
+          onAddToQueue={() => addToQueue.mutate()}
+          onAddToFavourites={() => addToFavourites.mutate()}
+          fairylistTrack={{
+            source: 'radio',
+            source_uri: station.uri,
+            title: station.title,
+            album_art_uri: station.albumArtUri,
+          }}
+        />
       </div>
     </li>
   )
@@ -608,34 +367,58 @@ function NasSearchArtistRow({ artist }: { artist: SonosSearchArtist }) {
 // ── NAS search album row ──────────────────────────────────────────────────────
 
 function NasSearchAlbumRow({ album, speaker }: { album: SonosSearchAlbum; speaker: string | null }) {
+  const queryClient = useQueryClient()
   const { toast } = useToast()
 
+  const albumUri = `A:ALBUMARTIST/${album.artist}/${album.name}`
+
   const playNow = useMutation({
-    mutationFn: () => api.sonos.playUri(
-      speaker!,
-      `A:ALBUMARTIST/${album.artist}/${album.name}`,
-    ),
+    mutationFn: () => api.sonos.playUri(speaker!, albumUri),
     onSuccess: () => toast({ message: `Playing "${album.name}"` }),
     onError: () => toast({ message: 'Failed to play album', type: 'error' }),
   })
 
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playAlbumNext(speaker!, albumUri, 'nas'),
+    onSuccess: () => {
+      toast({ message: `"${album.name}" will play next` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.addAlbumToQueue(speaker!, albumUri, 'nas'),
+    onSuccess: () => {
+      toast({ message: `Added "${album.name}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
   return (
-    <li className="flex items-center gap-3 px-4 py-2.5">
-      <ArtworkImage src={album.albumArtUri} size={40} fallback="disc" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">{album.name}</p>
-        <p className="truncate text-xs text-caption">{album.artist}</p>
-      </div>
-      <button
-        type="button"
-        disabled={!speaker || playNow.isPending}
-        onClick={() => playNow.mutate()}
-        aria-label={`Play album ${album.name}`}
-        className={actionBtn}
-      >
-        <Play className="h-4 w-4" aria-hidden="true" />
-      </button>
-    </li>
+    <MusicListItem
+      artwork={{ src: album.albumArtUri, size: 40, fallback: 'disc' }}
+      title={album.name}
+      subtitle={album.artist}
+      onTap={() => playNow.mutate()}
+      onPlay={() => playNow.mutate()}
+      playDisabled={!speaker}
+      playPending={playNow.isPending}
+      disabled={!speaker}
+      menuProps={{
+        label: album.name,
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
+        fairylistTrack: {
+          source: 'nas',
+          source_uri: albumUri,
+          title: album.name,
+          artist: album.artist,
+          album_art_uri: album.albumArtUri,
+        },
+      }}
+    />
   )
 }
 

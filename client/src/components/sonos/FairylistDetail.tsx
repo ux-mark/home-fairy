@@ -33,6 +33,7 @@ import type { FairylistItem } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ArtworkImage } from './ArtworkImage'
+import { MusicItemMenu } from './MusicItemMenu'
 import { cn } from '@/lib/utils'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -70,12 +71,15 @@ function SourceBadge({ source }: { source: string }) {
 function SortableItemRow({
   item,
   onRemove,
-  isRemoving,
+  speaker,
 }: {
   item: FairylistItem
   onRemove: (id: number) => void
-  isRemoving: boolean
+  speaker: string | null
 }) {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+
   const {
     attributes,
     listeners,
@@ -91,6 +95,56 @@ function SortableItemRow({
   }
 
   const artSrc = item.source === 'radio' ? undefined : item.album_art_uri ?? undefined
+
+  const playNow = useMutation({
+    mutationFn: () => {
+      if (item.source === 'spotify') {
+        return api.sonos.playSpotify(speaker!, item.source_uri, 'now')
+      }
+      return api.sonos.playUri(speaker!, item.source_uri)
+    },
+    onSuccess: () => toast({ message: `Playing "${item.title}"` }),
+    onError: () => toast({ message: 'Failed to play', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => {
+      if (item.source === 'spotify') {
+        return api.sonos.playSpotify(speaker!, item.source_uri, 'next')
+      }
+      return api.sonos.playNext(speaker!, item.source_uri)
+    },
+    onSuccess: () => {
+      toast({ message: `"${item.title}" will play next` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => {
+      if (item.source === 'spotify') {
+        return api.sonos.playSpotify(speaker!, item.source_uri, 'queue')
+      }
+      return api.sonos.addToQueue(speaker!, item.source_uri)
+    },
+    onSuccess: () => {
+      toast({ message: `Added "${item.title}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const addToFavourites = useMutation({
+    mutationFn: () => api.favourites.add({
+      source: item.source as 'sonos' | 'spotify' | 'nas' | 'radio',
+      source_uri: item.source_uri,
+      title: item.title,
+      album_art_uri: item.album_art_uri,
+    }),
+    onSuccess: () => toast({ message: `Added "${item.title}" to favourites` }),
+    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
+  })
 
   return (
     <li
@@ -136,21 +190,41 @@ function SortableItemRow({
         </div>
       </div>
 
-      {/* Remove button */}
-      <button
-        type="button"
-        disabled={isRemoving}
-        onClick={() => onRemove(item.id)}
-        aria-label={`Remove ${item.title} from Fairylist`}
-        className={cn(
-          'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-caption',
-          'transition-colors hover:bg-red-500/10 hover:text-red-400',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          'disabled:opacity-40',
-        )}
-      >
-        <Trash2 className="h-4 w-4" aria-hidden="true" />
-      </button>
+      {/* Play + context menu */}
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          disabled={!speaker || playNow.isPending}
+          onClick={() => playNow.mutate()}
+          aria-label={`Play ${item.title}`}
+          className={cn(
+            'flex h-11 w-11 items-center justify-center rounded-lg',
+            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'disabled:opacity-40',
+          )}
+        >
+          <Play className="h-4 w-4" aria-hidden="true" />
+        </button>
+
+        <MusicItemMenu
+          label={item.title}
+          disabled={!speaker}
+          onPlayNext={() => playNext.mutate()}
+          onAddToQueue={() => addToQueue.mutate()}
+          onAddToFavourites={() => addToFavourites.mutate()}
+          onRemove={() => onRemove(item.id)}
+          removeLabel="Remove from list"
+          fairylistTrack={{
+            source: item.source as 'sonos' | 'spotify' | 'nas' | 'radio',
+            source_uri: item.source_uri,
+            title: item.title,
+            artist: item.artist,
+            album_art_uri: item.album_art_uri,
+          }}
+          spotifyTrack={item.source === 'spotify' ? { trackUri: item.source_uri, trackName: item.title } : undefined}
+        />
+      </div>
     </li>
   )
 }
@@ -456,7 +530,7 @@ export function FairylistDetail({ fairylistId, onBack, effectiveSpeaker }: Fairy
                   key={item.id}
                   item={item}
                   onRemove={(id) => removeMutation.mutate(id)}
-                  isRemoving={removeMutation.isPending && removeMutation.variables === item.id}
+                  speaker={effectiveSpeaker}
                 />
               ))}
             </ul>

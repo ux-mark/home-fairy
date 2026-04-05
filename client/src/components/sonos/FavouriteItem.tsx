@@ -2,9 +2,11 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { CSS } from '@dnd-kit/utilities'
 import { useSortable } from '@dnd-kit/sortable'
-import { GripVertical, ImageOff, ListStart, ListEnd, X, Play } from 'lucide-react'
+import { GripVertical, ImageOff, ListStart, ListEnd, ListPlus, ListMusic, X, Play } from 'lucide-react'
 import type { UserFavourite } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { AddToFairylistDialog } from './AddToFairylistDialog'
+import { AddToSpotifyPlaylistDialog } from './AddToSpotifyPlaylistDialog'
 
 // ── Source badge ──────────────────────────────────────────────────────────────
 
@@ -40,6 +42,9 @@ interface BottomSheetProps {
   onPlayNext: (item: UserFavourite) => void
   onAddToQueue: (item: UserFavourite) => void
   onRemove: (id: number) => void
+  onFairylist: () => void
+  showSpotifyPlaylist: boolean
+  onSpotifyPlaylist: () => void
 }
 
 function FavouriteBottomSheet({
@@ -49,6 +54,9 @@ function FavouriteBottomSheet({
   onPlayNext,
   onAddToQueue,
   onRemove,
+  onFairylist,
+  showSpotifyPlaylist,
+  onSpotifyPlaylist,
 }: BottomSheetProps) {
   const [imgFailed, setImgFailed] = useState(false)
   const [entered, setEntered] = useState(false)
@@ -123,15 +131,6 @@ function FavouriteBottomSheet({
           </li>
           <li>
             <button
-              onClick={() => { onPlayNext(item); onClose() }}
-              className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-            >
-              <ListStart className="h-5 w-5 shrink-0 text-fairy-400" aria-hidden="true" />
-              Play next
-            </button>
-          </li>
-          <li>
-            <button
               onClick={() => { onAddToQueue(item); onClose() }}
               className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
             >
@@ -139,6 +138,35 @@ function FavouriteBottomSheet({
               Add to queue
             </button>
           </li>
+          <li>
+            <button
+              onClick={() => { onFairylist(); onClose() }}
+              className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+            >
+              <ListPlus className="h-5 w-5 shrink-0 text-purple-400" aria-hidden="true" />
+              Add to Fairylist
+            </button>
+          </li>
+          <li>
+            <button
+              onClick={() => { onPlayNext(item); onClose() }}
+              className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+            >
+              <ListStart className="h-5 w-5 shrink-0 text-fairy-400" aria-hidden="true" />
+              Play next
+            </button>
+          </li>
+          {showSpotifyPlaylist && (
+            <li>
+              <button
+                onClick={() => { onSpotifyPlaylist(); onClose() }}
+                className="flex w-full items-center gap-3 px-4 py-3.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+              >
+                <ListMusic className="h-5 w-5 shrink-0 text-emerald-400" aria-hidden="true" />
+                Add to Spotify Playlist
+              </button>
+            </li>
+          )}
           <li>
             <button
               onClick={() => { onRemove(item.id); onClose() }}
@@ -180,6 +208,8 @@ export function FavouriteItem({
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
   const [showBottomSheet, setShowBottomSheet] = useState(false)
+  const [fairylistOpen, setFairylistOpen] = useState(false)
+  const [spotifyPlaylistOpen, setSpotifyPlaylistOpen] = useState(false)
   const menuBtnRef = useRef<HTMLButtonElement>(null)
   // liveX only meaningful during an active gesture; at rest, position is derived
   // from isSwipeOpen so no effect-based sync is needed
@@ -438,9 +468,9 @@ export function FavouriteItem({
                 } else {
                   if (menuBtnRef.current) {
                     const rect = menuBtnRef.current.getBoundingClientRect()
-                    const showAbove = rect.bottom + 160 > window.innerHeight
+                    const showAbove = rect.bottom + 240 > window.innerHeight
                     setMenuPos({
-                      top: showAbove ? rect.top - 160 - 4 : rect.bottom + 4,
+                      top: showAbove ? rect.top - 240 - 4 : rect.bottom + 4,
                       right: window.innerWidth - rect.right,
                     })
                   }
@@ -469,16 +499,6 @@ export function FavouriteItem({
                 <li role="none">
                   <button
                     role="menuitem"
-                    onClick={() => { setMenuOpen(false); onPlayNext(item) }}
-                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                  >
-                    <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    Play next
-                  </button>
-                </li>
-                <li role="none">
-                  <button
-                    role="menuitem"
                     onClick={() => { setMenuOpen(false); onAddToQueue(item) }}
                     className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
                   >
@@ -486,6 +506,44 @@ export function FavouriteItem({
                     Add to queue
                   </button>
                 </li>
+                <li role="none">
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      setFairylistOpen(true)
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                  >
+                    <ListPlus className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Add to Fairylist
+                  </button>
+                </li>
+                <li role="none">
+                  <button
+                    role="menuitem"
+                    onClick={() => { setMenuOpen(false); onPlayNext(item) }}
+                    className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                  >
+                    <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Play next
+                  </button>
+                </li>
+                {item.source === 'spotify' && (
+                  <li role="none">
+                    <button
+                      role="menuitem"
+                      onClick={() => {
+                        setMenuOpen(false)
+                        setSpotifyPlaylistOpen(true)
+                      }}
+                      className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
+                    >
+                      <ListMusic className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      Add to Spotify Playlist
+                    </button>
+                  </li>
+                )}
                 <li role="none">
                   <button
                     role="menuitem"
@@ -511,6 +569,29 @@ export function FavouriteItem({
           onPlayNext={onPlayNext}
           onAddToQueue={onAddToQueue}
           onRemove={onRemove}
+          onFairylist={() => { setShowBottomSheet(false); setFairylistOpen(true) }}
+          showSpotifyPlaylist={item.source === 'spotify'}
+          onSpotifyPlaylist={() => { setShowBottomSheet(false); setSpotifyPlaylistOpen(true) }}
+        />
+      )}
+
+      <AddToFairylistDialog
+        open={fairylistOpen}
+        onOpenChange={setFairylistOpen}
+        track={{
+          source: item.source,
+          source_uri: item.source_uri,
+          title: item.title,
+          album_art_uri: item.album_art_uri,
+        }}
+      />
+
+      {item.source === 'spotify' && (
+        <AddToSpotifyPlaylistDialog
+          open={spotifyPlaylistOpen}
+          onOpenChange={setSpotifyPlaylistOpen}
+          trackUri={item.source_uri}
+          trackName={item.title}
         />
       )}
     </>
