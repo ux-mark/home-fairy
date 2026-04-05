@@ -1435,9 +1435,11 @@ function SearchResults({
 interface NasBrowseViewProps {
   searchQuery: string
   targetSpeaker?: string | null
+  initialArtist?: string | null
+  initialAlbum?: SonosGenreAlbum | null
 }
 
-export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps) {
+export function NasBrowseView({ searchQuery, targetSpeaker, initialArtist, initialAlbum }: NasBrowseViewProps) {
   const [view, setView] = useState<NasView>('home')
   const [browseMode, setBrowseMode] = useState<BrowseMode>('countries')
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null)
@@ -1448,6 +1450,20 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
 
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
   const isSearching = debouncedQuery.length > 0
+
+  useEffect(() => {
+    if (initialArtist) {
+      setSelectedArtist(initialArtist)
+      setView('artist-detail')
+    }
+  }, [initialArtist])
+
+  useEffect(() => {
+    if (initialAlbum) {
+      setSelectedAlbum(initialAlbum)
+      setView('album-detail')
+    }
+  }, [initialAlbum])
 
   function handleSelectArtist(name: string) {
     setSelectedArtist(name)
