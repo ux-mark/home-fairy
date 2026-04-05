@@ -1682,6 +1682,11 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ level }),
       }),
+    setGroupVolume: (speaker: string, level: number) =>
+      fetchApi<{ speaker: string; groupVolume: number }>('/sonos/group-volume/' + encodeURIComponent(speaker), {
+        method: 'PUT',
+        body: JSON.stringify({ level }),
+      }),
     setMute: (speaker: string, muted: boolean) =>
       fetchApi<{ speaker: string; muted: boolean }>('/sonos/mute/' + encodeURIComponent(speaker), {
         method: 'PUT',

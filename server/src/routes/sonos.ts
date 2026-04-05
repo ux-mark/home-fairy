@@ -1192,6 +1192,24 @@ router.put('/volume/:speaker', async (req: Request, res: Response) => {
   }
 })
 
+// PUT /group-volume/:speaker — set group volume (adjusts all members proportionally)
+router.put('/group-volume/:speaker', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const { level } = volumeSchema.parse(req.body)
+    await sonosClient.setGroupVolume(speaker, level)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, groupVolume: level })
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      res.status(400).json({ error: err.errors })
+      return
+    }
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
 // PUT /mute/:speaker — mute or unmute a speaker
 const muteSchema = z.object({ muted: z.boolean() })
 

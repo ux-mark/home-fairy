@@ -126,6 +126,7 @@ export function SonosSpeakerCard({
           onChange={level => volumeMutation.mutate(level)}
           label={`${roomName} volume`}
           disabled={!!error}
+          loading={volumeMutation.isPending}
         />
       </div>
 

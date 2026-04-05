@@ -1,6 +1,7 @@
-import { useState, useCallback } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useState, useCallback, useRef, useEffect } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import * as Popover from '@radix-ui/react-popover'
+import { X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
@@ -14,7 +15,7 @@ interface VolumeGroupPopoverProps {
   value: number
   /** Called on volume commit for the primary speaker */
   onChange: (level: number) => void
-  /** Group info — if null/undefined only the main slider is shown without popover */
+  /** Group info — popover only shows when grouped */
   group: SonosGroupInfo | null | undefined
   /** All speaker entries (used to look up room names and volumes) */
   allSpeakers: SonosNowPlayingEntry[]
@@ -23,15 +24,12 @@ interface VolumeGroupPopoverProps {
 }
 
 /**
- * Volume control for the Playing page.
+ * Volume control with group popover for the Playing page.
  *
- * - On mouse: behaves as a normal SonosVolumeControl slider.
- * - On touch (pointerType === 'touch'): opens a Radix Popover just below the
- *   slider, showing a volume control for each speaker in the group. The main
- *   slider gets an X button overlay while the popover is open.
- *
- * Per the spec the popover only appears when a group exists; a solo speaker
- * just shows the regular slider.
+ * When the user drags the main slider on a grouped speaker, a popover
+ * appears below showing each group member's volume. The main slider
+ * uses groupVolume so all speakers adjust proportionally. Member
+ * sliders update in real-time during the drag.
  */
 export function VolumeGroupPopover({
   speaker,
@@ -42,36 +40,99 @@ export function VolumeGroupPopover({
   label,
 }: VolumeGroupPopoverProps) {
   const { toast } = useToast()
+  const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
 
-  // Group members: coordinator + all members
+  // Only show group members in the popover
   const groupMembers = group?.members ?? []
   const isGrouped = groupMembers.length > 1
 
-  function handlePointerDown(e: React.PointerEvent) {
-    if (e.pointerType === 'touch' && isGrouped) {
+  // Build speaker list from group members only
+  const speakerList: SonosNowPlayingEntry[] = []
+  for (const name of groupMembers) {
+    const entry = allSpeakers.find(e => e.speakerName === name)
+    if (entry) speakerList.push(entry)
+  }
+
+  // Snapshot member volumes when the popover opens, so we can compute
+  // relative offsets during drag
+  const baseVolumes = useRef<Map<string, number>>(new Map())
+  const baseMainVolume = useRef(value)
+
+  // Delta-driven member volumes during main slider drag
+  const [memberOverrides, setMemberOverrides] = useState<Map<string, number>>(new Map())
+
+  useEffect(() => {
+    if (open) {
+      // Capture snapshot on open
+      const snap = new Map<string, number>()
+      for (const entry of speakerList) {
+        snap.set(entry.speakerName, entry.state?.volume ?? 0)
+      }
+      baseVolumes.current = snap
+      baseMainVolume.current = value
+      setMemberOverrides(new Map())
+    }
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  function handleInteractionStart() {
+    if (isGrouped && !open) {
       setOpen(true)
+    }
+  }
+
+  // While dragging the main slider, update member displays proportionally
+  function handleMainDrag(level: number) {
+    const delta = level - baseMainVolume.current
+    const overrides = new Map<string, number>()
+    for (const [name, base] of baseVolumes.current) {
+      overrides.set(name, Math.max(0, Math.min(100, base + delta)))
+    }
+    setMemberOverrides(overrides)
+  }
+
+  // On commit, use groupVolume API so Sonos adjusts all speakers
+  const groupVolumeMutation = useMutation({
+    mutationFn: (level: number) => api.sonos.setGroupVolume(speaker, level),
+    onSuccess: () => {
+      // Refetch now-playing after a short delay to get updated volumes
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
+      }, 500)
+    },
+    onError: () => toast({ message: 'Could not update group volume', type: 'error' }),
+  })
+
+  function handleMainCommit(level: number) {
+    if (isGrouped) {
+      groupVolumeMutation.mutate(level)
+    } else {
+      onChange(level)
     }
   }
 
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
-      <div onPointerDown={handlePointerDown}>
-        {/* Main volume slider — X thumb overlay is managed inside SonosVolumeControl */}
-        <SonosVolumeControl
-          value={value}
-          onChange={onChange}
-          label={label}
-          isPopoverOpen={open}
-          onClosePopover={() => setOpen(false)}
-        />
-      </div>
+      <Popover.Anchor asChild>
+        <div>
+          <SonosVolumeControl
+            value={value}
+            onChange={handleMainCommit}
+            onDragChange={open ? handleMainDrag : undefined}
+            label={label}
+            onInteractionStart={handleInteractionStart}
+            loading={groupVolumeMutation.isPending}
+          />
+        </div>
+      </Popover.Anchor>
 
       <Popover.Portal>
         <Popover.Content
           side="bottom"
           align="start"
           sideOffset={8}
+          onOpenAutoFocus={e => e.preventDefault()}
+          onInteractOutside={() => setOpen(false)}
           className={cn(
             'z-50 w-[calc(100vw-2rem)] max-w-sm rounded-xl',
             'border border-[var(--border-primary)] bg-[var(--bg-secondary)] shadow-xl',
@@ -80,74 +141,57 @@ export function VolumeGroupPopover({
             'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
             'data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95',
           )}
-          aria-label="Group speaker volumes"
+          aria-label="Speaker volumes"
         >
-          <p className="mb-3 text-xs font-medium text-caption">Speaker volumes</p>
-          <GroupMemberVolumes
-            groupMembers={groupMembers}
-            allSpeakers={allSpeakers}
-            primarySpeaker={speaker}
-            primaryValue={value}
-            onPrimaryChange={onChange}
-            toast={toast}
-          />
+          {/* Header with close button */}
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs font-medium text-caption">Speaker volumes</p>
+            <Popover.Close asChild>
+              <button
+                aria-label="Close speaker volumes"
+                className={cn(
+                  'flex h-7 w-7 items-center justify-center rounded-md transition-colors',
+                  'text-caption hover:bg-[var(--bg-tertiary)] hover:text-body',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                )}
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </Popover.Close>
+          </div>
+          <div className="flex flex-col gap-3">
+            {speakerList.map(entry => {
+              const serverVolume = entry.state?.volume ?? 0
+              // Use drag override if available, otherwise server value
+              const displayVolume = memberOverrides.get(entry.speakerName) ?? serverVolume
+              return (
+                <MemberVolumeSlider
+                  key={entry.speakerName}
+                  speakerName={entry.speakerName}
+                  roomName={entry.roomName}
+                  value={displayVolume}
+                  toast={toast}
+                />
+              )
+            })}
+          </div>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
   )
 }
 
-// ── Group member volume sliders ───────────────────────────────────────────────
-
-function GroupMemberVolumes({
-  groupMembers,
-  allSpeakers,
-  primarySpeaker,
-  primaryValue,
-  onPrimaryChange,
-  toast,
-}: {
-  groupMembers: string[]
-  allSpeakers: SonosNowPlayingEntry[]
-  primarySpeaker: string
-  primaryValue: number
-  onPrimaryChange: (level: number) => void
-  toast: ReturnType<typeof import('@/hooks/useToast').useToast>['toast']
-}) {
-  return (
-    <div className="flex flex-col gap-3">
-      {groupMembers.map(speakerName => {
-        const entry = allSpeakers.find(e => e.speakerName === speakerName)
-        const roomName = entry?.roomName ?? speakerName
-        const currentVolume = entry?.state?.volume ?? 0
-        const isPrimary = speakerName === primarySpeaker
-
-        return (
-          <MemberVolumeSlider
-            key={speakerName}
-            speakerName={speakerName}
-            roomName={roomName}
-            value={isPrimary ? primaryValue : currentVolume}
-            onChange={isPrimary ? onPrimaryChange : undefined}
-            toast={toast}
-          />
-        )
-      })}
-    </div>
-  )
-}
+// ── Member volume slider ─────────────────────────────────────────────────────
 
 function MemberVolumeSlider({
   speakerName,
   roomName,
   value,
-  onChange,
   toast,
 }: {
   speakerName: string
   roomName: string
   value: number
-  onChange?: (level: number) => void
   toast: ReturnType<typeof import('@/hooks/useToast').useToast>['toast']
 }) {
   const mutation = useMutation({
@@ -157,13 +201,9 @@ function MemberVolumeSlider({
 
   const handleChange = useCallback(
     (level: number) => {
-      if (onChange) {
-        onChange(level)
-      } else {
-        mutation.mutate(level)
-      }
+      mutation.mutate(level)
     },
-    [onChange, mutation],
+    [mutation],
   )
 
   return (
@@ -173,6 +213,7 @@ function MemberVolumeSlider({
         value={value}
         onChange={handleChange}
         label={`${roomName} volume`}
+        loading={mutation.isPending}
       />
     </div>
   )
