@@ -24,6 +24,7 @@ import {
   ChevronDown,
   ChevronUp,
   GripVertical,
+  ListMusic,
   ListStart,
   Music2,
   Trash2,
@@ -158,11 +159,10 @@ function SortableQueueItem({
         )}
         <button
           onClick={() => onRemove(index)}
-          className="flex h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-red-400/70 hover:text-red-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          className="flex h-11 w-11 items-center justify-center rounded-lg text-red-400/70 hover:text-red-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           aria-label={`Remove ${item.title} from queue`}
         >
-          <Trash2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-          Remove
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
     </li>
@@ -275,7 +275,7 @@ export function InlineQueue({
   const hasMore = queueLimit && queue && queue.length > queueLimit
 
   return (
-    <div className="mt-3 border-t border-[var(--border-secondary)] pt-3">
+    <div className="mt-2 border-t border-[var(--border-secondary)] pt-2">
       {/* Toggle button */}
       <button
         onClick={onToggle}
@@ -288,7 +288,8 @@ export function InlineQueue({
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
         )}
       >
-        <span>
+        <span className="flex items-center gap-1.5">
+          <ListMusic className="h-3 w-3" aria-hidden="true" />
           {expanded && !isLoading && queueCount > 0
             ? `Queue (${queueCount})`
             : 'Queue'}

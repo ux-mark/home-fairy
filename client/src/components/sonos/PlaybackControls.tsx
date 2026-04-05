@@ -1,5 +1,6 @@
-import { useMutation } from '@tanstack/react-query'
-import { Shuffle, SkipBack, Play, Pause, SkipForward, Repeat, Repeat1, Music, Loader2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { SkipBack, Play, Pause, SkipForward, Repeat1, Music, Loader2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
@@ -15,37 +16,32 @@ interface PlaybackControlsProps {
   showChange?: boolean
 }
 
-/** Parse currentPlayMode into shuffle/repeatAll/repeatOne flags.
- *
- * Sonos play modes: NORMAL, SHUFFLE_NOREPEAT, SHUFFLE, REPEAT_ALL, REPEAT_ONE, SHUFFLE_REPEAT_ALL
- */
-function parsePlayMode(mode: string | undefined): { shuffle: boolean; repeatAll: boolean; repeatOne: boolean } {
-  if (!mode) return { shuffle: false, repeatAll: false, repeatOne: false }
+/** Parse currentPlayMode into repeat-one flag. */
+function parseRepeatOne(mode: string | undefined): boolean {
+  if (!mode) return false
   const upper = mode.toUpperCase()
-  const shuffle = upper.includes('SHUFFLE')
-  const repeatOne = upper === 'REPEAT_ONE' || upper === 'SHUFFLE_REPEAT_ONE'
-  const repeatAll =
-    !repeatOne &&
-    (upper.includes('REPEAT_ALL') ||
-      upper === 'REPEAT' ||
-      (upper.includes('REPEAT') && !upper.includes('NOREPEAT') && !upper.includes('REPEAT_ONE')))
-  return { shuffle, repeatAll, repeatOne }
+  return upper === 'REPEAT_ONE' || upper === 'SHUFFLE_REPEAT_ONE'
 }
 
 /**
- * Playback control row: shuffle | skip-back | play/pause | skip-forward | repeat-one | change
+ * Playback control row: skip-back | play/pause | skip-forward | repeat-one | change
  *
- * - Shuffle and repeat buttons show highlighted state based on currentPlayMode.
- * - Skip/shuffle/repeat are disabled for TV and line-in sources.
- * - Change navigates to /sonos/browse instead of opening a bottom sheet.
+ * - Repeat button shows highlighted state with optimistic toggle.
+ * - Skip/repeat disabled for TV and line-in sources.
+ * - Change navigates to /sonos/browse.
  */
 export function PlaybackControls({ speaker, state, onInvalidate, showChange = true }: PlaybackControlsProps) {
   const { toast } = useToast()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
 
   const isPlaying = state.playbackState === 'PLAYING'
   const isLineSource = state.inputSource === 'tv' || state.inputSource === 'line-in'
-  const { shuffle: shuffleActive, repeatAll: _repeatAllActive, repeatOne: repeatOneActive } = parsePlayMode(state.currentPlayMode)
+  const serverRepeatOne = parseRepeatOne(state.currentPlayMode)
+
+  // Optimistic local state for repeat-one
+  const [repeatOneActive, setRepeatOneActive] = useState(serverRepeatOne)
+  useEffect(() => { setRepeatOneActive(serverRepeatOne) }, [serverRepeatOne])
 
   const playMutation = useMutation({
     mutationFn: () => api.sonos.play(speaker),
@@ -71,19 +67,24 @@ export function PlaybackControls({ speaker, state, onInvalidate, showChange = tr
     onError: () => toast({ message: 'Could not skip track', type: 'error' }),
   })
 
-  const shuffleMutation = useMutation({
-    mutationFn: () => api.sonos.shuffle(speaker, !shuffleActive),
-    onSuccess: onInvalidate,
-    onError: () => toast({ message: 'Could not toggle shuffle', type: 'error' }),
-  })
-
   const repeatOneMutation = useMutation({
     mutationFn: () =>
       repeatOneActive
         ? api.sonos.repeat(speaker, false, 'off')
         : api.sonos.repeat(speaker, true, 'one'),
-    onSuccess: onInvalidate,
-    onError: () => toast({ message: 'Could not toggle repeat one', type: 'error' }),
+    onMutate: () => {
+      setRepeatOneActive(prev => !prev)
+    },
+    onSuccess: () => {
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
+      }, 500)
+      onInvalidate()
+    },
+    onError: () => {
+      setRepeatOneActive(serverRepeatOne)
+      toast({ message: 'Could not toggle repeat one', type: 'error' })
+    },
   })
 
   const playPausePending = playMutation.isPending || pauseMutation.isPending
@@ -94,25 +95,6 @@ export function PlaybackControls({ speaker, state, onInvalidate, showChange = tr
       role="group"
       aria-label="Playback controls"
     >
-      {/* Shuffle */}
-      <button
-        onClick={() => shuffleMutation.mutate()}
-        disabled={isLineSource || shuffleMutation.isPending}
-        aria-label={shuffleActive ? 'Disable shuffle' : 'Enable shuffle'}
-        aria-pressed={shuffleActive}
-        className={cn(
-          'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          isLineSource || shuffleMutation.isPending
-            ? 'cursor-not-allowed opacity-40 text-caption'
-            : shuffleActive
-              ? 'text-fairy-400'
-              : 'text-caption hover:text-body',
-        )}
-      >
-        <Shuffle className="h-5 w-5" aria-hidden="true" />
-      </button>
-
       {/* Skip back */}
       <button
         onClick={() => prevMutation.mutate()}
@@ -191,7 +173,7 @@ export function PlaybackControls({ speaker, state, onInvalidate, showChange = tr
           isLineSource || repeatOneMutation.isPending
             ? 'cursor-not-allowed opacity-40 text-caption'
             : repeatOneActive
-              ? 'text-fairy-400'
+              ? 'bg-fairy-500/15 text-fairy-400'
               : 'text-caption hover:text-body',
         )}
       >
@@ -220,5 +202,3 @@ export function PlaybackControls({ speaker, state, onInvalidate, showChange = tr
     </div>
   )
 }
-
-export { Repeat as RepeatAllIcon }

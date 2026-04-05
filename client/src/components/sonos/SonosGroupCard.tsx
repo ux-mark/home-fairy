@@ -5,8 +5,8 @@ import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import type { SonosPlaybackState, SonosNowPlayingEntry } from '@/lib/api'
-import { SonosVolumeControl } from './SonosVolumeControl'
 import { UnifiedPlaybackCard } from './UnifiedPlaybackCard'
+import { VolumeGroupPopover } from './VolumeGroupPopover'
 import { GroupManager } from './GroupManager'
 
 interface SonosGroupCardProps {
@@ -109,12 +109,15 @@ export function SonosGroupCard({ coordinator, members, onRefresh, allSpeakers, f
         showGroupSpeakers={true}
       />
 
-      {/* Volume control — kept separate */}
+      {/* Volume control — with group popover for member volumes */}
       <div className="mt-3">
         <p className="mb-1.5 text-xs font-medium text-caption">Volume</p>
-        <SonosVolumeControl
+        <VolumeGroupPopover
+          speaker={coordinatorName}
           value={state?.volume ?? 0}
           onChange={level => volumeMutation.mutate(level)}
+          group={groupInfo}
+          allSpeakers={allSpeakers}
           label="Group volume"
         />
       </div>
