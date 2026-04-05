@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { countryCodeToFlag, isValidIsoCode } from './countryUtils'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -27,21 +28,6 @@ interface CountryEntry {
   name: string
   flag: string
   artistCount: number
-}
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Convert ISO 3166-1 alpha-2 code to flag emoji via regional indicator symbols */
-function countryCodeToFlag(code: string): string {
-  return code
-    .toUpperCase()
-    .split('')
-    .map(c => String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65))
-    .join('')
-}
-
-function isValidIsoCode(code: string | null | undefined): code is string {
-  return typeof code === 'string' && /^[A-Z]{2}$/.test(code)
 }
 
 // ── Skeleton / Error ─────────────────────────────────────────────────────────
@@ -330,6 +316,3 @@ export function CountryArtistList({
   )
 }
 
-// ── Re-export helpers for consumers ──────────────────────────────────────────
-
-export { countryCodeToFlag, isValidIsoCode }

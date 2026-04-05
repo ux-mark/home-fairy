@@ -55,7 +55,6 @@ interface SortableQueueItemProps {
   isCurrentTrack: boolean
   onRemove: (index: number) => void
   onPlayNext: (uri: string) => void
-  isFirst: boolean
   speaker: string
 }
 
@@ -65,7 +64,6 @@ function SortableQueueItem({
   isCurrentTrack,
   onRemove,
   onPlayNext,
-  isFirst: _isFirst,
   speaker,
 }: SortableQueueItemProps) {
   const [imgFailed, setImgFailed] = useState(false)
@@ -392,7 +390,6 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
                     isCurrentTrack={isCurrentTrack}
                     onRemove={handleRemove}
                     onPlayNext={handlePlayNext}
-                    isFirst={i === 0}
                     speaker={speaker}
                   />
                 )

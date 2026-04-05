@@ -61,7 +61,6 @@ interface SortableQueueItemProps {
   isCurrentTrack: boolean
   onRemove: (index: number) => void
   onPlayNext: (uri: string) => void
-  isFirst: boolean
   speaker: string
 }
 
@@ -71,7 +70,6 @@ function SortableQueueItem({
   isCurrentTrack,
   onRemove,
   onPlayNext,
-  isFirst: _isFirst,
   speaker,
 }: SortableQueueItemProps) {
   const navigate = useNavigate()
@@ -397,7 +395,6 @@ export function InlineQueue({
                         isCurrentTrack={isCurrentTrack}
                         onRemove={handleRemove}
                         onPlayNext={handlePlayNext}
-                        isFirst={i === 0}
                         speaker={speaker}
                       />
                     )
