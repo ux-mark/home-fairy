@@ -1,7 +1,8 @@
-import { Play } from 'lucide-react'
+import { Pause, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ArtworkImage, type ArtworkImageProps } from './ArtworkImage'
 import { MusicItemMenu, type MusicItemMenuProps } from './MusicItemMenu'
+import { ActiveTrackIndicator } from './ActiveTrackIndicator'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,8 @@ export interface MusicListItemProps {
   onTap: () => void
   /** Called when the play button is tapped */
   onPlay: () => void
+  /** Called when the pause button is tapped (only shown when isCurrentTrack && isPlaying) */
+  onPause?: () => void
   /** Disable the play button */
   playDisabled?: boolean
   /** Play mutation is pending */
@@ -24,6 +27,10 @@ export interface MusicListItemProps {
   menuProps: Omit<MusicItemMenuProps, 'disabled'>
   /** Disable all interactive controls (no speaker selected) */
   disabled?: boolean
+  /** True if this track is the currently loaded track on the selected speaker */
+  isCurrentTrack?: boolean
+  /** True if the speaker is actively playing (matters only when isCurrentTrack is true) */
+  isPlaying?: boolean
 }
 
 // ── Shared styles ────────────────────────────────────────────────────────────
@@ -43,13 +50,18 @@ export function MusicListItem({
   subtitle,
   onTap,
   onPlay,
+  onPause,
   playDisabled = false,
   playPending = false,
   menuProps,
   disabled = false,
+  isCurrentTrack = false,
+  isPlaying = false,
 }: MusicListItemProps) {
+  const showPause = isCurrentTrack && isPlaying && !!onPause
+
   return (
-    <li className="flex items-center gap-3 px-4 py-2.5 min-h-[44px]">
+    <li className={cn('flex items-center gap-3 px-4 py-2.5 min-h-[44px]', isCurrentTrack && 'bg-fairy-500/5')}>
       {/* Tappable content area — navigates to detail */}
       <button
         type="button"
@@ -63,21 +75,34 @@ export function MusicListItem({
       >
         <ArtworkImage {...artwork} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-heading">{title}</p>
+          <p className={cn('truncate text-sm font-medium', isCurrentTrack ? 'text-fairy-400' : 'text-heading')}>
+            {title}
+          </p>
           {subtitle && <p className="truncate text-xs text-caption">{subtitle}</p>}
         </div>
       </button>
 
-      {/* Play button + context menu */}
+      {/* Active track indicator + play/pause button + context menu */}
       <div className="flex shrink-0 items-center gap-1">
+        {isCurrentTrack && (
+          <ActiveTrackIndicator
+            isActive={isCurrentTrack}
+            isPlaying={isPlaying}
+            className="mr-1"
+          />
+        )}
+
         <button
           type="button"
           disabled={disabled || playDisabled || playPending}
-          onClick={onPlay}
-          aria-label={`Play ${title}`}
+          onClick={showPause ? onPause : onPlay}
+          aria-label={showPause ? `Pause ${title}` : `Play ${title}`}
           className={playBtnCls}
         >
-          <Play className="h-4 w-4" aria-hidden="true" />
+          {showPause
+            ? <Pause className="h-4 w-4" aria-hidden="true" />
+            : <Play className="h-4 w-4" aria-hidden="true" />
+          }
         </button>
 
         <MusicItemMenu {...menuProps} disabled={disabled} />

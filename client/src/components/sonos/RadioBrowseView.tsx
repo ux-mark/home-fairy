@@ -1,4 +1,3 @@
-import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -9,36 +8,13 @@ import {
 import { api } from '@/lib/api'
 import type { SonosRadioStation } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
+import { useDebounce } from '@/hooks/useBrowseShared'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from './ArtworkImage'
 import { MusicItemMenu } from './MusicItemMenu'
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function useFirstSpeaker() {
-  const { data: zones } = useQuery({
-    queryKey: ['sonos-zones'],
-    queryFn: api.sonos.getZones,
-    staleTime: 30_000,
-  })
-  return zones?.[0]?.members?.[0]?.roomName ?? zones?.[0]?.coordinator?.roomName ?? null
-}
-
-function useDebounce<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (timerRef.current !== null) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => setDebounced(value), delay)
-    return () => {
-      if (timerRef.current !== null) clearTimeout(timerRef.current)
-    }
-  }, [value, delay])
-
-  return debounced
-}
+import { ActiveTrackIndicator } from './ActiveTrackIndicator'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
 
 // ── Skeleton ─────────────────────────────────────────────────────────────────
 
@@ -98,9 +74,13 @@ function ErrorState({
 function StationRow({
   station,
   speaker,
+  isActive = false,
+  isPlaying = false,
 }: {
   station: SonosRadioStation
   speaker: string | null
+  isActive?: boolean
+  isPlaying?: boolean
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
@@ -141,11 +121,20 @@ function StationRow({
   })
 
   return (
-    <li className="flex items-center gap-3 px-4 py-2.5">
-      <ArtworkImage src={station.albumArtUri} size={40} fallback="disc" />
+    <li className={cn('flex items-center gap-3 px-4 py-2.5', isActive && 'bg-fairy-500/5')}>
+      <div className="relative shrink-0">
+        <ArtworkImage src={station.albumArtUri} size={40} fallback="disc" />
+        {isActive && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black/40">
+            <ActiveTrackIndicator isActive={isActive} isPlaying={isPlaying} />
+          </div>
+        )}
+      </div>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">{station.title}</p>
+        <p className={cn('truncate text-sm font-medium', isActive ? 'text-fairy-400' : 'text-heading')}>
+          {station.title}
+        </p>
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
@@ -190,8 +179,8 @@ interface RadioBrowseViewProps {
 }
 
 export function RadioBrowseView({ searchQuery, targetSpeaker }: RadioBrowseViewProps) {
-  const firstSpeaker = useFirstSpeaker()
-  const speaker = targetSpeaker ?? firstSpeaker
+  const { selectedSpeaker, isTrackActive, isSelectedPlaying } = usePlaybackState()
+  const speaker = targetSpeaker ?? selectedSpeaker
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
 
   const { data: stations, isLoading, isError, error, refetch } = useQuery({
@@ -243,9 +232,18 @@ export function RadioBrowseView({ searchQuery, targetSpeaker }: RadioBrowseViewP
 
   return (
     <ul className="-mx-4">
-      {filtered.map((station, i) => (
-        <StationRow key={station.uri + ':' + i} station={station} speaker={speaker} />
-      ))}
+      {filtered.map((station, i) => {
+        const isActive = isTrackActive(station.uri, station.title)
+        return (
+          <StationRow
+            key={station.uri + ':' + i}
+            station={station}
+            speaker={speaker}
+            isActive={isActive}
+            isPlaying={isActive && isSelectedPlaying}
+          />
+        )
+      })}
     </ul>
   )
 }

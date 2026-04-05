@@ -26,7 +26,8 @@ import type {
   EnrichmentProgress,
 } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
-import { useFirstSpeaker, useDebounce, useNowPlayingTrack } from '@/hooks/useBrowseShared'
+import { useDebounce } from '@/hooks/useBrowseShared'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
@@ -947,9 +948,9 @@ function AlbumDetail({
     onError: () => toast({ message: 'Failed to pause', type: 'error' }),
   })
 
-  const nowPlayingState = useNowPlayingTrack(speaker)
-  const isPlaying = nowPlayingState?.playbackState === 'PLAYING'
-  const currentUri = nowPlayingState?.currentTrack?.uri
+  const { isSelectedPlaying, isAlbumPlaying, isTrackActive } = usePlaybackState()
+  const isPlaying = isSelectedPlaying
+  const isThisAlbumPlaying = isAlbumPlaying(album.name)
 
   return (
     <div>
@@ -981,8 +982,8 @@ function AlbumDetail({
         <button
           type="button"
           disabled={!speaker || playAlbum.isPending || pauseAlbum.isPending}
-          onClick={() => isPlaying ? pauseAlbum.mutate() : playAlbum.mutate()}
-          aria-label={isPlaying ? `Pause ${album.name}` : `Play album ${album.name}`}
+          onClick={() => (isThisAlbumPlaying && isPlaying) ? pauseAlbum.mutate() : playAlbum.mutate()}
+          aria-label={(isThisAlbumPlaying && isPlaying) ? `Pause ${album.name}` : `Play album ${album.name}`}
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
             'text-white transition-colors hover:bg-fairy-400',
@@ -990,7 +991,7 @@ function AlbumDetail({
             'disabled:opacity-40',
           )}
         >
-          {isPlaying
+          {isThisAlbumPlaying && isPlaying
             ? <Pause className="h-5 w-5" aria-hidden="true" />
             : <Play className="h-5 w-5" aria-hidden="true" />
           }
@@ -1008,15 +1009,18 @@ function AlbumDetail({
 
       {!isLoading && !isError && tracks && tracks.length > 0 && (
         <ul className="-mx-4">
-          {tracks.map((track, i) => (
-            <TrackRow
-              key={track.uri + ':' + i}
-              track={track}
-              speaker={speaker}
-              isActive={!!currentUri && currentUri === track.uri}
-              isPlaying={isPlaying}
-            />
-          ))}
+          {tracks.map((track, i) => {
+            const active = isTrackActive(track.uri, track.title)
+            return (
+              <TrackRow
+                key={track.uri + ':' + i}
+                track={track}
+                speaker={speaker}
+                isActive={active}
+                isPlaying={active && isPlaying}
+              />
+            )
+          })}
         </ul>
       )}
 
@@ -1406,8 +1410,8 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null)
   const [selectedAlbum, setSelectedAlbum] = useState<SonosGenreAlbum | null>(null)
   const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
-  const firstSpeaker = useFirstSpeaker()
-  const speaker = targetSpeaker ?? firstSpeaker
+  const { selectedSpeaker } = usePlaybackState()
+  const speaker = targetSpeaker ?? selectedSpeaker
 
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
   const isSearching = debouncedQuery.length > 0

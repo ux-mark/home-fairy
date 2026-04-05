@@ -21,7 +21,8 @@ import type {
   SpotifyPlaylist,
 } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
-import { useFirstSpeaker, useDebounce } from '@/hooks/useBrowseShared'
+import { useDebounce } from '@/hooks/useBrowseShared'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
@@ -85,6 +86,8 @@ function NasTrackRow({
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const { isTrackActive, isSelectedPlaying } = usePlaybackState()
+  const isCurrentTrack = isTrackActive(track.uri, track.title)
 
   const playNow = useMutation({
     mutationFn: () => api.sonos.playUri(speaker!, track.uri),
@@ -131,6 +134,8 @@ function NasTrackRow({
       playDisabled={!speaker}
       playPending={playNow.isPending}
       disabled={!speaker}
+      isCurrentTrack={isCurrentTrack}
+      isPlaying={isCurrentTrack && isSelectedPlaying}
       menuProps={{
         label: track.title || 'Unknown track',
         onPlayNext: () => playNext.mutate(),
@@ -161,6 +166,8 @@ function SpotifyTrackRow({
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const { isTrackActive, isSelectedPlaying } = usePlaybackState()
+  const isCurrentTrack = isTrackActive(track.uri, track.name)
 
   const playNow = useMutation({
     mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'now'),
@@ -223,6 +230,8 @@ function SpotifyTrackRow({
       playDisabled={!speaker}
       playPending={playNow.isPending}
       disabled={!speaker}
+      isCurrentTrack={isCurrentTrack}
+      isPlaying={isCurrentTrack && isSelectedPlaying}
       menuProps={{
         label: track.name,
         onPlayNext: () => playNext.mutate(),
@@ -810,8 +819,8 @@ export function UnifiedSearchResults({
   onSelectSpotifyArtist,
   onSelectSpotifyPlaylist,
 }: UnifiedSearchResultsProps) {
-  const firstSpeaker = useFirstSpeaker()
-  const speaker = targetSpeaker ?? firstSpeaker
+  const { selectedSpeaker } = usePlaybackState()
+  const speaker = targetSpeaker ?? selectedSpeaker
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
 
   if (!debouncedQuery) return null

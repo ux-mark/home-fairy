@@ -24,6 +24,8 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { FavouriteItem } from './FavouriteItem'
 import { FairylistAccordion } from './FairylistAccordion'
 import { FairylistDetail } from './FairylistDetail'
+import { SpeakerSelectorDropdown } from './SpeakerSelectorDropdown'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -47,31 +49,9 @@ export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesT
   // ── Drag announcement for screen readers ──────────────────────────────────
   const [dragAnnouncement, setDragAnnouncement] = useState('')
 
-  // ── Speaker selection (mirror NowPlayingTab pattern) ─────────────────────
-  const { data: nowPlaying } = useQuery({
-    queryKey: ['sonos', 'now-playing'],
-    queryFn: api.sonos.getNowPlaying,
-    refetchInterval: 10_000,
-    staleTime: 8_000,
-    retry: 1,
-  })
-
-  const [userSpeakerChoice, setUserSpeakerChoice] = useState<string | undefined>(undefined)
-
-  const autoSpeaker = (() => {
-    if (!nowPlaying || nowPlaying.length === 0) return ''
-    const playing = nowPlaying.find(e => e.state?.playbackState === 'PLAYING')
-    return playing?.speakerName ?? nowPlaying[0].speakerName
-  })()
-
-  const allSpeakerNames = (nowPlaying ?? []).map(e => e.speakerName)
-
-  const selectedSpeaker =
-    userSpeakerChoice && allSpeakerNames.includes(userSpeakerChoice)
-      ? userSpeakerChoice
-      : autoSpeaker
-
-  const effectiveSpeaker = targetSpeaker ?? selectedSpeaker
+  // ── Speaker selection via context ─────────────────────────────────────────
+  const { selectedSpeaker: contextSpeaker } = usePlaybackState()
+  const effectiveSpeaker = targetSpeaker ?? contextSpeaker ?? null
 
   // ── Favourites query ─────────────────────────────────────────────────────
   const favsKey = ['favourites']
@@ -183,34 +163,6 @@ export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesT
     addToQueueMutation.mutate({ speaker: effectiveSpeaker, uri: item.source_uri })
   }
 
-  // ── Speaker selector (shown when multiple speakers available, hidden when targetSpeaker set) ─
-  function renderSpeakerSelector() {
-    if (targetSpeaker) return null
-    if (allSpeakerNames.length <= 1) return null
-    return (
-      <div className="mb-4 flex items-center gap-2">
-        <label
-          htmlFor="fav-speaker-select"
-          className="shrink-0 text-xs text-caption"
-        >
-          Playing on
-        </label>
-        <select
-          id="fav-speaker-select"
-          value={selectedSpeaker}
-          onChange={e => setUserSpeakerChoice(e.target.value)}
-          className="min-w-0 flex-1 rounded-lg border border-[var(--border-primary)] bg-[var(--bg-secondary)] px-3 py-1.5 text-sm text-body focus:outline-2 focus:outline-fairy-500"
-        >
-          {allSpeakerNames.map(name => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
-      </div>
-    )
-  }
-
   // ── Fairylist detail view ─────────────────────────────────────────────────
   if (fairylistDetailId !== null) {
     return (
@@ -271,7 +223,12 @@ export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesT
         {dragAnnouncement}
       </div>
 
-      {renderSpeakerSelector()}
+      {/* Speaker selector */}
+      {!targetSpeaker && (
+        <div className="flex items-center px-0 pb-2">
+          <SpeakerSelectorDropdown />
+        </div>
+      )}
 
       {/* Fairylists section */}
       <div className="mb-4">

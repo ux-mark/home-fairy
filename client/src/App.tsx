@@ -5,6 +5,7 @@ import WatchLayout from '@/components/layout/WatchLayout'
 import HomePage from '@/pages/HomePage'
 import { Skeleton, SkeletonList } from '@/components/ui/Skeleton'
 import { AuthGuard } from '@/components/auth/AuthGuard'
+import { PlaybackStateProvider } from '@/contexts/PlaybackStateContext'
 
 const LoginPage = React.lazy(() => import('@/pages/LoginPage'))
 const InvitePage = React.lazy(() => import('@/pages/InvitePage'))
@@ -50,7 +51,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/invite/:token" element={<InvitePage />} />
-        <Route element={<AuthGuard><AppLayout /></AuthGuard>}>
+        <Route element={<AuthGuard><PlaybackStateProvider><AppLayout /></PlaybackStateProvider></AuthGuard>}>
           <Route path="/" element={<HomePage />} />
           <Route path="/rooms" element={<RoomsPage />} />
           <Route path="/rooms/:name" element={<RoomDetailPage />} />
