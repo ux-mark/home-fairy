@@ -10,7 +10,7 @@ interface SonosNowPlayingProps {
 
 /**
  * Compact "now playing" display: album art + track title + artist.
- * Used inside SonosSpeakerCard.
+ * Used inside SpeakerCard.
  */
 export function SonosNowPlaying({ state, className }: SonosNowPlayingProps) {
   // Track which URL failed to load — compared against the current URL so a

@@ -38,6 +38,8 @@ export interface UnifiedPlaybackCardProps {
   showGroupSpeakers?: boolean
   /** Limit visible queue items (only used when showFullQueue is false) */
   queueLimit?: number
+  /** Show the inline queue section (default: true) */
+  showInlineQueue?: boolean
   /** Additional className for the root element */
   className?: string
 }
@@ -65,6 +67,7 @@ export function UnifiedPlaybackCard({
   showFullQueue = false,
   showGroupSpeakers = true,
   queueLimit = 5,
+  showInlineQueue = true,
   className,
 }: UnifiedPlaybackCardProps) {
   const queryClient = useQueryClient()
@@ -353,15 +356,17 @@ export function UnifiedPlaybackCard({
       />
 
       {/* Queue with optional limit */}
-      <InlineQueue
-        speaker={speaker}
-        currentTrackUri={trackUri ?? null}
-        expanded={queueExpanded}
-        onToggle={() => setQueueExpanded(v => !v)}
-        queueLimit={queueLimit}
-        playbackState={state}
-        onViewFullQueue={showFullQueue ? () => setQueueViewOpen(true) : undefined}
-      />
+      {showInlineQueue && (
+        <InlineQueue
+          speaker={speaker}
+          currentTrackUri={trackUri ?? null}
+          expanded={queueExpanded}
+          onToggle={() => setQueueExpanded(v => !v)}
+          queueLimit={queueLimit}
+          playbackState={state}
+          onViewFullQueue={showFullQueue ? () => setQueueViewOpen(true) : undefined}
+        />
+      )}
       {showFullQueue && (
         <QueueView
           speaker={speaker}
