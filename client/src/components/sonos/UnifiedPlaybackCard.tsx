@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import type { SonosPlaybackState, SonosGroupInfo, SonosNowPlayingEntry } from '@/lib/api'
 import { ProgressBar } from './ProgressBar'
 import { PlaybackControls } from './PlaybackControls'
+import { SonosVolumeControl } from './SonosVolumeControl'
 import { VolumeGroupPopover } from './VolumeGroupPopover'
 import { InlineQueue } from './InlineQueue'
 import { QueueView } from './QueueView'
@@ -299,51 +300,56 @@ export function UnifiedPlaybackCard({
   // ── Card variant ─────────────────────────────────────────────────────────
 
   return (
-    <div className={cn('flex flex-col gap-4', className)}>
-      {/* Large album art — tappable */}
+    <div className={cn('flex flex-col gap-3', className)}>
+      {/* Compact now-playing row: artwork + track info — tappable */}
       <button
         onClick={handleArtworkClick}
         disabled={isLineSource || !trackUri}
         aria-label={trackUri && !isLineSource ? `View details for ${title}` : undefined}
         className={cn(
-          'mx-auto aspect-square w-full max-w-[200px] overflow-hidden rounded-xl',
-          'bg-[var(--bg-secondary)] flex items-center justify-center',
-          !isPlaying && 'opacity-80',
-          (isLineSource || !trackUri) && 'cursor-default',
+          'flex items-center gap-3 w-full text-left rounded-lg',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          (isLineSource || !trackUri) && 'cursor-default',
         )}
       >
-        {isLineSource ? (
-          <Tv className="h-12 w-12 text-caption" aria-hidden="true" />
-        ) : showArt ? (
-          <img
-            src={artUri}
-            alt=""
-            className="h-full w-full object-cover"
-            onError={() => setFailedArtUri(artUri ?? null)}
-          />
-        ) : (
-          <ImageOff className="h-12 w-12 text-caption" aria-hidden="true" />
-        )}
-      </button>
-
-      {/* Track metadata — title tappable */}
-      <div className="min-w-0 text-center">
-        <button
-          onClick={handleArtworkClick}
-          disabled={isLineSource || !trackUri}
+        {/* Album art */}
+        <div
           className={cn(
-            'text-base font-semibold leading-tight text-heading',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded',
-            (isLineSource || !trackUri) && 'cursor-default',
+            'relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--bg-tertiary)]',
+            !isPlaying && 'opacity-60',
           )}
+          aria-hidden="true"
         >
-          {title}
-        </button>
-        {artist && (
-          <p className="mt-0.5 text-sm text-caption">{artist}</p>
-        )}
-      </div>
+          {isLineSource ? (
+            <Tv className="h-6 w-6 text-caption" aria-hidden="true" />
+          ) : showArt ? (
+            <img
+              src={artUri}
+              alt=""
+              className="h-full w-full object-cover"
+              onError={() => setFailedArtUri(artUri ?? null)}
+            />
+          ) : (
+            <ImageOff className="h-6 w-6 text-caption" aria-hidden="true" />
+          )}
+        </div>
+
+        {/* Track info */}
+        <div className="min-w-0 flex-1">
+          <p className={cn(
+            'truncate text-sm font-semibold leading-tight',
+            isPlaying ? 'text-heading' : 'text-caption',
+          )}>
+            {title}
+          </p>
+          {artist && (
+            <p className="mt-0.5 truncate text-xs text-caption">{artist}</p>
+          )}
+          {album && (
+            <p className="mt-0.5 truncate text-[11px] text-caption/70">{album}</p>
+          )}
+        </div>
+      </button>
 
       {/* Playback controls */}
       <PlaybackControls
@@ -351,6 +357,18 @@ export function UnifiedPlaybackCard({
         state={state}
         onInvalidate={invalidate}
       />
+
+      {/* Volume (card variant — optional, usually false) */}
+      {showVolume && (
+        <div>
+          <p className="mb-1.5 text-xs font-medium text-caption">Volume</p>
+          <SonosVolumeControl
+            value={state.volume}
+            onChange={level => volumeMutation.mutate(level)}
+            label={`${roomName} volume`}
+          />
+        </div>
+      )}
 
       {/* Queue with optional limit */}
       <InlineQueue

@@ -26,7 +26,6 @@ import {
   ListMusic,
   ListStart,
   Music2,
-  Play,
   Trash2,
 } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -70,10 +69,10 @@ function SortableQueueItem({
   isCurrentTrack,
   onRemove,
   onPlayNext,
+  isFirst,
   speaker,
 }: SortableQueueItemProps) {
   const navigate = useNavigate()
-  const { toast } = useToast()
 
   const {
     attributes,
@@ -88,17 +87,6 @@ function SortableQueueItem({
     transform: CSS.Transform.toString(transform),
     transition,
   }
-
-  const playNow = useMutation({
-    mutationFn: () => {
-      if (item.uri?.startsWith('spotify:')) {
-        return api.sonos.playSpotify(speaker, item.uri, 'now')
-      }
-      return api.sonos.playUri(speaker, item.uri)
-    },
-    onSuccess: () => toast({ message: `Playing "${item.title}"` }),
-    onError: () => toast({ message: 'Failed to play', type: 'error' }),
-  })
 
   function handleTitleClick() {
     if (item.uri) {
@@ -156,50 +144,23 @@ function SortableQueueItem({
         </p>
       </button>
 
-      {/* Actions — visible controls for quick queue management */}
-      <div className="flex shrink-0 items-center gap-0.5">
-        {/* Play now */}
+      {/* Actions */}
+      <div className="flex shrink-0 items-center">
+        {!isFirst && (
+          <button
+            onClick={() => onPlayNext(item.uri)}
+            className="flex h-11 w-9 items-center justify-center rounded-lg text-slate-400 hover:text-slate-200 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+            aria-label={`Play ${item.title} next`}
+          >
+            <ListStart className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )}
         <button
-          type="button"
-          disabled={playNow.isPending}
-          onClick={() => playNow.mutate()}
-          aria-label={`Play ${item.title}`}
-          className={cn(
-            'flex h-11 w-9 items-center justify-center rounded-lg',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'disabled:opacity-40',
-          )}
-        >
-          <Play className="h-3.5 w-3.5" aria-hidden="true" />
-        </button>
-
-        {/* Move to next */}
-        <button
-          type="button"
-          onClick={() => onPlayNext(item.uri)}
-          aria-label={`Move ${item.title} to play next`}
-          className={cn(
-            'flex h-11 w-9 items-center justify-center rounded-lg',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
-        >
-          <ListStart className="h-3.5 w-3.5" aria-hidden="true" />
-        </button>
-
-        {/* Remove from queue */}
-        <button
-          type="button"
           onClick={() => onRemove(index)}
+          className="flex h-11 w-11 items-center justify-center rounded-lg text-red-400/70 hover:text-red-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           aria-label={`Remove ${item.title} from queue`}
-          className={cn(
-            'flex h-11 w-9 items-center justify-center rounded-lg',
-            'text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
         >
-          <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
     </li>
