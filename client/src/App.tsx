@@ -26,6 +26,12 @@ const SonosDetailPage = React.lazy(() => import('@/pages/SonosDetailPage'))
 const SonosPlayingPage = React.lazy(() => import('@/pages/SonosPlayingPage'))
 const SonosBrowsePage = React.lazy(() => import('@/pages/SonosBrowsePage'))
 const SonosFavouritesPage = React.lazy(() => import('@/pages/SonosFavouritesPage'))
+const SpotifyArtistPage = React.lazy(() => import('@/pages/SpotifyArtistPage'))
+const SpotifyAlbumPage = React.lazy(() => import('@/pages/SpotifyAlbumPage'))
+const SpotifyPlaylistPage = React.lazy(() => import('@/pages/SpotifyPlaylistPage'))
+const SpotifyShowPage = React.lazy(() => import('@/pages/SpotifyShowPage'))
+const NasArtistPage = React.lazy(() => import('@/pages/NasArtistPage'))
+const NasAlbumPage = React.lazy(() => import('@/pages/NasAlbumPage'))
 const AccountPage = React.lazy(() => import('@/pages/AccountPage'))
 const FairyQueenPage = React.lazy(() => import('@/pages/FairyQueenPage'))
 
@@ -64,6 +70,12 @@ export default function App() {
           <Route path="/sonos" element={<SonosPlayingPage />} />
           <Route path="/sonos/playing" element={<SonosPlayingPage />} />
           <Route path="/sonos/browse" element={<SonosBrowsePage />} />
+          <Route path="/sonos/browse/spotify/artist/:id" element={<SpotifyArtistPage />} />
+          <Route path="/sonos/browse/spotify/album/:id" element={<SpotifyAlbumPage />} />
+          <Route path="/sonos/browse/spotify/playlist/:id" element={<SpotifyPlaylistPage />} />
+          <Route path="/sonos/browse/spotify/show/:id" element={<SpotifyShowPage />} />
+          <Route path="/sonos/browse/nas/artist/:name" element={<NasArtistPage />} />
+          <Route path="/sonos/browse/nas/album/:artist/:title" element={<NasAlbumPage />} />
           <Route path="/sonos/favourites" element={<SonosFavouritesPage />} />
           <Route path="/sonos/insights" element={<DashboardPage />} />
           <Route path="/sonos/setup" element={<SonosSetupPage />} />
