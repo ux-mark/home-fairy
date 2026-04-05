@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, Search, X, Music, Radio, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
+import type { SonosGenreAlbum, SpotifyAlbum, SpotifyArtist, SpotifyPlaylist } from '@/lib/api'
 import { NasBrowseView } from './NasBrowseView'
 import { SpotifyBrowseView } from './SpotifyBrowseView'
 import { RadioBrowseView } from './RadioBrowseView'
@@ -151,6 +152,19 @@ interface BrowseTabProps {
 export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
   const [activeSource, setActiveSource] = useState<SourceFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const [pendingNasArtist, setPendingNasArtist] = useState<string | null>(null)
+  const [pendingNasAlbum, setPendingNasAlbum] = useState<SonosGenreAlbum | null>(null)
+  const [pendingSpotifyAlbum, setPendingSpotifyAlbum] = useState<SpotifyAlbum | null>(null)
+  const [pendingSpotifyArtist, setPendingSpotifyArtist] = useState<SpotifyArtist | null>(null)
+  const [pendingSpotifyPlaylist, setPendingSpotifyPlaylist] = useState<SpotifyPlaylist | null>(null)
+
+  function clearPending() {
+    setPendingNasArtist(null)
+    setPendingNasAlbum(null)
+    setPendingSpotifyAlbum(null)
+    setPendingSpotifyArtist(null)
+    setPendingSpotifyPlaylist(null)
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -203,7 +217,7 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
               role="tab"
               aria-selected={isActive}
               aria-controls={`browse-panel-${id}`}
-              onClick={() => setActiveSource(id)}
+              onClick={() => { setActiveSource(id); clearPending() }}
               className={cn(
                 'shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors',
                 'min-h-[36px]',
@@ -226,15 +240,59 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
         aria-labelledby={`browse-tab-${activeSource}`}
       >
         {activeSource === 'all' && searchQuery ? (
-          <UnifiedSearchResults searchQuery={searchQuery} targetSpeaker={targetSpeaker} />
+          <UnifiedSearchResults
+            searchQuery={searchQuery}
+            targetSpeaker={targetSpeaker}
+            onSelectNasArtist={(name) => {
+              clearPending()
+              setPendingNasArtist(name)
+              setSearchQuery('')
+              setActiveSource('nas')
+            }}
+            onSelectNasAlbum={(album) => {
+              clearPending()
+              setPendingNasAlbum(album)
+              setSearchQuery('')
+              setActiveSource('nas')
+            }}
+            onSelectSpotifyAlbum={(album) => {
+              clearPending()
+              setPendingSpotifyAlbum(album)
+              setSearchQuery('')
+              setActiveSource('spotify')
+            }}
+            onSelectSpotifyArtist={(artist) => {
+              clearPending()
+              setPendingSpotifyArtist(artist)
+              setSearchQuery('')
+              setActiveSource('spotify')
+            }}
+            onSelectSpotifyPlaylist={(playlist) => {
+              clearPending()
+              setPendingSpotifyPlaylist(playlist)
+              setSearchQuery('')
+              setActiveSource('spotify')
+            }}
+          />
         ) : activeSource === 'all' ? (
           <AllSourcesView onSelectSource={setActiveSource} />
         ) : null}
         {activeSource === 'nas' && (
-          <NasBrowseView searchQuery={searchQuery} targetSpeaker={targetSpeaker} />
+          <NasBrowseView
+            searchQuery={searchQuery}
+            targetSpeaker={targetSpeaker}
+            initialArtist={pendingNasArtist}
+            initialAlbum={pendingNasAlbum}
+          />
         )}
         {activeSource === 'spotify' && (
-          <SpotifyBrowseView searchQuery={searchQuery} targetSpeaker={targetSpeaker} />
+          <SpotifyBrowseView
+            searchQuery={searchQuery}
+            targetSpeaker={targetSpeaker}
+            initialAlbum={pendingSpotifyAlbum}
+            initialArtist={pendingSpotifyArtist}
+            initialPlaylist={pendingSpotifyPlaylist}
+          />
         )}
         {activeSource === 'radio' && (
           <RadioBrowseView searchQuery={searchQuery} targetSpeaker={targetSpeaker} />

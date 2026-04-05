@@ -2259,9 +2259,12 @@ function SpotifyCountryArtistList({
 interface SpotifyBrowseViewProps {
   searchQuery: string
   targetSpeaker?: string | null
+  initialAlbum?: SpotifyAlbum | null
+  initialArtist?: SpotifyArtist | null
+  initialPlaylist?: SpotifyPlaylist | null
 }
 
-export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseViewProps) {
+export function SpotifyBrowseView({ searchQuery, targetSpeaker, initialAlbum, initialArtist, initialPlaylist }: SpotifyBrowseViewProps) {
   const [view, setView] = useState<SpotifyView>('home')
   const [browseMode, setBrowseMode] = useState<BrowseMode>('playlists')
   const [selectedPlaylist, setSelectedPlaylist] = useState<SpotifyPlaylist | null>(null)
@@ -2275,6 +2278,27 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
 
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
   const isSearching = debouncedQuery.length > 0
+
+  useEffect(() => {
+    if (initialAlbum) {
+      setSelectedAlbum(initialAlbum)
+      setView('album-detail')
+    }
+  }, [initialAlbum])
+
+  useEffect(() => {
+    if (initialArtist) {
+      setSelectedArtist(initialArtist)
+      setView('artist-detail')
+    }
+  }, [initialArtist])
+
+  useEffect(() => {
+    if (initialPlaylist) {
+      setSelectedPlaylist(initialPlaylist)
+      setView('playlist-detail')
+    }
+  }, [initialPlaylist])
 
   const {
     data: statusData,
