@@ -1,4 +1,4 @@
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
+import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { ArrowLeft, Music2, Pause, Play } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -14,13 +14,19 @@ export function SpotifyAlbumDetail() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const location = useLocation()
   const { toast } = useToast()
 
   const speakerParam = searchParams.get('speaker')
   const firstSpeaker = useFirstSpeaker()
   const speaker = speakerParam ?? firstSpeaker
 
-  const backUrl = `/sonos/browse?source=spotify${speakerParam ? `&speaker=${encodeURIComponent(speakerParam)}` : ''}`
+  // Navigate back to artist detail if arrived from there, otherwise back to browse
+  const locState = location.state as { fromArtist?: boolean; artistId?: string } | null
+  const fromArtistId = locState?.fromArtist ? locState.artistId : null
+  const backUrl = fromArtistId
+    ? `/sonos/browse/spotify/artist/${encodeURIComponent(fromArtistId)}${speakerParam ? `?speaker=${encodeURIComponent(speakerParam)}` : ''}`
+    : `/sonos/browse?source=spotify${speakerParam ? `&speaker=${encodeURIComponent(speakerParam)}` : ''}`
 
   // Load album metadata from the enriched albums list (cached)
   const { data: albumsData } = useQuery({
@@ -63,7 +69,7 @@ export function SpotifyAlbumDetail() {
         <button
           type="button"
           onClick={() => navigate(backUrl)}
-          aria-label="Back to albums"
+          aria-label={fromArtistId ? 'Back to artist' : 'Back to albums'}
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
             'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Search, X, Music, Radio, HardDrive } from 'lucide-react'
@@ -156,7 +156,14 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
   const [activeSource, setActiveSource] = useState<SourceFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const navigate = useNavigate()
-  const { selectedSpeaker } = usePlaybackState()
+  const { selectedSpeaker, setSelectedSpeaker } = usePlaybackState()
+
+  // Sync URL-provided speaker into global context so the dropdown reflects it
+  useEffect(() => {
+    if (targetSpeaker && targetSpeaker !== selectedSpeaker) {
+      setSelectedSpeaker(targetSpeaker)
+    }
+  }, [targetSpeaker]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Use context speaker unless a targetSpeaker override is provided
   const effectiveSpeaker = targetSpeaker ?? selectedSpeaker ?? undefined

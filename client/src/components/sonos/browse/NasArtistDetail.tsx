@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronRight, Disc3 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosLibraryTrack } from '@/lib/api'
 import { useFirstSpeaker } from '@/hooks/useBrowseShared'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { cn } from '@/lib/utils'
 import { ListSkeleton, ErrorState } from './BrowseShared'
 import { NasTrackRow } from './NasTrackRow'
@@ -30,6 +31,8 @@ export function NasArtistDetail() {
     enabled: !!artist,
   })
 
+  const { isTrackPlaying: isTrackActive, isSelectedPlaying: isPlaying } = usePlaybackState()
+
   // Group tracks by album
   const albums = new Map<string, SonosLibraryTrack[]>()
   if (tracks) {
@@ -46,13 +49,10 @@ export function NasArtistDetail() {
   function handleSelectAlbum(albumName: string) {
     const objectId = `A:ALBUMARTIST/${encodeURIComponent(artist!)}/${encodeURIComponent(albumName)}`
     const sp = speakerParam ? `?speaker=${encodeURIComponent(speakerParam)}` : ''
-    navigate(`/sonos/browse/nas/album/${encodeURIComponent(artist!)}/${encodeURIComponent(albumName)}${sp}`, {
-      state: { objectId },
-    })
-  }
-
-  function selectAlbum(albumName: string) {
-    handleSelectAlbum(albumName)
+    navigate(
+      `/sonos/browse/nas/album/${encodeURIComponent(artist!)}/${encodeURIComponent(albumName)}${sp}`,
+      { state: { objectId, fromArtist: true } },
+    )
   }
 
   return (
@@ -88,7 +88,7 @@ export function NasArtistDetail() {
             <section key={albumName} aria-label={albumName}>
               <button
                 type="button"
-                onClick={() => selectAlbum(albumName)}
+                onClick={() => handleSelectAlbum(albumName)}
                 className={cn(
                   'flex w-full items-center gap-2 px-4 pb-1 pt-4 text-left',
                   'transition-colors hover:bg-[var(--bg-secondary)]',
@@ -102,13 +102,19 @@ export function NasArtistDetail() {
               </button>
               <ul>
                 {albumTracks.slice(0, 5).map((track, i) => (
-                  <NasTrackRow key={track.uri + ':' + i} track={track} speaker={speaker} />
+                  <NasTrackRow
+                    key={track.uri + ':' + i}
+                    track={track}
+                    speaker={speaker}
+                    isActive={isTrackActive(track.uri, track.title)}
+                    isPlaying={isTrackActive(track.uri, track.title) && isPlaying}
+                  />
                 ))}
                 {albumTracks.length > 5 && (
                   <li className="px-4 py-2">
                     <button
                       type="button"
-                      onClick={() => selectAlbum(albumName)}
+                      onClick={() => handleSelectAlbum(albumName)}
                       className="text-xs font-medium text-fairy-400 hover:text-fairy-300"
                     >
                       Show all {albumTracks.length} tracks

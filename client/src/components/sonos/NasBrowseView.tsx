@@ -27,6 +27,7 @@ import type {
 } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { useDebounce } from '@/hooks/useBrowseShared'
+import { usePersistedState } from '@/hooks/usePersistedState'
 import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
@@ -1406,7 +1407,7 @@ interface NasBrowseViewProps {
 
 export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps) {
   const [view, setView] = useState<NasView>('home')
-  const [browseMode, setBrowseMode] = useState<BrowseMode>('countries')
+  const [browseMode, setBrowseMode] = usePersistedState<BrowseMode>('nas-browse-mode', 'countries')
   const [selectedArtist, setSelectedArtist] = useState<string | null>(null)
   const [selectedAlbum, setSelectedAlbum] = useState<SonosGenreAlbum | null>(null)
   const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
