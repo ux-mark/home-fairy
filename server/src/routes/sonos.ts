@@ -300,6 +300,25 @@ router.get('/speakers', (_req: Request, res: Response) => {
   res.json(speakers)
 })
 
+// GET /speakers-with-rooms — speaker mappings joined with room icons
+router.get('/speakers-with-rooms', (_req: Request, res: Response) => {
+  const speakers = getAll<{
+    id: number
+    room_name: string
+    speaker_name: string
+    favourite: string | null
+    default_volume: number
+    created_at: string
+    room_icon: string | null
+  }>(
+    `SELECT ss.*, r.icon AS room_icon
+     FROM sonos_speakers ss
+     LEFT JOIN rooms r ON r.name = ss.room_name
+     ORDER BY ss.room_name`,
+  )
+  res.json(speakers)
+})
+
 // POST /speakers — create/update a speaker mapping
 const speakerSchema = z.object({
   room_name: z.string().min(1),

@@ -9,6 +9,8 @@ import { NasBrowseView } from './NasBrowseView'
 import { SpotifyBrowseView } from './SpotifyBrowseView'
 import { RadioBrowseView } from './RadioBrowseView'
 import { UnifiedSearchResults } from './UnifiedSearchResults'
+import { SpeakerSelectorDropdown } from './SpeakerSelectorDropdown'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -154,11 +156,17 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
   const [activeSource, setActiveSource] = useState<SourceFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
   const navigate = useNavigate()
+  const { selectedSpeaker } = usePlaybackState()
 
-  const speakerQuery = targetSpeaker ? `?speaker=${encodeURIComponent(targetSpeaker)}` : ''
+  // Use context speaker unless a targetSpeaker override is provided
+  const effectiveSpeaker = targetSpeaker ?? selectedSpeaker ?? undefined
+  const speakerQuery = effectiveSpeaker ? `?speaker=${encodeURIComponent(effectiveSpeaker)}` : ''
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Speaker selector */}
+      <div className="flex items-center">
+        <SpeakerSelectorDropdown /></div>
       {/* Search bar */}
       <div className="relative flex items-center">
         <Search
@@ -233,7 +241,7 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
         {activeSource === 'all' && searchQuery ? (
           <UnifiedSearchResults
             searchQuery={searchQuery}
-            targetSpeaker={targetSpeaker}
+            targetSpeaker={effectiveSpeaker}
             onSelectNasArtist={(name) => {
               setSearchQuery('')
               navigate(`/sonos/browse/nas/artist/${encodeURIComponent(name)}${speakerQuery}`)
@@ -264,17 +272,17 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
         {activeSource === 'nas' && (
           <NasBrowseView
             searchQuery={searchQuery}
-            targetSpeaker={targetSpeaker}
+            targetSpeaker={effectiveSpeaker}
           />
         )}
         {activeSource === 'spotify' && (
           <SpotifyBrowseView
             searchQuery={searchQuery}
-            targetSpeaker={targetSpeaker}
+            targetSpeaker={effectiveSpeaker}
           />
         )}
         {activeSource === 'radio' && (
-          <RadioBrowseView searchQuery={searchQuery} targetSpeaker={targetSpeaker} />
+          <RadioBrowseView searchQuery={searchQuery} targetSpeaker={effectiveSpeaker} />
         )}
       </div>
     </div>

@@ -831,6 +831,10 @@ export interface SonosSpeakerMapping {
   created_at: string
 }
 
+export interface SonosSpeakerWithRoom extends SonosSpeakerMapping {
+  room_icon: string | null
+}
+
 export interface AutoPlayRule {
   id: number
   room_name: string | null
@@ -1611,6 +1615,7 @@ export const api = {
         body: JSON.stringify({ enabled }),
       }),
     getSpeakers: () => fetchApi<SonosSpeakerMapping[]>('/sonos/speakers'),
+    getSpeakersWithRooms: () => fetchApi<SonosSpeakerWithRoom[]>('/sonos/speakers-with-rooms'),
     setSpeaker: (data: { room_name: string; speaker_name: string; favourite?: string | null; default_volume?: number }) =>
       fetchApi<SonosSpeakerMapping>('/sonos/speakers', {
         method: 'POST',
