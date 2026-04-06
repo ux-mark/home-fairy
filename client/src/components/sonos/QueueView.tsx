@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useState } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import {
   DndContext,
   closestCenter,
@@ -22,16 +23,18 @@ import {
   AlertTriangle,
   GripVertical,
   ImageOff,
-  ListStart,
   Music2,
-  X,
+  Play,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { SonosQueueItem } from '@/lib/api'
-import { getSocket } from '@/hooks/useSocket'
+import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
+import { useQueueSync } from '@/hooks/useQueueSync'
 import { useToast } from '@/hooks/useToast'
+import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { SortableOverlay } from '@/components/ui/SortableOverlay'
+import { QueueHeader } from './QueueHeader'
+import { MusicItemMenu } from './MusicItemMenu'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -40,6 +43,8 @@ interface QueueViewProps {
   open: boolean
   onClose: () => void
   currentTrackUri: string | null
+  /** Current playback state — used for QueueHeader mode buttons */
+  playbackState?: SonosPlaybackState | null
 }
 
 // ── Sortable queue item ───────────────────────────────────────────────────────
@@ -50,7 +55,7 @@ interface SortableQueueItemProps {
   isCurrentTrack: boolean
   onRemove: (index: number) => void
   onPlayNext: (uri: string) => void
-  isFirst: boolean
+  speaker: string
 }
 
 function SortableQueueItem({
@@ -59,9 +64,12 @@ function SortableQueueItem({
   isCurrentTrack,
   onRemove,
   onPlayNext,
-  isFirst,
+  speaker,
 }: SortableQueueItemProps) {
   const [imgFailed, setImgFailed] = useState(false)
+  const navigate = useNavigate()
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
 
   const {
     attributes,
@@ -75,6 +83,46 @@ function SortableQueueItem({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+  }
+
+  const source = item.uri?.startsWith('spotify:') ? 'spotify' : 'nas'
+
+  const playNow = useMutation({
+    mutationFn: () => {
+      if (item.uri?.startsWith('spotify:')) {
+        return api.sonos.playSpotify(speaker, item.uri, 'now')
+      }
+      return api.sonos.playUri(speaker, item.uri)
+    },
+    onSuccess: () => toast({ message: `Playing "${item.title}"` }),
+    onError: () => toast({ message: 'Failed to play', type: 'error' }),
+  })
+
+  const addToQueueMut = useMutation({
+    mutationFn: () => api.sonos.addToQueue(speaker, item.uri),
+    onSuccess: () => {
+      toast({ message: `Added "${item.title}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const addToFavourites = useMutation({
+    mutationFn: () =>
+      api.favourites.add({
+        source,
+        source_uri: item.uri,
+        title: item.title,
+        album_art_uri: item.albumArtUri ?? undefined,
+      }),
+    onSuccess: () => toast({ message: `Added "${item.title}" to favourites` }),
+    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
+  })
+
+  function handleTitleClick() {
+    if (item.uri) {
+      navigate(`/sonos/track?uri=${encodeURIComponent(item.uri)}&speaker=${encodeURIComponent(speaker)}`)
+    }
   }
 
   return (
@@ -117,8 +165,12 @@ function SortableQueueItem({
         )}
       </div>
 
-      {/* Track info */}
-      <div className="min-w-0 flex-1">
+      {/* Track info — tappable */}
+      <button
+        onClick={handleTitleClick}
+        className="min-w-0 flex-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded"
+        aria-label={`View details for ${item.title}`}
+      >
         <div className="flex items-center gap-2">
           <p
             className={[
@@ -137,29 +189,46 @@ function SortableQueueItem({
         <p className="truncate text-xs text-caption">
           {[item.artist, item.album].filter(Boolean).join(' · ')}
         </p>
-      </div>
+      </button>
 
       {/* Actions */}
       <div className="flex shrink-0 items-center gap-1">
-        {/* Play Next — not shown for the currently-playing first item */}
-        {!isFirst && (
-          <button
-            onClick={() => onPlayNext(item.uri)}
-            className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 hover:text-slate-200 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-            aria-label={`Play ${item.title} next`}
-          >
-            <ListStart className="h-4 w-4" aria-hidden="true" />
-          </button>
-        )}
-
-        {/* Remove */}
+        {/* Play now — icon-only acceptable for universally-recognised play symbol */}
         <button
-          onClick={() => onRemove(index)}
-          className="flex h-11 w-11 items-center justify-center rounded-lg text-slate-400 hover:text-red-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-          aria-label={`Remove ${item.title} from queue`}
+          type="button"
+          disabled={playNow.isPending}
+          onClick={() => playNow.mutate()}
+          aria-label={`Play ${item.title}`}
+          className={cn(
+            'flex h-11 w-11 items-center justify-center rounded-lg',
+            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'disabled:opacity-40',
+          )}
         >
-          <X className="h-4 w-4" aria-hidden="true" />
+          <Play className="h-4 w-4" aria-hidden="true" />
         </button>
+
+        <MusicItemMenu
+          label={item.title}
+          onPlayNext={() => onPlayNext(item.uri)}
+          onAddToQueue={() => addToQueueMut.mutate()}
+          onAddToFavourites={() => addToFavourites.mutate()}
+          onRemove={() => onRemove(index)}
+          removeLabel="Remove from queue"
+          fairylistTrack={{
+            source,
+            source_uri: item.uri,
+            title: item.title,
+            artist: item.artist,
+            album_art_uri: item.albumArtUri ?? undefined,
+          }}
+          spotifyTrack={
+            item.uri?.startsWith('spotify:')
+              ? { trackUri: item.uri, trackName: item.title }
+              : undefined
+          }
+        />
       </div>
     </li>
   )
@@ -167,38 +236,16 @@ function SortableQueueItem({
 
 // ── QueueView ─────────────────────────────────────────────────────────────────
 
-export function QueueView({ speaker, open, onClose, currentTrackUri }: QueueViewProps) {
+export function QueueView({ speaker, open, onClose, currentTrackUri, playbackState }: QueueViewProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
   const queueKey = ['sonos', 'queue', speaker]
 
-  const {
-    data: queue,
-    isLoading,
-    isError,
-    refetch,
-  } = useQuery({
-    queryKey: queueKey,
-    queryFn: () => api.sonos.getQueue(speaker),
-    refetchInterval: 30_000,
-    staleTime: 29_000,
+  const { queue, isLoading, isError, refetch } = useQueueSync({
+    speaker,
     enabled: open && !!speaker,
-    retry: 1,
   })
-
-  useEffect(() => {
-    if (!open || !speaker) return
-    const s = getSocket()
-    function handleQueueUpdate(event: { speaker: string; action: string; queue: SonosQueueItem[] }) {
-      if (event.speaker !== speaker) return
-      queryClient.setQueryData<SonosQueueItem[]>(queueKey, event.queue)
-    }
-    s.on('sonos:queue-update', handleQueueUpdate)
-    return () => {
-      s.off('sonos:queue-update', handleQueueUpdate)
-    }
-  }, [open, speaker, queryClient]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -315,34 +362,42 @@ export function QueueView({ speaker, open, onClose, currentTrackUri }: QueueView
     const sortableIds = queue.map((item, i) => item.uri + ':' + i)
 
     return (
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragEnd={handleDragEnd}
-      >
-        <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-          <ul
-            className="divide-y divide-[var(--border-secondary)]"
-            aria-label="Queue — drag to reorder"
-          >
-            {queue.map((item, i) => {
-              const isCurrentTrack =
-                currentTrackUri ? item.uri === currentTrackUri : i === 0
-              return (
-                <SortableQueueItem
-                  key={item.uri + ':' + i}
-                  item={item}
-                  index={i}
-                  isCurrentTrack={isCurrentTrack}
-                  onRemove={handleRemove}
-                  onPlayNext={handlePlayNext}
-                  isFirst={i === 0}
-                />
-              )
-            })}
-          </ul>
-        </SortableContext>
-      </DndContext>
+      <>
+        {/* Queue header — shuffle, repeat all, clear */}
+        <QueueHeader
+          speaker={speaker}
+          currentPlayMode={playbackState?.currentPlayMode}
+          onModeChange={() => {}}
+        />
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
+            <ul
+              className="divide-y divide-[var(--border-secondary)]"
+              aria-label="Queue — drag to reorder"
+            >
+              {queue.map((item, i) => {
+                const isCurrentTrack =
+                  currentTrackUri ? item.uri === currentTrackUri : i === 0
+                return (
+                  <SortableQueueItem
+                    key={item.uri + ':' + i}
+                    item={item}
+                    index={i}
+                    isCurrentTrack={isCurrentTrack}
+                    onRemove={handleRemove}
+                    onPlayNext={handlePlayNext}
+                    speaker={speaker}
+                  />
+                )
+              })}
+            </ul>
+          </SortableContext>
+        </DndContext>
+      </>
     )
   }
 

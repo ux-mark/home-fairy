@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react'
-import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
@@ -8,13 +7,10 @@ import {
   ChevronRight,
   Disc3,
   Globe,
-  Heart,
-  ListEnd,
-  ListStart,
   Loader2,
   MapPin,
-  MoreVertical,
   Music2,
+  Pause,
   Play,
   RefreshCw,
   User,
@@ -30,51 +26,38 @@ import type {
   EnrichmentProgress,
 } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
+import { useFirstSpeaker, useDebounce, useNowPlayingTrack } from '@/hooks/useBrowseShared'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from './ArtworkImage'
-import { CountryList, CountryArtistList, isValidIsoCode, type CountryArtistItem } from './CountryBrowse'
+import { CountryList, CountryArtistList, type CountryArtistItem } from './CountryBrowse'
+import { isValidIsoCode } from './countryUtils'
+import { ActiveTrackIndicator } from './ActiveTrackIndicator'
+import { AlbumPlaylistMenu } from './AlbumPlaylistMenu'
+import { MusicItemMenu } from './MusicItemMenu'
+import { MusicListItem } from './MusicListItem'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type NasView = 'home' | 'artist-detail' | 'album-detail' | 'country-artists'
 type BrowseMode = 'countries' | 'albums' | 'artists' | 'songs'
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function useFirstSpeaker() {
-  const { data: zones } = useQuery({
-    queryKey: ['sonos-zones'],
-    queryFn: api.sonos.getZones,
-    staleTime: 30_000,
-  })
-  return zones?.[0]?.members?.[0]?.roomName ?? zones?.[0]?.coordinator?.roomName ?? null
-}
-
-function useDebounce<T>(value: T, delay: number): T {
-  const [debounced, setDebounced] = useState(value)
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  useEffect(() => {
-    if (timerRef.current !== null) clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => setDebounced(value), delay)
-    return () => {
-      if (timerRef.current !== null) clearTimeout(timerRef.current)
-    }
-  }, [value, delay])
-
-  return debounced
-}
-
 // ── Track row ─────────────────────────────────────────────────────────────────
 
-function TrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: string | null }) {
+function TrackRow({
+  track,
+  speaker,
+  isActive = false,
+  isPlaying = false,
+}: {
+  track: SonosLibraryTrack
+  speaker: string | null
+  isActive?: boolean
+  isPlaying?: boolean
+}) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
-  const menuBtnRef = useRef<HTMLButtonElement>(null)
 
   const playNow = useMutation({
     mutationFn: () => api.sonos.playUri(speaker!, track.uri),
@@ -112,8 +95,15 @@ function TrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: strin
   })
 
   return (
-    <li className="flex items-center gap-3 px-4 py-2.5">
-      <ArtworkImage src={track.albumArtUri} size={40} fallback="disc" />
+    <li className={cn('flex items-center gap-3 px-4 py-2.5', isActive && 'bg-fairy-500/10')}>
+      <div className="relative shrink-0">
+        <ArtworkImage src={track.albumArtUri} size={40} fallback="disc" />
+        {isActive && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black/40">
+            <ActiveTrackIndicator isActive={isActive} isPlaying={isPlaying} />
+          </div>
+        )}
+      </div>
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-heading">{track.title || 'Unknown track'}</p>
@@ -140,80 +130,20 @@ function TrackRow({ track, speaker }: { track: SonosLibraryTrack; speaker: strin
         </button>
 
         {/* Three-dot menu */}
-        <div className="shrink-0">
-          <button
-            ref={menuBtnRef}
-            type="button"
-            disabled={!speaker}
-            onClick={() => {
-              if (menuOpen) {
-                setMenuOpen(false)
-              } else {
-                if (menuBtnRef.current) {
-                  const rect = menuBtnRef.current.getBoundingClientRect()
-                  const showAbove = rect.bottom + 160 > window.innerHeight
-                  setMenuPos({
-                    top: showAbove ? rect.top - 160 - 4 : rect.bottom + 4,
-                    right: window.innerWidth - rect.right,
-                  })
-                }
-                setMenuOpen(true)
-              }
-            }}
-            onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
-            aria-label={`More options for ${track.title}`}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            className={cn(
-              'flex h-11 w-11 items-center justify-center rounded-lg',
-              'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              'disabled:opacity-40',
-            )}
-          >
-            <MoreVertical className="h-4 w-4" aria-hidden="true" />
-          </button>
-
-          {menuOpen && menuPos && createPortal(
-            <ul
-              role="menu"
-              style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
-              className="z-[200] min-w-[160px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
-            >
-              <li role="none">
-                <button
-                  role="menuitem"
-                  onClick={() => { setMenuOpen(false); playNext.mutate() }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                >
-                  <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  Play next
-                </button>
-              </li>
-              <li role="none">
-                <button
-                  role="menuitem"
-                  onClick={() => { setMenuOpen(false); addToQueue.mutate() }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                >
-                  <ListEnd className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  Add to queue
-                </button>
-              </li>
-              <li role="none">
-                <button
-                  role="menuitem"
-                  onClick={() => { setMenuOpen(false); addToFavourites.mutate() }}
-                  className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-[var(--bg-tertiary)] hover:text-heading"
-                >
-                  <Heart className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  Add to favourites
-                </button>
-              </li>
-            </ul>,
-            document.body,
-          )}
-        </div>
+        <MusicItemMenu
+          label={track.title || 'Unknown track'}
+          disabled={!speaker}
+          onPlayNext={() => playNext.mutate()}
+          onAddToQueue={() => addToQueue.mutate()}
+          onAddToFavourites={() => addToFavourites.mutate()}
+          fairylistTrack={{
+            source: 'nas',
+            source_uri: track.uri,
+            title: track.title || 'Unknown track',
+            artist: track.artist,
+            album_art_uri: track.albumArtUri,
+          }}
+        />
       </div>
     </li>
   )
@@ -646,8 +576,10 @@ type NasAlbumSort = 'a-z' | 'country'
 
 function AlbumList({
   onSelectAlbum,
+  speaker,
 }: {
   onSelectAlbum: (album: SonosGenreAlbum) => void
+  speaker: string | null
 }) {
   const [sort, setSort] = useState<NasAlbumSort>('a-z')
   const [collapsedCountries, setCollapsedCountries] = useState<Set<string>>(new Set())
@@ -785,7 +717,7 @@ function AlbumList({
                 {!isCollapsed && (
                   <ul>
                     {group.items.map(album => (
-                      <NasAlbumRow key={album.objectId} album={album} onSelect={onSelectAlbum} showCountry={false} />
+                      <NasAlbumRow key={album.objectId} album={album} onSelect={onSelectAlbum} showCountry={false} speaker={speaker} />
                     ))}
                   </ul>
                 )}
@@ -796,7 +728,7 @@ function AlbumList({
       ) : (
         <ul className="-mx-4">
           {albums.map(album => (
-            <NasAlbumRow key={album.objectId} album={album} onSelect={onSelectAlbum} showCountry={hasCountryData} />
+            <NasAlbumRow key={album.objectId} album={album} onSelect={onSelectAlbum} showCountry={hasCountryData} speaker={speaker} />
           ))}
         </ul>
       )}
@@ -808,38 +740,81 @@ function NasAlbumRow({
   album,
   onSelect,
   showCountry,
+  speaker,
 }: {
   album: NasEnrichedAlbum
   onSelect: (album: SonosGenreAlbum) => void
   showCountry: boolean
+  speaker: string | null
 }) {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
   const countryCode = album.artist_country?.country_code ?? null
 
+  const playAlbum = useMutation({
+    mutationFn: () => api.sonos.addAlbumToQueue(speaker!, album.objectId, 'nas'),
+    onSuccess: () => toast({ message: `Playing "${album.name}"` }),
+    onError: () => toast({ message: 'Failed to play album', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playAlbumNext(speaker!, album.objectId, 'nas'),
+    onSuccess: () => {
+      toast({ message: `"${album.name}" will play next` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.addAlbumToQueue(speaker!, album.objectId, 'nas'),
+    onSuccess: () => {
+      toast({ message: `Added "${album.name}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const addToFavourites = useMutation({
+    mutationFn: () => api.favourites.add({
+      source: 'nas',
+      source_uri: album.objectId,
+      title: album.name,
+      album_art_uri: album.albumArtUri,
+    }),
+    onSuccess: () => toast({ message: `Added "${album.name}" to favourites` }),
+    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
+  })
+
+  const subtitle = [
+    album.artist,
+    showCountry && countryCode ? countryCode : null,
+  ].filter(Boolean).join(' · ')
+
   return (
-    <li>
-      <button
-        type="button"
-        onClick={() => onSelect(album)}
-        className={cn(
-          'flex w-full items-center gap-3 px-4 py-2.5 text-left',
-          'transition-colors hover:bg-[var(--bg-secondary)]',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          'min-h-[44px]',
-        )}
-      >
-        <ArtworkImage src={album.albumArtUri} size={48} fallback="disc" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-heading">{album.name}</p>
-          <p className="truncate text-xs text-caption">
-            {album.artist}
-            {showCountry && countryCode && (
-              <span className="text-caption/60"> · {countryCode}</span>
-            )}
-          </p>
-        </div>
-        <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
-      </button>
-    </li>
+    <MusicListItem
+      artwork={{ src: album.albumArtUri, size: 48, fallback: 'disc' }}
+      title={album.name}
+      subtitle={subtitle}
+      onTap={() => onSelect(album)}
+      onPlay={() => playAlbum.mutate()}
+      playDisabled={!speaker}
+      playPending={playAlbum.isPending}
+      disabled={!speaker}
+      menuProps={{
+        label: album.name,
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
+        onAddToFavourites: () => addToFavourites.mutate(),
+        fairylistTrack: {
+          source: 'nas',
+          source_uri: album.objectId,
+          title: album.name,
+          artist: album.artist,
+          album_art_uri: album.albumArtUri,
+        },
+      }}
+    />
   )
 }
 
@@ -966,6 +941,16 @@ function AlbumDetail({
     onError: () => toast({ message: 'Failed to play album', type: 'error' }),
   })
 
+  const pauseAlbum = useMutation({
+    mutationFn: () => api.sonos.pause(speaker!),
+    onSuccess: () => { /* state updates via polling */ },
+    onError: () => toast({ message: 'Failed to pause', type: 'error' }),
+  })
+
+  const nowPlayingState = useNowPlayingTrack(speaker)
+  const isPlaying = nowPlayingState?.playbackState === 'PLAYING'
+  const currentUri = nowPlayingState?.currentTrack?.uri
+
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
@@ -986,11 +971,18 @@ function AlbumDetail({
           <h2 className="text-lg font-semibold leading-snug text-heading">{album.name}</h2>
           <p className="text-xs text-caption">{album.artist}</p>
         </div>
+        <AlbumPlaylistMenu
+          uri={album.objectId}
+          title={album.name}
+          artUri={album.albumArtUri}
+          source="nas"
+          speaker={speaker}
+        />
         <button
           type="button"
-          disabled={!speaker || playAlbum.isPending}
-          onClick={() => playAlbum.mutate()}
-          aria-label={`Play album ${album.name}`}
+          disabled={!speaker || playAlbum.isPending || pauseAlbum.isPending}
+          onClick={() => isPlaying ? pauseAlbum.mutate() : playAlbum.mutate()}
+          aria-label={isPlaying ? `Pause ${album.name}` : `Play album ${album.name}`}
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
             'text-white transition-colors hover:bg-fairy-400',
@@ -998,7 +990,10 @@ function AlbumDetail({
             'disabled:opacity-40',
           )}
         >
-          <Play className="h-5 w-5" aria-hidden="true" />
+          {isPlaying
+            ? <Pause className="h-5 w-5" aria-hidden="true" />
+            : <Play className="h-5 w-5" aria-hidden="true" />
+          }
         </button>
       </div>
 
@@ -1014,7 +1009,13 @@ function AlbumDetail({
       {!isLoading && !isError && tracks && tracks.length > 0 && (
         <ul className="-mx-4">
           {tracks.map((track, i) => (
-            <TrackRow key={track.uri + ':' + i} track={track} speaker={speaker} />
+            <TrackRow
+              key={track.uri + ':' + i}
+              track={track}
+              speaker={speaker}
+              isActive={!!currentUri && currentUri === track.uri}
+              isPlaying={isPlaying}
+            />
           ))}
         </ul>
       )}
@@ -1208,37 +1209,81 @@ function SearchArtistRow({
 function SearchAlbumRow({
   album,
   onSelect,
+  speaker,
 }: {
   album: SonosSearchAlbum
   onSelect: (album: SonosGenreAlbum) => void
+  speaker: string | null
 }) {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+
+  const objectId = `A:ALBUMARTIST/${encodeURIComponent(album.artist)}/${encodeURIComponent(album.name)}`
+  const albumArtUri = album.albumArtUri ?? ''
+
+  const playAlbum = useMutation({
+    mutationFn: () => api.sonos.addAlbumToQueue(speaker!, objectId, 'nas'),
+    onSuccess: () => toast({ message: `Playing "${album.name}"` }),
+    onError: () => toast({ message: 'Failed to play album', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playAlbumNext(speaker!, objectId, 'nas'),
+    onSuccess: () => {
+      toast({ message: `"${album.name}" will play next` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.addAlbumToQueue(speaker!, objectId, 'nas'),
+    onSuccess: () => {
+      toast({ message: `Added "${album.name}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const addToFavourites = useMutation({
+    mutationFn: () => api.favourites.add({
+      source: 'nas',
+      source_uri: objectId,
+      title: album.name,
+      album_art_uri: albumArtUri,
+    }),
+    onSuccess: () => toast({ message: `Added "${album.name}" to favourites` }),
+    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
+  })
+
+  const subtitle = album.trackCount
+    ? `${album.artist} · ${album.trackCount} ${album.trackCount === 1 ? 'song' : 'songs'}`
+    : album.artist
+
   return (
-    <li>
-      <button
-        type="button"
-        onClick={() =>
-          onSelect({
-            name: album.name,
-            artist: album.artist,
-            albumArtUri: album.albumArtUri ?? '',
-            objectId: `A:ALBUMARTIST/${encodeURIComponent(album.artist)}/${encodeURIComponent(album.name)}`,
-          })
-        }
-        className={cn(
-          'flex w-full items-center gap-3 px-4 py-2.5 text-left',
-          'transition-colors hover:bg-[var(--bg-secondary)]',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          'min-h-[44px]',
-        )}
-      >
-        <ArtworkImage src={album.albumArtUri} size={40} fallback="disc" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-heading">{album.name}</p>
-          <p className="truncate text-xs text-caption">{album.artist}</p>
-        </div>
-        <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
-      </button>
-    </li>
+    <MusicListItem
+      artwork={{ src: albumArtUri, size: 40, fallback: 'disc' }}
+      title={album.name}
+      subtitle={subtitle}
+      onTap={() => onSelect({ name: album.name, artist: album.artist, albumArtUri, objectId })}
+      onPlay={() => playAlbum.mutate()}
+      playDisabled={!speaker}
+      playPending={playAlbum.isPending}
+      disabled={!speaker}
+      menuProps={{
+        label: album.name,
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
+        onAddToFavourites: () => addToFavourites.mutate(),
+        fairylistTrack: {
+          source: 'nas',
+          source_uri: objectId,
+          title: album.name,
+          artist: album.artist,
+          album_art_uri: albumArtUri,
+        },
+      }}
+    />
   )
 }
 
@@ -1323,7 +1368,7 @@ function SearchResults({
         >
           <ul className="-mx-4">
             {albums.map((album, i) => (
-              <SearchAlbumRow key={album.name + ':' + album.artist + ':' + i} album={album} onSelect={onSelectAlbum} />
+              <SearchAlbumRow key={album.name + ':' + album.artist + ':' + i} album={album} onSelect={onSelectAlbum} speaker={speaker} />
             ))}
           </ul>
         </Accordion>
@@ -1448,7 +1493,7 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
     <div>
       <BrowseModeTabs mode={browseMode} onChangeMode={setBrowseMode} />
       {browseMode === 'countries' && <NasCountryList onSelectCountry={handleSelectCountry} />}
-      {browseMode === 'albums' && <AlbumList onSelectAlbum={handleSelectAlbum} />}
+      {browseMode === 'albums' && <AlbumList onSelectAlbum={handleSelectAlbum} speaker={speaker} />}
       {browseMode === 'artists' && <ArtistList onSelectArtist={handleSelectArtist} />}
       {browseMode === 'songs' && <SongsList speaker={speaker} />}
     </div>

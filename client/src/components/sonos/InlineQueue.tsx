@@ -1,5 +1,5 @@
-import { useEffect } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import {
   DndContext,
   closestCenter,
@@ -23,17 +23,19 @@ import {
   ChevronDown,
   ChevronUp,
   GripVertical,
+  ListMusic,
   ListStart,
   Music2,
-  X,
+  Trash2,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { SonosQueueItem } from '@/lib/api'
-import { getSocket } from '@/hooks/useSocket'
+import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
+import { useQueueSync } from '@/hooks/useQueueSync'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from './ArtworkImage'
+import { QueueHeader } from './QueueHeader'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -42,6 +44,12 @@ export interface InlineQueueProps {
   currentTrackUri: string | null
   expanded: boolean
   onToggle: () => void
+  /** If set, only show the first N items in the list (shows a link to full queue if more exist) */
+  queueLimit?: number
+  /** The current playback state — needed for QueueHeader play mode buttons */
+  playbackState?: SonosPlaybackState | null
+  /** If true, show the full QueueView trigger link when limit is exceeded */
+  onViewFullQueue?: () => void
 }
 
 // ── Sortable queue item ───────────────────────────────────────────────────────
@@ -52,7 +60,7 @@ interface SortableQueueItemProps {
   isCurrentTrack: boolean
   onRemove: (index: number) => void
   onPlayNext: (uri: string) => void
-  isFirst: boolean
+  speaker: string
 }
 
 function SortableQueueItem({
@@ -62,7 +70,10 @@ function SortableQueueItem({
   onRemove,
   onPlayNext,
   isFirst,
+  speaker,
 }: SortableQueueItemProps) {
+  const navigate = useNavigate()
+
   const {
     attributes,
     listeners,
@@ -75,6 +86,12 @@ function SortableQueueItem({
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
+  }
+
+  function handleTitleClick() {
+    if (item.uri) {
+      navigate(`/sonos/track?uri=${encodeURIComponent(item.uri)}&speaker=${encodeURIComponent(speaker)}`)
+    }
   }
 
   return (
@@ -101,8 +118,12 @@ function SortableQueueItem({
 
       <ArtworkImage src={item.albumArtUri} size={40} />
 
-      {/* Track info */}
-      <div className="min-w-0 flex-1">
+      {/* Track info — tappable */}
+      <button
+        onClick={handleTitleClick}
+        className="min-w-0 flex-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded"
+        aria-label={`View details for ${item.title}`}
+      >
         <div className="flex items-center gap-1.5">
           <p
             className={cn(
@@ -121,7 +142,7 @@ function SortableQueueItem({
         <p className="truncate text-[11px] text-caption">
           {[item.artist, item.album].filter(Boolean).join(' · ')}
         </p>
-      </div>
+      </button>
 
       {/* Actions */}
       <div className="flex shrink-0 items-center">
@@ -136,10 +157,10 @@ function SortableQueueItem({
         )}
         <button
           onClick={() => onRemove(index)}
-          className="flex h-11 w-9 items-center justify-center rounded-lg text-slate-400 hover:text-red-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          className="flex h-11 w-11 items-center justify-center rounded-lg text-red-400/70 hover:text-red-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           aria-label={`Remove ${item.title} from queue`}
         >
-          <X className="h-4 w-4" aria-hidden="true" />
+          <Trash2 className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
     </li>
@@ -148,38 +169,24 @@ function SortableQueueItem({
 
 // ── InlineQueue ───────────────────────────────────────────────────────────────
 
-export function InlineQueue({ speaker, currentTrackUri, expanded, onToggle }: InlineQueueProps) {
+export function InlineQueue({
+  speaker,
+  currentTrackUri,
+  expanded,
+  onToggle,
+  queueLimit,
+  playbackState,
+  onViewFullQueue,
+}: InlineQueueProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
   const queueKey = ['sonos', 'queue', speaker]
 
-  const {
-    data: queue,
-    isLoading,
-    isError,
-    refetch,
-  } = useQuery({
-    queryKey: queueKey,
-    queryFn: () => api.sonos.getQueue(speaker),
-    refetchInterval: expanded ? 30_000 : false,
-    staleTime: 29_000,
+  const { queue, isLoading, isError, refetch } = useQueueSync({
+    speaker,
     enabled: expanded && !!speaker,
-    retry: 1,
   })
-
-  useEffect(() => {
-    if (!expanded || !speaker) return
-    const s = getSocket()
-    function handleQueueUpdate(event: { speaker: string; action: string; queue: SonosQueueItem[] }) {
-      if (event.speaker !== speaker) return
-      queryClient.setQueryData<SonosQueueItem[]>(queueKey, event.queue)
-    }
-    s.on('sonos:queue-update', handleQueueUpdate)
-    return () => {
-      s.off('sonos:queue-update', handleQueueUpdate)
-    }
-  }, [expanded, speaker, queryClient]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -240,9 +247,11 @@ export function InlineQueue({ speaker, currentTrackUri, expanded, onToggle }: In
   }
 
   const queueCount = queue?.length ?? 0
+  const visibleQueue = queueLimit ? queue?.slice(0, queueLimit) : queue
+  const hasMore = queueLimit && queue && queue.length > queueLimit
 
   return (
-    <div className="mt-3 border-t border-[var(--border-secondary)] pt-3">
+    <div className="mt-2 border-t border-[var(--border-secondary)] pt-2">
       {/* Toggle button */}
       <button
         onClick={onToggle}
@@ -255,7 +264,8 @@ export function InlineQueue({ speaker, currentTrackUri, expanded, onToggle }: In
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
         )}
       >
-        <span>
+        <span className="flex items-center gap-1.5">
+          <ListMusic className="h-3 w-3" aria-hidden="true" />
           {expanded && !isLoading && queueCount > 0
             ? `Queue (${queueCount})`
             : 'Queue'}
@@ -270,6 +280,15 @@ export function InlineQueue({ speaker, currentTrackUri, expanded, onToggle }: In
       {/* Expanded content */}
       {expanded && (
         <div id={`inline-queue-${speaker}`}>
+          {/* Queue header — shuffle, repeat all, clear */}
+          {!isLoading && !isError && queue && queue.length > 0 && (
+            <QueueHeader
+              speaker={speaker}
+              currentPlayMode={playbackState?.currentPlayMode}
+              onModeChange={() => {}}
+            />
+          )}
+
           {isLoading && (
             <div className="flex flex-col gap-2 px-2 py-3" role="status" aria-label="Loading queue">
               {Array.from({ length: 3 }).map((_, i) => (
@@ -311,21 +330,21 @@ export function InlineQueue({ speaker, currentTrackUri, expanded, onToggle }: In
             </div>
           )}
 
-          {queue && queue.length > 0 && (
+          {visibleQueue && visibleQueue.length > 0 && (
             <DndContext
               sensors={sensors}
               collisionDetection={closestCenter}
               onDragEnd={handleDragEnd}
             >
               <SortableContext
-                items={queue.map((item, i) => item.uri + ':' + i)}
+                items={queue!.map((item, i) => item.uri + ':' + i)}
                 strategy={verticalListSortingStrategy}
               >
                 <ul
                   className="divide-y divide-[var(--border-secondary)]"
                   aria-label="Queue — drag to reorder"
                 >
-                  {queue.map((item, i) => {
+                  {visibleQueue.map((item, i) => {
                     const isCurrentTrack = currentTrackUri
                       ? item.uri === currentTrackUri
                       : i === 0
@@ -337,13 +356,27 @@ export function InlineQueue({ speaker, currentTrackUri, expanded, onToggle }: In
                         isCurrentTrack={isCurrentTrack}
                         onRemove={handleRemove}
                         onPlayNext={handlePlayNext}
-                        isFirst={i === 0}
+                        speaker={speaker}
                       />
                     )
                   })}
                 </ul>
               </SortableContext>
             </DndContext>
+          )}
+
+          {/* View full queue link */}
+          {hasMore && (
+            <button
+              onClick={onViewFullQueue}
+              className={cn(
+                'mt-1 flex w-full items-center justify-center rounded-lg px-2 py-2 text-xs text-caption transition-colors',
+                'hover:bg-[var(--bg-secondary)] hover:text-body',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              )}
+            >
+              View all {queue!.length} tracks
+            </button>
           )}
         </div>
       )}

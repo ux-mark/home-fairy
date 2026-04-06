@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { useState } from 'react'
 import * as Slider from '@radix-ui/react-slider'
+import { Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface SonosVolumeControlProps {
@@ -16,6 +17,10 @@ interface SonosVolumeControlProps {
   className?: string
   /** Whether the control is disabled */
   disabled?: boolean
+  /** Called on first pointer/touch interaction with the slider */
+  onInteractionStart?: () => void
+  /** Show a spinner in the thumb while a volume change is processing */
+  loading?: boolean
 }
 
 /**
@@ -39,12 +44,15 @@ export function SonosVolumeControl({
   label,
   className,
   disabled = false,
+  onInteractionStart,
+  loading = false,
 }: SonosVolumeControlProps) {
   // null means "use server value"; non-null means "user is dragging"
   const [dragValue, setDragValue] = useState<number | null>(null)
   // Holds the committed value after pointer-up until the server catches up
   const [optimisticValue, setOptimisticValue] = useState<number | null>(null)
   const prevValueRef = useRef(value)
+  const interactionFired = useRef(false)
 
   // Clear optimistic override when the server value changes (success or failure)
   useEffect(() => {
@@ -61,8 +69,12 @@ export function SonosVolumeControl({
       const next = vals[0]
       setDragValue(next)
       onDragChange?.(next)
+      if (!interactionFired.current && onInteractionStart) {
+        interactionFired.current = true
+        onInteractionStart()
+      }
     },
-    [onDragChange],
+    [onDragChange, onInteractionStart],
   )
 
   const handleValueCommit = useCallback(
@@ -71,6 +83,8 @@ export function SonosVolumeControl({
       setDragValue(null)
       setOptimisticValue(committed)
       onChange(committed)
+      // Reset so next interaction can re-trigger
+      interactionFired.current = false
     },
     [onChange],
   )
@@ -83,7 +97,7 @@ export function SonosVolumeControl({
     >
       <Slider.Root
         className={cn(
-          'relative flex flex-1 touch-none select-none items-center',
+          'relative flex w-full flex-1 touch-none select-none items-center',
           'focus-within:outline-none',
           disabled && 'opacity-50',
         )}
@@ -101,17 +115,21 @@ export function SonosVolumeControl({
         </Slider.Track>
         <Slider.Thumb
           className={cn(
-            'relative block h-7 w-7 rounded-full bg-white shadow-md ring-2 ring-fairy-500/50',
+            'relative flex h-7 w-7 items-center justify-center rounded-full bg-white shadow-md ring-2 ring-fairy-500/50',
             'before:absolute before:inset-[-8px] before:content-[""]',
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
             'transition-shadow hover:ring-fairy-500',
-            'cursor-grab active:cursor-grabbing',
+            loading ? 'cursor-default' : 'cursor-grab active:cursor-grabbing',
           )}
-          // Promote thumb to its own compositor layer for GPU-accelerated dragging
           style={{ willChange: 'transform', transform: 'translateZ(0)' }}
           aria-label={label}
-        />
+        >
+          {loading && (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-fairy-500" aria-hidden="true" />
+          )}
+        </Slider.Thumb>
       </Slider.Root>
+
       <span
         className="w-9 shrink-0 text-right text-xs tabular-nums text-caption"
         aria-live="polite"

@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Search, X, Music, Radio, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
+import type { SonosGenreAlbum, SpotifyAlbum, SpotifyArtist, SpotifyPlaylist } from '@/lib/api'
 import { NasBrowseView } from './NasBrowseView'
 import { SpotifyBrowseView } from './SpotifyBrowseView'
 import { RadioBrowseView } from './RadioBrowseView'
@@ -151,6 +153,9 @@ interface BrowseTabProps {
 export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
   const [activeSource, setActiveSource] = useState<SourceFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
+  const navigate = useNavigate()
+
+  const speakerQuery = targetSpeaker ? `?speaker=${encodeURIComponent(targetSpeaker)}` : ''
 
   return (
     <div className="flex flex-col gap-4">
@@ -226,15 +231,47 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
         aria-labelledby={`browse-tab-${activeSource}`}
       >
         {activeSource === 'all' && searchQuery ? (
-          <UnifiedSearchResults searchQuery={searchQuery} targetSpeaker={targetSpeaker} />
+          <UnifiedSearchResults
+            searchQuery={searchQuery}
+            targetSpeaker={targetSpeaker}
+            onSelectNasArtist={(name) => {
+              setSearchQuery('')
+              navigate(`/sonos/browse/nas/artist/${encodeURIComponent(name)}${speakerQuery}`)
+            }}
+            onSelectNasAlbum={(album: SonosGenreAlbum) => {
+              setSearchQuery('')
+              navigate(
+                `/sonos/browse/nas/album/${encodeURIComponent(album.artist)}/${encodeURIComponent(album.name)}${speakerQuery}`,
+                { state: { objectId: album.objectId } },
+              )
+            }}
+            onSelectSpotifyAlbum={(album: SpotifyAlbum) => {
+              setSearchQuery('')
+              navigate(`/sonos/browse/spotify/album/${encodeURIComponent(album.id)}${speakerQuery}`)
+            }}
+            onSelectSpotifyArtist={(artist: SpotifyArtist) => {
+              setSearchQuery('')
+              navigate(`/sonos/browse/spotify/artist/${encodeURIComponent(artist.id)}${speakerQuery}`)
+            }}
+            onSelectSpotifyPlaylist={(playlist: SpotifyPlaylist) => {
+              setSearchQuery('')
+              navigate(`/sonos/browse/spotify/playlist/${encodeURIComponent(playlist.id)}${speakerQuery}`)
+            }}
+          />
         ) : activeSource === 'all' ? (
           <AllSourcesView onSelectSource={setActiveSource} />
         ) : null}
         {activeSource === 'nas' && (
-          <NasBrowseView searchQuery={searchQuery} targetSpeaker={targetSpeaker} />
+          <NasBrowseView
+            searchQuery={searchQuery}
+            targetSpeaker={targetSpeaker}
+          />
         )}
         {activeSource === 'spotify' && (
-          <SpotifyBrowseView searchQuery={searchQuery} targetSpeaker={targetSpeaker} />
+          <SpotifyBrowseView
+            searchQuery={searchQuery}
+            targetSpeaker={targetSpeaker}
+          />
         )}
         {activeSource === 'radio' && (
           <RadioBrowseView searchQuery={searchQuery} targetSpeaker={targetSpeaker} />

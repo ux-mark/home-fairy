@@ -285,6 +285,14 @@ class SonosClient {
     }
   }
 
+  async repeatOne(speaker: string): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/repeat/one`)
+    } catch (err) {
+      this.handleError(err, `repeatOne(${speaker})`)
+    }
+  }
+
   async seek(speaker: string, seconds: number): Promise<void> {
     try {
       await this.api.get(`/${encodeURIComponent(speaker)}/seek/${seconds}`)
@@ -346,6 +354,14 @@ class SonosClient {
       await this.api.get(`/${encodeURIComponent(speaker)}/volume/${level}`)
     } catch (err) {
       this.handleError(err, `setVolume(${speaker}, ${level})`)
+    }
+  }
+
+  async setGroupVolume(speaker: string, level: number): Promise<void> {
+    try {
+      await this.api.get(`/${encodeURIComponent(speaker)}/groupVolume/${level}`)
+    } catch (err) {
+      this.handleError(err, `setGroupVolume(${speaker}, ${level})`)
     }
   }
 
