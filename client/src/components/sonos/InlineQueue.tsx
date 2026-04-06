@@ -31,6 +31,7 @@ import {
 import { api } from '@/lib/api'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
 import { useQueueSync } from '@/hooks/useQueueSync'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
@@ -58,6 +59,7 @@ interface SortableQueueItemProps {
   item: SonosQueueItem
   index: number
   isCurrentTrack: boolean
+  isFirst: boolean
   onRemove: (index: number) => void
   onPlayNext: (uri: string) => void
   speaker: string
@@ -180,6 +182,7 @@ export function InlineQueue({
 }: InlineQueueProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const { isTrackActive } = usePlaybackState()
 
   const queueKey = ['sonos', 'queue', speaker]
 
@@ -347,13 +350,14 @@ export function InlineQueue({
                   {visibleQueue.map((item, i) => {
                     const isCurrentTrack = currentTrackUri
                       ? item.uri === currentTrackUri
-                      : i === 0
+                      : isTrackActive(item.uri, item.title ?? '')
                     return (
                       <SortableQueueItem
                         key={item.uri + ':' + i}
                         item={item}
                         index={i}
                         isCurrentTrack={isCurrentTrack}
+                        isFirst={i === 0}
                         onRemove={handleRemove}
                         onPlayNext={handlePlayNext}
                         speaker={speaker}

@@ -50,7 +50,7 @@ export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesT
   const [dragAnnouncement, setDragAnnouncement] = useState('')
 
   // ── Speaker selection via context ─────────────────────────────────────────
-  const { selectedSpeaker: contextSpeaker } = usePlaybackState()
+  const { selectedSpeaker: contextSpeaker, isTrackActive, isSelectedPlaying } = usePlaybackState()
   const effectiveSpeaker = targetSpeaker ?? contextSpeaker ?? null
 
   // ── Favourites query ─────────────────────────────────────────────────────
@@ -98,6 +98,11 @@ export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesT
       api.sonos.playFavourite(speaker, title),
     onSuccess: () => toast({ message: 'Playing now' }),
     onError: () => toast({ message: 'Could not play this item', type: 'error' }),
+  })
+
+  const pauseMutation = useMutation({
+    mutationFn: (speaker: string) => api.sonos.pause(speaker),
+    onError: () => toast({ message: 'Could not pause', type: 'error' }),
   })
 
   const playNextMutation = useMutation({
@@ -273,11 +278,14 @@ export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesT
                   key={item.id}
                   item={item}
                   onPlay={handlePlay}
+                  onPause={effectiveSpeaker ? () => pauseMutation.mutate(effectiveSpeaker) : undefined}
                   onRemove={handleRemove}
                   onPlayNext={handlePlayNext}
                   onAddToQueue={handleAddToQueue}
                   swipedItemId={swipedItemId}
                   onSwipeOpen={setSwipedItemId}
+                  isCurrentTrack={isTrackActive(item.source_uri, item.title)}
+                  isPlaying={isSelectedPlaying}
                 />
               ))}
             </ul>

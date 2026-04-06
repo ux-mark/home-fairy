@@ -1,14 +1,22 @@
 import { useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ChevronRight, Music2, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SpotifyTrack, SpotifyAlbum, SpotifyArtist, SpotifyPlaylist } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from '../ArtworkImage'
 import { MusicListItem } from '../MusicListItem'
+
+function formatDuration(ms: number): string {
+  const totalSecs = Math.round(ms / 1000)
+  const mins = Math.floor(totalSecs / 60)
+  const secs = totalSecs % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
 
 // ── Skeleton / Error ──────────────────────────────────────────────────────────
 
@@ -57,12 +65,17 @@ function SectionError({ message, onRetry }: { message: string; onRetry: () => vo
 function SpotifyTrackRow({
   track,
   speaker,
+  isActive = false,
+  isPlaying = false,
   onSelectAlbum,
 }: {
   track: SpotifyTrack
   speaker: string | null
+  isActive?: boolean
+  isPlaying?: boolean
   onSelectAlbum: (album: SpotifyAlbum) => void
 }) {
+  const queryClient = useQueryClient()
   const { toast } = useToast()
 
   const playNow = useMutation({
@@ -71,8 +84,32 @@ function SpotifyTrackRow({
     onError: () => toast({ message: 'Failed to play track', type: 'error' }),
   })
 
+  const pauseNow = useMutation({
+    mutationFn: () => api.sonos.pause(speaker!),
+    onError: () => toast({ message: 'Failed to pause', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'next'),
+    onSuccess: () => {
+      toast({ message: `"${track.name}" will play next` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'queue'),
+    onSuccess: () => {
+      toast({ message: `Added "${track.name}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
   const artistNames = track.artists.map(a => a.name).join(', ')
   const artUri = track.album.images?.[0]?.url
+  const duration = formatDuration(track.duration_ms)
 
   const albumForNav: SpotifyAlbum = {
     id: track.album.id,
@@ -88,18 +125,21 @@ function SpotifyTrackRow({
 
   return (
     <MusicListItem
-      artwork={{ src: artUri, fallback: 'disc' }}
+      artwork={{ src: artUri, size: 40, fallback: 'disc' }}
       title={track.name}
-      subtitle={[artistNames, track.album.name].filter(Boolean).join(' · ')}
+      subtitle={[artistNames, track.album.name, duration].filter(Boolean).join(' · ')}
       onTap={() => onSelectAlbum(albumForNav)}
       onPlay={() => playNow.mutate()}
+      onPause={() => pauseNow.mutate()}
       playDisabled={!speaker}
-      playPending={playNow.isPending}
+      playPending={playNow.isPending || pauseNow.isPending}
       disabled={!speaker}
+      isCurrentTrack={isActive}
+      isPlaying={isPlaying}
       menuProps={{
         label: track.name,
-        onPlayNext: () => {},
-        onAddToQueue: () => {},
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
         fairylistTrack: {
           source: 'spotify',
           source_uri: track.uri,
@@ -124,6 +164,7 @@ function SpotifyAlbumRow({
   speaker: string | null
   onSelect: (album: SpotifyAlbum) => void
 }) {
+  const queryClient = useQueryClient()
   const { toast } = useToast()
 
   const playNow = useMutation({
@@ -132,11 +173,31 @@ function SpotifyAlbumRow({
     onError: () => toast({ message: 'Failed to play album', type: 'error' }),
   })
 
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playAlbumNext(speaker!, album.uri, 'spotify'),
+    onSuccess: () => {
+      toast({ message: `"${album.name}" will play next` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.addAlbumToQueue(speaker!, album.uri, 'spotify'),
+    onSuccess: () => {
+      toast({ message: `Added "${album.name}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const artistStr = album.artists.map(a => a.name).join(', ')
+
   return (
     <MusicListItem
-      artwork={{ src: album.images?.[0]?.url, fallback: 'disc' }}
+      artwork={{ src: album.images?.[0]?.url, size: 40, fallback: 'disc' }}
       title={album.name}
-      subtitle={album.artists.map(a => a.name).join(', ')}
+      subtitle={artistStr}
       onTap={() => onSelect(album)}
       onPlay={() => playNow.mutate()}
       playDisabled={!speaker}
@@ -144,13 +205,13 @@ function SpotifyAlbumRow({
       disabled={!speaker}
       menuProps={{
         label: album.name,
-        onPlayNext: () => {},
-        onAddToQueue: () => {},
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
         fairylistTrack: {
           source: 'spotify',
           source_uri: album.uri,
           title: album.name,
-          artist: album.artists.map(a => a.name).join(', '),
+          artist: artistStr,
           album_art_uri: album.images?.[0]?.url,
         },
       }}
@@ -203,6 +264,7 @@ function SpotifyPlaylistRow({
   speaker: string | null
   onSelect: (playlist: SpotifyPlaylist) => void
 }) {
+  const queryClient = useQueryClient()
   const { toast } = useToast()
 
   const playNow = useMutation({
@@ -211,9 +273,18 @@ function SpotifyPlaylistRow({
     onError: () => toast({ message: 'Failed to play playlist', type: 'error' }),
   })
 
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'queue'),
+    onSuccess: () => {
+      toast({ message: `Added "${playlist.name}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
   return (
     <MusicListItem
-      artwork={{ src: playlist.images?.[0]?.url, fallback: 'disc' }}
+      artwork={{ src: playlist.images?.[0]?.url, size: 40, fallback: 'disc' }}
       title={playlist.name}
       subtitle={`${playlist.tracks.total} tracks`}
       onTap={() => onSelect(playlist)}
@@ -224,7 +295,7 @@ function SpotifyPlaylistRow({
       menuProps={{
         label: playlist.name,
         onPlayNext: () => {},
-        onAddToQueue: () => {},
+        onAddToQueue: () => addToQueue.mutate(),
         fairylistTrack: {
           source: 'spotify',
           source_uri: playlist.uri,
@@ -254,6 +325,7 @@ export function SpotifySearchSection({
   onSelectPlaylist,
 }: SpotifySearchSectionProps) {
   const [spotifyOpen, setSpotifyOpen] = useState(true)
+  const { isTrackActive, isSelectedPlaying } = usePlaybackState()
 
   const {
     data: statusData,
@@ -340,7 +412,14 @@ export function SpotifySearchSection({
           {trackItems.length > 0 && (
             <ul>
               {trackItems.map((track, i) => (
-                <SpotifyTrackRow key={track.id + ':' + i} track={track} speaker={speaker} onSelectAlbum={onSelectAlbum} />
+                <SpotifyTrackRow
+                  key={track.id + ':' + i}
+                  track={track}
+                  speaker={speaker}
+                  isActive={isTrackActive(track.uri, track.name)}
+                  isPlaying={isSelectedPlaying}
+                  onSelectAlbum={onSelectAlbum}
+                />
               ))}
             </ul>
           )}

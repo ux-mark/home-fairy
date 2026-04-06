@@ -5,6 +5,7 @@ import { AlertTriangle } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosLibraryTrack, SonosSearchArtist, SonosSearchAlbum, SonosGenreAlbum } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
@@ -58,10 +59,14 @@ function SectionError({ message, onRetry }: { message: string; onRetry: () => vo
 function NasTrackRow({
   track,
   speaker,
+  isActive = false,
+  isPlaying = false,
   onSelectArtist,
 }: {
   track: SonosLibraryTrack
   speaker: string | null
+  isActive?: boolean
+  isPlaying?: boolean
   onSelectArtist: (name: string) => void
 }) {
   const queryClient = useQueryClient()
@@ -71,6 +76,11 @@ function NasTrackRow({
     mutationFn: () => api.sonos.playUri(speaker!, track.uri),
     onSuccess: () => toast({ message: `Playing "${track.title}"` }),
     onError: () => toast({ message: 'Failed to play track', type: 'error' }),
+  })
+
+  const pauseNow = useMutation({
+    mutationFn: () => api.sonos.pause(speaker!),
+    onError: () => toast({ message: 'Failed to pause', type: 'error' }),
   })
 
   const addToQueue = useMutation({
@@ -104,14 +114,17 @@ function NasTrackRow({
 
   return (
     <MusicListItem
-      artwork={{ src: track.albumArtUri, fallback: 'disc' }}
+      artwork={{ src: track.albumArtUri, size: 40, fallback: 'disc' }}
       title={track.title || 'Unknown track'}
       subtitle={[track.artist, track.album].filter(Boolean).join(' · ')}
       onTap={() => track.artist && onSelectArtist(track.artist)}
       onPlay={() => playNow.mutate()}
+      onPause={() => pauseNow.mutate()}
       playDisabled={!speaker}
-      playPending={playNow.isPending}
+      playPending={playNow.isPending || pauseNow.isPending}
       disabled={!speaker}
+      isCurrentTrack={isActive}
+      isPlaying={isPlaying}
       menuProps={{
         label: track.title || 'Unknown track',
         onPlayNext: () => playNext.mutate(),
@@ -250,6 +263,7 @@ export function NasSearchSection({
   onSelectAlbum,
 }: NasSearchSectionProps) {
   const [nasOpen, setNasOpen] = useState(true)
+  const { isTrackActive, isSelectedPlaying } = usePlaybackState()
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['sonos-library-search', query],
@@ -306,7 +320,14 @@ export function NasSearchSection({
           {tracks.length > 0 && (
             <ul>
               {tracks.map((track, i) => (
-                <NasTrackRow key={track.uri + ':' + i} track={track} speaker={speaker} onSelectArtist={onSelectArtist} />
+                <NasTrackRow
+                  key={track.uri + ':' + i}
+                  track={track}
+                  speaker={speaker}
+                  isActive={isTrackActive(track.uri, track.title ?? '')}
+                  isPlaying={isSelectedPlaying}
+                  onSelectArtist={onSelectArtist}
+                />
               ))}
             </ul>
           )}

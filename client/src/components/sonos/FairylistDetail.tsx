@@ -16,14 +16,17 @@ import {
   ArrowLeft,
   GripVertical,
   Loader2,
+  Pause,
   Play,
   Radio,
   Trash2,
 } from 'lucide-react'
 import type { FairylistItem } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ArtworkImage } from './ArtworkImage'
+import { ActiveTrackIndicator } from './ActiveTrackIndicator'
 import { MusicItemMenu } from './MusicItemMenu'
 import { cn } from '@/lib/utils'
 import { useFairylistEditor } from '@/hooks/useFairylistEditor'
@@ -64,10 +67,14 @@ function SortableItemRow({
   item,
   onRemove,
   speaker,
+  isCurrentTrack = false,
+  isPlaying = false,
 }: {
   item: FairylistItem
   onRemove: (id: number) => void
   speaker: string | null
+  isCurrentTrack?: boolean
+  isPlaying?: boolean
 }) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -98,6 +105,11 @@ function SortableItemRow({
     },
     onSuccess: () => toast({ message: `Playing "${item.title}"` }),
     onError: () => toast({ message: 'Failed to play', type: 'error' }),
+  })
+
+  const pauseNow = useMutation({
+    mutationFn: () => api.sonos.pause(speaker!),
+    onError: () => toast({ message: 'Failed to pause', type: 'error' }),
   })
 
   const playNext = useMutation({
@@ -141,12 +153,15 @@ function SortableItemRow({
     onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
   })
 
+  const showPause = isCurrentTrack && isPlaying
+
   return (
     <li
       ref={setNodeRef}
       style={style}
       className={cn(
         'flex items-center gap-2 px-4 py-2.5 transition-opacity',
+        isCurrentTrack && 'bg-fairy-500/5',
         isDragging && 'opacity-50',
       )}
     >
@@ -176,7 +191,9 @@ function SortableItemRow({
 
       {/* Track info */}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">{item.title}</p>
+        <p className={cn('truncate text-sm font-medium', isCurrentTrack ? 'text-fairy-400' : 'text-heading')}>
+          {item.title}
+        </p>
         <div className="flex items-center gap-1.5">
           {item.artist && (
             <p className="truncate text-xs text-caption">{item.artist}</p>
@@ -185,13 +202,17 @@ function SortableItemRow({
         </div>
       </div>
 
-      {/* Play + context menu */}
+      {/* Active indicator + play/pause + context menu */}
       <div className="flex shrink-0 items-center gap-1">
+        {isCurrentTrack && (
+          <ActiveTrackIndicator isActive={isCurrentTrack} isPlaying={isPlaying} className="mr-1" />
+        )}
+
         <button
           type="button"
-          disabled={!speaker || playNow.isPending}
-          onClick={() => playNow.mutate()}
-          aria-label={`Play ${item.title}`}
+          disabled={!speaker || playNow.isPending || pauseNow.isPending}
+          onClick={() => showPause ? pauseNow.mutate() : playNow.mutate()}
+          aria-label={showPause ? `Pause ${item.title}` : `Play ${item.title}`}
           className={cn(
             'flex h-11 w-11 items-center justify-center rounded-lg',
             'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
@@ -199,7 +220,10 @@ function SortableItemRow({
             'disabled:opacity-40',
           )}
         >
-          <Play className="h-4 w-4" aria-hidden="true" />
+          {showPause
+            ? <Pause className="h-4 w-4" aria-hidden="true" />
+            : <Play className="h-4 w-4" aria-hidden="true" />
+          }
         </button>
 
         <MusicItemMenu
@@ -227,6 +251,8 @@ function SortableItemRow({
 // ── FairylistDetail ───────────────────────────────────────────────────────────
 
 export function FairylistDetail({ fairylistId, onBack, effectiveSpeaker }: FairylistDetailProps) {
+  const { isTrackActive, isSelectedPlaying } = usePlaybackState()
+
   const {
     data,
     isLoading,
@@ -428,6 +454,8 @@ export function FairylistDetail({ fairylistId, onBack, effectiveSpeaker }: Fairy
                   item={item}
                   onRemove={(id) => removeMutation.mutate(id)}
                   speaker={effectiveSpeaker}
+                  isCurrentTrack={isTrackActive(item.source_uri, item.title)}
+                  isPlaying={isSelectedPlaying}
                 />
               ))}
             </ul>

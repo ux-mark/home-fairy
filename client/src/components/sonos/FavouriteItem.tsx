@@ -2,9 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { CSS } from '@dnd-kit/utilities'
 import { useSortable } from '@dnd-kit/sortable'
-import { GripVertical, ImageOff, ListStart, ListEnd, ListPlus, ListMusic, X, Play } from 'lucide-react'
+import { GripVertical, ImageOff, ListStart, ListEnd, ListPlus, ListMusic, Pause, Play, X } from 'lucide-react'
 import type { UserFavourite } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { ActiveTrackIndicator } from './ActiveTrackIndicator'
 import { AddToFairylistDialog } from './AddToFairylistDialog'
 import { AddToSpotifyPlaylistDialog } from './AddToSpotifyPlaylistDialog'
 import { useSwipeGesture } from '@/hooks/useSwipeGesture'
@@ -25,6 +26,7 @@ const TRAY_WIDTH = 216
 export interface FavouriteItemProps {
   item: UserFavourite
   onPlay: (item: UserFavourite) => void
+  onPause?: () => void
   onRemove: (id: number) => void
   onPlayNext: (item: UserFavourite) => void
   onAddToQueue: (item: UserFavourite) => void
@@ -32,6 +34,10 @@ export interface FavouriteItemProps {
   swipedItemId: number | null
   /** Called when this item wants to open/close the swipe tray */
   onSwipeOpen: (id: number | null) => void
+  /** True if this favourite is the currently playing track on the selected speaker */
+  isCurrentTrack?: boolean
+  /** True if the selected speaker is actively playing */
+  isPlaying?: boolean
 }
 
 // ── Bottom sheet (long-press action menu) ─────────────────────────────────────
@@ -199,11 +205,14 @@ function FavouriteBottomSheet({
 export function FavouriteItem({
   item,
   onPlay,
+  onPause,
   onRemove,
   onPlayNext,
   onAddToQueue,
   swipedItemId,
   onSwipeOpen,
+  isCurrentTrack = false,
+  isPlaying = false,
 }: FavouriteItemProps) {
   const [imgFailed, setImgFailed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -332,10 +341,10 @@ export function FavouriteItem({
           {/* Title + badge (tap to play) */}
           <button
             className="min-w-0 flex-1 rounded text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-            onClick={() => onPlay(item)}
-            aria-label={`Play ${item.title}`}
+            onClick={() => isCurrentTrack && isPlaying && onPause ? onPause() : onPlay(item)}
+            aria-label={isCurrentTrack && isPlaying ? `Pause ${item.title}` : `Play ${item.title}`}
           >
-            <p className="truncate text-sm font-medium leading-tight text-heading">
+            <p className={cn('truncate text-sm font-medium leading-tight', isCurrentTrack ? 'text-fairy-400' : 'text-heading')}>
               {item.title}
             </p>
             <span
@@ -348,13 +357,21 @@ export function FavouriteItem({
             </span>
           </button>
 
-          {/* Play button */}
+          {/* Active indicator */}
+          {isCurrentTrack && (
+            <ActiveTrackIndicator isActive={isCurrentTrack} isPlaying={isPlaying} className="shrink-0" />
+          )}
+
+          {/* Play/pause button */}
           <button
-            onClick={() => onPlay(item)}
+            onClick={() => isCurrentTrack && isPlaying && onPause ? onPause() : onPlay(item)}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:text-fairy-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-            aria-label={`Play ${item.title}`}
+            aria-label={isCurrentTrack && isPlaying ? `Pause ${item.title}` : `Play ${item.title}`}
           >
-            <Play className="h-4 w-4" aria-hidden="true" />
+            {isCurrentTrack && isPlaying
+              ? <Pause className="h-4 w-4" aria-hidden="true" />
+              : <Play className="h-4 w-4" aria-hidden="true" />
+            }
           </button>
 
           {/* Context menu — keyboard/mouse fallback for swipe actions */}
