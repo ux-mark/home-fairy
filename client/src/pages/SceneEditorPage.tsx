@@ -91,9 +91,10 @@ function LightEditorCard({
   const [expanded, setExpanded] = useState(false)
   const isOn = state.power === 'on'
 
-  const previewHex = state.hasColor
-    ? hsbToHex(state.hue, state.saturation / 100, state.brightness / 100)
-    : kelvinToHex(state.kelvin)
+  const isWhiteMode = !state.hasColor || state.saturation <= 1
+  const previewHex = isWhiteMode
+    ? kelvinToHex(state.kelvin)
+    : hsbToHex(state.hue, state.saturation / 100, state.brightness / 100)
 
   const debouncedApiCall = useMemo(() => {
     return debounce(
@@ -132,7 +133,11 @@ function LightEditorCard({
         // For colour lights, v encodes brightness — keep them in sync.
         next.brightness = update.color.v
       }
-      if (update.kelvin !== undefined) next.kelvin = update.kelvin
+      if (update.kelvin !== undefined) {
+        next.kelvin = update.kelvin
+        // Zero saturation so save serialises as kelvin (matches LIFX behaviour)
+        next.saturation = 0
+      }
       // For kelvin lights, brightness comes from the dedicated slider.
       if (!state.hasColor && update.brightness !== undefined)
         next.brightness = update.brightness
@@ -253,6 +258,23 @@ function LightEditorCard({
               // Pointer up: cancel any pending debounced call and persist the final value.
               debouncedApiCall.cancel()
               onChange(applyUpdate(update))
+              // Fire the API call directly for live preview — the debounced call was
+              // just cancelled, so for tap-based controls (kelvin presets) that fire
+              // onChange + onCommit synchronously, the debounce never gets to execute.
+              if (livePreview) {
+                const lifxColor = update.color
+                  ? `hue:${update.color.h} saturation:${(update.color.s / 100).toFixed(2)}`
+                  : update.kelvin !== undefined
+                    ? `kelvin:${update.kelvin}`
+                    : undefined
+                const lifxBrightness = update.brightness !== undefined ? update.brightness / 100 : undefined
+                api.lifx.setState(state.selector, {
+                  power: 'on',
+                  color: lifxColor,
+                  brightness: lifxBrightness,
+                  duration: 0.3,
+                })
+              }
             }}
           />
         </div>
@@ -808,15 +830,17 @@ export default function SceneEditorPage() {
         })
         if (!inScene) continue
 
+        // Use kelvin format when in white mode (saturation ≈ 0), hue/sat otherwise
+        const isWhiteMode = !ls.hasColor || ls.saturation <= 1
         lightCommands.push({
           type: 'lifx_light',
           name: ls.label,
           light_id: ls.lightId,
           selector: ls.selector,
           power: ls.power,
-          color: ls.hasColor
-            ? `hue:${ls.hue.toFixed(1)} saturation:${(ls.saturation / 100).toFixed(2)}`
-            : `kelvin:${ls.kelvin}`,
+          color: isWhiteMode
+            ? `kelvin:${ls.kelvin}`
+            : `hue:${ls.hue.toFixed(1)} saturation:${(ls.saturation / 100).toFixed(2)}`,
           brightness: ls.brightness / 100,
           duration: 1,
         })

@@ -3,10 +3,10 @@
  *
  * LIFX-style colour/temperature picker with:
  *   - "Colours" tab: circular hue-saturation wheel (ColorWheel)
- *   - "Whites"  tab: circular kelvin-temperature wheel (KelvinWheel)
- *   - Vertical brightness slider to the right of the wheel
+ *   - "Whites"  tab: Kelvin preset grid (KelvinPresets)
+ *   - Vertical brightness slider (Radix UI, butter-smooth on mobile)
  *   - Tabs only shown for colour-capable lights (has_color=true)
- *   - White-only lights show KelvinWheel + brightness slider directly
+ *   - White-only lights show KelvinPresets + brightness slider directly
  *
  * All colour work is done in HSV space (= HSB, matching LIFX's API).
  *
@@ -18,9 +18,11 @@
  * This component is a simple controlled input: it reports changes, parent decides what to do.
  */
 import { useCallback, useState } from 'react'
+import * as Slider from '@radix-ui/react-slider'
+import { Loader2 } from 'lucide-react'
 import { kelvinToHex, hsbToHex } from '@/lib/utils'
 import ColorWheel from './ColorWheel'
-import KelvinWheel from './KelvinWheel'
+import KelvinPresets from './KelvinPresets'
 
 export interface HsvColor {
   h: number // 0-360
@@ -42,23 +44,24 @@ interface ColorBrightnessPickerProps {
   onChange: (update: { color?: HsvColor; kelvin?: number; brightness?: number }) => void
   /** Called on pointer up — fire the final API commit */
   onCommit: (update: { color?: HsvColor; kelvin?: number; brightness?: number }) => void
+  /** Show a spinner in the brightness thumb while an API call is in flight */
+  loading?: boolean
 }
 
-// Wheel display size in CSS px — large enough for comfortable touch interaction
-const WHEEL_SIZE = 252
 // Brightness slider width and height
 const SLIDER_W = 40
-const SLIDER_H = WHEEL_SIZE
+const SLIDER_H = 252
 
 export default function ColorBrightnessPicker({
   hasColor,
   color,
   kelvin,
   brightness,
-  minKelvin = 2500,
+  minKelvin = 1500,
   maxKelvin = 9000,
   onChange,
   onCommit,
+  loading = false,
 }: ColorBrightnessPickerProps) {
   // Active tab — only relevant when hasColor=true
   const [tab, setTab] = useState<'colours' | 'whites'>(() => {
@@ -82,7 +85,7 @@ export default function ColorBrightnessPicker({
     [color.v, onCommit],
   )
 
-  // ── Kelvin wheel ──────────────────────────────────────────────────────────
+  // ── Kelvin presets ────────────────────────────────────────────────────────
 
   const handleKelvinChange = useCallback(
     (k: number) => {
@@ -98,12 +101,19 @@ export default function ColorBrightnessPicker({
     [onCommit],
   )
 
-  // ── Brightness slider ─────────────────────────────────────────────────────
+  // ── Brightness slider (Radix UI vertical, butter-smooth on touch) ─────────
 
-  // Called on every input event (including during touch drag) for instant local update
-  const handleBrightnessInput = useCallback(
-    (e: React.FormEvent<HTMLInputElement>) => {
-      const b = Number((e.target as HTMLInputElement).value)
+  const effectiveBrightness = hasColor ? color.v : brightness
+
+  // null = use server value; non-null = user is dragging (finger-tracks at 60fps)
+  const [dragValue, setDragValue] = useState<number | null>(null)
+
+  const displayBrightness = dragValue ?? effectiveBrightness
+
+  const handleBrightnessChange = useCallback(
+    (vals: number[]) => {
+      const b = vals[0]
+      setDragValue(b)
       if (hasColor) {
         onChange({ color: { h: color.h, s: color.s, v: b }, brightness: b })
       } else {
@@ -113,10 +123,10 @@ export default function ColorBrightnessPicker({
     [hasColor, color, onChange],
   )
 
-  // Called on pointer up / finger lift — final commit
-  const handleBrightnessChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const b = Number(e.target.value)
+  const handleBrightnessCommit = useCallback(
+    (vals: number[]) => {
+      const b = vals[0]
+      setDragValue(null)
       if (hasColor) {
         onCommit({ color: { h: color.h, s: color.s, v: b }, brightness: b })
       } else {
@@ -128,14 +138,11 @@ export default function ColorBrightnessPicker({
 
   // ── Derived display values ────────────────────────────────────────────────
 
-  const effectiveBrightness = hasColor ? color.v : brightness
-
   const currentColorHex = hasColor
-    ? hsbToHex(color.h, color.s / 100, effectiveBrightness / 100)
+    ? hsbToHex(color.h, color.s / 100, displayBrightness / 100)
     : kelvinToHex(kelvin)
 
   // Brightness slider gradient: black at bottom → current colour at top
-  // We use a vertical gradient (top = bright, bottom = dark)
   const brightnessGradient =
     tab === 'whites' || !hasColor
       ? `linear-gradient(to top, #0a0a0a, ${kelvinToHex(kelvin)})`
@@ -143,7 +150,7 @@ export default function ColorBrightnessPicker({
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const showWhitesWheel = !hasColor || tab === 'whites'
+  const showWhitesPresets = !hasColor || tab === 'whites'
   const showColourWheel = hasColor && tab === 'colours'
 
   return (
@@ -156,71 +163,87 @@ export default function ColorBrightnessPicker({
             : `Temp: ${kelvin}K`}
         </span>
         <span style={{ color: 'var(--text-primary, #f1f5f9)' }}>
-          ☀ {Math.round(effectiveBrightness)}%
+          ☀ {Math.round(displayBrightness)}%
         </span>
       </div>
 
-      {/* Wheel + brightness slider */}
-      <div className="flex items-center justify-center gap-3">
-        {/* Colour or kelvin wheel */}
-        <div style={{ width: WHEEL_SIZE, height: WHEEL_SIZE, flexShrink: 0 }}>
-          {showColourWheel && (
+      {/* Wheel/presets + brightness slider */}
+      <div className="flex items-start justify-center gap-3">
+        {/* Colour wheel or Kelvin preset grid */}
+        {showColourWheel && (
+          <div style={{ width: SLIDER_H, height: SLIDER_H, flexShrink: 0 }}>
             <ColorWheel
               hue={color.h}
               saturation={color.s}
-              size={WHEEL_SIZE}
+              size={SLIDER_H}
               onChange={handleColorWheelChange}
               onCommit={handleColorWheelCommit}
             />
-          )}
-          {showWhitesWheel && (
-            <KelvinWheel
+          </div>
+        )}
+        {showWhitesPresets && (
+          <div className="min-w-0 flex-1">
+            <KelvinPresets
               kelvin={kelvin}
               minKelvin={minKelvin}
               maxKelvin={maxKelvin}
-              size={WHEEL_SIZE}
               onChange={handleKelvinChange}
               onCommit={handleKelvinCommit}
             />
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* Vertical brightness slider */}
-        <div
-          className="relative flex items-center justify-center overflow-hidden rounded-full"
+        {/* Vertical brightness slider — Radix UI for butter-smooth touch tracking */}
+        <Slider.Root
+          orientation="vertical"
+          min={0}
+          max={100}
+          step={1}
+          value={[displayBrightness]}
+          onValueChange={handleBrightnessChange}
+          onValueCommit={handleBrightnessCommit}
+          aria-label="Brightness"
+          className="relative flex touch-none select-none justify-center rounded-full"
           style={{
             width: SLIDER_W,
             height: SLIDER_H,
-            background: brightnessGradient,
             flexShrink: 0,
-          }}
+            // Prevent text-selection and long-press popups on iOS Safari during drag
+            userSelect: 'none',
+            WebkitTouchCallout: 'none',
+          } as React.CSSProperties}
         >
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={1}
-            value={Math.round(effectiveBrightness)}
-            onInput={handleBrightnessInput}
-            onChange={handleBrightnessChange}
-            aria-label="Brightness"
-            className="brightness-slider-vertical"
-          />
-          {/* Colour swatch at the thumb position — purely visual */}
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute rounded-full border-2 border-white"
+          <Slider.Track
+            className="relative w-full overflow-hidden rounded-full"
+            style={{ background: brightnessGradient }}
+          >
+            {/* Range is invisible — the gradient track IS the visual indicator */}
+            <Slider.Range className="absolute w-full" style={{ background: 'transparent' }} />
+          </Slider.Track>
+          <Slider.Thumb
+            className={[
+              'relative flex items-center justify-center rounded-full border-2 border-white',
+              // Invisible touch-target enlargement for easier finger targeting
+              'before:absolute before:inset-[-8px] before:content-[""]',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              loading ? 'cursor-default' : 'cursor-grab active:cursor-grabbing',
+            ].join(' ')}
             style={{
               width: 28,
               height: 28,
               backgroundColor: currentColorHex,
-              // Position thumb: 0% brightness = bottom, 100% = top
-              top: `${100 - effectiveBrightness}%`,
-              transform: 'translateY(-50%)',
               boxShadow: '0 0 0 1.5px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.4)',
+              // GPU acceleration for jank-free thumb movement
+              willChange: 'transform',
+              transform: 'translateZ(0)',
             }}
-          />
-        </div>
+            aria-label="Brightness"
+          >
+            {loading && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-white/80" aria-hidden="true" />
+            )}
+          </Slider.Thumb>
+        </Slider.Root>
       </div>
 
       {/* Tab bar — only for colour-capable lights */}
@@ -244,53 +267,6 @@ export default function ColorBrightnessPicker({
           ))}
         </div>
       )}
-
-      {/* Scoped styles for vertical slider */}
-      <style>{`
-        .brightness-slider-vertical {
-          -webkit-appearance: none;
-          appearance: none;
-          writing-mode: vertical-lr;
-          direction: rtl;
-          width: ${SLIDER_H}px;
-          height: ${SLIDER_W}px;
-          background: transparent;
-          cursor: pointer;
-          outline: none;
-          position: absolute;
-          inset: 0;
-          margin: auto;
-        }
-        .brightness-slider-vertical:focus-visible {
-          outline: 2px solid #10b981;
-          outline-offset: 4px;
-          border-radius: 4px;
-        }
-        .brightness-slider-vertical::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          width: ${SLIDER_W + 4}px;
-          height: ${SLIDER_W + 4}px;
-          border-radius: 50%;
-          background: transparent;
-          border: none;
-          cursor: pointer;
-        }
-        .brightness-slider-vertical::-moz-range-thumb {
-          width: ${SLIDER_W + 4}px;
-          height: ${SLIDER_W + 4}px;
-          border-radius: 50%;
-          background: transparent;
-          border: none;
-          cursor: pointer;
-        }
-        .brightness-slider-vertical::-webkit-slider-runnable-track {
-          background: transparent;
-        }
-        .brightness-slider-vertical::-moz-range-track {
-          background: transparent;
-        }
-      `}</style>
     </div>
   )
 }

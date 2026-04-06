@@ -88,25 +88,39 @@ export default function LightDetailPage() {
     // in onCommit so the query fetch happens after the drag is fully complete.
     // Invalidating on every mutation success causes the UI to revert to stale
     // server data while a drag is still in progress.
+    onError: () => toast({ message: 'Failed to update light', type: 'error' }),
   })
 
   // ── Local colour state ────────────────────────────────────────────────────
-  // During drag we keep an override object so the picker stays responsive
-  // without waiting for server round-trips. When dragState is null we fall back
-  // to server values, so the picker auto-updates after a query invalidation.
+  // Two layers of override so the UI is always optimistic:
+  //   1. dragState   — set during active pointer drags (cleared on pointer up)
+  //   2. commitState — holds the last committed value while the LIFX API is in
+  //                    flight, so the UI doesn't revert to stale server data.
+  //                    Cleared when the server query refreshes with new values.
 
   const [dragState, setDragState] = useState<DragState | null>(null)
+  const [commitState, setCommitState] = useState<DragState | null>(null)
 
   const serverHue = light?.color.hue ?? 0
   const serverSat = (light?.color.saturation ?? 0) * 100
   const serverV = Math.round((light?.brightness ?? 0) * 100)
   const serverKelvin = light?.color.kelvin ?? 4000
 
-  // Displayed values: drag overrides take priority, otherwise use server data
-  const localH = dragState?.h ?? serverHue
-  const localS = dragState?.s ?? serverSat
-  const localV = dragState?.v ?? serverV
-  const localKelvin = dragState?.kelvin ?? serverKelvin
+  // Clear commitState when server data catches up (same pattern as Sonos volume)
+  const prevServerRef = useRef({ h: serverHue, s: serverSat, v: serverV, k: serverKelvin })
+  useEffect(() => {
+    const prev = prevServerRef.current
+    if (prev.h !== serverHue || prev.s !== serverSat || prev.v !== serverV || prev.k !== serverKelvin) {
+      prevServerRef.current = { h: serverHue, s: serverSat, v: serverV, k: serverKelvin }
+      setCommitState(null)
+    }
+  }, [serverHue, serverSat, serverV, serverKelvin])
+
+  // Displayed values: drag > commit > server
+  const localH = dragState?.h ?? commitState?.h ?? serverHue
+  const localS = dragState?.s ?? commitState?.s ?? serverSat
+  const localV = dragState?.v ?? commitState?.v ?? serverV
+  const localKelvin = dragState?.kelvin ?? commitState?.kelvin ?? serverKelvin
 
   // Debounced API call during drag — live preview without hammering LIFX
   const debouncedSetState = useMemo(
@@ -306,6 +320,7 @@ export default function LightDetailPage() {
                 brightness={localV}
                 minKelvin={light.product.capabilities.min_kelvin}
                 maxKelvin={light.product.capabilities.max_kelvin}
+                loading={setStateMutation.isPending}
                 onChange={update => {
                   // Live drag: update local drag state for instant UI feedback AND
                   // fire a debounced API call so the physical light follows the finger.
@@ -329,9 +344,17 @@ export default function LightDetailPage() {
                   }
                 }}
                 onCommit={update => {
-                  // Pointer up: cancel any pending debounced call, clear drag state,
-                  // fire the final mutation, then invalidate to sync server data.
+                  // Pointer up: cancel any pending debounced call, promote drag values
+                  // to commitState so the UI stays optimistic while LIFX responds.
                   debouncedSetState.cancel()
+                  const base: DragState = dragState ?? { h: serverHue, s: serverSat, v: serverV, kelvin: serverKelvin }
+                  if (update.color) {
+                    setCommitState({ ...base, h: update.color.h, s: update.color.s, v: update.color.v })
+                  } else if (update.kelvin !== undefined) {
+                    setCommitState({ ...base, kelvin: update.kelvin })
+                  } else if (update.brightness !== undefined) {
+                    setCommitState({ ...base, v: update.brightness })
+                  }
                   setDragState(null)
                   if (update.color) {
                     const lifxColor = `hue:${update.color.h} saturation:${(update.color.s / 100).toFixed(4)}`
