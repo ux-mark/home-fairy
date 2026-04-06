@@ -253,6 +253,23 @@ function LightEditorCard({
               // Pointer up: cancel any pending debounced call and persist the final value.
               debouncedApiCall.cancel()
               onChange(applyUpdate(update))
+              // Fire the API call directly for live preview — the debounced call was
+              // just cancelled, so for tap-based controls (kelvin presets) that fire
+              // onChange + onCommit synchronously, the debounce never gets to execute.
+              if (livePreview) {
+                const lifxColor = update.color
+                  ? `hue:${update.color.h} saturation:${(update.color.s / 100).toFixed(2)}`
+                  : update.kelvin !== undefined
+                    ? `kelvin:${update.kelvin}`
+                    : undefined
+                const lifxBrightness = update.brightness !== undefined ? update.brightness / 100 : undefined
+                api.lifx.setState(state.selector, {
+                  power: 'on',
+                  color: lifxColor,
+                  brightness: lifxBrightness,
+                  duration: 0.3,
+                })
+              }
             }}
           />
         </div>
