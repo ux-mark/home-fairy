@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Loader2, ChevronDown, ChevronUp, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api, type SonosNowPlayingEntry, type SonosQueueItem } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
@@ -257,7 +257,6 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
                 const entry = item.entry
                 const isPlaying = entry.state?.playbackState === 'PLAYING'
                 const isPaused = entry.state?.playbackState === 'PAUSED_PLAYBACK'
-                const isStopped = !entry.state || entry.state.playbackState === 'STOPPED'
                 const hasTrack =
                   entry.state &&
                   (entry.state.currentTrack.title || entry.state.currentTrack.stationName)
@@ -295,10 +294,8 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
               // Grouped speaker row
               const { coordinator, members } = item
               const allMembers = [coordinator, ...members]
-              const groupLabel = allMembers.map(e => e.roomName).join(' + ')
               const isPlaying = coordinator.state?.playbackState === 'PLAYING'
               const isPaused = coordinator.state?.playbackState === 'PAUSED_PLAYBACK'
-              const isStopped = !coordinator.state || coordinator.state.playbackState === 'STOPPED'
               const hasTrack =
                 coordinator.state &&
                 (coordinator.state.currentTrack.title || coordinator.state.currentTrack.stationName)
