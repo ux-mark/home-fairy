@@ -4,14 +4,13 @@ import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Headphones } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { SonosSpeakerCard } from './SonosSpeakerCard'
-import { SonosGroupCard } from './SonosGroupCard'
+import { SpeakerCard } from './SpeakerCard'
 
 /**
  * Multi-speaker Now Playing tab.
  *
- * Groups are rendered as SonosGroupCard (coordinator + members).
- * Solo speakers are rendered as SonosSpeakerCard.
+ * Groups are rendered as SpeakerCard type='group' (coordinator + members).
+ * Solo speakers are rendered as SpeakerCard type='solo'.
  * Non-coordinator group members are excluded from the solo list.
  */
 export function NowPlayingTab({ focusSpeaker }: { focusSpeaker?: string }) {
@@ -137,21 +136,25 @@ export function NowPlayingTab({ focusSpeaker }: { focusSpeaker?: string }) {
           memberSpeakerNames.includes(e.speakerName),
         )
         return (
-          <SonosGroupCard
+          <SpeakerCard
             key={coordinator.speakerName}
+            type="group"
             coordinator={coordinator}
             members={memberEntries}
             onRefresh={handleRefresh}
             allSpeakers={nowPlaying}
             focusSpeaker={focusSpeaker}
+            showVolume={true}
+            showQueue={true}
           />
         )
       })}
 
       {/* Solo speaker cards */}
       {soloSpeakers.map(entry => (
-        <SonosSpeakerCard
+        <SpeakerCard
           key={entry.speakerName}
+          type="solo"
           roomName={entry.roomName}
           speakerName={entry.speakerName}
           state={entry.state}
@@ -160,6 +163,8 @@ export function NowPlayingTab({ focusSpeaker }: { focusSpeaker?: string }) {
           onRefresh={handleRefresh}
           allSpeakers={nowPlaying}
           focusSpeaker={focusSpeaker}
+          showVolume={true}
+          showQueue={true}
         />
       ))}
     </div>
