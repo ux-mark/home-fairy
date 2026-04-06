@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -22,7 +21,6 @@ import { CSS } from '@dnd-kit/utilities'
 import {
   AlertTriangle,
   GripVertical,
-  ImageOff,
   Music2,
   Play,
 } from 'lucide-react'
@@ -33,6 +31,7 @@ import { useToast } from '@/hooks/useToast'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { SortableOverlay } from '@/components/ui/SortableOverlay'
+import { ArtworkImage } from './ArtworkImage'
 import { QueueHeader } from './QueueHeader'
 import { MusicItemMenu } from './MusicItemMenu'
 
@@ -66,7 +65,6 @@ function SortableQueueItem({
   onPlayNext,
   speaker,
 }: SortableQueueItemProps) {
-  const [imgFailed, setImgFailed] = useState(false)
   const navigate = useNavigate()
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -150,20 +148,7 @@ function SortableQueueItem({
       </button>
 
       {/* Album art */}
-      <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-[var(--bg-tertiary)]">
-        {item.albumArtUri && !imgFailed ? (
-          <img
-            src={item.albumArtUri}
-            alt=""
-            className="h-full w-full object-cover"
-            onError={() => setImgFailed(true)}
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center">
-            <ImageOff className="h-4 w-4 text-slate-500" aria-hidden="true" />
-          </div>
-        )}
-      </div>
+      <ArtworkImage src={item.albumArtUri} size={40} fallback="disc" />
 
       {/* Track info — tappable */}
       <button
@@ -175,7 +160,7 @@ function SortableQueueItem({
           <p
             className={[
               'truncate text-sm font-medium leading-tight',
-              isCurrentTrack ? 'text-fairy-300' : 'text-heading',
+              isCurrentTrack ? 'text-fairy-400' : 'text-heading',
             ].join(' ')}
           >
             {item.title || 'Unknown track'}

@@ -3,7 +3,8 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { ArrowLeft, Music2, Pause, Play } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
-import { useFirstSpeaker, useNowPlayingTrack } from '@/hooks/useBrowseShared'
+import { useFirstSpeaker } from '@/hooks/useBrowseShared'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from '../ArtworkImage'
 import { AlbumPlaylistMenu } from '../AlbumPlaylistMenu'
@@ -49,9 +50,7 @@ export function SpotifyAlbumDetail() {
     onError: () => toast({ message: 'Failed to pause', type: 'error' }),
   })
 
-  const nowPlayingState = useNowPlayingTrack(speaker)
-  const isPlaying = nowPlayingState?.playbackState === 'PLAYING'
-  const currentUri = nowPlayingState?.currentTrack?.uri
+  const { isTrackPlaying: isTrackActive, isSelectedPlaying: isPlaying } = usePlaybackState()
 
   if (!id) return null
 
@@ -136,7 +135,7 @@ export function SpotifyAlbumDetail() {
               key={track.id + ':' + i}
               track={track}
               speaker={speaker}
-              isActive={!!currentUri && currentUri === track.uri}
+              isActive={isTrackActive(track.uri, track.name)}
               isPlaying={isPlaying}
             />
           ))}

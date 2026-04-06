@@ -128,7 +128,7 @@ function SortableQueueItem({
           <p
             className={cn(
               'truncate text-xs font-medium leading-tight',
-              isCurrentTrack ? 'text-fairy-300' : 'text-heading',
+              isCurrentTrack ? 'text-fairy-400' : 'text-heading',
             )}
           >
             {item.title || 'Unknown track'}

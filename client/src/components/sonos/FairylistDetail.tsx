@@ -24,6 +24,7 @@ import type { FairylistItem } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ArtworkImage } from './ArtworkImage'
+import { SourceBadge } from './SourceBadge'
 import { MusicItemMenu } from './MusicItemMenu'
 import { cn } from '@/lib/utils'
 import { useFairylistEditor } from '@/hooks/useFairylistEditor'
@@ -34,28 +35,6 @@ interface FairylistDetailProps {
   fairylistId: number
   onBack: () => void
   effectiveSpeaker: string | null
-}
-
-// ── Source badge ──────────────────────────────────────────────────────────────
-
-const sourceBadgeClass: Record<string, string> = {
-  spotify: 'bg-green-500/15 text-green-400',
-  nas: 'bg-blue-500/15 text-blue-400',
-  radio: 'bg-amber-500/15 text-amber-400',
-  sonos: 'bg-purple-500/15 text-purple-400',
-}
-
-function SourceBadge({ source }: { source: string }) {
-  return (
-    <span
-      className={cn(
-        'rounded-full px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide',
-        sourceBadgeClass[source] ?? 'bg-[var(--bg-tertiary)] text-caption',
-      )}
-    >
-      {source}
-    </span>
-  )
 }
 
 // ── Sortable item row ─────────────────────────────────────────────────────────

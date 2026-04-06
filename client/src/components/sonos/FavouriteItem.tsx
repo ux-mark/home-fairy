@@ -2,21 +2,14 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { CSS } from '@dnd-kit/utilities'
 import { useSortable } from '@dnd-kit/sortable'
-import { GripVertical, ImageOff, ListStart, ListEnd, ListPlus, ListMusic, X, Play } from 'lucide-react'
+import { GripVertical, ListStart, ListEnd, ListPlus, ListMusic, X, Play } from 'lucide-react'
 import type { UserFavourite } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { AddToFairylistDialog } from './AddToFairylistDialog'
 import { AddToSpotifyPlaylistDialog } from './AddToSpotifyPlaylistDialog'
 import { useSwipeGesture } from '@/hooks/useSwipeGesture'
-
-// ── Source badge ──────────────────────────────────────────────────────────────
-
-const SOURCE_BADGE: Record<UserFavourite['source'], { label: string; className: string }> = {
-  sonos: { label: 'Sonos', className: 'bg-green-900/40 text-green-400' },
-  spotify: { label: 'Spotify', className: 'bg-emerald-900/40 text-emerald-400' },
-  nas: { label: 'NAS', className: 'bg-blue-900/40 text-blue-400' },
-  radio: { label: 'Radio', className: 'bg-orange-900/40 text-orange-400' },
-}
+import { ArtworkImage } from './ArtworkImage'
+import { SourceBadge } from './SourceBadge'
 
 const TRAY_WIDTH = 216
 
@@ -59,9 +52,7 @@ function FavouriteBottomSheet({
   showSpotifyPlaylist,
   onSpotifyPlaylist,
 }: BottomSheetProps) {
-  const [imgFailed, setImgFailed] = useState(false)
   const [entered, setEntered] = useState(false)
-  const badge = SOURCE_BADGE[item.source]
 
   useEffect(() => {
     // One-frame delay to trigger slide-up animation
@@ -92,30 +83,10 @@ function FavouriteBottomSheet({
       >
         {/* Item preview header */}
         <div className="flex items-center gap-3 border-b border-[var(--border-primary)] px-4 py-4">
-          <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-[var(--bg-tertiary)]">
-            {item.album_art_uri && !imgFailed ? (
-              <img
-                src={item.album_art_uri}
-                alt=""
-                className="h-full w-full object-cover"
-                onError={() => setImgFailed(true)}
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center">
-                <ImageOff className="h-5 w-5 text-slate-500" aria-hidden="true" />
-              </div>
-            )}
-          </div>
+          <ArtworkImage src={item.album_art_uri} size={48} fallback="image" rounded="rounded-lg" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold leading-tight text-heading">{item.title}</p>
-            <span
-              className={cn(
-                'mt-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-                badge.className,
-              )}
-            >
-              {badge.label}
-            </span>
+            <SourceBadge source={item.source} className="mt-1" />
           </div>
         </div>
 
@@ -205,7 +176,6 @@ export function FavouriteItem({
   swipedItemId,
   onSwipeOpen,
 }: FavouriteItemProps) {
-  const [imgFailed, setImgFailed] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
   const [showBottomSheet, setShowBottomSheet] = useState(false)
@@ -239,8 +209,6 @@ export function FavouriteItem({
     transform: CSS.Transform.toString(transform),
     transition,
   }
-
-  const badge = SOURCE_BADGE[item.source]
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -314,20 +282,7 @@ export function FavouriteItem({
           </button>
 
           {/* Album art */}
-          <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-[var(--bg-tertiary)]">
-            {item.album_art_uri && !imgFailed ? (
-              <img
-                src={item.album_art_uri}
-                alt=""
-                className="h-full w-full object-cover"
-                onError={() => setImgFailed(true)}
-              />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center">
-                <ImageOff className="h-4 w-4 text-slate-500" aria-hidden="true" />
-              </div>
-            )}
-          </div>
+          <ArtworkImage src={item.album_art_uri} size={40} fallback="image" />
 
           {/* Title + badge (tap to play) */}
           <button
@@ -338,14 +293,7 @@ export function FavouriteItem({
             <p className="truncate text-sm font-medium leading-tight text-heading">
               {item.title}
             </p>
-            <span
-              className={cn(
-                'mt-0.5 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-                badge.className,
-              )}
-            >
-              {badge.label}
-            </span>
+            <SourceBadge source={item.source} className="mt-0.5" />
           </button>
 
           {/* Play button */}
