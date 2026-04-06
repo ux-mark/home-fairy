@@ -58,6 +58,7 @@ export function SonosVolumeControl({
   useEffect(() => {
     if (value !== prevValueRef.current) {
       prevValueRef.current = value
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setOptimisticValue(null)
     }
   }, [value])

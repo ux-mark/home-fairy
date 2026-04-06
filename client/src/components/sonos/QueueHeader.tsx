@@ -42,7 +42,9 @@ export function QueueHeader({ speaker, currentPlayMode, onModeChange }: QueueHea
   const [repeatAllActive, setRepeatAllActive] = useState(parsed.repeatAll)
 
   // Sync local state when server data arrives (after refetch)
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setShuffleActive(parsed.shuffle) }, [parsed.shuffle])
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setRepeatAllActive(parsed.repeatAll) }, [parsed.repeatAll])
 
   function invalidatePlayback() {
