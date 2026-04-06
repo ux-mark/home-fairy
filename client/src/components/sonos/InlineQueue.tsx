@@ -248,31 +248,40 @@ export function InlineQueue({
     const { active, over } = event
     if (!over || active.id === over.id || !queue) return
 
+    // IDs are item.uri + ':' + originalIndex — search the full queue
     const items = [...queue]
-    const oldIndex = items.findIndex((_, i) => active.id === items[i].uri + ':' + i)
-    const newIndex = items.findIndex((_, i) => over.id === items[i].uri + ':' + i)
+    const oldIndex = items.findIndex((item, i) => active.id === item.uri + ':' + i)
+    const newIndex = items.findIndex((item, i) => over.id === item.uri + ':' + i)
     if (oldIndex === -1 || newIndex === -1) return
 
     queryClient.setQueryData<SonosQueueItem[]>(queueKey, arrayMove(items, oldIndex, newIndex))
     reorderMutation.mutate({ from: oldIndex, to: newIndex })
   }
 
-  function handleRemove(index: number) {
+  function handleRemove(originalIndex: number) {
     if (!queue) return
+    // originalIndex is the position in the full queue
     queryClient.setQueryData<SonosQueueItem[]>(
       queueKey,
-      queue.filter((_, i) => i !== index),
+      queue.filter((_, i) => i !== originalIndex),
     )
-    removeMutation.mutate(index)
+    removeMutation.mutate(originalIndex)
   }
 
   function handlePlayNext(uri: string) {
     playNextMutation.mutate(uri)
   }
 
-  const queueCount = queue?.length ?? 0
-  const visibleQueue = queueLimit ? queue?.slice(0, queueLimit) : queue
-  const hasMore = queueLimit && queue && queue.length > queueLimit
+  // Compute upcoming tracks (after the current track)
+  const currentIndex =
+    queue && currentTrackUri
+      ? Math.max(0, queue.findIndex(item => item.uri === currentTrackUri))
+      : 0
+  const upcomingStartIndex = currentIndex + 1
+  const upcomingQueue = queue ? queue.slice(upcomingStartIndex) : []
+  const upcomingCount = upcomingQueue.length
+  const visibleQueue = queueLimit ? upcomingQueue.slice(0, queueLimit) : upcomingQueue
+  const hasMore = queueLimit != null && upcomingQueue.length > queueLimit
 
   return (
     <div className="mt-2 border-t border-[var(--border-secondary)] pt-2">
@@ -290,9 +299,9 @@ export function InlineQueue({
       >
         <span className="flex items-center gap-1.5">
           <ListMusic className="h-3 w-3" aria-hidden="true" />
-          {expanded && !isLoading && queueCount > 0
-            ? `Queue (${queueCount})`
-            : 'Queue'}
+          {expanded && !isLoading && upcomingCount > 0
+            ? `Up next (${upcomingCount})`
+            : 'Up next'}
         </span>
         {expanded ? (
           <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
@@ -354,6 +363,16 @@ export function InlineQueue({
             </div>
           )}
 
+          {!isLoading && !isError && queue && queue.length > 0 && upcomingCount === 0 && (
+            <div className="flex flex-col items-center justify-center gap-2 py-8 text-center px-4">
+              <Music2 className="h-8 w-8 text-slate-500" aria-hidden="true" />
+              <div>
+                <p className="text-xs font-semibold text-heading">No more tracks in queue</p>
+                <p className="mt-0.5 text-xs text-caption">This is the last track.</p>
+              </div>
+            </div>
+          )}
+
           {visibleQueue && visibleQueue.length > 0 && (
             <DndContext
               sensors={sensors}
@@ -361,23 +380,21 @@ export function InlineQueue({
               onDragEnd={handleDragEnd}
             >
               <SortableContext
-                items={queue!.map((item, i) => item.uri + ':' + i)}
+                items={visibleQueue.map((item, i) => item.uri + ':' + (upcomingStartIndex + i))}
                 strategy={verticalListSortingStrategy}
               >
                 <ul
                   className="divide-y divide-[var(--border-secondary)]"
-                  aria-label="Queue — drag to reorder"
+                  aria-label="Up next — drag to reorder"
                 >
                   {visibleQueue.map((item, i) => {
-                    const isCurrentTrack = currentTrackUri
-                      ? item.uri === currentTrackUri
-                      : i === 0
+                    const originalIndex = upcomingStartIndex + i
                     return (
                       <SortableQueueItem
-                        key={item.uri + ':' + i}
+                        key={item.uri + ':' + originalIndex}
                         item={item}
-                        index={i}
-                        isCurrentTrack={isCurrentTrack}
+                        index={originalIndex}
+                        isCurrentTrack={false}
                         onRemove={handleRemove}
                         onPlayNext={handlePlayNext}
                         speaker={speaker}
@@ -399,7 +416,7 @@ export function InlineQueue({
                 'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               )}
             >
-              View all {queue!.length} tracks
+              View all {upcomingCount} upcoming tracks
             </button>
           )}
         </div>

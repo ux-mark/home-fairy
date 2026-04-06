@@ -268,29 +268,38 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
     const { active, over } = event
     if (!over || active.id === over.id || !queue) return
 
+    // IDs are item.uri + ':' + originalIndex — search the full queue
     const items = [...queue]
-    const oldIndex = items.findIndex((_, i) => active.id === items[i].uri + ':' + i)
-    const newIndex = items.findIndex((_, i) => over.id === items[i].uri + ':' + i)
+    const oldIndex = items.findIndex((item, i) => active.id === item.uri + ':' + i)
+    const newIndex = items.findIndex((item, i) => over.id === item.uri + ':' + i)
     if (oldIndex === -1 || newIndex === -1) return
 
-    // Optimistic update
+    // Optimistic update on the full queue
     queryClient.setQueryData<SonosQueueItem[]>(queueKey, arrayMove(items, oldIndex, newIndex))
     reorderMutation.mutate({ from: oldIndex, to: newIndex })
   }
 
-  function handleRemove(index: number) {
+  function handleRemove(originalIndex: number) {
     if (!queue) return
-    // Optimistic update
+    // Optimistic update on the full queue
     queryClient.setQueryData<SonosQueueItem[]>(
       queueKey,
-      queue.filter((_, i) => i !== index),
+      queue.filter((_, i) => i !== originalIndex),
     )
-    removeMutation.mutate(index)
+    removeMutation.mutate(originalIndex)
   }
 
   function handlePlayNext(uri: string) {
     playNextMutation.mutate(uri)
   }
+
+  // Compute upcoming tracks (items after the current track)
+  const currentIndex =
+    queue && currentTrackUri
+      ? Math.max(0, queue.findIndex(item => item.uri === currentTrackUri))
+      : 0
+  const upcomingStartIndex = currentIndex + 1
+  const upcomingQueue = queue ? queue.slice(upcomingStartIndex) : []
 
   // ── Content ───────────────────────────────────────────────────────────────
 
@@ -344,7 +353,28 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
       )
     }
 
-    const sortableIds = queue.map((item, i) => item.uri + ':' + i)
+    if (upcomingQueue.length === 0) {
+      return (
+        <>
+          <QueueHeader
+            speaker={speaker}
+            currentPlayMode={playbackState?.currentPlayMode}
+            onModeChange={() => {}}
+          />
+          <div className="flex flex-col items-center justify-center gap-3 py-16 text-center px-4">
+            <Music2 className="h-10 w-10 text-slate-500" aria-hidden="true" />
+            <div>
+              <p className="text-sm font-semibold text-heading">No more tracks in queue</p>
+              <p className="mt-1 text-xs text-caption">
+                This is the last track.
+              </p>
+            </div>
+          </div>
+        </>
+      )
+    }
+
+    const sortableIds = upcomingQueue.map((item, i) => item.uri + ':' + (upcomingStartIndex + i))
 
     return (
       <>
@@ -354,6 +384,9 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
           currentPlayMode={playbackState?.currentPlayMode}
           onModeChange={() => {}}
         />
+        <p className="px-4 pb-1 pt-2 text-xs font-semibold text-caption uppercase tracking-wide">
+          Up next
+        </p>
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -362,17 +395,16 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
           <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
             <ul
               className="divide-y divide-[var(--border-secondary)]"
-              aria-label="Queue — drag to reorder"
+              aria-label="Up next — drag to reorder"
             >
-              {queue.map((item, i) => {
-                const isCurrentTrack =
-                  currentTrackUri ? item.uri === currentTrackUri : i === 0
+              {upcomingQueue.map((item, i) => {
+                const originalIndex = upcomingStartIndex + i
                 return (
                   <SortableQueueItem
-                    key={item.uri + ':' + i}
+                    key={item.uri + ':' + originalIndex}
                     item={item}
-                    index={i}
-                    isCurrentTrack={isCurrentTrack}
+                    index={originalIndex}
+                    isCurrentTrack={false}
                     onRemove={handleRemove}
                     onPlayNext={handlePlayNext}
                     speaker={speaker}
