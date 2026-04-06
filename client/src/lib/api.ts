@@ -793,6 +793,7 @@ export interface SonosLibraryTrack {
   album: string
   albumArtUri: string | undefined
   uri: string
+  duration_ms?: number
 }
 
 export interface SonosSearchArtist {
@@ -880,6 +881,7 @@ export interface UserFavourite {
   source: 'sonos' | 'spotify' | 'nas' | 'radio'
   source_uri: string
   title: string
+  artist?: string | null
   album_art_uri: string | null
   sort_order: number
   created_at: string
@@ -889,6 +891,7 @@ export interface AddFavouriteInput {
   source: 'sonos' | 'spotify' | 'nas' | 'radio'
   source_uri: string
   title: string
+  artist?: string
   album_art_uri?: string
 }
 

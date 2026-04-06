@@ -96,6 +96,7 @@ function NasTrackRow({
       source: 'nas',
       source_uri: track.uri,
       title: track.title || 'Unknown track',
+      artist: track.artist || undefined,
       album_art_uri: track.albumArtUri,
     }),
     onSuccess: () => toast({ message: `Added "${track.title}" to favourites` }),
@@ -210,7 +211,7 @@ function NasSearchAlbumRow({
 
   return (
     <MusicListItem
-      artwork={{ src: albumArtUri, size: 40, fallback: 'disc' }}
+      artwork={{ src: albumArtUri, size: 48, fallback: 'disc' }}
       title={album.name}
       subtitle={subtitle}
       onTap={() => onSelect({ name: album.name, artist: album.artist, albumArtUri, objectId })}

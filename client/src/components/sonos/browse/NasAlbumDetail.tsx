@@ -137,6 +137,7 @@ export function NasAlbumDetail() {
               speaker={speaker}
               isActive={!!currentUri && currentUri === track.uri}
               isPlaying={isPlaying}
+              trackNumber={i + 1}
             />
           ))}
         </ul>

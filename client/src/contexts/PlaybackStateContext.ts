@@ -4,6 +4,21 @@ import { api } from '@/lib/api'
 import type { SonosNowPlayingEntry, SonosPlaybackState } from '@/lib/api'
 import { getSocket } from '@/hooks/useSocket'
 
+// ── URI normalisation ────────────────────────────────────────────────────────
+// Sonos wraps Spotify URIs as "x-sonos-spotify:spotify:track:ABC?sid=…".
+// Strip the wrapper and query params so both sides compare the core URI.
+function normalizeUri(uri: string): string {
+  let u = uri.split('?')[0]
+  // Unwrap x-sonos-spotify: / x-sonos-http: / x-sonos-hls: prefixes
+  const wrappedMatch = u.match(/^x-sonos-[^:]+:(.+)/)
+  if (wrappedMatch) u = wrappedMatch[1]
+  // Unwrap URL-encoded Spotify URIs (e.g. spotify%3atrack%3a...)
+  if (u.includes('%3a') || u.includes('%3A')) {
+    try { u = decodeURIComponent(u) } catch { /* keep as-is */ }
+  }
+  return u
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export interface PlaybackStateContextValue {
@@ -75,8 +90,19 @@ export function PlaybackStateProvider({ children }: { children: ReactNode }) {
     function handlePlaybackUpdate() {
       queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
     }
+    function handleQueueUpdate(data: { speaker?: string }) {
+      if (data?.speaker) {
+        queryClient.invalidateQueries({ queryKey: ['sonos', 'queue', data.speaker] })
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['sonos', 'queue'] })
+      }
+    }
     socket.on('sonos:playback-update', handlePlaybackUpdate)
-    return () => { socket.off('sonos:playback-update', handlePlaybackUpdate) }
+    socket.on('sonos:queue-update', handleQueueUpdate)
+    return () => {
+      socket.off('sonos:playback-update', handlePlaybackUpdate)
+      socket.off('sonos:queue-update', handleQueueUpdate)
+    }
   }, [queryClient])
 
   // ── Derived state ─────────────────────────────────────────────────────────
@@ -85,12 +111,12 @@ export function PlaybackStateProvider({ children }: { children: ReactNode }) {
   const isSelectedPlaying = selectedPlayback?.playbackState === 'PLAYING'
 
   // ── Helper functions ──────────────────────────────────────────────────────
+
   const isTrackPlaying = useCallback(
     (uri: string | undefined, title: string): boolean => {
       if (!selectedPlayback) return false
       const track = selectedPlayback.currentTrack
       if (uri && track.uri) {
-        const normalizeUri = (u: string) => u.split('?')[0]
         if (normalizeUri(uri) === normalizeUri(track.uri)) return true
       }
       return track.title?.toLowerCase() === title?.toLowerCase()
@@ -111,8 +137,9 @@ export function PlaybackStateProvider({ children }: { children: ReactNode }) {
   const isPlaylistPlaying = useCallback(
     (playlistUri: string): boolean => {
       if (!selectedPlayback) return false
-      const uri = selectedPlayback.currentTrack.uri ?? ''
-      return uri.includes(playlistUri) || playlistUri.includes(uri.split('?')[0])
+      const trackUri = normalizeUri(selectedPlayback.currentTrack.uri ?? '')
+      const normalised = normalizeUri(playlistUri)
+      return trackUri.includes(normalised) || normalised.includes(trackUri)
     },
     [selectedPlayback],
   )

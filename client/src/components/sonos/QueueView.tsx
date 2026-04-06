@@ -28,6 +28,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { useQueueSync } from '@/hooks/useQueueSync'
 import { useToast } from '@/hooks/useToast'
 import { cn } from '@/lib/utils'
@@ -186,9 +187,19 @@ function SortableQueueItem({
             </span>
           )}
         </div>
-        <p className="truncate text-xs text-caption">
-          {[item.artist, item.album].filter(Boolean).join(' · ')}
-        </p>
+        <div className="flex items-center gap-1.5">
+          <p className="truncate text-xs text-caption">
+            {[item.artist, item.album].filter(Boolean).join(' · ')}
+          </p>
+          <span className={cn(
+            'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+            source === 'spotify'
+              ? 'bg-emerald-900/40 text-emerald-400'
+              : 'bg-blue-900/40 text-blue-400',
+          )}>
+            {source === 'spotify' ? 'Spotify' : 'NAS'}
+          </span>
+        </div>
       </button>
 
       {/* Actions */}
@@ -239,6 +250,7 @@ function SortableQueueItem({
 export function QueueView({ speaker, open, onClose, currentTrackUri, playbackState }: QueueViewProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const { isTrackActive } = usePlaybackState()
 
   const queueKey = ['sonos', 'queue', speaker]
 
@@ -381,7 +393,9 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
             >
               {queue.map((item, i) => {
                 const isCurrentTrack =
-                  currentTrackUri ? item.uri === currentTrackUri : i === 0
+                  isTrackActive(item.uri, item.title)
+                  || (currentTrackUri ? item.uri === currentTrackUri : false)
+                  || (!currentTrackUri && i === 0)
                 return (
                   <SortableQueueItem
                     key={item.uri + ':' + i}

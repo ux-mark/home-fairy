@@ -31,6 +31,7 @@ import {
 import { api } from '@/lib/api'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
 import { useQueueSync } from '@/hooks/useQueueSync'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
@@ -58,6 +59,7 @@ interface SortableQueueItemProps {
   item: SonosQueueItem
   index: number
   isCurrentTrack: boolean
+  isFirst: boolean
   onRemove: (index: number) => void
   onPlayNext: (uri: string) => void
   speaker: string
@@ -139,9 +141,19 @@ function SortableQueueItem({
             </span>
           )}
         </div>
-        <p className="truncate text-[11px] text-caption">
-          {[item.artist, item.album].filter(Boolean).join(' · ')}
-        </p>
+        <div className="flex items-center gap-1.5">
+          <p className="truncate text-[11px] text-caption">
+            {[item.artist, item.album].filter(Boolean).join(' · ')}
+          </p>
+          <span className={cn(
+            'shrink-0 rounded-full px-1 py-0.5 text-[9px] font-semibold',
+            item.uri?.startsWith('spotify:')
+              ? 'bg-emerald-900/40 text-emerald-400'
+              : 'bg-blue-900/40 text-blue-400',
+          )}>
+            {item.uri?.startsWith('spotify:') ? 'Spotify' : 'NAS'}
+          </span>
+        </div>
       </button>
 
       {/* Actions */}
@@ -180,6 +192,7 @@ export function InlineQueue({
 }: InlineQueueProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const { isTrackActive } = usePlaybackState()
 
   const queueKey = ['sonos', 'queue', speaker]
 
@@ -345,15 +358,19 @@ export function InlineQueue({
                   aria-label="Queue — drag to reorder"
                 >
                   {visibleQueue.map((item, i) => {
-                    const isCurrentTrack = currentTrackUri
-                      ? item.uri === currentTrackUri
-                      : i === 0
+                    // Prefer context-based matching (handles URI normalisation + title fallback),
+                    // fall back to URI equality, then first-item heuristic
+                    const contextMatch = isTrackActive(item.uri, item.title)
+                    const isCurrentTrack = contextMatch
+                      || (currentTrackUri ? item.uri === currentTrackUri : false)
+                      || (!contextMatch && !currentTrackUri && i === 0)
                     return (
                       <SortableQueueItem
                         key={item.uri + ':' + i}
                         item={item}
                         index={i}
                         isCurrentTrack={isCurrentTrack}
+                        isFirst={i === 0}
                         onRemove={handleRemove}
                         onPlayNext={handlePlayNext}
                         speaker={speaker}

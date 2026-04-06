@@ -171,6 +171,7 @@ export function SpotifyAlbumTrackRow({
       source: 'spotify',
       source_uri: track.uri,
       title: track.name,
+      artist: track.artists.map(a => a.name).join(', ') || undefined,
     }),
     onSuccess: () => toast({ message: `Added "${track.name}" to favourites` }),
     onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),

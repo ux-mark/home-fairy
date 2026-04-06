@@ -15,6 +15,7 @@ const addFavouriteSchema = z.object({
   source: z.enum(['sonos', 'spotify', 'nas', 'radio']),
   source_uri: z.string().min(1),
   title: z.string().min(1),
+  artist: z.string().optional(),
   album_art_uri: z.string().optional(),
 })
 
@@ -41,7 +42,7 @@ router.post('/', (req: Request, res: Response) => {
   }
   try {
     const userId = (req as any).user.id
-    const { source, source_uri, title, album_art_uri } = parsed.data
+    const { source, source_uri, title, artist, album_art_uri } = parsed.data
 
     const maxRow = db
       .prepare('SELECT COALESCE(MAX(sort_order), -1) as max_order FROM user_favourites WHERE user_id = ?')
@@ -49,9 +50,9 @@ router.post('/', (req: Request, res: Response) => {
     const nextOrder = maxRow.max_order + 1
 
     const result = run(
-      `INSERT INTO user_favourites (user_id, source, source_uri, title, album_art_uri, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [userId, source, source_uri, title, album_art_uri ?? null, nextOrder],
+      `INSERT INTO user_favourites (user_id, source, source_uri, title, artist, album_art_uri, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [userId, source, source_uri, title, artist ?? null, album_art_uri ?? null, nextOrder],
     )
 
     const created = db

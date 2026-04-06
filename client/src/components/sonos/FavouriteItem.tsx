@@ -2,9 +2,10 @@ import { useState, useRef, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { CSS } from '@dnd-kit/utilities'
 import { useSortable } from '@dnd-kit/sortable'
-import { GripVertical, ImageOff, ListStart, ListEnd, ListPlus, ListMusic, X, Play } from 'lucide-react'
+import { GripVertical, ImageOff, ListStart, ListEnd, ListPlus, ListMusic, X, Play, Pause } from 'lucide-react'
 import type { UserFavourite } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { ActiveTrackIndicator } from './ActiveTrackIndicator'
 import { AddToFairylistDialog } from './AddToFairylistDialog'
 import { AddToSpotifyPlaylistDialog } from './AddToSpotifyPlaylistDialog'
 import { useSwipeGesture } from '@/hooks/useSwipeGesture'
@@ -25,9 +26,14 @@ const TRAY_WIDTH = 216
 export interface FavouriteItemProps {
   item: UserFavourite
   onPlay: (item: UserFavourite) => void
+  onPause?: () => void
   onRemove: (id: number) => void
   onPlayNext: (item: UserFavourite) => void
   onAddToQueue: (item: UserFavourite) => void
+  /** Whether this favourite is the current track on the selected speaker */
+  isCurrentTrack?: boolean
+  /** Whether the selected speaker is actively playing */
+  isPlaying?: boolean
   /** ID of the currently swiped-open item (lifted state) */
   swipedItemId: number | null
   /** Called when this item wants to open/close the swipe tray */
@@ -108,14 +114,18 @@ function FavouriteBottomSheet({
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold leading-tight text-heading">{item.title}</p>
-            <span
-              className={cn(
-                'mt-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-                badge.className,
-              )}
-            >
-              {badge.label}
-            </span>
+            {item.artist ? (
+              <p className="mt-0.5 truncate text-xs text-caption">{item.artist}</p>
+            ) : (
+              <span
+                className={cn(
+                  'mt-1 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                  badge.className,
+                )}
+              >
+                {badge.label}
+              </span>
+            )}
           </div>
         </div>
 
@@ -199,9 +209,12 @@ function FavouriteBottomSheet({
 export function FavouriteItem({
   item,
   onPlay,
+  onPause,
   onRemove,
   onPlayNext,
   onAddToQueue,
+  isCurrentTrack = false,
+  isPlaying = false,
   swipedItemId,
   onSwipeOpen,
 }: FavouriteItemProps) {
@@ -290,7 +303,10 @@ export function FavouriteItem({
         {/* Content layer — translates left on swipe to reveal tray */}
         <div
           ref={contentRef}
-          className="relative flex items-center gap-3 px-4 py-2.5 bg-[var(--bg-primary)]"
+          className={cn(
+            'relative flex items-center gap-3 px-4 py-2.5',
+            isCurrentTrack ? 'bg-fairy-500/5 border-l-2 border-fairy-500 pl-[14px]' : 'bg-[var(--bg-primary)]',
+          )}
           style={{
             transform: `translateX(${swipeTranslateX}px)`,
             transition: isGesturing ? 'none' : 'transform 0.2s ease-out',
@@ -329,32 +345,48 @@ export function FavouriteItem({
             )}
           </div>
 
-          {/* Title + badge (tap to play) */}
+          {/* Active track indicator */}
+          <ActiveTrackIndicator isActive={isCurrentTrack} isPlaying={isCurrentTrack && isPlaying} />
+
+          {/* Title + artist + badge (tap to play) */}
           <button
             className="min-w-0 flex-1 rounded text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
             onClick={() => onPlay(item)}
             aria-label={`Play ${item.title}`}
           >
-            <p className="truncate text-sm font-medium leading-tight text-heading">
+            <p className={cn(
+              'truncate text-sm font-medium leading-tight',
+              isCurrentTrack ? 'text-fairy-300' : 'text-heading',
+            )}>
               {item.title}
             </p>
-            <span
-              className={cn(
-                'mt-0.5 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
-                badge.className,
-              )}
-            >
-              {badge.label}
-            </span>
+            {item.artist ? (
+              <p className="truncate text-xs text-caption">{item.artist}</p>
+            ) : (
+              <span
+                className={cn(
+                  'mt-0.5 inline-block rounded-full px-1.5 py-0.5 text-[10px] font-semibold',
+                  badge.className,
+                )}
+              >
+                {badge.label}
+              </span>
+            )}
           </button>
 
-          {/* Play button */}
+          {/* Play/Pause button */}
           <button
-            onClick={() => onPlay(item)}
+            onClick={() => {
+              if (isCurrentTrack && isPlaying && onPause) onPause()
+              else onPlay(item)
+            }}
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:text-fairy-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-            aria-label={`Play ${item.title}`}
+            aria-label={isCurrentTrack && isPlaying ? `Pause ${item.title}` : `Play ${item.title}`}
           >
-            <Play className="h-4 w-4" aria-hidden="true" />
+            {isCurrentTrack && isPlaying
+              ? <Pause className="h-4 w-4" aria-hidden="true" />
+              : <Play className="h-4 w-4" aria-hidden="true" />
+            }
           </button>
 
           {/* Context menu — keyboard/mouse fallback for swipe actions */}

@@ -898,7 +898,8 @@ router.get('/library/search', async (req: Request, res: Response) => {
   }
   const result = await sonosClient.searchLibrary(q)
   res.json({
-    ...result,
+    artists: result.artists.map(a => ({ ...a, albumArtUri: rewriteAlbumArtUri(a.albumArtUri) ?? '' })),
+    albums: result.albums.map(a => ({ ...a, albumArtUri: rewriteAlbumArtUri(a.albumArtUri) ?? '' })),
     tracks: result.tracks.map(t => ({ ...t, albumArtUri: rewriteAlbumArtUri(t.albumArtUri) ?? '' })),
   })
 })

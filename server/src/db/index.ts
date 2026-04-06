@@ -321,6 +321,7 @@ export function initDb(): void {
       source TEXT NOT NULL CHECK(source IN ('sonos','spotify','nas','radio')),
       source_uri TEXT NOT NULL,
       title TEXT NOT NULL,
+      artist TEXT,
       album_art_uri TEXT,
       sort_order INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now')),
@@ -578,6 +579,12 @@ export function initDb(): void {
   const artistCountryCols = db.prepare("PRAGMA table_info('artist_countries')").all() as { name: string }[]
   if (!artistCountryCols.map(c => c.name).includes('image_url')) {
     db.exec('ALTER TABLE artist_countries ADD COLUMN image_url TEXT DEFAULT NULL')
+  }
+
+  // Migration: add artist column to user_favourites
+  const favCols = db.prepare("PRAGMA table_info('user_favourites')").all() as { name: string }[]
+  if (!favCols.map(c => c.name).includes('artist')) {
+    db.exec('ALTER TABLE user_favourites ADD COLUMN artist TEXT DEFAULT NULL')
   }
 
   // Seed defaults for a fresh database

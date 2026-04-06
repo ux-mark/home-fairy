@@ -16,6 +16,7 @@ import {
   ArrowLeft,
   GripVertical,
   Loader2,
+  Pause,
   Play,
   Radio,
   Trash2,
@@ -25,8 +26,10 @@ import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ArtworkImage } from './ArtworkImage'
 import { MusicItemMenu } from './MusicItemMenu'
+import { ActiveTrackIndicator } from './ActiveTrackIndicator'
 import { cn } from '@/lib/utils'
 import { useFairylistEditor } from '@/hooks/useFairylistEditor'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -71,6 +74,10 @@ function SortableItemRow({
 }) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
+  const { isTrackActive, isSelectedPlaying } = usePlaybackState()
+
+  const isCurrentTrack = isTrackActive(item.source_uri, item.title)
+  const isPlaying = isCurrentTrack && isSelectedPlaying
 
   const {
     attributes,
@@ -141,6 +148,11 @@ function SortableItemRow({
     onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
   })
 
+  const pauseNow = useMutation({
+    mutationFn: () => api.sonos.pause(speaker!),
+    onError: () => toast({ message: 'Could not pause', type: 'error' }),
+  })
+
   return (
     <li
       ref={setNodeRef}
@@ -148,6 +160,7 @@ function SortableItemRow({
       className={cn(
         'flex items-center gap-2 px-4 py-2.5 transition-opacity',
         isDragging && 'opacity-50',
+        isCurrentTrack && 'bg-fairy-500/5 border-l-2 border-fairy-500 pl-[14px]',
       )}
     >
       {/* Drag handle */}
@@ -174,9 +187,15 @@ function SortableItemRow({
         <ArtworkImage src={artSrc} fallback="disc" />
       )}
 
+      {/* Active track indicator */}
+      <ActiveTrackIndicator isActive={isCurrentTrack} isPlaying={isPlaying} />
+
       {/* Track info */}
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">{item.title}</p>
+        <p className={cn(
+          'truncate text-sm font-medium leading-tight',
+          isCurrentTrack ? 'text-fairy-300' : 'text-heading',
+        )}>{item.title}</p>
         <div className="flex items-center gap-1.5">
           {item.artist && (
             <p className="truncate text-xs text-caption">{item.artist}</p>
@@ -185,13 +204,13 @@ function SortableItemRow({
         </div>
       </div>
 
-      {/* Play + context menu */}
+      {/* Play/Pause + context menu */}
       <div className="flex shrink-0 items-center gap-1">
         <button
           type="button"
-          disabled={!speaker || playNow.isPending}
-          onClick={() => playNow.mutate()}
-          aria-label={`Play ${item.title}`}
+          disabled={!speaker || (isPlaying ? pauseNow.isPending : playNow.isPending)}
+          onClick={() => isPlaying ? pauseNow.mutate() : playNow.mutate()}
+          aria-label={isPlaying ? `Pause ${item.title}` : `Play ${item.title}`}
           className={cn(
             'flex h-11 w-11 items-center justify-center rounded-lg',
             'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
@@ -199,7 +218,10 @@ function SortableItemRow({
             'disabled:opacity-40',
           )}
         >
-          <Play className="h-4 w-4" aria-hidden="true" />
+          {isPlaying
+            ? <Pause className="h-4 w-4" aria-hidden="true" />
+            : <Play className="h-4 w-4" aria-hidden="true" />
+          }
         </button>
 
         <MusicItemMenu

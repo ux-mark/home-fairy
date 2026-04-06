@@ -49,8 +49,8 @@ export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesT
   // ── Drag announcement for screen readers ──────────────────────────────────
   const [dragAnnouncement, setDragAnnouncement] = useState('')
 
-  // ── Speaker selection via context ─────────────────────────────────────────
-  const { selectedSpeaker: contextSpeaker } = usePlaybackState()
+  // ── Speaker selection + playback awareness via context ─────────────────────
+  const { selectedSpeaker: contextSpeaker, isTrackActive, isSelectedPlaying } = usePlaybackState()
   const effectiveSpeaker = targetSpeaker ?? contextSpeaker ?? null
 
   // ── Favourites query ─────────────────────────────────────────────────────
@@ -107,6 +107,11 @@ export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesT
     onError: () => toast({ message: 'Could not add to play next', type: 'error' }),
   })
 
+  const pauseMutation = useMutation({
+    mutationFn: (speaker: string) => api.sonos.pause(speaker),
+    onError: () => toast({ message: 'Could not pause', type: 'error' }),
+  })
+
   const addToQueueMutation = useMutation({
     mutationFn: ({ speaker, uri }: { speaker: string; uri: string }) =>
       api.sonos.addToQueue(speaker, uri),
@@ -161,6 +166,11 @@ export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesT
       return
     }
     addToQueueMutation.mutate({ speaker: effectiveSpeaker, uri: item.source_uri })
+  }
+
+  function handlePause() {
+    if (!effectiveSpeaker) return
+    pauseMutation.mutate(effectiveSpeaker)
   }
 
   // ── Fairylist detail view ─────────────────────────────────────────────────
@@ -268,18 +278,24 @@ export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesT
               aria-label="Favourites — drag to reorder"
               onClick={() => setSwipedItemId(null)}
             >
-              {favourites.map(item => (
-                <FavouriteItem
-                  key={item.id}
-                  item={item}
-                  onPlay={handlePlay}
-                  onRemove={handleRemove}
-                  onPlayNext={handlePlayNext}
-                  onAddToQueue={handleAddToQueue}
-                  swipedItemId={swipedItemId}
-                  onSwipeOpen={setSwipedItemId}
-                />
-              ))}
+              {favourites.map(item => {
+                const active = isTrackActive(item.source_uri, item.title)
+                return (
+                  <FavouriteItem
+                    key={item.id}
+                    item={item}
+                    onPlay={handlePlay}
+                    onPause={handlePause}
+                    onRemove={handleRemove}
+                    onPlayNext={handlePlayNext}
+                    onAddToQueue={handleAddToQueue}
+                    isCurrentTrack={active}
+                    isPlaying={active && isSelectedPlaying}
+                    swipedItemId={swipedItemId}
+                    onSwipeOpen={setSwipedItemId}
+                  />
+                )
+              })}
             </ul>
           </SortableContext>
         </DndContext>

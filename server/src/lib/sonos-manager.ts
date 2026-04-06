@@ -55,6 +55,7 @@ class SonosManager {
   private rulePlayCounts: Map<number, number> = new Map()
   private currentMode: string | null = null
   private podcastArtCache: Map<string, string> = new Map()
+  private lastPlaybackFingerprint: string = ''
 
   init(): void {
     this.loadRoomSpeakerMap()
@@ -79,6 +80,14 @@ class SonosManager {
     this.loadRoomSpeakerMap()
   }
 
+  /** Build a lightweight fingerprint of playback state across all zones */
+  private getPlaybackFingerprint(zones: SonosZone[]): string {
+    return zones.map(z => {
+      const s = z.coordinator.state
+      return `${z.coordinator.roomName}:${s.playbackState}:${s.currentTrack?.uri ?? ''}:${s.currentTrack?.title ?? ''}`
+    }).join('|')
+  }
+
   private startZonePolling(): void {
     const poll = async () => {
       try {
@@ -88,6 +97,13 @@ class SonosManager {
         this.consecutiveFailures = 0
         if (changed) {
           emit('sonos:zones-update', this.injectPodcastArtIntoZones(newZones))
+
+          // Also detect playback-specific changes (track change, play/pause from external source)
+          const newFingerprint = this.getPlaybackFingerprint(newZones)
+          if (newFingerprint !== this.lastPlaybackFingerprint) {
+            this.lastPlaybackFingerprint = newFingerprint
+            emit('sonos:playback-update', { source: 'zone-poll' })
+          }
         }
       } catch {
         this.consecutiveFailures++
@@ -97,7 +113,8 @@ class SonosManager {
       }
 
       if (this.shuttingDown) return
-      const interval = this.consecutiveFailures >= 5 ? 120_000 : 30_000
+      // Poll every 10s for responsive playback detection, back off to 120s on failures
+      const interval = this.consecutiveFailures >= 5 ? 120_000 : 10_000
       this.zoneRefreshTimer = setTimeout(poll, interval)
       this.zoneRefreshTimer.unref()
     }

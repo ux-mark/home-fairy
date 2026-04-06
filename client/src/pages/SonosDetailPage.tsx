@@ -3,7 +3,6 @@ import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as Switch from '@radix-ui/react-switch'
 import { Pencil, Volume2, VolumeX, Zap, CirclePause, CircleSlash } from 'lucide-react'
-import { io, Socket } from 'socket.io-client'
 import { api, type Room, type AutoPlayRule } from '@/lib/api'
 import { DeviceLinkManager } from '@/components/DeviceLinkManager'
 import { cn } from '@/lib/utils'
@@ -14,25 +13,7 @@ import { PillSelect } from '@/components/ui/PillSelect'
 import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
 import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
 import { useToast } from '@/hooks/useToast'
-
-// ── Socket singleton (reuse the same pattern as useSocket.ts) ─────────────────
-
-let _socket: Socket | null = null
-
-function getSocket(): Socket {
-  if (!_socket) {
-    const url = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin
-    _socket = io(url, {
-      transports: ['websocket', 'polling'],
-      withCredentials: true,
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 30000,
-    })
-  }
-  return _socket
-}
+import { getSocket } from '@/hooks/useSocket'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
