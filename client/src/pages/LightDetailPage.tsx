@@ -131,7 +131,7 @@ export default function LightDetailPage() {
           brightness: params.brightness !== undefined ? params.brightness / 100 : undefined,
           duration: 0.1,
         })
-      }, 500),
+      }, 120),
     [id],
   )
 

@@ -49,7 +49,7 @@ interface ColorBrightnessPickerProps {
 }
 
 // Brightness slider width and height
-const SLIDER_W = 40
+const SLIDER_W = 48
 const SLIDER_H = 252
 
 export default function ColorBrightnessPicker({
@@ -215,7 +215,12 @@ export default function ColorBrightnessPicker({
         >
           <Slider.Track
             className="relative w-full overflow-hidden rounded-full"
-            style={{ background: brightnessGradient }}
+            style={{
+              background: brightnessGradient,
+              // Ensure taps anywhere on the track register immediately on iOS Safari
+              pointerEvents: 'auto',
+              touchAction: 'none',
+            }}
           >
             {/* Range is invisible — the gradient track IS the visual indicator */}
             <Slider.Range className="absolute w-full" style={{ background: 'transparent' }} />
@@ -223,19 +228,21 @@ export default function ColorBrightnessPicker({
           <Slider.Thumb
             className={[
               'relative flex items-center justify-center rounded-full border-2 border-white',
-              // Invisible touch-target enlargement for easier finger targeting
-              'before:absolute before:inset-[-8px] before:content-[""]',
+              // Larger invisible touch-target for easier finger grab on mobile
+              'before:absolute before:inset-[-12px] before:content-[""]',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
               loading ? 'cursor-default' : 'cursor-grab active:cursor-grabbing',
             ].join(' ')}
             style={{
-              width: 28,
-              height: 28,
+              width: 34,
+              height: 34,
               backgroundColor: currentColorHex,
               boxShadow: '0 0 0 1.5px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.4)',
               // GPU acceleration for jank-free thumb movement
               willChange: 'transform',
               transform: 'translateZ(0)',
+              // Animate only decorative properties — keep transform instant so thumb tracks finger
+              transition: 'box-shadow 150ms ease, background-color 80ms ease',
             }}
             aria-label="Brightness"
           >
