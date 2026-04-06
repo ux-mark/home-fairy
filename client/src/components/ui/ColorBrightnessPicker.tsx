@@ -216,10 +216,10 @@ export default function ColorBrightnessPicker({
       </div>
 
       {/* Wheel/presets + brightness slider */}
-      <div className="flex items-center justify-center gap-3">
+      <div className="flex items-start justify-center gap-3">
         {/* Colour wheel or Kelvin preset grid */}
-        <div style={{ width: SLIDER_H, height: SLIDER_H, flexShrink: 0 }}>
-          {showColourWheel && (
+        {showColourWheel && (
+          <div style={{ width: SLIDER_H, height: SLIDER_H, flexShrink: 0 }}>
             <ColorWheel
               hue={color.h}
               saturation={color.s}
@@ -227,8 +227,10 @@ export default function ColorBrightnessPicker({
               onChange={handleColorWheelChange}
               onCommit={handleColorWheelCommit}
             />
-          )}
-          {showWhitesPresets && (
+          </div>
+        )}
+        {showWhitesPresets && (
+          <div className="min-w-0 flex-1">
             <KelvinPresets
               kelvin={kelvin}
               minKelvin={minKelvin}
@@ -236,8 +238,8 @@ export default function ColorBrightnessPicker({
               onChange={handleKelvinChange}
               onCommit={handleKelvinCommit}
             />
-          )}
-        </div>
+          </div>
+        )}
 
         {/* Custom vertical brightness slider */}
         <div
