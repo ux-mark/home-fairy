@@ -14,7 +14,7 @@ function RoomIconAvatar({ icon, roomName }: { icon: string | null; roomName: str
     <span
       className={cn(
         'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
-        'bg-[var(--bg-tertiary)]',
+        'bg-slate-100 dark:bg-[var(--bg-tertiary)]',
       )}
       aria-hidden="true"
     >
@@ -39,7 +39,7 @@ function fallbackIconForRoom(roomName: string): string {
 function StatusLine({ speaker, isActive }: { speaker: SpeakerSelectorItem; isActive: boolean }) {
   if (speaker.status === 'playing') {
     return (
-      <p className={cn('truncate text-xs', isActive ? 'text-emerald-400' : 'text-emerald-400/80')}>
+      <p className={cn('truncate text-xs', isActive ? 'text-emerald-600 dark:text-emerald-400' : 'text-emerald-600/80 dark:text-emerald-400/80')}>
         Playing{speaker.currentTrackTitle ? ` — ${speaker.currentTrackTitle}` : ''}
       </p>
     )
@@ -153,7 +153,7 @@ export function SpeakerSelectorDropdown({ className }: SpeakerSelectorDropdownPr
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
           open
             ? 'text-fairy-400'
-            : 'text-caption hover:bg-[var(--bg-secondary)] hover:text-body',
+            : 'text-caption hover:bg-slate-100 dark:hover:bg-[var(--bg-secondary)] hover:text-body',
         )}
       >
         <Speaker className="h-4 w-4 shrink-0" aria-hidden="true" />
@@ -176,8 +176,8 @@ export function SpeakerSelectorDropdown({ className }: SpeakerSelectorDropdownPr
           tabIndex={-1}
           className={cn(
             'absolute left-0 top-full z-50 mt-1 min-w-[220px] rounded-xl',
-            'border border-white/10 bg-slate-900/80 backdrop-blur-xl',
-            'shadow-xl shadow-black/40',
+            'border border-slate-200 dark:border-[var(--border-primary)] bg-white dark:bg-[var(--bg-primary)] backdrop-blur-xl',
+            'shadow-xl shadow-black/10 dark:shadow-black/40',
             'animate-in fade-in-0 zoom-in-95 duration-150',
             'py-1',
           )}
@@ -196,14 +196,14 @@ export function SpeakerSelectorDropdown({ className }: SpeakerSelectorDropdownPr
                 className={cn(
                   'flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors',
                   'focus-visible:outline-none',
-                  isFocused && !isActive && 'bg-white/5',
+                  isFocused && !isActive && 'bg-slate-100 dark:bg-[var(--bg-tertiary)]',
                   isActive
                     ? [
-                        'bg-emerald-500/10',
-                        '[box-shadow:inset_0_0_0_1px_theme(colors.emerald.500)]',
+                        'bg-fairy-500/10',
+                        '[box-shadow:inset_0_0_0_1px_theme(colors.fairy.500)]',
                         'rounded-lg mx-1 w-[calc(100%-8px)]',
                       ]
-                    : 'hover:bg-white/5',
+                    : 'hover:bg-slate-100 dark:hover:bg-[var(--bg-tertiary)]',
                 )}
               >
                 <RoomIconAvatar icon={speaker.roomIcon} roomName={speaker.roomName} />
@@ -214,7 +214,7 @@ export function SpeakerSelectorDropdown({ className }: SpeakerSelectorDropdownPr
                 </div>
 
                 {isActive && (
-                  <Check className="h-4 w-4 shrink-0 text-emerald-400" aria-hidden="true" />
+                  <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
                 )}
               </button>
             )
