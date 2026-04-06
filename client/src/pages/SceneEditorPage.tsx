@@ -91,9 +91,10 @@ function LightEditorCard({
   const [expanded, setExpanded] = useState(false)
   const isOn = state.power === 'on'
 
-  const previewHex = state.hasColor
-    ? hsbToHex(state.hue, state.saturation / 100, state.brightness / 100)
-    : kelvinToHex(state.kelvin)
+  const isWhiteMode = !state.hasColor || state.saturation <= 1
+  const previewHex = isWhiteMode
+    ? kelvinToHex(state.kelvin)
+    : hsbToHex(state.hue, state.saturation / 100, state.brightness / 100)
 
   const debouncedApiCall = useMemo(() => {
     return debounce(
