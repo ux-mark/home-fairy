@@ -10,6 +10,7 @@ import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from '../ArtworkImage'
 import { MusicListItem } from '../MusicListItem'
+import { SourceBadge } from '../SourceBadge'
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 
@@ -107,6 +108,7 @@ function NasTrackRow({
       artwork={{ src: track.albumArtUri, fallback: 'disc' }}
       title={track.title || 'Unknown track'}
       subtitle={[track.artist, track.album].filter(Boolean).join(' · ')}
+      badge={<SourceBadge source="nas" />}
       onTap={() => track.artist && onSelectArtist(track.artist)}
       onPlay={() => playNow.mutate()}
       playDisabled={!speaker}
@@ -213,6 +215,7 @@ function NasSearchAlbumRow({
       artwork={{ src: albumArtUri, size: 40, fallback: 'disc' }}
       title={album.name}
       subtitle={subtitle}
+      badge={<SourceBadge source="nas" />}
       onTap={() => onSelect({ name: album.name, artist: album.artist, albumArtUri, objectId })}
       onPlay={() => playNow.mutate()}
       playDisabled={!speaker}

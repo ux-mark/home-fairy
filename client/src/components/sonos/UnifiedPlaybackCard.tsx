@@ -14,6 +14,7 @@ import { VolumeGroupPopover } from './VolumeGroupPopover'
 import { InlineQueue } from './InlineQueue'
 import { QueueView } from './QueueView'
 import { GroupSpeakersPanel } from './GroupSpeakersPanel'
+import { proxyArtUrl } from './ArtworkImage'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -71,7 +72,6 @@ export function UnifiedPlaybackCard({
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const navigate = useNavigate()
-  const [failedArtUri, setFailedArtUri] = useState<string | null>(null)
   const [queueExpanded, setQueueExpanded] = useState(false)
   const [queueViewOpen, setQueueViewOpen] = useState(false)
 
@@ -169,7 +169,7 @@ export function UnifiedPlaybackCard({
   const artist = isTv ? null : currentTrack.artist || null
   const album = isTv ? null : currentTrack.album || null
   const artUri = currentTrack.albumArtUri
-  const showArt = !isLineSource && artUri && artUri !== failedArtUri
+  const showArt = !isLineSource && !!artUri
   const elapsed = state.elapsedTime ?? 0
   const duration = state.duration ?? 0
   const trackUri = currentTrack.uri
@@ -202,10 +202,9 @@ export function UnifiedPlaybackCard({
             <Tv className="h-16 w-16 text-caption" aria-hidden="true" />
           ) : showArt ? (
             <img
-              src={artUri}
+              src={proxyArtUrl(artUri) ?? ''}
               alt=""
               className="h-full w-full object-cover"
-              onError={() => setFailedArtUri(artUri ?? null)}
             />
           ) : (
             <ImageOff className="h-16 w-16 text-caption" aria-hidden="true" />
@@ -332,10 +331,9 @@ export function UnifiedPlaybackCard({
             <Tv className="h-6 w-6 text-caption" aria-hidden="true" />
           ) : showArt ? (
             <img
-              src={artUri}
+              src={proxyArtUrl(artUri) ?? ''}
               alt=""
               className="h-full w-full object-cover"
-              onError={() => setFailedArtUri(artUri ?? null)}
             />
           ) : (
             <ImageOff className="h-6 w-6 text-caption" aria-hidden="true" />

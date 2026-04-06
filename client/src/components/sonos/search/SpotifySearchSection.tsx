@@ -9,6 +9,7 @@ import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from '../ArtworkImage'
 import { MusicListItem } from '../MusicListItem'
+import { SourceBadge } from '../SourceBadge'
 
 // ── Skeleton / Error ──────────────────────────────────────────────────────────
 
@@ -71,6 +72,18 @@ function SpotifyTrackRow({
     onError: () => toast({ message: 'Failed to play track', type: 'error' }),
   })
 
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'next'),
+    onSuccess: () => toast({ message: `"${track.name}" will play next` }),
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'queue'),
+    onSuccess: () => toast({ message: `Added "${track.name}" to queue` }),
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
   const artistNames = track.artists.map(a => a.name).join(', ')
   const artUri = track.album.images?.[0]?.url
 
@@ -91,6 +104,7 @@ function SpotifyTrackRow({
       artwork={{ src: artUri, fallback: 'disc' }}
       title={track.name}
       subtitle={[artistNames, track.album.name].filter(Boolean).join(' · ')}
+      badge={<SourceBadge source="spotify" />}
       onTap={() => onSelectAlbum(albumForNav)}
       onPlay={() => playNow.mutate()}
       playDisabled={!speaker}
@@ -98,8 +112,8 @@ function SpotifyTrackRow({
       disabled={!speaker}
       menuProps={{
         label: track.name,
-        onPlayNext: () => {},
-        onAddToQueue: () => {},
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
         fairylistTrack: {
           source: 'spotify',
           source_uri: track.uri,
@@ -132,11 +146,24 @@ function SpotifyAlbumRow({
     onError: () => toast({ message: 'Failed to play album', type: 'error' }),
   })
 
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'next'),
+    onSuccess: () => toast({ message: `"${album.name}" will play next` }),
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'queue'),
+    onSuccess: () => toast({ message: `Added "${album.name}" to queue` }),
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
   return (
     <MusicListItem
       artwork={{ src: album.images?.[0]?.url, fallback: 'disc' }}
       title={album.name}
       subtitle={album.artists.map(a => a.name).join(', ')}
+      badge={<SourceBadge source="spotify" />}
       onTap={() => onSelect(album)}
       onPlay={() => playNow.mutate()}
       playDisabled={!speaker}
@@ -144,8 +171,8 @@ function SpotifyAlbumRow({
       disabled={!speaker}
       menuProps={{
         label: album.name,
-        onPlayNext: () => {},
-        onAddToQueue: () => {},
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
         fairylistTrack: {
           source: 'spotify',
           source_uri: album.uri,
@@ -211,11 +238,24 @@ function SpotifyPlaylistRow({
     onError: () => toast({ message: 'Failed to play playlist', type: 'error' }),
   })
 
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'next'),
+    onSuccess: () => toast({ message: `"${playlist.name}" will play next` }),
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'queue'),
+    onSuccess: () => toast({ message: `Added "${playlist.name}" to queue` }),
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
   return (
     <MusicListItem
       artwork={{ src: playlist.images?.[0]?.url, fallback: 'disc' }}
       title={playlist.name}
       subtitle={`${playlist.tracks.total} tracks`}
+      badge={<SourceBadge source="spotify" />}
       onTap={() => onSelect(playlist)}
       onPlay={() => playNow.mutate()}
       playDisabled={!speaker}
@@ -223,8 +263,8 @@ function SpotifyPlaylistRow({
       disabled={!speaker}
       menuProps={{
         label: playlist.name,
-        onPlayNext: () => {},
-        onAddToQueue: () => {},
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
         fairylistTrack: {
           source: 'spotify',
           source_uri: playlist.uri,
