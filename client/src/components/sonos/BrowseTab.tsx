@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { usePersistedState } from '@/hooks/usePersistedState'
 import { AlertTriangle, CheckCircle2, Search, X, Music, Radio, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
@@ -153,8 +154,8 @@ interface BrowseTabProps {
 }
 
 export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
-  const [activeSource, setActiveSource] = useState<SourceFilter>('all')
-  const [searchQuery, setSearchQuery] = useState('')
+  const [activeSource, setActiveSource] = usePersistedState<SourceFilter>('browse-source-filter', 'all')
+  const [searchQuery, setSearchQuery] = usePersistedState<string>('browse-search-query', '')
   const navigate = useNavigate()
   const { selectedSpeaker, setSelectedSpeaker } = usePlaybackState()
 
