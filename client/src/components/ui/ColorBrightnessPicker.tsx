@@ -4,7 +4,7 @@
  * LIFX-style colour/temperature picker with:
  *   - "Colours" tab: circular hue-saturation wheel (ColorWheel)
  *   - "Whites"  tab: Kelvin preset grid (KelvinPresets)
- *   - Vertical brightness slider (custom pointer-event based, touch-optimised)
+ *   - Vertical brightness slider (Radix UI, butter-smooth on mobile)
  *   - Tabs only shown for colour-capable lights (has_color=true)
  *   - White-only lights show KelvinPresets + brightness slider directly
  *
@@ -17,7 +17,8 @@
  * The parent is responsible for debouncing any API calls it makes in onChange.
  * This component is a simple controlled input: it reports changes, parent decides what to do.
  */
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
+import * as Slider from '@radix-ui/react-slider'
 import { kelvinToHex, hsbToHex } from '@/lib/utils'
 import ColorWheel from './ColorWheel'
 import KelvinPresets from './KelvinPresets'
@@ -53,7 +54,7 @@ export default function ColorBrightnessPicker({
   color,
   kelvin,
   brightness,
-  minKelvin = 2500,
+  minKelvin = 1500,
   maxKelvin = 9000,
   onChange,
   onCommit,
@@ -96,25 +97,19 @@ export default function ColorBrightnessPicker({
     [onCommit],
   )
 
-  // ── Brightness slider (custom pointer-event based) ────────────────────────
-
-  const sliderRef = useRef<HTMLDivElement>(null)
-  const isDraggingBrightness = useRef(false)
+  // ── Brightness slider (Radix UI vertical, butter-smooth on touch) ─────────
 
   const effectiveBrightness = hasColor ? color.v : brightness
 
-  /** Convert pointer clientY to a brightness value 0–100 */
-  const pointerYToBrightness = useCallback((clientY: number): number => {
-    const el = sliderRef.current
-    if (!el) return effectiveBrightness
-    const rect = el.getBoundingClientRect()
-    // top = 100%, bottom = 0%
-    const ratio = 1 - (clientY - rect.top) / rect.height
-    return Math.round(Math.max(0, Math.min(100, ratio * 100)))
-  }, [effectiveBrightness])
+  // null = use server value; non-null = user is dragging (finger-tracks at 60fps)
+  const [dragValue, setDragValue] = useState<number | null>(null)
 
-  const fireBrightnessChange = useCallback(
-    (b: number) => {
+  const displayBrightness = dragValue ?? effectiveBrightness
+
+  const handleBrightnessChange = useCallback(
+    (vals: number[]) => {
+      const b = vals[0]
+      setDragValue(b)
       if (hasColor) {
         onChange({ color: { h: color.h, s: color.s, v: b }, brightness: b })
       } else {
@@ -124,8 +119,10 @@ export default function ColorBrightnessPicker({
     [hasColor, color, onChange],
   )
 
-  const fireBrightnessCommit = useCallback(
-    (b: number) => {
+  const handleBrightnessCommit = useCallback(
+    (vals: number[]) => {
+      const b = vals[0]
+      setDragValue(null)
       if (hasColor) {
         onCommit({ color: { h: color.h, s: color.s, v: b }, brightness: b })
       } else {
@@ -135,56 +132,10 @@ export default function ColorBrightnessPicker({
     [hasColor, color, onCommit],
   )
 
-  const handleSliderPointerDown = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      isDraggingBrightness.current = true
-      ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
-      const b = pointerYToBrightness(e.clientY)
-      fireBrightnessChange(b)
-    },
-    [pointerYToBrightness, fireBrightnessChange],
-  )
-
-  const handleSliderPointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!isDraggingBrightness.current) return
-      const b = pointerYToBrightness(e.clientY)
-      fireBrightnessChange(b)
-    },
-    [pointerYToBrightness, fireBrightnessChange],
-  )
-
-  const handleSliderPointerUp = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!isDraggingBrightness.current) return
-      isDraggingBrightness.current = false
-      const b = pointerYToBrightness(e.clientY)
-      fireBrightnessCommit(b)
-    },
-    [pointerYToBrightness, fireBrightnessCommit],
-  )
-
-  const handleSliderKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      let delta = 0
-      if (e.key === 'ArrowUp') delta = 1
-      else if (e.key === 'ArrowDown') delta = -1
-      else if (e.key === 'PageUp') delta = 10
-      else if (e.key === 'PageDown') delta = -10
-      else return
-
-      e.preventDefault()
-      const b = Math.max(0, Math.min(100, Math.round(effectiveBrightness) + delta))
-      fireBrightnessChange(b)
-      fireBrightnessCommit(b)
-    },
-    [effectiveBrightness, fireBrightnessChange, fireBrightnessCommit],
-  )
-
   // ── Derived display values ────────────────────────────────────────────────
 
   const currentColorHex = hasColor
-    ? hsbToHex(color.h, color.s / 100, effectiveBrightness / 100)
+    ? hsbToHex(color.h, color.s / 100, displayBrightness / 100)
     : kelvinToHex(kelvin)
 
   // Brightness slider gradient: black at bottom → current colour at top
@@ -198,9 +149,6 @@ export default function ColorBrightnessPicker({
   const showWhitesPresets = !hasColor || tab === 'whites'
   const showColourWheel = hasColor && tab === 'colours'
 
-  // Thumb Y%: 0% brightness = 100% from top (bottom), 100% brightness = 0% from top (top)
-  const thumbTopPercent = 100 - effectiveBrightness
-
   return (
     <div className="select-none space-y-3">
       {/* Info row */}
@@ -211,7 +159,7 @@ export default function ColorBrightnessPicker({
             : `Temp: ${kelvin}K`}
         </span>
         <span style={{ color: 'var(--text-primary, #f1f5f9)' }}>
-          ☀ {Math.round(effectiveBrightness)}%
+          ☀ {Math.round(displayBrightness)}%
         </span>
       </div>
 
@@ -241,46 +189,53 @@ export default function ColorBrightnessPicker({
           </div>
         )}
 
-        {/* Custom vertical brightness slider */}
-        <div
-          ref={sliderRef}
-          role="slider"
-          tabIndex={0}
+        {/* Vertical brightness slider — Radix UI for butter-smooth touch tracking */}
+        <Slider.Root
+          orientation="vertical"
+          min={0}
+          max={100}
+          step={1}
+          value={[displayBrightness]}
+          onValueChange={handleBrightnessChange}
+          onValueCommit={handleBrightnessCommit}
           aria-label="Brightness"
-          aria-orientation="vertical"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={Math.round(effectiveBrightness)}
-          className="relative overflow-hidden rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          className="relative flex touch-none select-none justify-center rounded-full"
           style={{
             width: SLIDER_W,
             height: SLIDER_H,
-            background: brightnessGradient,
             flexShrink: 0,
-            touchAction: 'none',
-            cursor: 'pointer',
-          }}
-          onPointerDown={handleSliderPointerDown}
-          onPointerMove={handleSliderPointerMove}
-          onPointerUp={handleSliderPointerUp}
-          onPointerCancel={() => { isDraggingBrightness.current = false }}
-          onKeyDown={handleSliderKeyDown}
+            // Prevent text-selection and long-press popups on iOS Safari during drag
+            userSelect: 'none',
+            WebkitTouchCallout: 'none',
+          } as React.CSSProperties}
         >
-          {/* Thumb */}
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute rounded-full border-2 border-white"
+          <Slider.Track
+            className="relative w-full overflow-hidden rounded-full"
+            style={{ background: brightnessGradient }}
+          >
+            {/* Range is invisible — the gradient track IS the visual indicator */}
+            <Slider.Range className="absolute w-full" style={{ background: 'transparent' }} />
+          </Slider.Track>
+          <Slider.Thumb
+            className={[
+              'relative block rounded-full border-2 border-white',
+              // Invisible touch-target enlargement for easier finger targeting
+              'before:absolute before:inset-[-8px] before:content-[""]',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              'cursor-grab active:cursor-grabbing',
+            ].join(' ')}
             style={{
               width: 28,
               height: 28,
               backgroundColor: currentColorHex,
-              left: '50%',
-              top: `${thumbTopPercent}%`,
-              transform: 'translate(-50%, -50%)',
               boxShadow: '0 0 0 1.5px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.4)',
+              // GPU acceleration for jank-free thumb movement
+              willChange: 'transform',
+              transform: 'translateZ(0)',
             }}
+            aria-label="Brightness"
           />
-        </div>
+        </Slider.Root>
       </div>
 
       {/* Tab bar — only for colour-capable lights */}

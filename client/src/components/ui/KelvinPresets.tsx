@@ -52,7 +52,7 @@ function getTextColor(k: number): string {
 
 export default function KelvinPresets({
   kelvin,
-  minKelvin = 2500,
+  minKelvin = 1500,
   maxKelvin = 9000,
   onChange,
   onCommit,
