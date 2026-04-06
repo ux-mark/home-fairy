@@ -415,51 +415,33 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
                 const isMediaStream = !isTv && !isLineIn
                 const showQueue = isMediaStream && (isPlaying || isPaused) && !!hasTrack
 
-                if ((isPlaying || isPaused) && hasTrack && entry.state) {
-                  // Playing or paused with a track — delegate to SpeakerCard
-                  return (
-                    <li key={entry.speakerName}>
-                      <SpeakerCard
-                        type="solo"
-                        roomName={entry.roomName}
-                        speakerName={entry.speakerName}
-                        state={entry.state}
-                        group={entry.group ?? null}
-                        allSpeakers={nowPlaying}
-                        onRefresh={() => queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })}
-                        showVolume={false}
-                        showQueue={false}
-                      />
-                      {showQueue && (
-                        <QueueAccordion
-                          speakerName={entry.speakerName}
-                          roomName={entry.roomName}
-                          isExpanded={expandedQueues.has(entry.speakerName)}
-                          onToggle={() => toggleQueueExpanded(entry.speakerName)}
-                          onClose={onClose}
-                        />
-                      )}
-                    </li>
-                  )
-                }
-
-                // Stopped / no track — compact row with Choose Music
                 return (
-                  <li
-                    key={entry.speakerName}
-                    className="flex items-center gap-3 rounded-lg p-2"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium text-heading">
-                          {entry.roomName}
-                        </span>
-                        <span className="shrink-0 rounded-full bg-[var(--bg-tertiary)] px-2 py-0.5 text-[10px] font-medium text-caption">
-                          Stopped
-                        </span>
+                  <li key={entry.speakerName}>
+                    <SpeakerCard
+                      type="solo"
+                      roomName={entry.roomName}
+                      speakerName={entry.speakerName}
+                      state={entry.state ?? null}
+                      group={entry.group ?? null}
+                      allSpeakers={nowPlaying}
+                      onRefresh={() => queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })}
+                      showVolume={false}
+                      showQueue={false}
+                    />
+                    {showQueue && (
+                      <QueueAccordion
+                        speakerName={entry.speakerName}
+                        roomName={entry.roomName}
+                        isExpanded={expandedQueues.has(entry.speakerName)}
+                        onToggle={() => toggleQueueExpanded(entry.speakerName)}
+                        onClose={onClose}
+                      />
+                    )}
+                    {isStopped && !hasTrack && (
+                      <div className="px-3 pb-2">
+                        {renderChooseMusicDialog(entry.speakerName, entry.roomName)}
                       </div>
-                    </div>
-                    {isStopped && !hasTrack && renderChooseMusicDialog(entry.speakerName, entry.roomName)}
+                    )}
                   </li>
                 )
               }
@@ -482,45 +464,27 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
 
               return (
                 <li key={coordinator.speakerName}>
-                  {(isPlaying || isPaused) && hasTrack && coordinator.state ? (
-                    // Playing/paused group — delegate to SpeakerCard
-                    <>
-                      <SpeakerCard
-                        type="group"
-                        coordinator={coordinator}
-                        members={members}
-                        allSpeakers={nowPlaying}
-                        onRefresh={() => queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })}
-                        showVolume={false}
-                        showQueue={false}
-                      />
-                      {showQueue && (
-                        <QueueAccordion
-                          speakerName={coordinator.speakerName}
-                          roomName={coordinator.roomName}
-                          isExpanded={expandedQueues.has(coordinator.speakerName)}
-                          onToggle={() => toggleQueueExpanded(coordinator.speakerName)}
-                          onClose={onClose}
-                        />
-                      )}
-                    </>
-                  ) : (
-                    // Stopped group — compact row
-                    <div className="flex items-center gap-3 rounded-lg p-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate text-sm font-medium text-heading">
-                            {groupLabel}
-                          </span>
-                          <span className="shrink-0 rounded-full bg-[var(--bg-tertiary)] px-1.5 py-0.5 text-[10px] font-medium text-caption">
-                            {allMembers.length}
-                          </span>
-                          <span className="shrink-0 rounded-full bg-[var(--bg-tertiary)] px-2 py-0.5 text-[10px] font-medium text-caption">
-                            Stopped
-                          </span>
-                        </div>
-                      </div>
-                      {isStopped && !hasTrack && renderChooseMusicDialog(coordinator.speakerName, groupLabel)}
+                  <SpeakerCard
+                    type="group"
+                    coordinator={coordinator}
+                    members={members}
+                    allSpeakers={nowPlaying}
+                    onRefresh={() => queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })}
+                    showVolume={false}
+                    showQueue={false}
+                  />
+                  {showQueue && (
+                    <QueueAccordion
+                      speakerName={coordinator.speakerName}
+                      roomName={coordinator.roomName}
+                      isExpanded={expandedQueues.has(coordinator.speakerName)}
+                      onToggle={() => toggleQueueExpanded(coordinator.speakerName)}
+                      onClose={onClose}
+                    />
+                  )}
+                  {isStopped && !hasTrack && (
+                    <div className="px-3 pb-2">
+                      {renderChooseMusicDialog(coordinator.speakerName, groupLabel)}
                     </div>
                   )}
 

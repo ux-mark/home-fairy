@@ -143,7 +143,15 @@ export function UnifiedPlaybackCard({
       )
     }
     return (
-      <p className={cn('text-sm text-caption', className)}>Nothing playing</p>
+      <div className={cn('flex items-center gap-3', className)}>
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-tertiary)]" aria-hidden="true">
+          <Music2 className="h-6 w-6 text-caption/40" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-heading">{roomName}</p>
+          <p className="text-xs text-caption">Nothing playing</p>
+        </div>
+      </div>
     )
   }
 
