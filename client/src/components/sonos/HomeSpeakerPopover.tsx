@@ -1,13 +1,11 @@
 import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, Music, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
-import * as Dialog from '@radix-ui/react-dialog'
+import { Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { api, parseApiError, type SonosNowPlayingEntry, type SonosQueueItem } from '@/lib/api'
+import { api, type SonosNowPlayingEntry, type SonosQueueItem } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { ArtworkImage } from './ArtworkImage'
-import { FavouriteSelector } from './FavouriteSelector'
 import { ActionPopover } from '@/components/ui/ActionPopover'
 import { SpeakerCard } from './SpeakerCard'
 
@@ -119,10 +117,6 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
-  // Dialog state: which speaker is having music chosen for it
-  const [activeSpeaker, setActiveSpeaker] = useState<string | null>(null)
-  const [selectedFavourite, setSelectedFavourite] = useState('')
-
   // Track expanded group accordions (keyed by coordinator speakerName)
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
 
@@ -140,32 +134,6 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
     refetchInterval: open ? 5_000 : false,
     staleTime: 4_000,
     retry: false,
-  })
-
-  // Favourites (stale for 5 min — same as SonosSpeakerCard)
-  const { data: favourites = [] } = useQuery({
-    queryKey: ['sonos', 'favourites'],
-    queryFn: api.sonos.getFavourites,
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-    enabled: open,
-  })
-
-  // Play favourite mutation
-  const playFavouriteMutation = useMutation({
-    mutationFn: ({ speaker, name }: { speaker: string; name: string }) =>
-      api.sonos.playFavourite(speaker, name),
-    onSuccess: (_data, { name }) => {
-      setActiveSpeaker(null)
-      setSelectedFavourite('')
-      queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
-      queryClient.invalidateQueries({ queryKey: ['sonos', 'play-status'] })
-      toast({ message: `Playing ${name}` })
-    },
-    onError: (err, { name }) => {
-      const serverMsg = parseApiError(err)
-      toast({ message: serverMsg ?? `Couldn't play ${name}`, type: 'error' })
-    },
   })
 
   // Leave group mutation
@@ -225,10 +193,6 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
 
   if (!open) return null
 
-  const activeSpeakerEntry = activeSpeaker
-    ? nowPlaying.find(e => e.speakerName === activeSpeaker)
-    : null
-
   function toggleGroupExpanded(coordinatorName: string) {
     setExpandedGroups(prev => {
       const next = new Set(prev)
@@ -250,119 +214,6 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
   function handleRemoveMember(speakerName: string) {
     setRemovingMember(speakerName)
     leaveMutation.mutate(speakerName)
-  }
-
-  // ── Choose Music dialog (for stopped speakers with no track) ────────────────
-  function renderChooseMusicDialog(speakerName: string, roomName: string) {
-    return (
-      <Dialog.Root
-        open={activeSpeaker === speakerName}
-        onOpenChange={dialogOpen => {
-          if (dialogOpen) {
-            setActiveSpeaker(speakerName)
-            setSelectedFavourite('')
-          } else {
-            setActiveSpeaker(null)
-            setSelectedFavourite('')
-          }
-        }}
-      >
-        <Dialog.Trigger asChild>
-          <button
-            className={cn(
-              'flex min-h-[44px] shrink-0 items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium transition-colors',
-              'surface text-body hover:brightness-95 dark:hover:brightness-110',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            )}
-            aria-label={`Choose music for ${roomName}`}
-          >
-            <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
-            Choose Music
-          </button>
-        </Dialog.Trigger>
-
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-          <Dialog.Content
-            className={cn(
-              'fixed bottom-0 left-0 right-0 z-50 max-h-[85vh] overflow-y-auto rounded-t-2xl',
-              'bg-[var(--bg-primary)] p-6 shadow-xl',
-              'data-[state=open]:animate-in data-[state=closed]:animate-out',
-              'data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
-              'focus:outline-none',
-            )}
-            aria-describedby={undefined}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <Dialog.Title className="text-base font-semibold text-heading">
-                Choose music for {roomName}
-              </Dialog.Title>
-              <Dialog.Close asChild>
-                <button
-                  className={cn(
-                    'flex h-8 w-8 items-center justify-center rounded-lg text-caption transition-colors',
-                    'hover:bg-[var(--bg-secondary)]',
-                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                  )}
-                  aria-label="Close"
-                >
-                  <X className="h-4 w-4" aria-hidden="true" />
-                </button>
-              </Dialog.Close>
-            </div>
-
-            <FavouriteSelector
-              id={`home-fav-selector-${speakerName}`}
-              favourites={favourites}
-              value={selectedFavourite}
-              onChange={setSelectedFavourite}
-              includeContinue={false}
-            />
-
-            <div className="mt-4 flex gap-2">
-              <Dialog.Close asChild>
-                <button
-                  className={cn(
-                    'flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors',
-                    'surface text-body hover:brightness-95 dark:hover:brightness-110',
-                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                    'min-h-[44px]',
-                  )}
-                >
-                  Cancel
-                </button>
-              </Dialog.Close>
-              <button
-                onClick={() => {
-                  if (selectedFavourite && activeSpeaker) {
-                    playFavouriteMutation.mutate({
-                      speaker: activeSpeaker,
-                      name: selectedFavourite,
-                    })
-                  }
-                }}
-                disabled={!selectedFavourite || playFavouriteMutation.isPending}
-                className={cn(
-                  'flex-1 rounded-lg px-4 py-2.5 text-sm font-semibold transition-colors',
-                  'bg-fairy-500 text-white hover:bg-fairy-600 active:bg-fairy-700',
-                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                  'disabled:opacity-50 min-h-[44px]',
-                )}
-              >
-                {playFavouriteMutation.isPending ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                    Playing…
-                  </span>
-                ) : (
-                  'Play'
-                )}
-              </button>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-    )
   }
 
   return (
@@ -437,11 +288,6 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
                         onClose={onClose}
                       />
                     )}
-                    {isStopped && !hasTrack && (
-                      <div className="px-3 pb-2">
-                        {renderChooseMusicDialog(entry.speakerName, entry.roomName)}
-                      </div>
-                    )}
                   </li>
                 )
               }
@@ -481,11 +327,6 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
                       onToggle={() => toggleQueueExpanded(coordinator.speakerName)}
                       onClose={onClose}
                     />
-                  )}
-                  {isStopped && !hasTrack && (
-                    <div className="px-3 pb-2">
-                      {renderChooseMusicDialog(coordinator.speakerName, groupLabel)}
-                    </div>
                   )}
 
                   {/* Expandable member accordion */}
@@ -552,13 +393,6 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
           </ul>
         )}
       </div>
-
-      {/* Active speaker label for screen readers */}
-      {activeSpeakerEntry && (
-        <span className="sr-only" aria-live="polite">
-          Choosing music for {activeSpeakerEntry.roomName}
-        </span>
-      )}
     </ActionPopover>
   )
 }
