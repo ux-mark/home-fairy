@@ -118,7 +118,10 @@ export function SpotifyArtistDetail() {
 
   function handleSelectAlbum(album: SpotifyAlbum) {
     const sp = speakerParam ? `?speaker=${encodeURIComponent(speakerParam)}` : ''
-    navigate(`/sonos/browse/spotify/album/${encodeURIComponent(album.id)}${sp}`)
+    navigate(
+      `/sonos/browse/spotify/album/${encodeURIComponent(album.id)}${sp}`,
+      { state: { fromArtist: true, artistId: id } },
+    )
   }
 
   return (

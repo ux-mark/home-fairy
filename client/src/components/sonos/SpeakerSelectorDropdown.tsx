@@ -1,36 +1,37 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Check, ChevronDown, Volume2 } from 'lucide-react'
+import { Check, ChevronDown, Speaker } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { LucideIcon } from '@/components/ui/LucideIcon'
 import { useSpeakerSelector } from '@/hooks/useSpeakerSelector'
 import type { SpeakerSelectorItem } from '@/hooks/useSpeakerSelector'
 
 // ── Room icon mapping ─────────────────────────────────────────────────────────
-// Maps emoji icon values stored in the DB to a display emoji, with fallbacks.
+// Uses LucideIcon with the DB-stored icon name, falling back by room name.
 
 function RoomIconAvatar({ icon, roomName }: { icon: string | null; roomName: string }) {
-  const displayIcon = icon ?? fallbackIconForRoom(roomName)
+  const iconName = icon ?? fallbackIconForRoom(roomName)
   return (
     <span
       className={cn(
         'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
-        'bg-[var(--bg-tertiary)] text-sm',
+        'bg-[var(--bg-tertiary)]',
       )}
       aria-hidden="true"
     >
-      {displayIcon}
+      <LucideIcon name={iconName} className="h-4 w-4 text-fairy-400" />
     </span>
   )
 }
 
 function fallbackIconForRoom(roomName: string): string {
   const lower = roomName.toLowerCase()
-  if (lower.includes('living') || lower.includes('lounge') || lower.includes('sofa')) return '🛋️'
-  if (lower.includes('bed') || lower.includes('sleep')) return '🌙'
-  if (lower.includes('kitchen') || lower.includes('cook') || lower.includes('dining')) return '👨‍🍳'
-  if (lower.includes('office') || lower.includes('study') || lower.includes('desk')) return '🖥️'
-  if (lower.includes('bath') || lower.includes('shower')) return '💧'
-  if (lower.includes('garden') || lower.includes('outdoor') || lower.includes('patio')) return '🌿'
-  return '🔊'
+  if (lower.includes('living') || lower.includes('lounge') || lower.includes('sofa')) return 'sofa'
+  if (lower.includes('bed') || lower.includes('sleep')) return 'bed'
+  if (lower.includes('kitchen') || lower.includes('cook') || lower.includes('dining')) return 'cooking-pot'
+  if (lower.includes('office') || lower.includes('study') || lower.includes('desk')) return 'monitor'
+  if (lower.includes('bath') || lower.includes('shower')) return 'bath'
+  if (lower.includes('garden') || lower.includes('outdoor') || lower.includes('patio')) return 'trees'
+  return 'speaker'
 }
 
 // ── Status line ───────────────────────────────────────────────────────────────
@@ -128,7 +129,7 @@ export function SpeakerSelectorDropdown({ className }: SpeakerSelectorDropdownPr
   if (isLoading && speakers.length === 0) {
     return (
       <div className={cn('flex items-center gap-2 px-1 py-1 text-sm text-caption', className)}>
-        <Volume2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <Speaker className="h-4 w-4 shrink-0" aria-hidden="true" />
         <span className="animate-pulse text-xs">Loading speakers…</span>
       </div>
     )
@@ -155,7 +156,7 @@ export function SpeakerSelectorDropdown({ className }: SpeakerSelectorDropdownPr
             : 'text-caption hover:bg-[var(--bg-secondary)] hover:text-body',
         )}
       >
-        <Volume2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+        <Speaker className="h-4 w-4 shrink-0" aria-hidden="true" />
         <span className="max-w-[140px] truncate">
           {activeSpeaker?.roomName ?? 'Select speaker'}
         </span>

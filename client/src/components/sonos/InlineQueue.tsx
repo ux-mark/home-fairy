@@ -24,7 +24,9 @@ import {
   ChevronUp,
   GripVertical,
   ListMusic,
+  Music,
   Music2,
+  Play,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
@@ -58,7 +60,6 @@ interface SortableQueueItemProps {
   index: number
   isCurrentTrack: boolean
   onRemove: (index: number) => void
-  onPlayNext: (uri: string) => void
   speaker: string
 }
 
@@ -67,12 +68,10 @@ function SortableQueueItem({
   index,
   isCurrentTrack,
   onRemove,
-  onPlayNext,
   speaker,
 }: SortableQueueItemProps) {
   const navigate = useNavigate()
   const { toast } = useToast()
-  const queryClient = useQueryClient()
 
   const {
     attributes,
@@ -88,13 +87,10 @@ function SortableQueueItem({
     transition,
   }
 
-  const addToQueueMut = useMutation({
-    mutationFn: () => api.sonos.addToQueue(speaker, item.uri),
-    onSuccess: () => {
-      toast({ message: `Added "${item.title}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos', 'queue', speaker] })
-    },
-    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.seekToTrack(speaker, index + 1),
+    onSuccess: () => toast({ message: `Playing "${item.title}"` }),
+    onError: () => toast({ message: 'Failed to play', type: 'error' }),
   })
 
   const addToFavourites = useMutation({
@@ -166,10 +162,22 @@ function SortableQueueItem({
 
       {/* Actions */}
       <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          disabled={playNow.isPending}
+          onClick={() => playNow.mutate()}
+          aria-label={`Play ${item.title}`}
+          className={cn(
+            'flex h-11 w-11 items-center justify-center rounded-lg',
+            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'disabled:opacity-40',
+          )}
+        >
+          <Play className="h-4 w-4" aria-hidden="true" />
+        </button>
         <MusicItemMenu
           label={item.title}
-          onPlayNext={() => onPlayNext(item.uri)}
-          onAddToQueue={() => addToQueueMut.mutate()}
           onAddToFavourites={() => addToFavourites.mutate()}
           onRemove={() => onRemove(index)}
           removeLabel="Remove from queue"
@@ -202,6 +210,7 @@ export function InlineQueue({
   playbackState,
   onViewFullQueue,
 }: InlineQueueProps) {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -221,6 +230,7 @@ export function InlineQueue({
   const reorderMutation = useMutation({
     mutationFn: ({ from, to }: { from: number; to: number }) =>
       api.sonos.reorderQueue(speaker, from, to),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queueKey }),
     onError: () => {
       queryClient.invalidateQueries({ queryKey: queueKey })
       toast({ message: 'Could not reorder queue', type: 'error' })
@@ -229,19 +239,11 @@ export function InlineQueue({
 
   const removeMutation = useMutation({
     mutationFn: (index: number) => api.sonos.removeFromQueue(speaker, index),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queueKey }),
     onError: () => {
       queryClient.invalidateQueries({ queryKey: queueKey })
       toast({ message: 'Could not remove track', type: 'error' })
     },
-  })
-
-  const playNextMutation = useMutation({
-    mutationFn: (uri: string) => api.sonos.playNext(speaker, uri),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queueKey })
-      toast({ message: 'Added to play next' })
-    },
-    onError: () => toast({ message: 'Could not add to play next', type: 'error' }),
   })
 
   function handleDragEnd(event: DragEndEvent) {
@@ -264,10 +266,6 @@ export function InlineQueue({
       queue.filter((_, i) => i !== index),
     )
     removeMutation.mutate(index)
-  }
-
-  function handlePlayNext(uri: string) {
-    playNextMutation.mutate(uri)
   }
 
   const queueCount = queue?.length ?? 0
@@ -351,6 +349,18 @@ export function InlineQueue({
                 <p className="text-xs font-semibold text-heading">Queue is empty</p>
                 <p className="mt-0.5 text-xs text-caption">Start playing music to build a queue.</p>
               </div>
+              <button
+                onClick={() => navigate(`/sonos/browse?speaker=${encodeURIComponent(speaker)}`)}
+                className={cn(
+                  'flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors',
+                  'surface text-body hover:brightness-95 dark:hover:brightness-110',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                )}
+                aria-label="Browse music"
+              >
+                <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
+                Browse music
+              </button>
             </div>
           )}
 
@@ -379,7 +389,6 @@ export function InlineQueue({
                         index={i}
                         isCurrentTrack={isCurrentTrack}
                         onRemove={handleRemove}
-                        onPlayNext={handlePlayNext}
                         speaker={speaker}
                       />
                     )

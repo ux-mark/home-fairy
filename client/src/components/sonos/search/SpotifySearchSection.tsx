@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, ChevronRight, Music2, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SpotifyTrack, SpotifyAlbum, SpotifyArtist, SpotifyPlaylist } from '@/lib/api'
@@ -9,7 +9,6 @@ import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from '../ArtworkImage'
 import { MusicListItem } from '../MusicListItem'
-import { SourceBadge } from '../SourceBadge'
 
 // ── Skeleton / Error ──────────────────────────────────────────────────────────
 
@@ -64,6 +63,7 @@ function SpotifyTrackRow({
   speaker: string | null
   onSelectAlbum: (album: SpotifyAlbum) => void
 }) {
+  const queryClient = useQueryClient()
   const { toast } = useToast()
 
   const playNow = useMutation({
@@ -74,14 +74,31 @@ function SpotifyTrackRow({
 
   const playNext = useMutation({
     mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'next'),
-    onSuccess: () => toast({ message: `"${track.name}" will play next` }),
+    onSuccess: () => {
+      toast({ message: `"${track.name}" will play next` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
 
   const addToQueue = useMutation({
     mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'queue'),
-    onSuccess: () => toast({ message: `Added "${track.name}" to queue` }),
+    onSuccess: () => {
+      toast({ message: `Added "${track.name}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const addToFavourites = useMutation({
+    mutationFn: () => api.favourites.add({
+      source: 'spotify',
+      source_uri: track.uri,
+      title: track.name,
+      album_art_uri: track.album.images?.[0]?.url,
+    }),
+    onSuccess: () => toast({ message: `Added "${track.name}" to favourites` }),
+    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
   })
 
   const artistNames = track.artists.map(a => a.name).join(', ')
@@ -104,7 +121,6 @@ function SpotifyTrackRow({
       artwork={{ src: artUri, fallback: 'disc' }}
       title={track.name}
       subtitle={[artistNames, track.album.name].filter(Boolean).join(' · ')}
-      badge={<SourceBadge source="spotify" />}
       onTap={() => onSelectAlbum(albumForNav)}
       onPlay={() => playNow.mutate()}
       playDisabled={!speaker}
@@ -114,6 +130,7 @@ function SpotifyTrackRow({
         label: track.name,
         onPlayNext: () => playNext.mutate(),
         onAddToQueue: () => addToQueue.mutate(),
+        onAddToFavourites: () => addToFavourites.mutate(),
         fairylistTrack: {
           source: 'spotify',
           source_uri: track.uri,
@@ -138,6 +155,7 @@ function SpotifyAlbumRow({
   speaker: string | null
   onSelect: (album: SpotifyAlbum) => void
 }) {
+  const queryClient = useQueryClient()
   const { toast } = useToast()
 
   const playNow = useMutation({
@@ -148,22 +166,33 @@ function SpotifyAlbumRow({
 
   const playNext = useMutation({
     mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'next'),
-    onSuccess: () => toast({ message: `"${album.name}" will play next` }),
+    onSuccess: () => {
+      toast({ message: `"${album.name}" will play next` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
 
   const addToQueue = useMutation({
     mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'queue'),
-    onSuccess: () => toast({ message: `Added "${album.name}" to queue` }),
+    onSuccess: () => {
+      toast({ message: `Added "${album.name}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
+
+  const artistNames = album.artists.map(a => a.name).join(', ')
+  const songCount = album.total_tracks
+  const subtitle = songCount
+    ? `${artistNames} · ${songCount} ${songCount === 1 ? 'song' : 'songs'}`
+    : artistNames
 
   return (
     <MusicListItem
       artwork={{ src: album.images?.[0]?.url, fallback: 'disc' }}
       title={album.name}
-      subtitle={album.artists.map(a => a.name).join(', ')}
-      badge={<SourceBadge source="spotify" />}
+      subtitle={subtitle}
       onTap={() => onSelect(album)}
       onPlay={() => playNow.mutate()}
       playDisabled={!speaker}
@@ -177,7 +206,7 @@ function SpotifyAlbumRow({
           source: 'spotify',
           source_uri: album.uri,
           title: album.name,
-          artist: album.artists.map(a => a.name).join(', '),
+          artist: artistNames,
           album_art_uri: album.images?.[0]?.url,
         },
       }}
@@ -230,6 +259,7 @@ function SpotifyPlaylistRow({
   speaker: string | null
   onSelect: (playlist: SpotifyPlaylist) => void
 }) {
+  const queryClient = useQueryClient()
   const { toast } = useToast()
 
   const playNow = useMutation({
@@ -240,13 +270,19 @@ function SpotifyPlaylistRow({
 
   const playNext = useMutation({
     mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'next'),
-    onSuccess: () => toast({ message: `"${playlist.name}" will play next` }),
+    onSuccess: () => {
+      toast({ message: `"${playlist.name}" will play next` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
 
   const addToQueue = useMutation({
     mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'queue'),
-    onSuccess: () => toast({ message: `Added "${playlist.name}" to queue` }),
+    onSuccess: () => {
+      toast({ message: `Added "${playlist.name}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
 
@@ -254,8 +290,7 @@ function SpotifyPlaylistRow({
     <MusicListItem
       artwork={{ src: playlist.images?.[0]?.url, fallback: 'disc' }}
       title={playlist.name}
-      subtitle={`${playlist.tracks.total} tracks`}
-      badge={<SourceBadge source="spotify" />}
+      subtitle={`${playlist.tracks.total} ${playlist.tracks.total === 1 ? 'track' : 'tracks'}`}
       onTap={() => onSelect(playlist)}
       onPlay={() => playNow.mutate()}
       playDisabled={!speaker}
