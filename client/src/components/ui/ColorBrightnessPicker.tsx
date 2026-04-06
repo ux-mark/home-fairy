@@ -3,10 +3,10 @@
  *
  * LIFX-style colour/temperature picker with:
  *   - "Colours" tab: circular hue-saturation wheel (ColorWheel)
- *   - "Whites"  tab: circular kelvin-temperature wheel (KelvinWheel)
- *   - Vertical brightness slider to the right of the wheel
+ *   - "Whites"  tab: Kelvin preset grid (KelvinPresets)
+ *   - Vertical brightness slider (custom pointer-event based, touch-optimised)
  *   - Tabs only shown for colour-capable lights (has_color=true)
- *   - White-only lights show KelvinWheel + brightness slider directly
+ *   - White-only lights show KelvinPresets + brightness slider directly
  *
  * All colour work is done in HSV space (= HSB, matching LIFX's API).
  *
@@ -17,10 +17,10 @@
  * The parent is responsible for debouncing any API calls it makes in onChange.
  * This component is a simple controlled input: it reports changes, parent decides what to do.
  */
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { kelvinToHex, hsbToHex } from '@/lib/utils'
 import ColorWheel from './ColorWheel'
-import KelvinWheel from './KelvinWheel'
+import KelvinPresets from './KelvinPresets'
 
 export interface HsvColor {
   h: number // 0-360
@@ -44,11 +44,9 @@ interface ColorBrightnessPickerProps {
   onCommit: (update: { color?: HsvColor; kelvin?: number; brightness?: number }) => void
 }
 
-// Wheel display size in CSS px — large enough for comfortable touch interaction
-const WHEEL_SIZE = 252
 // Brightness slider width and height
 const SLIDER_W = 40
-const SLIDER_H = WHEEL_SIZE
+const SLIDER_H = 252
 
 export default function ColorBrightnessPicker({
   hasColor,
@@ -82,7 +80,7 @@ export default function ColorBrightnessPicker({
     [color.v, onCommit],
   )
 
-  // ── Kelvin wheel ──────────────────────────────────────────────────────────
+  // ── Kelvin presets ────────────────────────────────────────────────────────
 
   const handleKelvinChange = useCallback(
     (k: number) => {
@@ -98,12 +96,25 @@ export default function ColorBrightnessPicker({
     [onCommit],
   )
 
-  // ── Brightness slider ─────────────────────────────────────────────────────
+  // ── Brightness slider (custom pointer-event based) ────────────────────────
 
-  // Called on every input event (including during touch drag) for instant local update
-  const handleBrightnessInput = useCallback(
-    (e: React.FormEvent<HTMLInputElement>) => {
-      const b = Number((e.target as HTMLInputElement).value)
+  const sliderRef = useRef<HTMLDivElement>(null)
+  const isDraggingBrightness = useRef(false)
+
+  const effectiveBrightness = hasColor ? color.v : brightness
+
+  /** Convert pointer clientY to a brightness value 0–100 */
+  const pointerYToBrightness = useCallback((clientY: number): number => {
+    const el = sliderRef.current
+    if (!el) return effectiveBrightness
+    const rect = el.getBoundingClientRect()
+    // top = 100%, bottom = 0%
+    const ratio = 1 - (clientY - rect.top) / rect.height
+    return Math.round(Math.max(0, Math.min(100, ratio * 100)))
+  }, [effectiveBrightness])
+
+  const fireBrightnessChange = useCallback(
+    (b: number) => {
       if (hasColor) {
         onChange({ color: { h: color.h, s: color.s, v: b }, brightness: b })
       } else {
@@ -113,10 +124,8 @@ export default function ColorBrightnessPicker({
     [hasColor, color, onChange],
   )
 
-  // Called on pointer up / finger lift — final commit
-  const handleBrightnessChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const b = Number(e.target.value)
+  const fireBrightnessCommit = useCallback(
+    (b: number) => {
       if (hasColor) {
         onCommit({ color: { h: color.h, s: color.s, v: b }, brightness: b })
       } else {
@@ -126,16 +135,59 @@ export default function ColorBrightnessPicker({
     [hasColor, color, onCommit],
   )
 
-  // ── Derived display values ────────────────────────────────────────────────
+  const handleSliderPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      isDraggingBrightness.current = true
+      ;(e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId)
+      const b = pointerYToBrightness(e.clientY)
+      fireBrightnessChange(b)
+    },
+    [pointerYToBrightness, fireBrightnessChange],
+  )
 
-  const effectiveBrightness = hasColor ? color.v : brightness
+  const handleSliderPointerMove = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!isDraggingBrightness.current) return
+      const b = pointerYToBrightness(e.clientY)
+      fireBrightnessChange(b)
+    },
+    [pointerYToBrightness, fireBrightnessChange],
+  )
+
+  const handleSliderPointerUp = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!isDraggingBrightness.current) return
+      isDraggingBrightness.current = false
+      const b = pointerYToBrightness(e.clientY)
+      fireBrightnessCommit(b)
+    },
+    [pointerYToBrightness, fireBrightnessCommit],
+  )
+
+  const handleSliderKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      let delta = 0
+      if (e.key === 'ArrowUp') delta = 1
+      else if (e.key === 'ArrowDown') delta = -1
+      else if (e.key === 'PageUp') delta = 10
+      else if (e.key === 'PageDown') delta = -10
+      else return
+
+      e.preventDefault()
+      const b = Math.max(0, Math.min(100, Math.round(effectiveBrightness) + delta))
+      fireBrightnessChange(b)
+      fireBrightnessCommit(b)
+    },
+    [effectiveBrightness, fireBrightnessChange, fireBrightnessCommit],
+  )
+
+  // ── Derived display values ────────────────────────────────────────────────
 
   const currentColorHex = hasColor
     ? hsbToHex(color.h, color.s / 100, effectiveBrightness / 100)
     : kelvinToHex(kelvin)
 
   // Brightness slider gradient: black at bottom → current colour at top
-  // We use a vertical gradient (top = bright, bottom = dark)
   const brightnessGradient =
     tab === 'whites' || !hasColor
       ? `linear-gradient(to top, #0a0a0a, ${kelvinToHex(kelvin)})`
@@ -143,8 +195,11 @@ export default function ColorBrightnessPicker({
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  const showWhitesWheel = !hasColor || tab === 'whites'
+  const showWhitesPresets = !hasColor || tab === 'whites'
   const showColourWheel = hasColor && tab === 'colours'
+
+  // Thumb Y%: 0% brightness = 100% from top (bottom), 100% brightness = 0% from top (top)
+  const thumbTopPercent = 100 - effectiveBrightness
 
   return (
     <div className="select-none space-y-3">
@@ -160,53 +215,56 @@ export default function ColorBrightnessPicker({
         </span>
       </div>
 
-      {/* Wheel + brightness slider */}
+      {/* Wheel/presets + brightness slider */}
       <div className="flex items-center justify-center gap-3">
-        {/* Colour or kelvin wheel */}
-        <div style={{ width: WHEEL_SIZE, height: WHEEL_SIZE, flexShrink: 0 }}>
+        {/* Colour wheel or Kelvin preset grid */}
+        <div style={{ width: SLIDER_H, height: SLIDER_H, flexShrink: 0 }}>
           {showColourWheel && (
             <ColorWheel
               hue={color.h}
               saturation={color.s}
-              size={WHEEL_SIZE}
+              size={SLIDER_H}
               onChange={handleColorWheelChange}
               onCommit={handleColorWheelCommit}
             />
           )}
-          {showWhitesWheel && (
-            <KelvinWheel
+          {showWhitesPresets && (
+            <KelvinPresets
               kelvin={kelvin}
               minKelvin={minKelvin}
               maxKelvin={maxKelvin}
-              size={WHEEL_SIZE}
               onChange={handleKelvinChange}
               onCommit={handleKelvinCommit}
             />
           )}
         </div>
 
-        {/* Vertical brightness slider */}
+        {/* Custom vertical brightness slider */}
         <div
-          className="relative flex items-center justify-center overflow-hidden rounded-full"
+          ref={sliderRef}
+          role="slider"
+          tabIndex={0}
+          aria-label="Brightness"
+          aria-orientation="vertical"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(effectiveBrightness)}
+          className="relative overflow-hidden rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           style={{
             width: SLIDER_W,
             height: SLIDER_H,
             background: brightnessGradient,
             flexShrink: 0,
+            touchAction: 'none',
+            cursor: 'pointer',
           }}
+          onPointerDown={handleSliderPointerDown}
+          onPointerMove={handleSliderPointerMove}
+          onPointerUp={handleSliderPointerUp}
+          onPointerCancel={() => { isDraggingBrightness.current = false }}
+          onKeyDown={handleSliderKeyDown}
         >
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={1}
-            value={Math.round(effectiveBrightness)}
-            onInput={handleBrightnessInput}
-            onChange={handleBrightnessChange}
-            aria-label="Brightness"
-            className="brightness-slider-vertical"
-          />
-          {/* Colour swatch at the thumb position — purely visual */}
+          {/* Thumb */}
           <div
             aria-hidden="true"
             className="pointer-events-none absolute rounded-full border-2 border-white"
@@ -214,9 +272,9 @@ export default function ColorBrightnessPicker({
               width: 28,
               height: 28,
               backgroundColor: currentColorHex,
-              // Position thumb: 0% brightness = bottom, 100% = top
-              top: `${100 - effectiveBrightness}%`,
-              transform: 'translateY(-50%)',
+              left: '50%',
+              top: `${thumbTopPercent}%`,
+              transform: 'translate(-50%, -50%)',
               boxShadow: '0 0 0 1.5px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.4)',
             }}
           />
@@ -244,53 +302,6 @@ export default function ColorBrightnessPicker({
           ))}
         </div>
       )}
-
-      {/* Scoped styles for vertical slider */}
-      <style>{`
-        .brightness-slider-vertical {
-          -webkit-appearance: none;
-          appearance: none;
-          writing-mode: vertical-lr;
-          direction: rtl;
-          width: ${SLIDER_H}px;
-          height: ${SLIDER_W}px;
-          background: transparent;
-          cursor: pointer;
-          outline: none;
-          position: absolute;
-          inset: 0;
-          margin: auto;
-        }
-        .brightness-slider-vertical:focus-visible {
-          outline: 2px solid #10b981;
-          outline-offset: 4px;
-          border-radius: 4px;
-        }
-        .brightness-slider-vertical::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          width: ${SLIDER_W + 4}px;
-          height: ${SLIDER_W + 4}px;
-          border-radius: 50%;
-          background: transparent;
-          border: none;
-          cursor: pointer;
-        }
-        .brightness-slider-vertical::-moz-range-thumb {
-          width: ${SLIDER_W + 4}px;
-          height: ${SLIDER_W + 4}px;
-          border-radius: 50%;
-          background: transparent;
-          border: none;
-          cursor: pointer;
-        }
-        .brightness-slider-vertical::-webkit-slider-runnable-track {
-          background: transparent;
-        }
-        .brightness-slider-vertical::-moz-range-track {
-          background: transparent;
-        }
-      `}</style>
     </div>
   )
 }
