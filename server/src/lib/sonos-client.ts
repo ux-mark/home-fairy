@@ -433,7 +433,7 @@ class SonosClient {
 
   async getQueue(speaker: string): Promise<SonosQueueItem[]> {
     try {
-      const { data } = await this.api.get<SonosQueueItem[]>(`/${encodeURIComponent(speaker)}/queue`)
+      const { data } = await this.api.get<SonosQueueItem[]>(`/${encodeURIComponent(speaker)}/queue/detailed`)
       return Array.isArray(data) ? data : []
     } catch (err) {
       this.handleError(err, `getQueue(${speaker})`)
@@ -550,6 +550,92 @@ class SonosClient {
         headers: {
           'Content-Type': 'text/xml; charset=utf-8',
           'SOAPAction': '"urn:schemas-upnp-org:service:AVTransport:1#AddURIToQueue"',
+        },
+        timeout: 10_000,
+      },
+    )
+  }
+
+  /**
+   * Remove a track from the queue using UPnP SOAP directly.
+   * trackNumber is 1-based (Sonos queue position).
+   */
+  async removeFromQueueSOAP(speakerIp: string, trackNumber: number): Promise<void> {
+    const body = `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:RemoveTrackFromQueue xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+      <InstanceID>0</InstanceID>
+      <ObjectID>Q:0/${trackNumber}</ObjectID>
+      <UpdateID>0</UpdateID>
+    </u:RemoveTrackFromQueue>
+  </s:Body>
+</s:Envelope>`
+    await axios.post(
+      `http://${speakerIp}:1400/MediaRenderer/AVTransport/Control`,
+      body,
+      {
+        headers: {
+          'Content-Type': 'text/xml; charset=utf-8',
+          'SOAPAction': '"urn:schemas-upnp-org:service:AVTransport:1#RemoveTrackFromQueue"',
+        },
+        timeout: 10_000,
+      },
+    )
+  }
+
+  /**
+   * Reorder a track in the queue using UPnP SOAP directly.
+   * startIndex and insertBefore are 1-based Sonos queue positions.
+   * insertBefore semantics: the track is inserted before that position.
+   */
+  async reorderQueueSOAP(speakerIp: string, startIndex: number, insertBefore: number): Promise<void> {
+    const body = `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:ReorderTracksInQueue xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+      <InstanceID>0</InstanceID>
+      <StartingIndex>${startIndex}</StartingIndex>
+      <NumberOfTracks>1</NumberOfTracks>
+      <InsertBefore>${insertBefore}</InsertBefore>
+      <UpdateID>0</UpdateID>
+    </u:ReorderTracksInQueue>
+  </s:Body>
+</s:Envelope>`
+    await axios.post(
+      `http://${speakerIp}:1400/MediaRenderer/AVTransport/Control`,
+      body,
+      {
+        headers: {
+          'Content-Type': 'text/xml; charset=utf-8',
+          'SOAPAction': '"urn:schemas-upnp-org:service:AVTransport:1#ReorderTracksInQueue"',
+        },
+        timeout: 10_000,
+      },
+    )
+  }
+
+  /**
+   * Seek to a specific track in the queue using UPnP SOAP directly.
+   * trackNumber is 1-based (Sonos queue position).
+   */
+  async seekToTrackSOAP(speakerIp: string, trackNumber: number): Promise<void> {
+    await axios.post(
+      `http://${speakerIp}:1400/MediaRenderer/AVTransport/Control`,
+      `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:Seek xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
+      <InstanceID>0</InstanceID>
+      <Unit>TRACK_NR</Unit>
+      <Target>${trackNumber}</Target>
+    </u:Seek>
+  </s:Body>
+</s:Envelope>`,
+      {
+        headers: {
+          'Content-Type': 'text/xml; charset=utf-8',
+          'SOAPAction': '"urn:schemas-upnp-org:service:AVTransport:1#Seek"',
         },
         timeout: 10_000,
       },

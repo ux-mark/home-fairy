@@ -1767,6 +1767,10 @@ export const api = {
       fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/clear`, {
         method: 'DELETE',
       }),
+    seekToTrack: (speaker: string, trackNumber: number) =>
+      fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/seek/${trackNumber}`, {
+        method: 'POST',
+      }),
     playUri: (speaker: string, uri: string) =>
       fetchApi<{ speaker: string; uri: string }>(
         `/sonos/play-uri/${encodeURIComponent(speaker)}`,

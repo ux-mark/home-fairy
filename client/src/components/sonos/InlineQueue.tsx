@@ -25,6 +25,7 @@ import {
   GripVertical,
   ListMusic,
   Music2,
+  Play,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
@@ -58,7 +59,6 @@ interface SortableQueueItemProps {
   index: number
   isCurrentTrack: boolean
   onRemove: (index: number) => void
-  onPlayNext: (uri: string) => void
   speaker: string
 }
 
@@ -67,12 +67,10 @@ function SortableQueueItem({
   index,
   isCurrentTrack,
   onRemove,
-  onPlayNext,
   speaker,
 }: SortableQueueItemProps) {
   const navigate = useNavigate()
   const { toast } = useToast()
-  const queryClient = useQueryClient()
 
   const {
     attributes,
@@ -88,13 +86,10 @@ function SortableQueueItem({
     transition,
   }
 
-  const addToQueueMut = useMutation({
-    mutationFn: () => api.sonos.addToQueue(speaker, item.uri),
-    onSuccess: () => {
-      toast({ message: `Added "${item.title}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos', 'queue', speaker] })
-    },
-    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.seekToTrack(speaker, index + 1),
+    onSuccess: () => toast({ message: `Playing "${item.title}"` }),
+    onError: () => toast({ message: 'Failed to play', type: 'error' }),
   })
 
   const addToFavourites = useMutation({
@@ -166,10 +161,22 @@ function SortableQueueItem({
 
       {/* Actions */}
       <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          disabled={playNow.isPending}
+          onClick={() => playNow.mutate()}
+          aria-label={`Play ${item.title}`}
+          className={cn(
+            'flex h-11 w-11 items-center justify-center rounded-lg',
+            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'disabled:opacity-40',
+          )}
+        >
+          <Play className="h-4 w-4" aria-hidden="true" />
+        </button>
         <MusicItemMenu
           label={item.title}
-          onPlayNext={() => onPlayNext(item.uri)}
-          onAddToQueue={() => addToQueueMut.mutate()}
           onAddToFavourites={() => addToFavourites.mutate()}
           onRemove={() => onRemove(index)}
           removeLabel="Remove from queue"
@@ -221,6 +228,7 @@ export function InlineQueue({
   const reorderMutation = useMutation({
     mutationFn: ({ from, to }: { from: number; to: number }) =>
       api.sonos.reorderQueue(speaker, from, to),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queueKey }),
     onError: () => {
       queryClient.invalidateQueries({ queryKey: queueKey })
       toast({ message: 'Could not reorder queue', type: 'error' })
@@ -229,19 +237,11 @@ export function InlineQueue({
 
   const removeMutation = useMutation({
     mutationFn: (index: number) => api.sonos.removeFromQueue(speaker, index),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queueKey }),
     onError: () => {
       queryClient.invalidateQueries({ queryKey: queueKey })
       toast({ message: 'Could not remove track', type: 'error' })
     },
-  })
-
-  const playNextMutation = useMutation({
-    mutationFn: (uri: string) => api.sonos.playNext(speaker, uri),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queueKey })
-      toast({ message: 'Added to play next' })
-    },
-    onError: () => toast({ message: 'Could not add to play next', type: 'error' }),
   })
 
   function handleDragEnd(event: DragEndEvent) {
@@ -264,10 +264,6 @@ export function InlineQueue({
       queue.filter((_, i) => i !== index),
     )
     removeMutation.mutate(index)
-  }
-
-  function handlePlayNext(uri: string) {
-    playNextMutation.mutate(uri)
   }
 
   const queueCount = queue?.length ?? 0
@@ -379,7 +375,6 @@ export function InlineQueue({
                         index={i}
                         isCurrentTrack={isCurrentTrack}
                         onRemove={handleRemove}
-                        onPlayNext={handlePlayNext}
                         speaker={speaker}
                       />
                     )

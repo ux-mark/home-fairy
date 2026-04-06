@@ -23,10 +23,10 @@ export interface SpotifyPlaylistTrackData {
 export interface MusicItemMenuProps {
   /** Label for accessibility */
   label: string
-  /** Handler for "Play next" */
-  onPlayNext: () => void
-  /** Handler for "Add to queue" */
-  onAddToQueue: () => void
+  /** Handler for "Play next" — omit to hide this option */
+  onPlayNext?: () => void
+  /** Handler for "Add to queue" — omit to hide this option */
+  onAddToQueue?: () => void
   /** Data for the Fairylist dialog */
   fairylistTrack: FairylistTrackData
   /** If provided, shows "Add to Spotify Playlist" option */
@@ -76,7 +76,9 @@ export function MusicItemMenu({
   const menuBtnRef = useRef<HTMLButtonElement>(null)
 
   // Count menu items for height estimation
-  let itemCount = 3 // Play next + Add to queue + Add to Fairylist
+  let itemCount = 1 // Add to Fairylist (always shown)
+  if (onAddToQueue) itemCount++
+  if (onPlayNext) itemCount++
   if (spotifyTrack) itemCount++
   if (onAddToFavourites) itemCount++
   if (onRemove) itemCount++
@@ -123,19 +125,21 @@ export function MusicItemMenu({
               style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
               className="z-[200] min-w-[200px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
             >
-              <li role="none">
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    onAddToQueue()
-                  }}
-                  className={menuItemCls}
-                >
-                  <ListEnd className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  Add to queue
-                </button>
-              </li>
+              {onAddToQueue && (
+                <li role="none">
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      onAddToQueue()
+                    }}
+                    className={menuItemCls}
+                  >
+                    <ListEnd className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Add to queue
+                  </button>
+                </li>
+              )}
               <li role="none">
                 <button
                   role="menuitem"
@@ -164,19 +168,21 @@ export function MusicItemMenu({
                   </button>
                 </li>
               )}
-              <li role="none">
-                <button
-                  role="menuitem"
-                  onClick={() => {
-                    setMenuOpen(false)
-                    onPlayNext()
-                  }}
-                  className={menuItemCls}
-                >
-                  <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  Play next
-                </button>
-              </li>
+              {onPlayNext && (
+                <li role="none">
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      onPlayNext()
+                    }}
+                    className={menuItemCls}
+                  >
+                    <ListStart className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Play next
+                  </button>
+                </li>
+              )}
               {spotifyTrack && (
                 <li role="none">
                   <button

@@ -53,7 +53,6 @@ interface SortableQueueItemProps {
   index: number
   isCurrentTrack: boolean
   onRemove: (index: number) => void
-  onPlayNext: (uri: string) => void
   speaker: string
 }
 
@@ -62,12 +61,10 @@ function SortableQueueItem({
   index,
   isCurrentTrack,
   onRemove,
-  onPlayNext,
   speaker,
 }: SortableQueueItemProps) {
   const navigate = useNavigate()
   const { toast } = useToast()
-  const queryClient = useQueryClient()
 
   const {
     attributes,
@@ -86,23 +83,9 @@ function SortableQueueItem({
   const source = item.uri?.startsWith('spotify:') ? 'spotify' : 'nas'
 
   const playNow = useMutation({
-    mutationFn: () => {
-      if (item.uri?.startsWith('spotify:')) {
-        return api.sonos.playSpotify(speaker, item.uri, 'now')
-      }
-      return api.sonos.playUri(speaker, item.uri)
-    },
+    mutationFn: () => api.sonos.seekToTrack(speaker, index + 1),
     onSuccess: () => toast({ message: `Playing "${item.title}"` }),
     onError: () => toast({ message: 'Failed to play', type: 'error' }),
-  })
-
-  const addToQueueMut = useMutation({
-    mutationFn: () => api.sonos.addToQueue(speaker, item.uri),
-    onSuccess: () => {
-      toast({ message: `Added "${item.title}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos', 'queue', speaker] })
-    },
-    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
 
   const addToFavourites = useMutation({
@@ -196,8 +179,6 @@ function SortableQueueItem({
 
         <MusicItemMenu
           label={item.title}
-          onPlayNext={() => onPlayNext(item.uri)}
-          onAddToQueue={() => addToQueueMut.mutate()}
           onAddToFavourites={() => addToFavourites.mutate()}
           onRemove={() => onRemove(index)}
           removeLabel="Remove from queue"
@@ -241,6 +222,7 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
   const reorderMutation = useMutation({
     mutationFn: ({ from, to }: { from: number; to: number }) =>
       api.sonos.reorderQueue(speaker, from, to),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queueKey }),
     onError: () => {
       queryClient.invalidateQueries({ queryKey: queueKey })
       toast({ message: 'Could not reorder queue', type: 'error' })
@@ -249,20 +231,13 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
 
   const removeMutation = useMutation({
     mutationFn: (index: number) => api.sonos.removeFromQueue(speaker, index),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queueKey }),
     onError: () => {
       queryClient.invalidateQueries({ queryKey: queueKey })
       toast({ message: 'Could not remove track', type: 'error' })
     },
   })
 
-  const playNextMutation = useMutation({
-    mutationFn: (uri: string) => api.sonos.playNext(speaker, uri),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queueKey })
-      toast({ message: 'Added to play next' })
-    },
-    onError: () => toast({ message: 'Could not add to play next', type: 'error' }),
-  })
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
@@ -286,10 +261,6 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
       queue.filter((_, i) => i !== index),
     )
     removeMutation.mutate(index)
-  }
-
-  function handlePlayNext(uri: string) {
-    playNextMutation.mutate(uri)
   }
 
   // ── Content ───────────────────────────────────────────────────────────────
@@ -374,7 +345,6 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
                     index={i}
                     isCurrentTrack={isCurrentTrack}
                     onRemove={handleRemove}
-                    onPlayNext={handlePlayNext}
                     speaker={speaker}
                   />
                 )

@@ -715,7 +715,7 @@ router.post('/queue/:speaker/playnext-album', async (req: Request, res: Response
   }
 })
 
-// DELETE /queue/:speaker/remove/:index — remove item from queue by index
+// DELETE /queue/:speaker/remove/:index — remove item from queue by index (0-based)
 router.delete('/queue/:speaker/remove/:index', async (req: Request, res: Response) => {
   try {
     const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
@@ -725,8 +725,13 @@ router.delete('/queue/:speaker/remove/:index', async (req: Request, res: Respons
       res.status(400).json({ error: 'index must be a non-negative integer' })
       return
     }
-    await sonosClient.removeFromQueue(speaker, index)
-    emit('sonos:playback-update', { speaker })
+    const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
+    if (!speakerInfo) {
+      res.status(404).json({ error: `Speaker not found: ${speaker}` })
+      return
+    }
+    // Convert 0-based frontend index to 1-based Sonos queue position
+    await sonosClient.removeFromQueueSOAP(speakerInfo.ip, index + 1)
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'remove', queue })
     res.json({ speaker, action: 'remove-from-queue', index })
@@ -736,7 +741,7 @@ router.delete('/queue/:speaker/remove/:index', async (req: Request, res: Respons
   }
 })
 
-// POST /queue/:speaker/reorder — move item in queue
+// POST /queue/:speaker/reorder — move item in queue (from/to are 0-based)
 router.post('/queue/:speaker/reorder', async (req: Request, res: Response) => {
   try {
     const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
@@ -745,11 +750,46 @@ router.post('/queue/:speaker/reorder', async (req: Request, res: Response) => {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
       return
     }
-    await sonosClient.reorderQueue(speaker, parsed.data.from, parsed.data.to)
-    emit('sonos:playback-update', { speaker })
+    const { from, to } = parsed.data
+    const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
+    if (!speakerInfo) {
+      res.status(404).json({ error: `Speaker not found: ${speaker}` })
+      return
+    }
+    // Convert 0-based frontend indices to 1-based Sonos positions.
+    // ReorderTracksInQueue uses insertBefore semantics:
+    //   moving forward (from < to): insertBefore = to + 2 (accounts for index shift after removal)
+    //   moving backward (from > to): insertBefore = to + 1
+    const startIndex = from + 1
+    const insertBefore = from < to ? to + 2 : to + 1
+    await sonosClient.reorderQueueSOAP(speakerInfo.ip, startIndex, insertBefore)
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'reorder', queue })
-    res.json({ speaker, action: 'reorder-queue', from: parsed.data.from, to: parsed.data.to })
+    res.json({ speaker, action: 'reorder-queue', from, to })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
+// POST /queue/:speaker/seek/:trackNumber — seek to a track in the queue (1-based)
+router.post('/queue/:speaker/seek/:trackNumber', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const rawTrackNumber = Array.isArray(req.params.trackNumber) ? req.params.trackNumber[0] : req.params.trackNumber
+    const trackNumber = parseInt(rawTrackNumber, 10)
+    if (isNaN(trackNumber) || trackNumber < 1) {
+      res.status(400).json({ error: 'trackNumber must be a positive integer' })
+      return
+    }
+    const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
+    if (!speakerInfo) {
+      res.status(404).json({ error: `Speaker not found: ${speaker}` })
+      return
+    }
+    await sonosClient.seekToTrackSOAP(speakerInfo.ip, trackNumber)
+    emit('sonos:playback-update', { speaker })
+    res.json({ speaker, action: 'seek-to-track', trackNumber })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
