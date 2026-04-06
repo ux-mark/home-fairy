@@ -1685,10 +1685,12 @@ function ArtistAlbumRow({
 
 function ArtistDetail({
   artist,
+  speaker,
   onBack,
   onSelectAlbum,
 }: {
   artist: SpotifyArtist
+  speaker: string | null
   onBack: () => void
   onSelectAlbum: (album: SpotifyAlbum) => void
 }) {
@@ -2330,6 +2332,7 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
     return (
       <ArtistDetail
         artist={selectedArtist}
+        speaker={speaker}
         onBack={handleBack}
         onSelectAlbum={handleSelectArtistAlbum}
       />

@@ -61,6 +61,7 @@ interface SortableQueueItemProps {
   onRemove: (index: number) => void
   onPlayNext: (uri: string) => void
   speaker: string
+  isFirst: boolean
 }
 
 function SortableQueueItem({
@@ -357,6 +358,7 @@ export function InlineQueue({
                         onRemove={handleRemove}
                         onPlayNext={handlePlayNext}
                         speaker={speaker}
+                        isFirst={i === 0}
                       />
                     )
                   })}
