@@ -24,6 +24,7 @@ import {
   ChevronUp,
   GripVertical,
   ListMusic,
+  Music,
   Music2,
 } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -202,6 +203,7 @@ export function InlineQueue({
   playbackState,
   onViewFullQueue,
 }: InlineQueueProps) {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
@@ -351,6 +353,18 @@ export function InlineQueue({
                 <p className="text-xs font-semibold text-heading">Queue is empty</p>
                 <p className="mt-0.5 text-xs text-caption">Start playing music to build a queue.</p>
               </div>
+              <button
+                onClick={() => navigate(`/sonos/browse?speaker=${encodeURIComponent(speaker)}`)}
+                className={cn(
+                  'flex min-h-[44px] w-full items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors',
+                  'surface text-body hover:brightness-95 dark:hover:brightness-110',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                )}
+                aria-label="Browse music"
+              >
+                <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
+                Browse music
+              </button>
             </div>
           )}
 
