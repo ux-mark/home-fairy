@@ -1677,26 +1677,17 @@ function ArtistAlbumRow({
 
 function ArtistDetail({
   artist,
-  speaker,
   onBack,
   onSelectAlbum,
 }: {
   artist: SpotifyArtist
-  speaker: string | null
   onBack: () => void
   onSelectAlbum: (album: SpotifyAlbum) => void
 }) {
-  const { toast } = useToast()
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['spotify-artist-albums', artist.id],
     queryFn: () => api.spotify.getArtistAlbums(artist.id),
     staleTime: 5 * 60_000,
-  })
-
-  const playArtist = useMutation({
-    mutationFn: () => api.sonos.playSpotify(speaker!, artist.uri, 'now'),
-    onSuccess: () => toast({ message: `Playing ${artist.name}` }),
-    onError: () => toast({ message: 'Failed to play artist', type: 'error' }),
   })
 
   const albums = data?.items ?? []
@@ -1716,29 +1707,7 @@ function ArtistDetail({
         >
           <ArrowLeft className="h-5 w-5" aria-hidden="true" />
         </button>
-        <ArtworkImage images={artist.images} size={44} rounded="rounded-full" />
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-lg font-semibold leading-snug text-heading">{artist.name}</h2>
-          {artist.followers !== undefined && (
-            <p className="truncate text-xs text-caption">
-              {artist.followers.total.toLocaleString()} followers
-            </p>
-          )}
-        </div>
-        <button
-          type="button"
-          disabled={!speaker || playArtist.isPending}
-          onClick={() => playArtist.mutate()}
-          aria-label={`Play ${artist.name}`}
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
-            'text-white transition-colors hover:bg-fairy-400',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'disabled:opacity-40',
-          )}
-        >
-          <Play className="h-5 w-5" aria-hidden="true" />
-        </button>
+        <h2 className="truncate text-lg font-semibold text-heading">{artist.name}</h2>
       </div>
 
       {isLoading && <ListSkeleton />}
@@ -1758,11 +1727,11 @@ function ArtistDetail({
       )}
 
       {albums.length > 0 && (
-        <ul className="-mx-4">
+        <div className="-mx-4">
           {albums.map(album => (
             <ArtistAlbumRow key={album.id} album={album} speaker={speaker} onSelectAlbum={onSelectAlbum} />
           ))}
-        </ul>
+        </div>
       )}
     </div>
   )
@@ -2353,7 +2322,6 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
     return (
       <ArtistDetail
         artist={selectedArtist}
-        speaker={speaker}
         onBack={handleBack}
         onSelectAlbum={handleSelectArtistAlbum}
       />
