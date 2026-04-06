@@ -24,9 +24,7 @@ import {
   ChevronUp,
   GripVertical,
   ListMusic,
-  ListStart,
   Music2,
-  Trash2,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
@@ -35,6 +33,7 @@ import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from './ArtworkImage'
+import { MusicItemMenu } from './MusicItemMenu'
 import { QueueHeader } from './QueueHeader'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -69,10 +68,11 @@ function SortableQueueItem({
   isCurrentTrack,
   onRemove,
   onPlayNext,
-  isFirst,
   speaker,
 }: SortableQueueItemProps) {
   const navigate = useNavigate()
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
 
   const {
     attributes,
@@ -87,6 +87,26 @@ function SortableQueueItem({
     transform: CSS.Transform.toString(transform),
     transition,
   }
+
+  const addToQueueMut = useMutation({
+    mutationFn: () => api.sonos.addToQueue(speaker, item.uri),
+    onSuccess: () => {
+      toast({ message: `Added "${item.title}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos', 'queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const addToFavourites = useMutation({
+    mutationFn: () => api.favourites.add({
+      source: item.uri?.startsWith('spotify:') ? 'spotify' : 'nas',
+      source_uri: item.uri,
+      title: item.title,
+      album_art_uri: item.albumArtUri ?? undefined,
+    }),
+    onSuccess: () => toast({ message: `Added "${item.title}" to favourites` }),
+    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
+  })
 
   function handleTitleClick() {
     if (item.uri) {
@@ -127,7 +147,7 @@ function SortableQueueItem({
         <div className="flex items-center gap-1.5">
           <p
             className={cn(
-              'truncate text-xs font-medium leading-tight',
+              'truncate text-sm font-medium leading-tight',
               isCurrentTrack ? 'text-fairy-400' : 'text-heading',
             )}
           >
@@ -139,29 +159,33 @@ function SortableQueueItem({
             </span>
           )}
         </div>
-        <p className="truncate text-[11px] text-caption">
+        <p className="truncate text-xs text-caption">
           {[item.artist, item.album].filter(Boolean).join(' · ')}
         </p>
       </button>
 
       {/* Actions */}
-      <div className="flex shrink-0 items-center">
-        {!isFirst && (
-          <button
-            onClick={() => onPlayNext(item.uri)}
-            className="flex h-11 w-9 items-center justify-center rounded-lg text-slate-400 hover:text-slate-200 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-            aria-label={`Play ${item.title} next`}
-          >
-            <ListStart className="h-4 w-4" aria-hidden="true" />
-          </button>
-        )}
-        <button
-          onClick={() => onRemove(index)}
-          className="flex h-11 w-11 items-center justify-center rounded-lg text-red-400/70 hover:text-red-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-          aria-label={`Remove ${item.title} from queue`}
-        >
-          <Trash2 className="h-4 w-4" aria-hidden="true" />
-        </button>
+      <div className="flex shrink-0 items-center gap-1">
+        <MusicItemMenu
+          label={item.title}
+          onPlayNext={() => onPlayNext(item.uri)}
+          onAddToQueue={() => addToQueueMut.mutate()}
+          onAddToFavourites={() => addToFavourites.mutate()}
+          onRemove={() => onRemove(index)}
+          removeLabel="Remove from queue"
+          fairylistTrack={{
+            source: item.uri?.startsWith('spotify:') ? 'spotify' : 'nas',
+            source_uri: item.uri,
+            title: item.title,
+            artist: item.artist,
+            album_art_uri: item.albumArtUri ?? undefined,
+          }}
+          spotifyTrack={
+            item.uri?.startsWith('spotify:')
+              ? { trackUri: item.uri, trackName: item.title }
+              : undefined
+          }
+        />
       </div>
     </li>
   )

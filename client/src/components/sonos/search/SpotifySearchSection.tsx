@@ -9,6 +9,7 @@ import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from '../ArtworkImage'
 import { MusicListItem } from '../MusicListItem'
+import { SourceBadge } from '../SourceBadge'
 
 // ── Skeleton / Error ──────────────────────────────────────────────────────────
 
@@ -103,6 +104,7 @@ function SpotifyTrackRow({
       artwork={{ src: artUri, fallback: 'disc' }}
       title={track.name}
       subtitle={[artistNames, track.album.name].filter(Boolean).join(' · ')}
+      badge={<SourceBadge source="spotify" />}
       onTap={() => onSelectAlbum(albumForNav)}
       onPlay={() => playNow.mutate()}
       playDisabled={!speaker}
@@ -161,6 +163,7 @@ function SpotifyAlbumRow({
       artwork={{ src: album.images?.[0]?.url, fallback: 'disc' }}
       title={album.name}
       subtitle={album.artists.map(a => a.name).join(', ')}
+      badge={<SourceBadge source="spotify" />}
       onTap={() => onSelect(album)}
       onPlay={() => playNow.mutate()}
       playDisabled={!speaker}
@@ -252,6 +255,7 @@ function SpotifyPlaylistRow({
       artwork={{ src: playlist.images?.[0]?.url, fallback: 'disc' }}
       title={playlist.name}
       subtitle={`${playlist.tracks.total} tracks`}
+      badge={<SourceBadge source="spotify" />}
       onTap={() => onSelect(playlist)}
       onPlay={() => playNow.mutate()}
       playDisabled={!speaker}

@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
 import { cn } from '@/lib/utils'
 import { MusicListItem } from '../MusicListItem'
+import { SourceBadge } from '../SourceBadge'
 
 // ── Skeleton / Error ──────────────────────────────────────────────────────────
 
@@ -103,6 +104,7 @@ function RadioStationRow({
       artwork={{ src: station.albumArtUri, fallback: 'disc' }}
       title={station.title}
       subtitle=""
+      badge={<SourceBadge source="radio" />}
       onTap={() => play.mutate()}
       onPlay={() => play.mutate()}
       playDisabled={!speaker}

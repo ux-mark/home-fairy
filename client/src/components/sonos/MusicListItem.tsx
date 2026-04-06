@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { Pause, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ArtworkImage, type ArtworkImageProps } from './ArtworkImage'
@@ -31,6 +32,12 @@ export interface MusicListItemProps {
   isCurrentTrack?: boolean
   /** True if the speaker is actively playing (matters only when isCurrentTrack is true) */
   isPlaying?: boolean
+  /** Track number shown instead of artwork (album detail view) */
+  trackNumber?: number
+  /** Optional badge element rendered after subtitle (e.g. SourceBadge) */
+  badge?: ReactNode
+  /** Optional duration string shown before controls */
+  duration?: string
 }
 
 // ── Shared styles ────────────────────────────────────────────────────────────
@@ -57,6 +64,9 @@ export function MusicListItem({
   disabled = false,
   isCurrentTrack = false,
   isPlaying = false,
+  trackNumber,
+  badge,
+  duration,
 }: MusicListItemProps) {
   const showPause = isCurrentTrack && isPlaying && !!onPause
 
@@ -73,23 +83,44 @@ export function MusicListItem({
           'rounded-md',
         )}
       >
-        <ArtworkImage {...artwork} />
+        {trackNumber != null ? (
+          <div className="flex w-6 shrink-0 items-center justify-end">
+            {isCurrentTrack ? (
+              <ActiveTrackIndicator isActive isPlaying={isPlaying} />
+            ) : (
+              <span className="text-right text-xs tabular-nums text-caption/50" aria-label={`Track ${trackNumber}`}>
+                {trackNumber}
+              </span>
+            )}
+          </div>
+        ) : (
+          <ArtworkImage {...artwork} />
+        )}
         <div className="min-w-0 flex-1">
           <p className={cn('truncate text-sm font-medium', isCurrentTrack ? 'text-fairy-400' : 'text-heading')}>
             {title}
           </p>
-          {subtitle && <p className="truncate text-xs text-caption">{subtitle}</p>}
+          {(subtitle || badge) && (
+            <div className="flex items-center gap-1.5">
+              {subtitle && <p className="truncate text-xs text-caption">{subtitle}</p>}
+              {badge}
+            </div>
+          )}
         </div>
       </button>
 
-      {/* Active track indicator + play/pause button + context menu */}
+      {/* Active track indicator + duration + play/pause button + context menu */}
       <div className="flex shrink-0 items-center gap-1">
-        {isCurrentTrack && (
+        {isCurrentTrack && trackNumber == null && (
           <ActiveTrackIndicator
             isActive={isCurrentTrack}
             isPlaying={isPlaying}
             className="mr-1"
           />
+        )}
+
+        {duration && (
+          <span className="mr-1 text-xs text-caption/70">{duration}</span>
         )}
 
         <button
