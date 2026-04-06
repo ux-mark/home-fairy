@@ -306,6 +306,7 @@ export default function LightDetailPage() {
                 brightness={localV}
                 minKelvin={light.product.capabilities.min_kelvin}
                 maxKelvin={light.product.capabilities.max_kelvin}
+                loading={setStateMutation.isPending}
                 onChange={update => {
                   // Live drag: update local drag state for instant UI feedback AND
                   // fire a debounced API call so the physical light follows the finger.

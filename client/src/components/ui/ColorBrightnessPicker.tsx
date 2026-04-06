@@ -19,6 +19,7 @@
  */
 import { useCallback, useState } from 'react'
 import * as Slider from '@radix-ui/react-slider'
+import { Loader2 } from 'lucide-react'
 import { kelvinToHex, hsbToHex } from '@/lib/utils'
 import ColorWheel from './ColorWheel'
 import KelvinPresets from './KelvinPresets'
@@ -43,6 +44,8 @@ interface ColorBrightnessPickerProps {
   onChange: (update: { color?: HsvColor; kelvin?: number; brightness?: number }) => void
   /** Called on pointer up — fire the final API commit */
   onCommit: (update: { color?: HsvColor; kelvin?: number; brightness?: number }) => void
+  /** Show a spinner in the brightness thumb while an API call is in flight */
+  loading?: boolean
 }
 
 // Brightness slider width and height
@@ -58,6 +61,7 @@ export default function ColorBrightnessPicker({
   maxKelvin = 9000,
   onChange,
   onCommit,
+  loading = false,
 }: ColorBrightnessPickerProps) {
   // Active tab — only relevant when hasColor=true
   const [tab, setTab] = useState<'colours' | 'whites'>(() => {
@@ -218,11 +222,11 @@ export default function ColorBrightnessPicker({
           </Slider.Track>
           <Slider.Thumb
             className={[
-              'relative block rounded-full border-2 border-white',
+              'relative flex items-center justify-center rounded-full border-2 border-white',
               // Invisible touch-target enlargement for easier finger targeting
               'before:absolute before:inset-[-8px] before:content-[""]',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              'cursor-grab active:cursor-grabbing',
+              loading ? 'cursor-default' : 'cursor-grab active:cursor-grabbing',
             ].join(' ')}
             style={{
               width: 28,
@@ -234,7 +238,11 @@ export default function ColorBrightnessPicker({
               transform: 'translateZ(0)',
             }}
             aria-label="Brightness"
-          />
+          >
+            {loading && (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-white/80" aria-hidden="true" />
+            )}
+          </Slider.Thumb>
         </Slider.Root>
       </div>
 
