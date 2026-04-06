@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { Music2, Tv, ImageOff } from 'lucide-react'
+import { Music, Music2, Tv, ImageOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
@@ -129,6 +129,7 @@ export function UnifiedPlaybackCard({
   // ── Empty ────────────────────────────────────────────────────────────────
 
   if (!state || (state.playbackState === 'STOPPED' && !state.currentTrack.title && !state.currentTrack.stationName)) {
+    const browseUrl = `/sonos/browse?speaker=${encodeURIComponent(speaker)}`
     if (variant === 'full') {
       return (
         <div className={cn('flex flex-col items-center justify-center gap-6 py-12 text-center', className)}>
@@ -139,6 +140,18 @@ export function UnifiedPlaybackCard({
               Start playing music from the Favourites tab or your Sonos app.
             </p>
           </div>
+          <button
+            onClick={() => navigate(browseUrl)}
+            className={cn(
+              'flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-5 text-sm font-medium transition-colors',
+              'surface text-body hover:brightness-95 dark:hover:brightness-110',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            )}
+            aria-label="Browse music"
+          >
+            <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
+            Browse music
+          </button>
         </div>
       )
     }
@@ -151,6 +164,18 @@ export function UnifiedPlaybackCard({
           <p className="text-sm font-medium text-heading">{roomName}</p>
           <p className="text-xs text-caption">Nothing playing</p>
         </div>
+        <button
+          onClick={() => navigate(browseUrl)}
+          className={cn(
+            'flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors',
+            'surface text-body hover:brightness-95 dark:hover:brightness-110',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          )}
+          aria-label="Browse music"
+        >
+          <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
+          Browse
+        </button>
       </div>
     )
   }

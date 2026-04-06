@@ -33,6 +33,7 @@ import type {
 } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { useDebounce } from '@/hooks/useBrowseShared'
+import { usePersistedState } from '@/hooks/usePersistedState'
 import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
@@ -2205,7 +2206,7 @@ interface SpotifyBrowseViewProps {
 
 export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseViewProps) {
   const [view, setView] = useState<SpotifyView>('home')
-  const [browseMode, setBrowseMode] = useState<BrowseMode>('playlists')
+  const [browseMode, setBrowseMode] = usePersistedState<BrowseMode>('spotify-browse-mode', 'playlists')
   const [selectedPlaylist, setSelectedPlaylist] = useState<SpotifyPlaylist | null>(null)
   const [selectedAlbum, setSelectedAlbum] = useState<SpotifyAlbum | null>(null)
   const [selectedShow, setSelectedShow] = useState<SpotifyShow | null>(null)
