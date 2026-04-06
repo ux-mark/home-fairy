@@ -1,12 +1,12 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Play } from 'lucide-react'
+import { Pause, Play } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SpotifyTrack, SpotifyAlbumTrack } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { cn } from '@/lib/utils'
-import { ArtworkImage } from '../ArtworkImage'
 import { ActiveTrackIndicator } from '../ActiveTrackIndicator'
 import { MusicItemMenu } from '../MusicItemMenu'
+import { MusicListItem } from '../MusicListItem'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -57,6 +57,11 @@ export function SpotifyTrackRow({
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
 
+  const pauseNow = useMutation({
+    mutationFn: () => api.sonos.pause(speaker!),
+    onError: () => toast({ message: 'Failed to pause', type: 'error' }),
+  })
+
   const addToFavourites = useMutation({
     mutationFn: () => api.favourites.add({
       source: 'spotify',
@@ -69,60 +74,36 @@ export function SpotifyTrackRow({
   })
 
   const artistNames = track.artists.map(a => a.name).join(', ')
+  const duration = formatDuration(track.duration_ms)
 
   return (
-    <li className={cn('flex items-center gap-3 px-4 py-2.5', isActive && 'bg-fairy-500/10')}>
-      <div className="relative shrink-0">
-        <ArtworkImage images={track.album.images} size={40} />
-        {isActive && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black/40">
-            <ActiveTrackIndicator isActive={isActive} isPlaying={isPlaying} />
-          </div>
-        )}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">{track.name}</p>
-        <p className="truncate text-xs text-caption">
-          {[artistNames, track.album.name].filter(Boolean).join(' · ')}
-        </p>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-1">
-        <span className="mr-1 text-xs text-caption/70">{formatDuration(track.duration_ms)}</span>
-
-        <button
-          type="button"
-          disabled={!speaker || playNow.isPending}
-          onClick={() => playNow.mutate()}
-          aria-label={`Play ${track.name}`}
-          className={cn(
-            'flex h-11 w-11 items-center justify-center rounded-lg',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'disabled:opacity-40',
-          )}
-        >
-          <Play className="h-4 w-4" aria-hidden="true" />
-        </button>
-
-        <MusicItemMenu
-          label={track.name}
-          disabled={!speaker}
-          onPlayNext={() => playNext.mutate()}
-          onAddToQueue={() => addToQueue.mutate()}
-          onAddToFavourites={() => addToFavourites.mutate()}
-          fairylistTrack={{
-            source: 'spotify',
-            source_uri: track.uri,
-            title: track.name,
-            artist: artistNames,
-            album_art_uri: track.album.images?.[0]?.url,
-          }}
-          spotifyTrack={{ trackUri: track.uri, trackName: track.name }}
-        />
-      </div>
-    </li>
+    <MusicListItem
+      artwork={{ images: track.album.images, size: 40, fallback: 'disc' }}
+      title={track.name}
+      subtitle={[artistNames, track.album.name, duration].filter(Boolean).join(' · ')}
+      onTap={() => {}}
+      onPlay={() => playNow.mutate()}
+      onPause={() => pauseNow.mutate()}
+      playDisabled={!speaker}
+      playPending={playNow.isPending || pauseNow.isPending}
+      disabled={!speaker}
+      isCurrentTrack={isActive}
+      isPlaying={isPlaying}
+      menuProps={{
+        label: track.name,
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
+        onAddToFavourites: () => addToFavourites.mutate(),
+        fairylistTrack: {
+          source: 'spotify',
+          source_uri: track.uri,
+          title: track.name,
+          artist: artistNames,
+          album_art_uri: track.album.images?.[0]?.url,
+        },
+        spotifyTrack: { trackUri: track.uri, trackName: track.name },
+      }}
+    />
   )
 }
 
@@ -176,10 +157,16 @@ export function SpotifyAlbumTrackRow({
     onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
   })
 
+  const pauseNow = useMutation({
+    mutationFn: () => api.sonos.pause(speaker!),
+    onError: () => toast({ message: 'Failed to pause', type: 'error' }),
+  })
+
   const artistNames = track.artists.map(a => a.name).join(', ')
+  const showPause = isActive && isPlaying
 
   return (
-    <li className={cn('flex items-center gap-3 px-4 py-2.5', isActive && 'bg-fairy-500/10')}>
+    <li className={cn('flex items-center gap-3 px-4 py-2.5', isActive && 'bg-fairy-500/5')}>
       <div className="w-6 shrink-0 flex items-center justify-end">
         {isActive
           ? <ActiveTrackIndicator isActive={isActive} isPlaying={isPlaying} />
@@ -195,7 +182,7 @@ export function SpotifyAlbumTrackRow({
       </div>
 
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">{track.name}</p>
+        <p className={cn('truncate text-sm font-medium', isActive ? 'text-fairy-400' : 'text-heading')}>{track.name}</p>
         <p className="truncate text-xs text-caption">{artistNames}</p>
       </div>
 
@@ -204,9 +191,9 @@ export function SpotifyAlbumTrackRow({
 
         <button
           type="button"
-          disabled={!speaker || playNow.isPending}
-          onClick={() => playNow.mutate()}
-          aria-label={`Play ${track.name}`}
+          disabled={!speaker || playNow.isPending || pauseNow.isPending}
+          onClick={() => showPause ? pauseNow.mutate() : playNow.mutate()}
+          aria-label={showPause ? `Pause ${track.name}` : `Play ${track.name}`}
           className={cn(
             'flex h-11 w-11 items-center justify-center rounded-lg',
             'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
@@ -214,7 +201,10 @@ export function SpotifyAlbumTrackRow({
             'disabled:opacity-40',
           )}
         >
-          <Play className="h-4 w-4" aria-hidden="true" />
+          {showPause
+            ? <Pause className="h-4 w-4" aria-hidden="true" />
+            : <Play className="h-4 w-4" aria-hidden="true" />
+          }
         </button>
 
         <MusicItemMenu

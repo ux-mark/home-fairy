@@ -584,3 +584,27 @@
 - **Branch cleanup**: done
 - **Summary**: Complete Sonos Browse overhaul. Genre browsing via UPnP SOAP (26 genres → albums with cover art → tracks). Album browsing with artwork (704 albums). Artist browsing (1,240 artists). Radio from Sonos favourites. Spotify configured/not-configured states. PWA service worker fix for OAuth. Cloudflare 502 HTML interception fix. FavouritesTab wired up. SearchableSelect for Hushing Home.
 - **Files**: 13 files changed (+1,166/-311) — sonos-client.ts, sonos.ts, spotify-client.ts, spotify.ts, NasBrowseView.tsx, BrowseTab.tsx, SpotifyBrowseView.tsx, SonosPage.tsx, api.ts, HushingHomeSection.tsx, vite.config.ts, .env.example, prs.md
+
+## PR #151 — Fix country browse: full ISO mapping, validation, sub-region accordions
+- **Branch**: feature/country-browse-tab → dev
+- **Created**: 2026-04-04
+- **Status**: merged
+- **Merge date**: 2026-04-04
+- **Branch cleanup**: done
+- **Summary**: Expand COUNTRY_NAMES from ~65 to all 249 ISO 3166-1 alpha-2 codes (fixes CV, DZ etc showing as raw codes). Filter CountryList/ArtistList/AlbumList to reject entries without valid 2-letter ISO codes (fixes city names like "Darmstadt", "Belfast" appearing as countries). Add sub-region accordion grouping when drilling into a country.
+- **Files**: musicbrainz-client.ts, NasBrowseView.tsx
+
+## PR #152 — Add Countries tab to Spotify browse (shared component)
+- **Branch**: feature/spotify-country-browse → dev
+- **Created**: 2026-04-04
+- **Status**: merged
+- **Merge date**: 2026-04-04
+- **Branch cleanup**: done
+- **Summary**: Shared CountryBrowse + Countries pill for Spotify. Cache ALL artwork through art-proxy (Spotify CDN HTTPS too). Shared ArtworkImage replacing 5 duplicates. Artist images via Spotify batch API + MusicBrainz URL-rels. Backfill endpoints + buttons. PWA cache 2000→5000.
+- **Files**: 15 files — ArtworkImage.tsx, CountryBrowse.tsx (new), SpotifyBrowseView, NasBrowseView, RadioBrowseView, UnifiedSearchResults, InlineQueue, api.ts, vite.config.ts, db/index.ts, musicbrainz-client.ts, spotify-client.ts, sonos.ts, spotify.ts
+## PR #162 — Fix NAS-sourced country artists and restyle Spotify artist page
+- **Branch**: fix/nas-artist-albums-lookup → dev
+- **Created**: 2026-04-04
+- **Status**: open
+- **Summary**: NAS artists in Countries tab had `nas:` IDs causing API errors — backend resolves via Spotify search. Filtered albums to primary artist only (removes compilations/features). Restyled artist page to match NAS layout (Disc3 icons, track counts, simple header).
+- **Files**: server/src/routes/spotify.ts, client/src/components/sonos/SpotifyBrowseView.tsx, .testing/tests/artist-albums-fix.spec.ts

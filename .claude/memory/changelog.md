@@ -5,6 +5,21 @@
 
 ---
 
+## 2026-04-04 — Spotify Countries tab + full artwork caching (PR #152)
+- **Spotify Countries tab**: Countries pill between Playlists and Podcasts, shared CountryBrowse components with NAS
+- **All artwork cached**: Spotify CDN HTTPS images now routed through art-proxy for disk cache + PWA offline
+- **Artist images**: `image_url` column on artist_countries, Spotify batch fetch, MusicBrainz URL-rels for NAS artists
+- **Shared ArtworkImage**: Replaced 5 duplicate AlbumArt/CoverArt components across all browse views
+- **Backfill UI**: "Fetch artwork" button on both NAS and Spotify enrichment bars
+- **PWA cache**: Bumped from 2000 to 5000 entries
+- **Files**: 15 files changed
+
+## 2026-04-04 — Fix country browse tab (PR #151)
+- **Full ISO mapping**: Expanded `COUNTRY_NAMES` from ~65 to all 249 ISO 3166-1 alpha-2 codes — codes like CV (Cape Verde), DZ (Algeria) now display proper names
+- **ISO code validation**: CountryList, ArtistList, AlbumList grouping now rejects entries without valid 2-letter ISO codes — city names like "Darmstadt", "Belfast" no longer appear as countries
+- **Sub-region accordions**: Drilling into a country shows artists grouped by sub-region (e.g. "London", "Manchester" under UK) with collapsible sections
+- **Files**: musicbrainz-client.ts, NasBrowseView.tsx
+
 ## 2026-04-03 — Sonos Browse UX overhaul, album play, art caching (PR #145)
 - **Track row actions**: Replaced icon-only buttons (ListStart, Plus) with Play button + three-dot context menu (Play next, Add to queue, Add to favourites) across NAS, Spotify, Radio browse views and unified search results
 - **Album/playlist play**: Play album button on NAS album detail headers. Play playlist button on Spotify playlist detail. Uses UPnP SOAP AddURIToQueue (bypasses node-sonos-http-api URI mangling), sets transport to queue, seeks to track 1

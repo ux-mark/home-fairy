@@ -24,6 +24,7 @@ import {
   GripVertical,
   ImageOff,
   Music2,
+  Pause,
   Play,
 } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -53,6 +54,7 @@ interface SortableQueueItemProps {
   item: SonosQueueItem
   index: number
   isCurrentTrack: boolean
+  isPlaying: boolean
   onRemove: (index: number) => void
   onPlayNext: (uri: string) => void
   speaker: string
@@ -62,6 +64,7 @@ function SortableQueueItem({
   item,
   index,
   isCurrentTrack,
+  isPlaying,
   onRemove,
   onPlayNext,
   speaker,
@@ -96,6 +99,11 @@ function SortableQueueItem({
     },
     onSuccess: () => toast({ message: `Playing "${item.title}"` }),
     onError: () => toast({ message: 'Failed to play', type: 'error' }),
+  })
+
+  const pauseNow = useMutation({
+    mutationFn: () => api.sonos.pause(speaker),
+    onError: () => toast({ message: 'Failed to pause', type: 'error' }),
   })
 
   const addToQueueMut = useMutation({
@@ -193,12 +201,11 @@ function SortableQueueItem({
 
       {/* Actions */}
       <div className="flex shrink-0 items-center gap-1">
-        {/* Play now — icon-only acceptable for universally-recognised play symbol */}
         <button
           type="button"
-          disabled={playNow.isPending}
-          onClick={() => playNow.mutate()}
-          aria-label={`Play ${item.title}`}
+          disabled={playNow.isPending || pauseNow.isPending}
+          onClick={() => (isCurrentTrack && isPlaying) ? pauseNow.mutate() : playNow.mutate()}
+          aria-label={(isCurrentTrack && isPlaying) ? `Pause ${item.title}` : `Play ${item.title}`}
           className={cn(
             'flex h-11 w-11 items-center justify-center rounded-lg',
             'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
@@ -206,7 +213,10 @@ function SortableQueueItem({
             'disabled:opacity-40',
           )}
         >
-          <Play className="h-4 w-4" aria-hidden="true" />
+          {(isCurrentTrack && isPlaying)
+            ? <Pause className="h-4 w-4" aria-hidden="true" />
+            : <Play className="h-4 w-4" aria-hidden="true" />
+          }
         </button>
 
         <MusicItemMenu
@@ -388,6 +398,7 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
                     item={item}
                     index={i}
                     isCurrentTrack={isCurrentTrack}
+                    isPlaying={playbackState?.playbackState === 'PLAYING'}
                     onRemove={handleRemove}
                     onPlayNext={handlePlayNext}
                     speaker={speaker}

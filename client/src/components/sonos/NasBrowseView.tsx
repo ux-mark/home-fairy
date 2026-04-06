@@ -66,6 +66,11 @@ function TrackRow({
     onError: () => toast({ message: 'Failed to play track', type: 'error' }),
   })
 
+  const pauseNow = useMutation({
+    mutationFn: () => api.sonos.pause(speaker!),
+    onError: () => toast({ message: 'Failed to pause', type: 'error' }),
+  })
+
   const addToQueue = useMutation({
     mutationFn: () => api.sonos.addToQueue(speaker!, track.uri),
     onSuccess: () => {
@@ -96,57 +101,32 @@ function TrackRow({
   })
 
   return (
-    <li className={cn('flex items-center gap-3 px-4 py-2.5', isActive && 'bg-fairy-500/10')}>
-      <div className="relative shrink-0">
-        <ArtworkImage src={track.albumArtUri} size={40} fallback="disc" />
-        {isActive && (
-          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black/40">
-            <ActiveTrackIndicator isActive={isActive} isPlaying={isPlaying} />
-          </div>
-        )}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">{track.title || 'Unknown track'}</p>
-        <p className="truncate text-xs text-caption">
-          {[track.artist, track.album].filter(Boolean).join(' · ')}
-        </p>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-1">
-        {/* Play now — universally recognisable icon, icon-only acceptable */}
-        <button
-          type="button"
-          disabled={!speaker || playNow.isPending}
-          onClick={() => playNow.mutate()}
-          aria-label={`Play ${track.title}`}
-          className={cn(
-            'flex h-11 w-11 items-center justify-center rounded-lg',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'disabled:opacity-40',
-          )}
-        >
-          <Play className="h-4 w-4" aria-hidden="true" />
-        </button>
-
-        {/* Three-dot menu */}
-        <MusicItemMenu
-          label={track.title || 'Unknown track'}
-          disabled={!speaker}
-          onPlayNext={() => playNext.mutate()}
-          onAddToQueue={() => addToQueue.mutate()}
-          onAddToFavourites={() => addToFavourites.mutate()}
-          fairylistTrack={{
-            source: 'nas',
-            source_uri: track.uri,
-            title: track.title || 'Unknown track',
-            artist: track.artist,
-            album_art_uri: track.albumArtUri,
-          }}
-        />
-      </div>
-    </li>
+    <MusicListItem
+      artwork={{ src: track.albumArtUri, size: 40, fallback: 'disc' }}
+      title={track.title || 'Unknown track'}
+      subtitle={[track.artist, track.album].filter(Boolean).join(' · ')}
+      onTap={() => {}}
+      onPlay={() => playNow.mutate()}
+      onPause={() => pauseNow.mutate()}
+      playDisabled={!speaker}
+      playPending={playNow.isPending || pauseNow.isPending}
+      disabled={!speaker}
+      isCurrentTrack={isActive}
+      isPlaying={isPlaying}
+      menuProps={{
+        label: track.title || 'Unknown track',
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
+        onAddToFavourites: () => addToFavourites.mutate(),
+        fairylistTrack: {
+          source: 'nas',
+          source_uri: track.uri,
+          title: track.title || 'Unknown track',
+          artist: track.artist,
+          album_art_uri: track.albumArtUri,
+        },
+      }}
+    />
   )
 }
 

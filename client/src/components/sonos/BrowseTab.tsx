@@ -1,10 +1,10 @@
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, Search, X, Music, Radio, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import type { SonosGenreAlbum, SpotifyAlbum, SpotifyArtist, SpotifyPlaylist } from '@/lib/api'
+import { usePersistedState } from '@/hooks/usePersistedState'
 import { NasBrowseView } from './NasBrowseView'
 import { SpotifyBrowseView } from './SpotifyBrowseView'
 import { RadioBrowseView } from './RadioBrowseView'
@@ -153,8 +153,8 @@ interface BrowseTabProps {
 }
 
 export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
-  const [activeSource, setActiveSource] = useState<SourceFilter>('all')
-  const [searchQuery, setSearchQuery] = useState('')
+  const [activeSource, setActiveSource] = usePersistedState<SourceFilter>('browse:activeSource', 'all')
+  const [searchQuery, setSearchQuery] = usePersistedState<string>('browse:searchQuery', '')
   const navigate = useNavigate()
   const { selectedSpeaker } = usePlaybackState()
 
