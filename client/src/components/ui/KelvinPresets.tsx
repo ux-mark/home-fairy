@@ -45,10 +45,8 @@ const KELVIN_PRESETS: KelvinPreset[] = [
   { name: 'Blue Ice',         kelvin: 9000 },
 ]
 
-/** Warm presets (≤4000K) use dark text; cool presets (≥4500K) use lighter text */
-function getTextColor(k: number): string {
-  return k <= 4000 ? '#1a1a1a' : '#f0f4ff'
-}
+/** All kelvin backgrounds are light (warm amber → white → light blue), so dark text throughout */
+const PRESET_TEXT_COLOR = '#1a1a1a'
 
 export default function KelvinPresets({
   kelvin,
@@ -71,7 +69,7 @@ export default function KelvinPresets({
       <div className="grid grid-cols-3 gap-1 p-0.5">
         {visiblePresets.map(preset => {
           const bg = kelvinToHex(preset.kelvin)
-          const textColor = getTextColor(preset.kelvin)
+          const textColor = PRESET_TEXT_COLOR
           const isSelected = kelvin === preset.kelvin
 
           return (

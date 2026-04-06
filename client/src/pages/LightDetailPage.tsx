@@ -88,6 +88,7 @@ export default function LightDetailPage() {
     // in onCommit so the query fetch happens after the drag is fully complete.
     // Invalidating on every mutation success causes the UI to revert to stale
     // server data while a drag is still in progress.
+    onError: () => toast({ message: 'Failed to update light', type: 'error' }),
   })
 
   // ── Local colour state ────────────────────────────────────────────────────
