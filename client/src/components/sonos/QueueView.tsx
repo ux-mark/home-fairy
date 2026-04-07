@@ -1,5 +1,5 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
 import {
   DndContext,
   closestCenter,
@@ -14,26 +14,22 @@ import {
   arrayMove,
   SortableContext,
   sortableKeyboardCoordinates,
-  useSortable,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import {
-  AlertTriangle,
-  GripVertical,
-  Music2,
-  Play,
-} from 'lucide-react'
+import { AlertTriangle, ArrowUp } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
 import { useQueueSync } from '@/hooks/useQueueSync'
+import { useQueueSelection } from '@/hooks/useQueueSelection'
+import { useUndoableQueueAction } from '@/hooks/useUndoableQueueAction'
 import { useToast } from '@/hooks/useToast'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { SortableOverlay } from '@/components/ui/SortableOverlay'
-import { ArtworkImage } from './ArtworkImage'
+import { QueueItemRow } from './QueueItemRow'
+import { QueueEmptyState } from './QueueEmptyState'
+import { QueueBulkActionBar } from './QueueBulkActionBar'
+import { QueueUpNextPreview } from './QueueUpNextPreview'
 import { QueueHeader } from './QueueHeader'
-import { MusicItemMenu } from './MusicItemMenu'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -42,162 +38,7 @@ interface QueueViewProps {
   open: boolean
   onClose: () => void
   currentTrackUri: string | null
-  /** Current playback state — used for QueueHeader mode buttons */
   playbackState?: SonosPlaybackState | null
-}
-
-// ── Sortable queue item ───────────────────────────────────────────────────────
-
-interface SortableQueueItemProps {
-  item: SonosQueueItem
-  index: number
-  isCurrentTrack: boolean
-  onRemove: (index: number) => void
-  speaker: string
-}
-
-function SortableQueueItem({
-  item,
-  index,
-  isCurrentTrack,
-  onRemove,
-  speaker,
-}: SortableQueueItemProps) {
-  const navigate = useNavigate()
-  const { toast } = useToast()
-
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: item.uri + ':' + index })
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  }
-
-  const source = item.uri?.startsWith('spotify:') ? 'spotify' : 'nas'
-
-  const playNow = useMutation({
-    mutationFn: () => api.sonos.seekToTrack(speaker, index + 1),
-    onSuccess: () => toast({ message: `Playing "${item.title}"` }),
-    onError: () => toast({ message: 'Failed to play', type: 'error' }),
-  })
-
-  const addToFavourites = useMutation({
-    mutationFn: () =>
-      api.favourites.add({
-        source,
-        source_uri: item.uri,
-        title: item.title,
-        album_art_uri: item.albumArtUri ?? undefined,
-      }),
-    onSuccess: () => toast({ message: `Added "${item.title}" to favourites` }),
-    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
-  })
-
-  function handleTitleClick() {
-    if (item.uri) {
-      navigate(`/sonos/track?uri=${encodeURIComponent(item.uri)}&speaker=${encodeURIComponent(speaker)}`)
-    }
-  }
-
-  return (
-    <li
-      ref={setNodeRef}
-      style={style}
-      className={[
-        'flex items-center gap-3 px-4 py-2.5 select-none transition-opacity',
-        isCurrentTrack ? 'border-l-2 border-fairy-500 pl-[14px]' : '',
-        isDragging ? 'opacity-80 z-10 relative' : '',
-      ]
-        .filter(Boolean)
-        .join(' ')}
-    >
-      {/* Drag handle */}
-      <button
-        {...attributes}
-        {...listeners}
-        className="flex h-11 w-6 shrink-0 cursor-grab items-center justify-center rounded text-slate-500 hover:text-slate-400 active:cursor-grabbing focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-        style={{ touchAction: 'none' }}
-        aria-label={`Drag to reorder ${item.title}`}
-        tabIndex={0}
-      >
-        <GripVertical className="h-4 w-4" aria-hidden="true" />
-      </button>
-
-      {/* Album art */}
-      <ArtworkImage src={item.albumArtUri} size={40} fallback="disc" />
-
-      {/* Track info — tappable */}
-      <button
-        onClick={handleTitleClick}
-        className="min-w-0 flex-1 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded"
-        aria-label={`View details for ${item.title}`}
-      >
-        <div className="flex items-center gap-2">
-          <p
-            className={[
-              'truncate text-sm font-medium leading-tight',
-              isCurrentTrack ? 'text-fairy-400' : 'text-heading',
-            ].join(' ')}
-          >
-            {item.title || 'Unknown track'}
-          </p>
-          {isCurrentTrack && (
-            <span className="shrink-0 rounded-full bg-fairy-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-fairy-400">
-              Now playing
-            </span>
-          )}
-        </div>
-        <p className="truncate text-xs text-caption">
-          {[item.artist, item.album].filter(Boolean).join(' · ')}
-        </p>
-      </button>
-
-      {/* Actions */}
-      <div className="flex shrink-0 items-center gap-1">
-        {/* Play now — icon-only acceptable for universally-recognised play symbol */}
-        <button
-          type="button"
-          disabled={playNow.isPending}
-          onClick={() => playNow.mutate()}
-          aria-label={`Play ${item.title}`}
-          className={cn(
-            'flex h-11 w-11 items-center justify-center rounded-lg',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'disabled:opacity-40',
-          )}
-        >
-          <Play className="h-4 w-4" aria-hidden="true" />
-        </button>
-
-        <MusicItemMenu
-          label={item.title}
-          onAddToFavourites={() => addToFavourites.mutate()}
-          onRemove={() => onRemove(index)}
-          removeLabel="Remove from queue"
-          fairylistTrack={{
-            source,
-            source_uri: item.uri,
-            title: item.title,
-            artist: item.artist,
-            album_art_uri: item.albumArtUri ?? undefined,
-          }}
-          spotifyTrack={
-            item.uri?.startsWith('spotify:')
-              ? { trackUri: item.uri, trackName: item.title }
-              : undefined
-          }
-        />
-      </div>
-    </li>
-  )
 }
 
 // ── QueueView ─────────────────────────────────────────────────────────────────
@@ -205,6 +46,8 @@ function SortableQueueItem({
 export function QueueView({ speaker, open, onClose, currentTrackUri, playbackState }: QueueViewProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
+  const panelRef = useRef<HTMLDivElement>(null)
+  const cancelBtnRef = useRef<HTMLButtonElement | null>(null)
 
   const queueKey = ['sonos', 'queue', speaker]
 
@@ -213,11 +56,79 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
     enabled: open && !!speaker,
   })
 
+  const selection = useQueueSelection()
+  const undo = useUndoableQueueAction()
+
+  // ── Swipe state ───────────────────────────────────────────────────────────
+
+  const [swipedIndex, setSwipedIndex] = useState<number | null>(null)
+
+  // ── Jump to now-playing ───────────────────────────────────────────────────
+
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const nowPlayingRowRef = useRef<HTMLLIElement | null>(null)
+  const [showJumpPill, setShowJumpPill] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    const row = nowPlayingRowRef.current
+    const scrollEl = scrollAreaRef.current
+    if (!row || !scrollEl) return
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setShowJumpPill(!entry.isIntersecting),
+      { root: scrollEl, threshold: 0.1 },
+    )
+    observer.observe(row)
+    return () => observer.disconnect()
+  }, [queue, open])
+
+  function handleJumpToNowPlaying() {
+    nowPlayingRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setTimeout(() => nowPlayingRowRef.current?.focus(), 300)
+  }
+
+  // ── Focus trap + keyboard ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => cancelBtnRef.current?.focus(), 50)
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    const el = panelRef.current
+    if (!el) return
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') { onClose(); return }
+      if (e.key !== 'Tab') return
+      const focusable = el!.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      )
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last.focus() }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first.focus() }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [open, onClose])
+
+  // ── DnD sensors ──────────────────────────────────────────────────────────
+
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
+
+  // ── Mutations ─────────────────────────────────────────────────────────────
 
   const reorderMutation = useMutation({
     mutationFn: ({ from, to }: { from: number; to: number }) =>
@@ -231,13 +142,95 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
 
   const removeMutation = useMutation({
     mutationFn: (index: number) => api.sonos.removeFromQueue(speaker, index),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: queueKey }),
     onError: () => {
       queryClient.invalidateQueries({ queryKey: queueKey })
       toast({ message: 'Could not remove track', type: 'error' })
     },
   })
 
+  const bulkFavouritesMutation = useMutation({
+    mutationFn: async (indices: number[]) => {
+      if (!queue) return
+      const tracks = indices.map(i => queue[i]).filter(Boolean)
+      await Promise.all(
+        tracks.map(t =>
+          api.favourites.add({
+            source: t.uri?.startsWith('spotify:') ? 'spotify' : 'nas',
+            source_uri: t.uri,
+            title: t.title,
+            album_art_uri: t.albumArtUri ?? undefined,
+          }),
+        ),
+      )
+    },
+    onSuccess: () => {
+      toast({ message: `Added ${selection.selectedCount} tracks to favourites` })
+      selection.exitSelectMode()
+    },
+    onError: () => toast({ message: 'Could not add to favourites', type: 'error' }),
+  })
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
+  function handleRemove(index: number) {
+    if (!queue) return
+    const removedItem = queue[index]
+    const snapshot = [...queue]
+
+    queryClient.setQueryData<SonosQueueItem[]>(
+      queueKey,
+      queue.filter((_, i) => i !== index),
+    )
+
+    undo.scheduleAction(
+      `Removed "${removedItem.title}"`,
+      () => removeMutation.mutate(index),
+      () => queryClient.setQueryData<SonosQueueItem[]>(queueKey, snapshot),
+    )
+  }
+
+  function handleBulkRemove() {
+    if (!queue) return
+    const indices = Array.from(selection.selectedIndices).sort((a, b) => b - a)
+    const snapshot = [...queue]
+    const removedCount = indices.length
+    const selectedSet = new Set(selection.selectedIndices)
+
+    queryClient.setQueryData<SonosQueueItem[]>(
+      queueKey,
+      queue.filter((_, i) => !selectedSet.has(i)),
+    )
+    selection.exitSelectMode()
+
+    undo.scheduleAction(
+      `Removed ${removedCount} tracks`,
+      async () => {
+        for (const idx of indices) {
+          await removeMutation.mutateAsync(idx)
+        }
+      },
+      () => queryClient.setQueryData<SonosQueueItem[]>(queueKey, snapshot),
+    )
+  }
+
+  function handleBulkPlayNext() {
+    if (!queue) return
+    const indices = Array.from(selection.selectedIndices).sort()
+    const tracks = indices.map(i => queue[i]).filter(Boolean)
+
+    Promise.all(tracks.map(t => api.sonos.playNext(speaker, t.uri)))
+      .then(() => {
+        toast({ message: `${tracks.length} tracks queued next` })
+        queryClient.invalidateQueries({ queryKey: queueKey })
+      })
+      .catch(() => toast({ message: 'Could not queue tracks', type: 'error' }))
+
+    selection.exitSelectMode()
+  }
+
+  function handleDragStart() {
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(8)
+  }
 
   function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
@@ -248,123 +241,260 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
     const newIndex = items.findIndex((_, i) => over.id === items[i].uri + ':' + i)
     if (oldIndex === -1 || newIndex === -1) return
 
-    // Optimistic update
+    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(8)
+
     queryClient.setQueryData<SonosQueueItem[]>(queueKey, arrayMove(items, oldIndex, newIndex))
     reorderMutation.mutate({ from: oldIndex, to: newIndex })
   }
 
-  function handleRemove(index: number) {
-    if (!queue) return
-    // Optimistic update
-    queryClient.setQueryData<SonosQueueItem[]>(
-      queueKey,
-      queue.filter((_, i) => i !== index),
-    )
-    removeMutation.mutate(index)
-  }
+  // ── Derived state ─────────────────────────────────────────────────────────
 
-  // ── Content ───────────────────────────────────────────────────────────────
+  const currentIndex = queue
+    ? currentTrackUri
+      ? queue.findIndex(item => item.uri === currentTrackUri)
+      : 0
+    : -1
 
-  function renderContent() {
-    if (isLoading) {
-      return (
-        <div className="flex flex-col gap-2 px-4 py-3" role="status" aria-label="Loading queue">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="flex items-center gap-3 py-1">
-              <Skeleton className="h-4 w-4 rounded" />
-              <Skeleton className="h-10 w-10 shrink-0 rounded-md" />
-              <div className="flex-1 space-y-1.5">
-                <Skeleton className="h-3.5 w-3/4 rounded" />
-                <Skeleton className="h-3 w-1/2 rounded" />
-              </div>
-            </div>
-          ))}
-        </div>
-      )
-    }
+  const nowPlayingRefCallback = useCallback((el: HTMLLIElement | null) => {
+    nowPlayingRowRef.current = el
+  }, [])
 
-    if (isError) {
-      return (
-        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center px-4">
-          <AlertTriangle className="h-10 w-10 text-red-400" aria-hidden="true" />
-          <div>
-            <p className="text-sm font-semibold text-heading">Could not load queue</p>
-            <p className="mt-1 text-xs text-caption">Check the speaker is reachable.</p>
-          </div>
-          <button
-            onClick={() => refetch()}
-            className="rounded-lg border border-[var(--border-primary)] px-4 py-2 text-sm text-slate-300 hover:text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-          >
-            Retry
-          </button>
-        </div>
-      )
-    }
+  const title = queue && queue.length > 0 ? `Queue (${queue.length})` : 'Queue'
 
-    if (!queue || queue.length === 0) {
-      return (
-        <div className="flex flex-col items-center justify-center gap-3 py-16 text-center px-4">
-          <Music2 className="h-10 w-10 text-slate-500" aria-hidden="true" />
-          <div>
-            <p className="text-sm font-semibold text-heading">Queue is empty</p>
-            <p className="mt-1 text-xs text-caption">
-              Start playing music to build a queue.
-            </p>
-          </div>
-        </div>
-      )
-    }
-
-    const sortableIds = queue.map((item, i) => item.uri + ':' + i)
-
-    return (
-      <>
-        {/* Queue header — shuffle, repeat all, clear */}
-        <QueueHeader
-          speaker={speaker}
-          currentPlayMode={playbackState?.currentPlayMode}
-          onModeChange={() => {}}
-        />
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragEnd={handleDragEnd}
-        >
-          <SortableContext items={sortableIds} strategy={verticalListSortingStrategy}>
-            <ul
-              className="divide-y divide-[var(--border-secondary)]"
-              aria-label="Queue — drag to reorder"
-            >
-              {queue.map((item, i) => {
-                const isCurrentTrack =
-                  currentTrackUri ? item.uri === currentTrackUri : i === 0
-                return (
-                  <SortableQueueItem
-                    key={item.uri + ':' + i}
-                    item={item}
-                    index={i}
-                    isCurrentTrack={isCurrentTrack}
-                    onRemove={handleRemove}
-                    speaker={speaker}
-                  />
-                )
-              })}
-            </ul>
-          </SortableContext>
-        </DndContext>
-      </>
-    )
-  }
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <SortableOverlay
-      open={open}
-      onClose={onClose}
-      onDone={onClose}
-      isSaving={false}
-      title="Queue"
-    >
-      {renderContent()}
-    </SortableOverlay>
+    <>
+      {/* Backdrop */}
+      <div
+        className={cn(
+          'fixed inset-0 z-40 bg-black/60 transition-opacity duration-300',
+          open ? 'opacity-100' : 'opacity-0 pointer-events-none',
+        )}
+        aria-hidden="true"
+        onClick={onClose}
+      />
+
+      {/* Slide-up panel */}
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={cn(
+          'fixed inset-x-0 bottom-0 z-50 flex flex-col transition-transform duration-300 ease-out',
+          'max-h-[calc(100dvh-4rem)]',
+          open ? 'translate-y-0' : 'translate-y-full',
+        )}
+        style={{ borderRadius: '1rem 1rem 0 0', background: 'var(--bg-secondary)' }}
+      >
+        {/* Header bar */}
+        <div
+          className="flex shrink-0 items-center justify-between border-b px-4 py-3"
+          style={{ borderColor: 'var(--border-secondary)' }}
+        >
+          <button
+            ref={cancelBtnRef}
+            onClick={onClose}
+            className="min-h-[44px] min-w-[44px] text-sm text-slate-400 hover:text-slate-300 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          >
+            Close
+          </button>
+
+          <h2 className="text-sm font-semibold text-heading">{title}</h2>
+
+          <button
+            onClick={onClose}
+            className="min-h-[44px] min-w-[44px] text-sm font-semibold text-fairy-400 hover:text-fairy-300 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+          >
+            Done
+          </button>
+        </div>
+
+        {/* Scrollable content */}
+        <div ref={scrollAreaRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto relative">
+          {isLoading && (
+            <div className="flex flex-col gap-2 px-4 py-3" role="status" aria-label="Loading queue">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-3 py-1">
+                  <Skeleton className="h-4 w-4 rounded" />
+                  <Skeleton className="h-10 w-10 shrink-0 rounded-md" />
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-3.5 w-3/4 rounded" />
+                    <Skeleton className="h-3 w-1/2 rounded" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {isError && (
+            <div className="flex flex-col items-center justify-center gap-4 py-16 text-center px-4">
+              <AlertTriangle className="h-10 w-10 text-red-400" aria-hidden="true" />
+              <div>
+                <p className="text-sm font-semibold text-heading">Could not load queue</p>
+                <p className="mt-1 text-xs text-caption">Check the speaker is reachable.</p>
+              </div>
+              <button
+                onClick={() => refetch()}
+                className="rounded-lg border border-[var(--border-primary)] px-4 py-2 text-sm text-slate-300 hover:text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
+          {!isLoading && !isError && (!queue || queue.length === 0) && (
+            <QueueEmptyState speaker={speaker} />
+          )}
+
+          {!isLoading && !isError && queue && queue.length > 0 && (
+            <>
+              {/* Up next preview strip */}
+              {currentIndex >= 0 && (
+                <QueueUpNextPreview speaker={speaker} queue={queue} currentIndex={currentIndex} />
+              )}
+
+              {/* Queue controls header */}
+              <QueueHeader
+                speaker={speaker}
+                currentPlayMode={playbackState?.currentPlayMode}
+                onModeChange={() => {}}
+                queue={queue}
+                isSelecting={selection.isSelecting}
+                onToggleSelect={
+                  selection.isSelecting ? selection.exitSelectMode : () => selection.enterSelectMode()
+                }
+              />
+
+              {/* Aria-live drag announcement */}
+              <div aria-live="polite" aria-atomic="true" className="sr-only" id="queue-dnd-announce" />
+
+              {/* Sortable track list */}
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                accessibility={{
+                  announcements: {
+                    onDragStart({ active }) {
+                      const idx = String(active.id).split(':').pop()
+                      return `Picked up track at position ${idx}`
+                    },
+                    onDragOver({ over }) {
+                      const idx = String(over?.id ?? '').split(':').pop()
+                      return `Moving to position ${idx}`
+                    },
+                    onDragEnd({ over }) {
+                      const idx = String(over?.id ?? '').split(':').pop()
+                      return `Dropped at position ${idx}`
+                    },
+                    onDragCancel() {
+                      return 'Drag cancelled'
+                    },
+                  },
+                }}
+              >
+                <SortableContext
+                  items={queue.map((item, i) => item.uri + ':' + i)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <ul
+                    className="divide-y divide-[var(--border-secondary)]"
+                    aria-label="Queue — drag to reorder"
+                  >
+                    {queue.map((item, i) => {
+                      const isCurrentTrack = currentTrackUri
+                        ? item.uri === currentTrackUri
+                        : i === 0
+                      return (
+                        <QueueItemRow
+                          key={item.uri + ':' + i}
+                          item={item}
+                          index={i}
+                          isCurrentTrack={isCurrentTrack}
+                          speaker={speaker}
+                          dndId={item.uri + ':' + i}
+                          nowPlayingRef={isCurrentTrack ? nowPlayingRefCallback : undefined}
+                          onRemove={handleRemove}
+                          swipedIndex={swipedIndex}
+                          onSwipeOpen={setSwipedIndex}
+                          isSelecting={selection.isSelecting}
+                          isSelected={selection.isSelected(i)}
+                          onSelect={selection.toggleItem}
+                          onEnterSelectMode={selection.enterSelectMode}
+                        />
+                      )
+                    })}
+                  </ul>
+                </SortableContext>
+              </DndContext>
+
+              {/* Bulk action bar — sticky to bottom of scroll area in select mode */}
+              {selection.isSelecting && (
+                <QueueBulkActionBar
+                  selectedCount={selection.selectedCount}
+                  totalCount={queue.length}
+                  onPlayNext={handleBulkPlayNext}
+                  onRemove={handleBulkRemove}
+                  onAddToFavourites={() =>
+                    bulkFavouritesMutation.mutate(Array.from(selection.selectedIndices))
+                  }
+                  onSelectAll={() =>
+                    selection.selectedCount === queue.length
+                      ? selection.clearSelection()
+                      : selection.selectAll(queue.length)
+                  }
+                  onCancel={selection.exitSelectMode}
+                  isRemoving={removeMutation.isPending}
+                />
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Undo snackbar — fixed to bottom of panel, above scroll area */}
+        {undo.pendingAction && (
+          <div
+            className={cn(
+              'absolute bottom-16 left-1/2 -translate-x-1/2 z-30',
+              'flex items-center gap-3 rounded-full px-4 py-2.5 shadow-lg',
+              'bg-slate-800 border border-slate-700',
+            )}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="text-sm text-slate-200 whitespace-nowrap">
+              {undo.pendingAction.label}
+            </span>
+            <button
+              onClick={undo.triggerUndo}
+              className="text-sm font-semibold text-fairy-400 hover:text-fairy-300 transition-colors focus-visible:outline-2 focus-visible:outline-fairy-500 rounded"
+            >
+              Undo
+            </button>
+          </div>
+        )}
+
+        {/* Jump to now-playing pill */}
+        {showJumpPill && queue && queue.length > 0 && !selection.isSelecting && (
+          <button
+            onClick={handleJumpToNowPlaying}
+            className={cn(
+              'absolute bottom-4 right-4 z-30',
+              'flex items-center gap-1.5 rounded-full px-3 py-2 shadow-lg',
+              'bg-fairy-500/90 text-white text-xs font-semibold',
+              'hover:bg-fairy-500 transition-colors',
+              'focus-visible:outline-2 focus-visible:outline-white',
+            )}
+            aria-label="Jump to now playing track"
+          >
+            <ArrowUp className="h-3 w-3" aria-hidden="true" />
+            Now playing
+          </button>
+        )}
+      </div>
+    </>
   )
 }

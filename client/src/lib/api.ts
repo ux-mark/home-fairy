@@ -820,6 +820,8 @@ export interface SonosQueueItem {
   album: string
   albumArtUri: string
   uri: string
+  /** Track duration in seconds — may be absent if not returned by Sonos API */
+  duration?: number
 }
 
 export interface SonosSpeakerMapping {
@@ -1770,6 +1772,11 @@ export const api = {
     seekToTrack: (speaker: string, trackNumber: number) =>
       fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/seek/${trackNumber}`, {
         method: 'POST',
+      }),
+    saveQueueAsFairylist: (speaker: string, fairylistId: number) =>
+      fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/save-as-fairylist`, {
+        method: 'POST',
+        body: JSON.stringify({ fairylistId }),
       }),
     playUri: (speaker: string, uri: string) =>
       fetchApi<{ speaker: string; uri: string }>(

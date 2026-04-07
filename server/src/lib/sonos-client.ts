@@ -109,6 +109,8 @@ export interface SonosQueueItem {
   album: string
   albumArtUri: string
   uri: string
+  /** Duration in seconds — present when node-sonos-http-api returns it */
+  duration?: number
 }
 
 export interface SonosLibraryArtist {

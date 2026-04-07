@@ -809,6 +809,60 @@ router.delete('/queue/:speaker/clear', async (req: Request, res: Response) => {
   }
 })
 
+// POST /queue/:speaker/save-as-fairylist — batch-add all queue tracks to a fairylist
+const saveAsFairylistSchema = z.object({ fairylistId: z.number().int().positive() })
+
+router.post('/queue/:speaker/save-as-fairylist', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const parsed = saveAsFairylistSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
+      return
+    }
+    const { fairylistId } = parsed.data
+
+    // Verify fairylist exists
+    const fairylist = db.prepare('SELECT id FROM fairylists WHERE id = ?').get(fairylistId)
+    if (!fairylist) {
+      res.status(404).json({ error: `Fairylist not found: ${fairylistId}` })
+      return
+    }
+
+    // Fetch current queue
+    const queue = await sonosClient.getQueue(speaker)
+    if (!queue || queue.length === 0) {
+      res.status(400).json({ error: 'Queue is empty' })
+      return
+    }
+
+    // Get current max sort_order
+    const maxRow = db
+      .prepare('SELECT MAX(sort_order) as maxOrder FROM fairylist_items WHERE fairylist_id = ?')
+      .get(fairylistId) as { maxOrder: number | null }
+    let sortOrder = (maxRow.maxOrder ?? -1) + 1
+
+    const insertItem = db.prepare(`
+      INSERT OR IGNORE INTO fairylist_items (fairylist_id, source, source_uri, title, artist, album_art_uri, sort_order)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `)
+
+    const insertMany = db.transaction((tracks: typeof queue) => {
+      for (const track of tracks) {
+        const source = track.uri?.startsWith('spotify:') ? 'spotify' : 'nas'
+        insertItem.run(fairylistId, source, track.uri, track.title, track.artist ?? null, track.albumArtUri ?? null, sortOrder++)
+      }
+    })
+
+    insertMany(queue)
+
+    res.json({ added: queue.length, fairylistId })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Could not save queue' : msg })
+  }
+})
+
 // ── Genre browsing (via Sonos UPnP SOAP) ─────────────────────────────────────
 
 // GET /library/genres — list all genres from the Sonos music library index
