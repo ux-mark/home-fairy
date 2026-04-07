@@ -1,6 +1,7 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type SonosNowPlayingEntry } from '@/lib/api'
+import { sortSpeakersByActivity, updateSpeakerActivity } from '@/lib/sortSpeakersByActivity'
 import { ActionPopover } from '@/components/ui/ActionPopover'
 import { SpeakerCard } from './SpeakerCard'
 
@@ -39,17 +40,24 @@ export function HomeSpeakerPopover({
     retry: false,
   })
 
-  // Group entries: coordinators lead their groups; solo speakers are their own group
+  // Update activity timestamps whenever now-playing refreshes
+  useEffect(() => {
+    if (nowPlaying.length > 0) updateSpeakerActivity(nowPlaying)
+  }, [nowPlaying])
+
+  // Group entries: coordinators lead their groups; solo speakers are their own group.
+  // Active/recently-active speakers sort to the top via sortSpeakersByActivity.
   const renderItems = useMemo(() => {
     if (nowPlaying.length === 0) return []
 
+    const sorted = sortSpeakersByActivity(nowPlaying)
     const placed = new Set<string>()
     const items: Array<
       | { type: 'solo'; entry: SonosNowPlayingEntry }
       | { type: 'group'; coordinator: SonosNowPlayingEntry; members: SonosNowPlayingEntry[] }
     > = []
 
-    for (const entry of nowPlaying) {
+    for (const entry of sorted) {
       if (placed.has(entry.speakerName)) continue
       const grp = entry.group
       if (grp && grp.members.length > 1 && grp.isCoordinator) {

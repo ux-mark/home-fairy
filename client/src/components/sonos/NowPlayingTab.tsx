@@ -5,6 +5,7 @@ import { AlertTriangle, Headphones } from 'lucide-react'
 import { api } from '@/lib/api'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { SpeakerCard } from './SpeakerCard'
+import { updateSpeakerActivity, sortSpeakersByActivity } from '@/lib/sortSpeakersByActivity'
 
 /**
  * Multi-speaker Now Playing tab.
@@ -38,6 +39,11 @@ export function NowPlayingTab({ focusSpeaker }: { focusSpeaker?: string }) {
     staleTime: 4_000,
     retry: 1,
   })
+
+  // Update activity timestamps whenever now-playing refreshes
+  useEffect(() => {
+    if (nowPlaying && nowPlaying.length > 0) updateSpeakerActivity(nowPlaying)
+  }, [nowPlaying])
 
   // Loading state — show 2 skeleton cards
   if (isLoading) {
@@ -107,18 +113,14 @@ export function NowPlayingTab({ focusSpeaker }: { focusSpeaker?: string }) {
     )
   }
 
-  // Compute groups and solo speakers
-  const coordinators = nowPlaying.filter(
-    e => e.group?.isCoordinator && (e.group.members.length > 1),
-  )
-  const groupedNonCoordinatorNames = new Set(
+  // Build a unified ordered list: sort all entries by activity, then render
+  // coordinators as group cards (absorbing their members) and solo speakers
+  // as solo cards. Non-coordinator group members are skipped (absorbed).
+  const sorted = sortSpeakersByActivity(nowPlaying)
+  const absorbedMembers = new Set(
     nowPlaying
       .filter(e => e.group && !e.group.isCoordinator)
       .map(e => e.speakerName),
-  )
-  const coordinatorNames = new Set(coordinators.map(e => e.speakerName))
-  const soloSpeakers = nowPlaying.filter(
-    e => !coordinatorNames.has(e.speakerName) && !groupedNonCoordinatorNames.has(e.speakerName),
   )
 
   function handleRefresh() {
@@ -127,20 +129,40 @@ export function NowPlayingTab({ focusSpeaker }: { focusSpeaker?: string }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Group cards */}
-      {coordinators.map(coordinator => {
-        const memberSpeakerNames = coordinator.group?.members.filter(
-          m => m !== coordinator.speakerName,
-        ) ?? []
-        const memberEntries = nowPlaying.filter(e =>
-          memberSpeakerNames.includes(e.speakerName),
-        )
+      {sorted.map(entry => {
+        // Skip non-coordinator group members — absorbed into their coordinator card
+        if (absorbedMembers.has(entry.speakerName)) return null
+
+        const isGroupCoordinator = entry.group?.isCoordinator && (entry.group.members.length > 1)
+
+        if (isGroupCoordinator) {
+          const memberSpeakerNames = entry.group!.members.filter(m => m !== entry.speakerName)
+          const memberEntries = nowPlaying.filter(e => memberSpeakerNames.includes(e.speakerName))
+          return (
+            <SpeakerCard
+              key={entry.speakerName}
+              type="group"
+              coordinator={entry}
+              members={memberEntries}
+              onRefresh={handleRefresh}
+              allSpeakers={nowPlaying}
+              focusSpeaker={focusSpeaker}
+              showVolume={true}
+              showQueue={true}
+              showFullQueue={true}
+            />
+          )
+        }
+
         return (
           <SpeakerCard
-            key={coordinator.speakerName}
-            type="group"
-            coordinator={coordinator}
-            members={memberEntries}
+            key={entry.speakerName}
+            type="solo"
+            roomName={entry.roomName}
+            speakerName={entry.speakerName}
+            state={entry.state}
+            error={entry.error}
+            group={entry.group}
             onRefresh={handleRefresh}
             allSpeakers={nowPlaying}
             focusSpeaker={focusSpeaker}
@@ -150,25 +172,6 @@ export function NowPlayingTab({ focusSpeaker }: { focusSpeaker?: string }) {
           />
         )
       })}
-
-      {/* Solo speaker cards */}
-      {soloSpeakers.map(entry => (
-        <SpeakerCard
-          key={entry.speakerName}
-          type="solo"
-          roomName={entry.roomName}
-          speakerName={entry.speakerName}
-          state={entry.state}
-          error={entry.error}
-          group={entry.group}
-          onRefresh={handleRefresh}
-          allSpeakers={nowPlaying}
-          focusSpeaker={focusSpeaker}
-          showVolume={true}
-          showQueue={true}
-          showFullQueue={true}
-        />
-      ))}
     </div>
   )
 }
