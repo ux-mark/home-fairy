@@ -12,9 +12,11 @@ import {
   Activity,
   Clock,
   AlertTriangle,
+  Play,
+  Square,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import type { Scene } from '@/lib/api'
+import type { Scene, Room } from '@/lib/api'
 import { LucideIcon } from '@/components/ui/LucideIcon'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
@@ -61,22 +63,27 @@ interface SceneRowProps {
   isDefault: boolean
   showRoomBadges?: boolean
   roomIconMap?: Record<string, string | null>
+  onActivate: (sceneName: string) => void
+  onDeactivate: (sceneName: string) => void
+  isPending?: boolean
 }
 
-function SceneRow({ scene, isDefault, isActive, showRoomBadges, roomIconMap }: SceneRowProps) {
+function SceneRow({ scene, isDefault, isActive, showRoomBadges, roomIconMap, onActivate, onDeactivate, isPending }: SceneRowProps) {
   const season = isSceneInSeason(scene)
   const roomList = Array.isArray(scene.rooms) ? scene.rooms : []
 
   return (
-    <Link
-      to={`/scenes/${encodeURIComponent(scene.name)}`}
+    <div
       className={cn(
-        'group flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2.5 transition-colors',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+        'group flex min-h-[44px] items-center gap-2 rounded-lg pl-3 pr-2 py-2 transition-colors',
         'hover:bg-white/5',
         season.hasSeason && !season.inSeason && 'opacity-50',
       )}
     >
+      <Link
+        to={`/scenes/${encodeURIComponent(scene.name)}`}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+      >
       <SceneIcon icon={scene.icon} />
 
       <div className="min-w-0 flex-1">
@@ -127,7 +134,35 @@ function SceneRow({ scene, isDefault, isActive, showRoomBadges, roomIconMap }: S
         className="text-caption h-4 w-4 flex-shrink-0 transition-colors group-hover:text-[var(--text-secondary)]"
         aria-hidden="true"
       />
-    </Link>
+      </Link>
+      <button
+        type="button"
+        onClick={() => (isActive ? onDeactivate(scene.name) : onActivate(scene.name))}
+        disabled={isPending}
+        aria-label={isActive ? `Turn off ${scene.name}` : `Turn on ${scene.name}`}
+        aria-pressed={isActive}
+        className={cn(
+          'flex min-h-[36px] flex-shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'disabled:opacity-50',
+          isActive
+            ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+            : 'border-fairy-500/40 bg-fairy-500/10 text-fairy-300 hover:bg-fairy-500/20',
+        )}
+      >
+        {isActive ? (
+          <>
+            <Square className="h-3.5 w-3.5" aria-hidden="true" />
+            Turn off
+          </>
+        ) : (
+          <>
+            <Play className="h-3.5 w-3.5" aria-hidden="true" />
+            Turn on
+          </>
+        )}
+      </button>
+    </div>
   )
 }
 
@@ -148,6 +183,9 @@ interface RoomAccordionProps {
   isOpen: boolean
   onToggle: () => void
   compact?: boolean
+  onActivate: (sceneName: string) => void
+  onDeactivate: (sceneName: string) => void
+  pendingSceneNames: Set<string>
 }
 
 function RoomAccordion({
@@ -163,6 +201,9 @@ function RoomAccordion({
   isOpen,
   onToggle,
   compact,
+  onActivate,
+  onDeactivate,
+  pendingSceneNames,
 }: RoomAccordionProps) {
   const [activeMode, setActiveMode] = useState<string>('All')
 
@@ -258,6 +299,9 @@ function RoomAccordion({
               isActive={activeSceneNames.has(scene.name)}
               isDefault={isDefault}
               roomIconMap={roomIconMap}
+              onActivate={onActivate}
+              onDeactivate={onDeactivate}
+              isPending={pendingSceneNames.has(scene.name)}
             />
           )
         })
@@ -283,6 +327,9 @@ function RoomAccordionContent({
   systemModes,
   modeIcons,
   roomIconMap,
+  onActivate,
+  onDeactivate,
+  pendingSceneNames,
 }: Omit<RoomAccordionProps, 'roomIcon' | 'isOpen' | 'onToggle'>) {
   const [activeMode, setActiveMode] = useState<string>('All')
 
@@ -345,6 +392,9 @@ function RoomAccordionContent({
               isActive={activeSceneNames.has(scene.name)}
               isDefault={isDefault}
               roomIconMap={roomIconMap}
+              onActivate={onActivate}
+              onDeactivate={onDeactivate}
+              isPending={pendingSceneNames.has(scene.name)}
             />
           )
         })
@@ -366,22 +416,27 @@ interface FlatSceneRowProps {
   isActive: boolean
   label?: React.ReactNode
   roomIconMap?: Record<string, string | null>
+  onActivate: (sceneName: string) => void
+  onDeactivate: (sceneName: string) => void
+  isPending?: boolean
 }
 
-function FlatSceneRow({ scene, isActive, label, roomIconMap }: FlatSceneRowProps) {
+function FlatSceneRow({ scene, isActive, label, roomIconMap, onActivate, onDeactivate, isPending }: FlatSceneRowProps) {
   const season = isSceneInSeason(scene)
   const roomList = Array.isArray(scene.rooms) ? scene.rooms : []
 
   return (
-    <Link
-      to={`/scenes/${encodeURIComponent(scene.name)}`}
+    <div
       className={cn(
-        'group flex min-h-[44px] items-center gap-3 rounded-lg px-3 py-2.5 transition-colors',
-        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+        'group flex min-h-[44px] items-center gap-2 rounded-lg pl-3 pr-2 py-2 transition-colors',
         'hover:bg-white/5',
         season.hasSeason && !season.inSeason && 'opacity-50',
       )}
     >
+      <Link
+        to={`/scenes/${encodeURIComponent(scene.name)}`}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+      >
       <SceneIcon icon={scene.icon} />
 
       <div className="min-w-0 flex-1">
@@ -416,7 +471,35 @@ function FlatSceneRow({ scene, isActive, label, roomIconMap }: FlatSceneRowProps
         className="text-caption h-4 w-4 flex-shrink-0 transition-colors group-hover:text-[var(--text-secondary)]"
         aria-hidden="true"
       />
-    </Link>
+      </Link>
+      <button
+        type="button"
+        onClick={() => (isActive ? onDeactivate(scene.name) : onActivate(scene.name))}
+        disabled={isPending}
+        aria-label={isActive ? `Turn off ${scene.name}` : `Turn on ${scene.name}`}
+        aria-pressed={isActive}
+        className={cn(
+          'flex min-h-[36px] flex-shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'disabled:opacity-50',
+          isActive
+            ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
+            : 'border-fairy-500/40 bg-fairy-500/10 text-fairy-300 hover:bg-fairy-500/20',
+        )}
+      >
+        {isActive ? (
+          <>
+            <Square className="h-3.5 w-3.5" aria-hidden="true" />
+            Turn off
+          </>
+        ) : (
+          <>
+            <Play className="h-3.5 w-3.5" aria-hidden="true" />
+            Turn on
+          </>
+        )}
+      </button>
+    </div>
   )
 }
 
@@ -465,6 +548,82 @@ export default function ScenesPage() {
     () => new Set(rooms?.filter(r => r.current_scene).map(r => r.current_scene!) ?? []),
     [rooms],
   )
+
+  // ── Activate / deactivate mutations ─────────────────────────────────────
+  const [pendingSceneNames, setPendingSceneNames] = useState<Set<string>>(new Set())
+  const markPending = (name: string, pending: boolean) => {
+    setPendingSceneNames(prev => {
+      const next = new Set(prev)
+      if (pending) next.add(name)
+      else next.delete(name)
+      return next
+    })
+  }
+
+  const activateSceneMutation = useMutation({
+    mutationFn: api.scenes.activate,
+    onMutate: async (sceneName: string) => {
+      markPending(sceneName, true)
+      await queryClient.cancelQueries({ queryKey: ['rooms'] })
+      const previous = queryClient.getQueryData<Room[]>(['rooms'])
+      const scene = scenes?.find(s => s.name === sceneName)
+      const sceneRoomNames = scene?.rooms?.map(r => r.name) ?? []
+      queryClient.setQueryData<Room[]>(['rooms'], old =>
+        old?.map(room =>
+          sceneRoomNames.includes(room.name)
+            ? { ...room, current_scene: sceneName }
+            : room,
+        ),
+      )
+      return { previous }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] })
+      queryClient.invalidateQueries({ queryKey: ['scenes'] })
+      toast({ message: 'Scene activated' })
+    },
+    onError: (_err, _name, context) => {
+      if (context?.previous) queryClient.setQueryData(['rooms'], context.previous)
+      toast({ message: 'Failed to activate scene', type: 'error' })
+    },
+    onSettled: (_data, _err, sceneName) => {
+      markPending(sceneName, false)
+    },
+  })
+
+  const deactivateSceneMutation = useMutation({
+    mutationFn: api.scenes.deactivate,
+    onMutate: async (sceneName: string) => {
+      markPending(sceneName, true)
+      await queryClient.cancelQueries({ queryKey: ['rooms'] })
+      const previous = queryClient.getQueryData<Room[]>(['rooms'])
+      const scene = scenes?.find(s => s.name === sceneName)
+      const sceneRoomNames = scene?.rooms?.map(r => r.name) ?? []
+      queryClient.setQueryData<Room[]>(['rooms'], old =>
+        old?.map(room =>
+          sceneRoomNames.includes(room.name) && room.current_scene === sceneName
+            ? { ...room, current_scene: null }
+            : room,
+        ),
+      )
+      return { previous }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['rooms'] })
+      queryClient.invalidateQueries({ queryKey: ['scenes'] })
+      toast({ message: 'Scene turned off' })
+    },
+    onError: (_err, _name, context) => {
+      if (context?.previous) queryClient.setQueryData(['rooms'], context.previous)
+      toast({ message: 'Failed to turn off scene', type: 'error' })
+    },
+    onSettled: (_data, _err, sceneName) => {
+      markPending(sceneName, false)
+    },
+  })
+
+  const handleActivate = (name: string) => activateSceneMutation.mutate(name)
+  const handleDeactivate = (name: string) => deactivateSceneMutation.mutate(name)
 
   // Search filter: applies across all tabs
   const filteredScenes = useMemo(() => {
@@ -805,6 +964,9 @@ export default function ScenesPage() {
                         roomIconMap={roomIconMap}
                         isOpen={computedOpenRooms.has(roomName)}
                         onToggle={() => toggleRoom(roomName)}
+                        onActivate={handleActivate}
+                        onDeactivate={handleDeactivate}
+                        pendingSceneNames={pendingSceneNames}
                       />
                     )
                   }
@@ -856,6 +1018,9 @@ export default function ScenesPage() {
                               isOpen={computedOpenRooms.has(childName)}
                               onToggle={() => toggleRoom(childName)}
                               compact
+                              onActivate={handleActivate}
+                              onDeactivate={handleDeactivate}
+                              pendingSceneNames={pendingSceneNames}
                             />
                           </div>
                         )
@@ -873,6 +1038,9 @@ export default function ScenesPage() {
                           systemModes={systemCurrent?.all_modes}
                           modeIcons={systemCurrent?.mode_icons}
                           roomIconMap={roomIconMap}
+                          onActivate={handleActivate}
+                          onDeactivate={handleDeactivate}
+                          pendingSceneNames={pendingSceneNames}
                         />
                         </div>
                       )}
@@ -895,6 +1063,9 @@ export default function ScenesPage() {
                         scene={scene}
                         isActive={activeSceneNames.has(scene.name)}
                         isDefault={false}
+                        onActivate={handleActivate}
+                        onDeactivate={handleDeactivate}
+                        isPending={pendingSceneNames.has(scene.name)}
                       />
                     ))}
                   </Accordion>
@@ -923,6 +1094,9 @@ export default function ScenesPage() {
                         scene={scene}
                         isActive
                         roomIconMap={roomIconMap}
+                        onActivate={handleActivate}
+                        onDeactivate={handleDeactivate}
+                        isPending={pendingSceneNames.has(scene.name)}
                         label={
                           activeInRooms.length > 0
                             ? (
@@ -965,6 +1139,9 @@ export default function ScenesPage() {
                       scene={scene}
                       isActive={activeSceneNames.has(scene.name)}
                       roomIconMap={roomIconMap}
+                      onActivate={handleActivate}
+                      onDeactivate={handleDeactivate}
+                      isPending={pendingSceneNames.has(scene.name)}
                       label={
                         scene.last_activated_at
                           ? (
@@ -1000,6 +1177,9 @@ export default function ScenesPage() {
                       scene={scene}
                       isActive={activeSceneNames.has(scene.name)}
                       roomIconMap={roomIconMap}
+                      onActivate={handleActivate}
+                      onDeactivate={handleDeactivate}
+                      isPending={pendingSceneNames.has(scene.name)}
                       label={
                         scene.last_activated_at
                           ? formatRelativeTime(scene.last_activated_at)
