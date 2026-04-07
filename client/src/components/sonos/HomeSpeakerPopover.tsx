@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, Music, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { cn } from '@/lib/utils'
 import { api, parseApiError, type SonosNowPlayingEntry, type SonosQueueItem } from '@/lib/api'
+import { updateSpeakerActivity, sortSpeakersByActivity } from '@/lib/sortSpeakersByActivity'
 import { useToast } from '@/hooks/useToast'
 import { ArtworkImage } from './ArtworkImage'
 import { FavouriteSelector } from './FavouriteSelector'
@@ -142,6 +143,11 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
     retry: false,
   })
 
+  // Update activity timestamps whenever now-playing refreshes
+  useEffect(() => {
+    if (nowPlaying.length > 0) updateSpeakerActivity(nowPlaying)
+  }, [nowPlaying])
+
   // Favourites (stale for 5 min — same as SonosSpeakerCard)
   const { data: favourites = [] } = useQuery({
     queryKey: ['sonos', 'favourites'],
@@ -185,17 +191,19 @@ export function HomeSpeakerPopover({ open, onClose, triggerRef, borderColor }: H
     },
   })
 
-  // Group entries: coordinators lead their groups; solo speakers are their own group
+  // Group entries: coordinators lead their groups; solo speakers are their own group.
+  // Active/recently-active speakers sort to the top via sortSpeakersByActivity.
   const renderItems = useMemo(() => {
     if (nowPlaying.length === 0) return []
 
+    const sorted = sortSpeakersByActivity(nowPlaying)
     const placed = new Set<string>()
     const items: Array<
       | { type: 'solo'; entry: SonosNowPlayingEntry }
       | { type: 'group'; coordinator: SonosNowPlayingEntry; members: SonosNowPlayingEntry[] }
     > = []
 
-    for (const entry of nowPlaying) {
+    for (const entry of sorted) {
       if (placed.has(entry.speakerName)) continue
       const grp = entry.group
       if (grp && grp.members.length > 1 && grp.isCoordinator) {
