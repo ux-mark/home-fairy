@@ -12,8 +12,7 @@ import {
   Activity,
   Clock,
   AlertTriangle,
-  Play,
-  Square,
+  Power,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { Scene, Room } from '@/lib/api'
@@ -140,27 +139,18 @@ function SceneRow({ scene, isDefault, isActive, showRoomBadges, roomIconMap, onA
         onClick={() => (isActive ? onDeactivate(scene.name) : onActivate(scene.name))}
         disabled={isPending}
         aria-label={isActive ? `Turn off ${scene.name}` : `Turn on ${scene.name}`}
+        title={isActive ? `Turn off ${scene.name}` : `Turn on ${scene.name}`}
         aria-pressed={isActive}
         className={cn(
-          'flex min-h-[36px] flex-shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+          'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border transition-colors',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
           'disabled:opacity-50',
           isActive
             ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-            : 'border-fairy-500/40 bg-fairy-500/10 text-fairy-300 hover:bg-fairy-500/20',
+            : 'border-white/10 text-caption hover:border-fairy-500/40 hover:bg-fairy-500/10 hover:text-fairy-300',
         )}
       >
-        {isActive ? (
-          <>
-            <Square className="h-3.5 w-3.5" aria-hidden="true" />
-            Turn off
-          </>
-        ) : (
-          <>
-            <Play className="h-3.5 w-3.5" aria-hidden="true" />
-            Turn on
-          </>
-        )}
+        <Power className="h-4 w-4" aria-hidden="true" />
       </button>
     </div>
   )
@@ -477,27 +467,18 @@ function FlatSceneRow({ scene, isActive, label, roomIconMap, onActivate, onDeact
         onClick={() => (isActive ? onDeactivate(scene.name) : onActivate(scene.name))}
         disabled={isPending}
         aria-label={isActive ? `Turn off ${scene.name}` : `Turn on ${scene.name}`}
+        title={isActive ? `Turn off ${scene.name}` : `Turn on ${scene.name}`}
         aria-pressed={isActive}
         className={cn(
-          'flex min-h-[36px] flex-shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors',
+          'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border transition-colors',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
           'disabled:opacity-50',
           isActive
             ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-            : 'border-fairy-500/40 bg-fairy-500/10 text-fairy-300 hover:bg-fairy-500/20',
+            : 'border-white/10 text-caption hover:border-fairy-500/40 hover:bg-fairy-500/10 hover:text-fairy-300',
         )}
       >
-        {isActive ? (
-          <>
-            <Square className="h-3.5 w-3.5" aria-hidden="true" />
-            Turn off
-          </>
-        ) : (
-          <>
-            <Play className="h-3.5 w-3.5" aria-hidden="true" />
-            Turn on
-          </>
-        )}
+        <Power className="h-4 w-4" aria-hidden="true" />
       </button>
     </div>
   )
