@@ -22,6 +22,11 @@ interface QueueHeaderProps {
   onToggleSelect?: () => void
   /** Called when user confirms clear queue (so parent can apply undo) */
   onClearQueue?: () => void
+  /**
+   * If provided, fully delegates clear handling to the parent. The built-in clearMutation
+   * is not run — the parent is responsible for optimistic update, server call, and undo.
+   */
+  onClearRequest?: () => void
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -76,6 +81,7 @@ export function QueueHeader({
   isSelecting,
   onToggleSelect,
   onClearQueue,
+  onClearRequest,
 }: QueueHeaderProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
@@ -263,7 +269,14 @@ export function QueueHeader({
                   </AlertDialog.Cancel>
                   <AlertDialog.Action asChild>
                     <button
-                      onClick={() => clearMutation.mutate()}
+                      onClick={() => {
+                        if (onClearRequest) {
+                          onClearRequest()
+                          setConfirmOpen(false)
+                        } else {
+                          clearMutation.mutate()
+                        }
+                      }}
                       disabled={clearMutation.isPending}
                       className="flex items-center gap-2 rounded-lg bg-red-500/15 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-500/25 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 min-h-[44px] disabled:opacity-50"
                     >

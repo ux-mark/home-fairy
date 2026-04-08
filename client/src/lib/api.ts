@@ -1769,6 +1769,14 @@ export const api = {
       fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/clear`, {
         method: 'DELETE',
       }),
+    restoreQueue: (speaker: string, uris: string[]) =>
+      fetchApi<{ added: number; failedCount: number }>(
+        `/sonos/queue/${encodeURIComponent(speaker)}/restore`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ uris }),
+        },
+      ),
     seekToTrack: (speaker: string, trackNumber: number) =>
       fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/seek/${trackNumber}`, {
         method: 'POST',

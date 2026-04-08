@@ -1,21 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  DndContext,
-  closestCenter,
-  KeyboardSensor,
-  PointerSensor,
-  TouchSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core'
-import {
-  arrayMove,
-  SortableContext,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable'
+import { arrayMove } from '@dnd-kit/sortable'
 import { AlertTriangle, ArrowUp } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
@@ -25,11 +10,12 @@ import { useUndoableQueueAction } from '@/hooks/useUndoableQueueAction'
 import { useToast } from '@/hooks/useToast'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { QueueItemRow } from './QueueItemRow'
 import { QueueEmptyState } from './QueueEmptyState'
 import { QueueBulkActionBar } from './QueueBulkActionBar'
-import { QueueUpNextPreview } from './QueueUpNextPreview'
 import { QueueHeader } from './QueueHeader'
+import { NowPlayingCard } from './queue/NowPlayingCard'
+import { UpNextWindow } from './queue/UpNextWindow'
+import { PlayedHistorySection } from './queue/PlayedHistorySection'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -48,6 +34,8 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
   const { toast } = useToast()
   const panelRef = useRef<HTMLDivElement>(null)
   const cancelBtnRef = useRef<HTMLButtonElement | null>(null)
+  const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const nowPlayingCardRef = useRef<HTMLDivElement>(null)
 
   const queueKey = ['sonos', 'queue', speaker]
 
@@ -59,37 +47,48 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
   const selection = useQueueSelection()
   const undo = useUndoableQueueAction()
 
-  // ── Swipe state ───────────────────────────────────────────────────────────
-
   const [swipedIndex, setSwipedIndex] = useState<number | null>(null)
-
-  // ── Jump to now-playing ───────────────────────────────────────────────────
-
-  const scrollAreaRef = useRef<HTMLDivElement>(null)
-  const nowPlayingRowRef = useRef<HTMLLIElement | null>(null)
   const [showJumpPill, setShowJumpPill] = useState(false)
 
+  // ── Derived state ─────────────────────────────────────────────────────────
+  // Resolve the index of the currently playing track — with safe fallbacks so we
+  // never silently highlight position 0 when nothing is playing.
+  const currentIndex = useMemo(() => {
+    if (!queue || queue.length === 0) return -1
+    if (currentTrackUri) {
+      const idx = queue.findIndex(item => item.uri === currentTrackUri)
+      if (idx >= 0) return idx
+    }
+    const trackNo = playbackState?.trackNo
+    if (typeof trackNo === 'number' && trackNo >= 1 && trackNo <= queue.length) {
+      return trackNo - 1
+    }
+    return -1
+  }, [queue, currentTrackUri, playbackState?.trackNo])
+
+  const currentItem = currentIndex >= 0 && queue ? queue[currentIndex] : null
+
+  // ── Jump-to-now pill: observe the now-playing card ───────────────────────
   useEffect(() => {
     if (!open) return
-    const row = nowPlayingRowRef.current
+    const card = nowPlayingCardRef.current
     const scrollEl = scrollAreaRef.current
-    if (!row || !scrollEl) return
+    if (!card || !scrollEl) return
 
     const observer = new IntersectionObserver(
       ([entry]) => setShowJumpPill(!entry.isIntersecting),
-      { root: scrollEl, threshold: 0.1 },
+      { root: scrollEl, threshold: 0.2 },
     )
-    observer.observe(row)
+    observer.observe(card)
     return () => observer.disconnect()
-  }, [queue, open])
+  }, [queue, currentIndex, open])
 
-  function handleJumpToNowPlaying() {
-    nowPlayingRowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    setTimeout(() => nowPlayingRowRef.current?.focus(), 300)
-  }
+  const handleJumpToNowPlaying = useCallback(() => {
+    nowPlayingCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setTimeout(() => nowPlayingCardRef.current?.focus(), 300)
+  }, [])
 
   // ── Focus trap + keyboard ─────────────────────────────────────────────────
-
   useEffect(() => {
     if (open) {
       setTimeout(() => cancelBtnRef.current?.focus(), 50)
@@ -120,16 +119,7 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [open, onClose])
 
-  // ── DnD sensors ──────────────────────────────────────────────────────────
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 5 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
-
   // ── Mutations ─────────────────────────────────────────────────────────────
-
   const reorderMutation = useMutation({
     mutationFn: ({ from, to }: { from: number; to: number }) =>
       api.sonos.reorderQueue(speaker, from, to),
@@ -171,7 +161,6 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
   })
 
   // ── Handlers ──────────────────────────────────────────────────────────────
-
   function handleRemove(index: number) {
     if (!queue) return
     const removedItem = queue[index]
@@ -186,6 +175,53 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
       `Removed "${removedItem.title}"`,
       () => removeMutation.mutate(index),
       () => queryClient.setQueryData<SonosQueueItem[]>(queueKey, snapshot),
+    )
+  }
+
+  function handleReorderFromUpNext(from: number, to: number) {
+    if (!queue) return
+    queryClient.setQueryData<SonosQueueItem[]>(
+      queueKey,
+      arrayMove([...queue], from, to),
+    )
+    reorderMutation.mutate({ from, to })
+  }
+
+  function handleClearRequest() {
+    if (!queue || queue.length === 0) return
+    const snapshot = [...queue]
+    const snapshotUris = snapshot.map(t => t.uri).filter(Boolean)
+
+    // Optimistic client clear
+    queryClient.setQueryData<SonosQueueItem[]>(queueKey, [])
+
+    // Fire the server clear immediately — the user expects the speaker to stop
+    // queueing up these tracks right away, not after a 5s grace period.
+    api.sonos.clearQueue(speaker).catch(() => {
+      toast({ message: 'Could not clear queue', type: 'error' })
+      queryClient.setQueryData<SonosQueueItem[]>(queueKey, snapshot)
+    })
+
+    undo.scheduleAction(
+      `Queue cleared · ${snapshot.length} ${snapshot.length === 1 ? 'track' : 'tracks'}`,
+      // Commit: nothing to do — the clear already happened.
+      () => {},
+      // Undo: restore the client state and re-add everything on the server.
+      () => {
+        queryClient.setQueryData<SonosQueueItem[]>(queueKey, snapshot)
+        if (snapshotUris.length > 0) {
+          api.sonos
+            .restoreQueue(speaker, snapshotUris)
+            .then(() => {
+              toast({ message: `Restored ${snapshotUris.length} tracks` })
+              queryClient.invalidateQueries({ queryKey: queueKey })
+            })
+            .catch(() => {
+              toast({ message: 'Could not restore queue', type: 'error' })
+              queryClient.invalidateQueries({ queryKey: queueKey })
+            })
+        }
+      },
     )
   }
 
@@ -228,40 +264,8 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
     selection.exitSelectMode()
   }
 
-  function handleDragStart() {
-    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(8)
-  }
-
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event
-    if (!over || active.id === over.id || !queue) return
-
-    const items = [...queue]
-    const oldIndex = items.findIndex((_, i) => active.id === items[i].uri + ':' + i)
-    const newIndex = items.findIndex((_, i) => over.id === items[i].uri + ':' + i)
-    if (oldIndex === -1 || newIndex === -1) return
-
-    if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(8)
-
-    queryClient.setQueryData<SonosQueueItem[]>(queueKey, arrayMove(items, oldIndex, newIndex))
-    reorderMutation.mutate({ from: oldIndex, to: newIndex })
-  }
-
-  // ── Derived state ─────────────────────────────────────────────────────────
-
-  const currentIndex = queue
-    ? currentTrackUri
-      ? queue.findIndex(item => item.uri === currentTrackUri)
-      : 0
-    : -1
-
-  const nowPlayingRefCallback = useCallback((el: HTMLLIElement | null) => {
-    nowPlayingRowRef.current = el
-  }, [])
-
+  // ── Render helpers ────────────────────────────────────────────────────────
   const title = queue && queue.length > 0 ? `Queue (${queue.length})` : 'Queue'
-
-  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -350,12 +354,7 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
 
           {!isLoading && !isError && queue && queue.length > 0 && (
             <>
-              {/* Up next preview strip */}
-              {currentIndex >= 0 && (
-                <QueueUpNextPreview speaker={speaker} queue={queue} currentIndex={currentIndex} />
-              )}
-
-              {/* Queue controls header */}
+              {/* Queue controls — shuffle, repeat, select, save, clear + summary */}
               <QueueHeader
                 speaker={speaker}
                 currentPlayMode={playbackState?.currentPlayMode}
@@ -365,71 +364,49 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
                 onToggleSelect={
                   selection.isSelecting ? selection.exitSelectMode : () => selection.enterSelectMode()
                 }
+                onClearRequest={handleClearRequest}
               />
 
-              {/* Aria-live drag announcement */}
+              {/* Aria-live drag announcement target */}
               <div aria-live="polite" aria-atomic="true" className="sr-only" id="queue-dnd-announce" />
 
-              {/* Sortable track list */}
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-                accessibility={{
-                  announcements: {
-                    onDragStart({ active }) {
-                      const idx = String(active.id).split(':').pop()
-                      return `Picked up track at position ${idx}`
-                    },
-                    onDragOver({ over }) {
-                      const idx = String(over?.id ?? '').split(':').pop()
-                      return `Moving to position ${idx}`
-                    },
-                    onDragEnd({ over }) {
-                      const idx = String(over?.id ?? '').split(':').pop()
-                      return `Dropped at position ${idx}`
-                    },
-                    onDragCancel() {
-                      return 'Drag cancelled'
-                    },
-                  },
-                }}
-              >
-                <SortableContext
-                  items={queue.map((item, i) => item.uri + ':' + i)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <ul
-                    className="divide-y divide-[var(--border-secondary)]"
-                    aria-label="Queue — drag to reorder"
-                  >
-                    {queue.map((item, i) => {
-                      const isCurrentTrack = currentTrackUri
-                        ? item.uri === currentTrackUri
-                        : i === 0
-                      return (
-                        <QueueItemRow
-                          key={item.uri + ':' + i}
-                          item={item}
-                          index={i}
-                          isCurrentTrack={isCurrentTrack}
-                          speaker={speaker}
-                          dndId={item.uri + ':' + i}
-                          nowPlayingRef={isCurrentTrack ? nowPlayingRefCallback : undefined}
-                          onRemove={handleRemove}
-                          swipedIndex={swipedIndex}
-                          onSwipeOpen={setSwipedIndex}
-                          isSelecting={selection.isSelecting}
-                          isSelected={selection.isSelected(i)}
-                          onSelect={selection.toggleItem}
-                          onEnterSelectMode={selection.enterSelectMode}
-                        />
-                      )
-                    })}
-                  </ul>
-                </SortableContext>
-              </DndContext>
+              {/* Timeline: history → now playing → up next */}
+              <PlayedHistorySection
+                speaker={speaker}
+                queue={queue}
+                currentIndex={currentIndex}
+                onRemove={handleRemove}
+                isSelecting={selection.isSelecting}
+                isSelected={selection.isSelected}
+                onSelectToggle={selection.toggleItem}
+                onEnterSelectMode={selection.enterSelectMode}
+                swipedIndex={swipedIndex}
+                onSwipeOpen={setSwipedIndex}
+              />
+
+              <NowPlayingCard
+                ref={nowPlayingCardRef}
+                speaker={speaker}
+                item={currentItem}
+                currentIndex={currentIndex}
+                playbackState={playbackState}
+                onRemove={handleRemove}
+                variant="sticky"
+              />
+
+              <UpNextWindow
+                speaker={speaker}
+                queue={queue}
+                currentIndex={currentIndex}
+                onRemove={handleRemove}
+                onReorder={handleReorderFromUpNext}
+                isSelecting={selection.isSelecting}
+                isSelected={selection.isSelected}
+                onSelectToggle={selection.toggleItem}
+                onEnterSelectMode={selection.enterSelectMode}
+                swipedIndex={swipedIndex}
+                onSwipeOpen={setSwipedIndex}
+              />
 
               {/* Bulk action bar — sticky to bottom of scroll area in select mode */}
               {selection.isSelecting && (
@@ -478,7 +455,7 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
         )}
 
         {/* Jump to now-playing pill */}
-        {showJumpPill && queue && queue.length > 0 && !selection.isSelecting && (
+        {showJumpPill && currentItem && !selection.isSelecting && (
           <button
             onClick={handleJumpToNowPlaying}
             className={cn(

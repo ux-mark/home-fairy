@@ -38,8 +38,8 @@ export interface UnifiedPlaybackCardProps {
   showFullQueue?: boolean
   /** Show the grouped speakers panel at the bottom (default: true) */
   showGroupSpeakers?: boolean
-  /** Limit visible queue items (only used when showFullQueue is false) */
-  queueLimit?: number
+  /** Show the inline queue preview + full queue trigger (default: true) */
+  showQueue?: boolean
   /** Additional className for the root element */
   className?: string
 }
@@ -66,13 +66,12 @@ export function UnifiedPlaybackCard({
   showVolume = false,
   showFullQueue = false,
   showGroupSpeakers = true,
-  queueLimit = 5,
+  showQueue = true,
   className,
 }: UnifiedPlaybackCardProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const navigate = useNavigate()
-  const [queueExpanded, setQueueExpanded] = useState(false)
   const [queueViewOpen, setQueueViewOpen] = useState(false)
 
   const invalidate = useCallback(() => {
@@ -287,34 +286,25 @@ export function UnifiedPlaybackCard({
           </div>
         )}
 
-        {/* Queue section */}
-        {showFullQueue ? (
+        {/* Queue section — compact preview + optional full QueueView trigger */}
+        {showQueue && (
           <>
             <InlineQueue
               speaker={speaker}
               currentTrackUri={trackUri ?? null}
-              expanded={queueExpanded}
-              onToggle={() => setQueueExpanded(v => !v)}
               playbackState={state}
-              onViewFullQueue={() => setQueueViewOpen(true)}
+              onViewFullQueue={showFullQueue ? () => setQueueViewOpen(true) : undefined}
             />
-            <QueueView
-              speaker={speaker}
-              open={queueViewOpen}
-              onClose={() => setQueueViewOpen(false)}
-              currentTrackUri={trackUri ?? null}
-              playbackState={state}
-            />
+            {showFullQueue && (
+              <QueueView
+                speaker={speaker}
+                open={queueViewOpen}
+                onClose={() => setQueueViewOpen(false)}
+                currentTrackUri={trackUri ?? null}
+                playbackState={state}
+              />
+            )}
           </>
-        ) : (
-          <InlineQueue
-            speaker={speaker}
-            currentTrackUri={trackUri ?? null}
-            expanded={queueExpanded}
-            onToggle={() => setQueueExpanded(v => !v)}
-            queueLimit={queueLimit}
-            playbackState={state}
-          />
         )}
 
         {/* Group speakers panel */}
@@ -401,24 +391,25 @@ export function UnifiedPlaybackCard({
         </div>
       )}
 
-      {/* Queue with optional limit */}
-      <InlineQueue
-        speaker={speaker}
-        currentTrackUri={trackUri ?? null}
-        expanded={queueExpanded}
-        onToggle={() => setQueueExpanded(v => !v)}
-        queueLimit={queueLimit}
-        playbackState={state}
-        onViewFullQueue={showFullQueue ? () => setQueueViewOpen(true) : undefined}
-      />
-      {showFullQueue && (
-        <QueueView
-          speaker={speaker}
-          open={queueViewOpen}
-          onClose={() => setQueueViewOpen(false)}
-          currentTrackUri={trackUri ?? null}
-          playbackState={state}
-        />
+      {/* Queue — compact preview; QueueView is the full surface */}
+      {showQueue && (
+        <>
+          <InlineQueue
+            speaker={speaker}
+            currentTrackUri={trackUri ?? null}
+            playbackState={state}
+            onViewFullQueue={showFullQueue ? () => setQueueViewOpen(true) : undefined}
+          />
+          {showFullQueue && (
+            <QueueView
+              speaker={speaker}
+              open={queueViewOpen}
+              onClose={() => setQueueViewOpen(false)}
+              currentTrackUri={trackUri ?? null}
+              playbackState={state}
+            />
+          )}
+        </>
       )}
 
       {/* Group speakers panel */}

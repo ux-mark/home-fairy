@@ -809,6 +809,50 @@ router.delete('/queue/:speaker/clear', async (req: Request, res: Response) => {
   }
 })
 
+// POST /queue/:speaker/restore — re-add a list of URIs in order (used for Undo Clear)
+const restoreQueueSchema = z.object({
+  uris: z.array(z.string().min(1)).min(1).max(500),
+})
+
+router.post('/queue/:speaker/restore', async (req: Request, res: Response) => {
+  try {
+    const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
+    const parsed = restoreQueueSchema.safeParse(req.body)
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
+      return
+    }
+    const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
+    if (!speakerInfo) {
+      res.status(404).json({ error: `Speaker not found: ${speaker}` })
+      return
+    }
+    // Re-add each URI in order. We swallow individual failures so a single bad URI
+    // (e.g. a stale Spotify track) doesn't abort the entire restore.
+    let added = 0
+    const failures: string[] = []
+    for (const uri of parsed.data.uris) {
+      try {
+        await sonosClient.addToQueueSOAP(speakerInfo.ip, uri)
+        added++
+      } catch (err) {
+        failures.push(uri)
+      }
+    }
+    const queue = await sonosClient.getQueue(speaker)
+    emit('sonos:queue-update', { speaker, action: 'restore', queue })
+    res.json({
+      speaker,
+      action: 'restore-queue',
+      added,
+      failedCount: failures.length,
+    })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+  }
+})
+
 // POST /queue/:speaker/save-as-fairylist — batch-add all queue tracks to a fairylist
 const saveAsFairylistSchema = z.object({ fairylistId: z.number().int().positive() })
 

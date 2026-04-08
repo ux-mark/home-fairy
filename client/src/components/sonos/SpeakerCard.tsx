@@ -207,7 +207,7 @@ export function SpeakerCard(props: SpeakerCardProps) {
         variant="card"
         showVolume={false}
         showFullQueue={false}
-        queueLimit={showQueue ? 5 : 0}
+        showQueue={showQueue}
         showGroupSpeakers={true}
       />
 
