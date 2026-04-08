@@ -151,6 +151,16 @@ function triggerNasAutoBackfill(): void {
     })
 }
 
+/**
+ * Rewrite albumArtUri on every item in a queue so the client can fetch the
+ * images. Used before emitting `sonos:queue-update` over the socket — without
+ * this, socket-pushed updates clobber the query cache with raw /getaa paths
+ * and all album art breaks after a mutation.
+ */
+function rewriteQueueArt<T extends { albumArtUri?: string }>(items: T[]): T[] {
+  return items.map(item => ({ ...item, albumArtUri: rewriteAlbumArtUri(item.albumArtUri) }))
+}
+
 function rewriteAlbumArtUri(uri: string | undefined): string | undefined {
   if (!uri) return undefined
 
@@ -628,7 +638,7 @@ router.post('/queue/:speaker/add', async (req: Request, res: Response) => {
     await withSpeakerByRoom(speaker, ({ ip }) => sonosClient.addToQueueSOAP(ip, parsed.data.uri))
     emit('sonos:playback-update', { speaker })
     const queue = await sonosClient.getQueue(speaker)
-    emit('sonos:queue-update', { speaker, action: 'add', queue })
+    emit('sonos:queue-update', { speaker, action: 'add', queue: rewriteQueueArt(queue) })
     res.json({ speaker, action: 'add-to-queue' })
   } catch (err) {
     sendSonosError(res, err)
@@ -647,7 +657,7 @@ router.post('/queue/:speaker/playnext', async (req: Request, res: Response) => {
     await withSpeakerByRoom(speaker, ({ ip }) => sonosClient.playNextSOAP(ip, parsed.data.uri))
     emit('sonos:playback-update', { speaker })
     const queue = await sonosClient.getQueue(speaker)
-    emit('sonos:queue-update', { speaker, action: 'playnext', queue })
+    emit('sonos:queue-update', { speaker, action: 'playnext', queue: rewriteQueueArt(queue) })
     res.json({ speaker, action: 'play-next' })
   } catch (err) {
     sendSonosError(res, err)
@@ -698,7 +708,7 @@ router.post('/queue/:speaker/add-album', async (req: Request, res: Response) => 
 
     emit('sonos:playback-update', { speaker })
     const queue = await sonosClient.getQueue(speaker)
-    emit('sonos:queue-update', { speaker, action: 'add', queue })
+    emit('sonos:queue-update', { speaker, action: 'add', queue: rewriteQueueArt(queue) })
     res.json({ speaker, action: 'add-album-to-queue', tracksQueued: queued })
   } catch (err) {
     sendSonosError(res, err)
@@ -742,7 +752,7 @@ router.post('/queue/:speaker/playnext-album', async (req: Request, res: Response
 
     emit('sonos:playback-update', { speaker })
     const queue = await sonosClient.getQueue(speaker)
-    emit('sonos:queue-update', { speaker, action: 'playnext', queue })
+    emit('sonos:queue-update', { speaker, action: 'playnext', queue: rewriteQueueArt(queue) })
     res.json({ speaker, action: 'playnext-album' })
   } catch (err) {
     sendSonosError(res, err)
@@ -762,7 +772,7 @@ router.delete('/queue/:speaker/remove/:index', async (req: Request, res: Respons
     // Convert 0-based frontend index to 1-based Sonos queue position
     await withSpeakerByRoom(speaker, ({ ip }) => sonosClient.removeFromQueueSOAP(ip, index + 1))
     const queue = await sonosClient.getQueue(speaker)
-    emit('sonos:queue-update', { speaker, action: 'remove', queue })
+    emit('sonos:queue-update', { speaker, action: 'remove', queue: rewriteQueueArt(queue) })
     res.json({ speaker, action: 'remove-from-queue', index })
   } catch (err) {
     sendSonosError(res, err)
@@ -787,7 +797,7 @@ router.post('/queue/:speaker/reorder', async (req: Request, res: Response) => {
     const insertBefore = from < to ? to + 2 : to + 1
     await withSpeakerByRoom(speaker, ({ ip }) => sonosClient.reorderQueueSOAP(ip, startIndex, insertBefore))
     const queue = await sonosClient.getQueue(speaker)
-    emit('sonos:queue-update', { speaker, action: 'reorder', queue })
+    emit('sonos:queue-update', { speaker, action: 'reorder', queue: rewriteQueueArt(queue) })
     res.json({ speaker, action: 'reorder-queue', from, to })
   } catch (err) {
     sendSonosError(res, err)
@@ -852,7 +862,7 @@ router.post('/queue/:speaker/restore', async (req: Request, res: Response) => {
       }
     })
     const queue = await sonosClient.getQueue(speaker)
-    emit('sonos:queue-update', { speaker, action: 'restore', queue })
+    emit('sonos:queue-update', { speaker, action: 'restore', queue: rewriteQueueArt(queue) })
     res.json({
       speaker,
       action: 'restore-queue',
@@ -1604,7 +1614,7 @@ router.put('/play-uri/:speaker', async (req: Request, res: Response) => {
       }
       emit('sonos:playback-update', { speaker })
       const queue = await sonosClient.getQueue(speaker)
-      emit('sonos:queue-update', { speaker, action: 'replace', queue })
+      emit('sonos:queue-update', { speaker, action: 'replace', queue: rewriteQueueArt(queue) })
       console.log(`[sonos] play-uri: queued ${queued}/${tracks.length} tracks, playing from track 1`)
       res.json({ speaker, uri, tracksQueued: queued })
     } else {
