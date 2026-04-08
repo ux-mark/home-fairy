@@ -82,7 +82,7 @@ export default function KelvinPresets({
                 onChange(preset.kelvin)
                 onCommit(preset.kelvin)
               }}
-              className="flex min-h-[44px] flex-col items-center justify-center rounded-lg px-1 py-1.5 text-center transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+              className="flex min-h-[44px] flex-col items-center justify-center rounded-xl px-1 py-2 text-center transition-all active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               style={{
                 backgroundColor: bg,
                 color: textColor,
