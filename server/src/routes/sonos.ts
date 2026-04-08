@@ -2,10 +2,11 @@ import { Router, type Request, type Response } from 'express'
 import { z } from 'zod'
 import axios from 'axios'
 import { createHash } from 'crypto'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { db, getAll, getOne, run } from '../db/index.js'
 import { sonosClient } from '../lib/sonos-client.js'
+import { speakerRegistry, withSpeakerByRoom, SpeakerNotFoundError } from '../lib/speaker-registry.js'
 import { musicBrainzClient, type ArtistCountryRow } from '../lib/musicbrainz-client.js'
 import { spotifyClient } from '../lib/spotify-client.js'
 import { sonosManager } from '../lib/sonos-manager.js'
@@ -31,38 +32,81 @@ function artCachePath(url: string): { imgPath: string; metaPath: string } {
   }
 }
 
+/**
+ * Sweep art-cache entries whose source URL points to an IP that is no longer
+ * a known Sonos speaker. After a DHCP lease change, those entries are dead
+ * weight — they'll never be hit again because the URLs they're keyed off no
+ * longer appear in any /zones response. Runs once on startup, after the
+ * SpeakerRegistry has had a chance to discover speakers.
+ */
+function sweepStaleArtCache(): void {
+  try {
+    const validIps = new Set(speakerRegistry.list().map(s => s.ip))
+    if (validIps.size === 0) return  // registry not warm yet — try again later
+    let removed = 0
+    for (const file of readdirSync(ART_CACHE_DIR)) {
+      if (!file.endsWith('.meta.json')) continue
+      const metaPath = join(ART_CACHE_DIR, file)
+      try {
+        const meta = JSON.parse(readFileSync(metaPath, 'utf-8')) as { url?: string }
+        if (typeof meta.url !== 'string') continue
+        const m = meta.url.match(/^https?:\/\/([\d.]+):/i)
+        if (!m) continue  // non-IP URL (e.g. https://i.scdn.co); leave alone
+        if (validIps.has(m[1])) continue  // still a known speaker
+        // Stale entry — drop the meta and the binary
+        const imgPath = metaPath.replace(/\.meta\.json$/, '')
+        try { unlinkSync(metaPath) } catch { /* already gone */ }
+        try { unlinkSync(imgPath) } catch { /* already gone */ }
+        removed++
+      } catch { /* corrupt meta — skip */ }
+    }
+    if (removed > 0) {
+      console.log(`[ArtCache] swept ${removed} stale entries pointing to unknown speaker IPs`)
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn('[ArtCache] sweep failed:', msg)
+  }
+}
+
+// Defer the sweep until after the registry has had time to discover speakers.
+// We retry once if the first attempt finds no speakers (registry still warming).
+setTimeout(() => {
+  if (speakerRegistry.list().length > 0) {
+    sweepStaleArtCache()
+  } else {
+    setTimeout(sweepStaleArtCache, 30_000)
+  }
+}, 10_000)
+
 // ── Album art proxy helpers ───────────────────────────────────────────────────
 
 const INTERNAL_IP_RE = /^https?:\/\/(192\.168\.\d{1,3}\.\d{1,3}|10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|localhost|127\.0\.0\.1)([\/:?]|$)/i
 
-// Speaker IP cache for album art rewriting — populated from zones on first use
-let cachedSpeakerIp: string | null = null
-
-async function ensureSpeakerIp(): Promise<string | null> {
-  if (cachedSpeakerIp) return cachedSpeakerIp
-  try {
-    const info = await sonosClient.getSpeakerInfoByName('')
-    // getSpeakerInfoByName with empty name falls through to getSpeakerIp
-  } catch { /* ignore */ }
-  // Try via zones
-  try {
-    const zones = await sonosClient.getZones()
-    for (const zone of zones) {
-      const coord = zone.coordinator as Record<string, unknown> | undefined
-      const state = coord?.state as Record<string, unknown> | undefined
-      const ct = state?.currentTrack as Record<string, unknown> | undefined
-      const absUri = ct?.absoluteAlbumArtUri
-      if (typeof absUri === 'string') {
-        const match = absUri.match(/https?:\/\/([\d.]+)/)
-        if (match) { cachedSpeakerIp = match[1]; return match[1] }
-      }
-    }
-  } catch { /* ignore */ }
-  return null
+/**
+ * Returns any reachable Sonos speaker IP, used by `rewriteAlbumArtUri` to
+ * proxy /getaa requests. The art proxy doesn't need a *specific* speaker —
+ * any speaker on the network can serve any other speaker's album art via
+ * Rincon routing — but it does need one that's actually online right now.
+ * The SpeakerRegistry guarantees that.
+ */
+function anySpeakerIp(): string | null {
+  return speakerRegistry.anyIp()
 }
 
-// Warm the cache on startup (non-blocking)
-setTimeout(() => ensureSpeakerIp(), 5_000)
+/**
+ * Send the appropriate HTTP error for an exception thrown by a Sonos route.
+ * SpeakerNotFoundError → 404 (the registry could not discover the speaker
+ * on the network); everything else → 424 (Sonos API unavailable).
+ */
+function sendSonosError(res: Response, err: unknown): void {
+  if (err instanceof SpeakerNotFoundError) {
+    res.status(404).json({ error: err.message })
+    return
+  }
+  const msg = err instanceof Error ? err.message : String(err)
+  res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+}
 
 /**
  * Rewrite a Sonos albumArtUri so it can be fetched by the browser.
@@ -110,10 +154,13 @@ function triggerNasAutoBackfill(): void {
 function rewriteAlbumArtUri(uri: string | undefined): string | undefined {
   if (!uri) return undefined
 
-  // Relative /getaa path — route directly to Sonos speaker IP (node-sonos-http-api's
-  // /getaa proxy is unreliable). Falls back to node-sonos-http-api if speaker IP unknown.
+  // Relative /getaa path — route directly to a known-reachable Sonos speaker
+  // (node-sonos-http-api's /getaa proxy is unreliable). The SpeakerRegistry
+  // gives us a speaker IP that's currently online. Falls back to the
+  // node-sonos-http-api base URL if discovery hasn't run yet.
   if (uri.startsWith('/')) {
-    const base = cachedSpeakerIp ? `http://${cachedSpeakerIp}:1400` : SONOS_API_URL
+    const ip = anySpeakerIp()
+    const base = ip ? `http://${ip}:1400` : SONOS_API_URL
     const absolute = `${base}${uri}`
     return `/api/sonos/art-proxy?url=${encodeURIComponent(absolute)}`
   }
@@ -200,14 +247,27 @@ router.get('/art-proxy', async (req: Request, res: Response) => {
 let favouritesCache: { data: unknown[]; fetchedAt: number } | null = null
 const FAVOURITES_CACHE_TTL = 5 * 60 * 1000
 
+// GET /registry — diagnostic snapshot of the SpeakerRegistry. Shows each
+// discovered speaker's room, UUID, IP, model, and lastSeen timestamp. Used
+// for verifying that the network discovery is finding all the expected
+// speakers and that no IPs are stale. POST /registry/refresh forces a fresh
+// SSDP sweep — handy when a speaker's IP just changed.
+router.get('/registry', (_req: Request, res: Response) => {
+  res.json(speakerRegistry.status())
+})
+
+router.post('/registry/refresh', async (_req: Request, res: Response) => {
+  await speakerRegistry.refresh()
+  res.json(speakerRegistry.status())
+})
+
 // GET /zones — list all Sonos speakers/groups
 router.get('/zones', async (_req: Request, res: Response) => {
   try {
     const zones = await sonosClient.getZones()
     res.json(zones)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -225,8 +285,7 @@ router.get('/state/:speaker', async (req: Request, res: Response) => {
     state.currentTrack.albumArtUri = rewriteAlbumArtUri(state.currentTrack.albumArtUri) ?? ''
     res.json(state)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -243,8 +302,7 @@ router.get('/favourites', async (_req: Request, res: Response) => {
     favouritesCache = { data: favs, fetchedAt: now }
     res.json(favs)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -254,8 +312,7 @@ router.get('/services', async (_req: Request, res: Response) => {
     const services = await sonosClient.getUserServices()
     res.json(services)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -555,8 +612,7 @@ router.get('/queue/:speaker', async (req: Request, res: Response) => {
     }))
     res.json(items)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -569,19 +625,13 @@ router.post('/queue/:speaker/add', async (req: Request, res: Response) => {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
       return
     }
-    const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
-    if (!speakerInfo) {
-      res.status(404).json({ error: `Speaker not found: ${speaker}` })
-      return
-    }
-    await sonosClient.addToQueueSOAP(speakerInfo.ip, parsed.data.uri)
+    await withSpeakerByRoom(speaker, ({ ip }) => sonosClient.addToQueueSOAP(ip, parsed.data.uri))
     emit('sonos:playback-update', { speaker })
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'add', queue })
     res.json({ speaker, action: 'add-to-queue' })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -594,19 +644,13 @@ router.post('/queue/:speaker/playnext', async (req: Request, res: Response) => {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
       return
     }
-    const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
-    if (!speakerInfo) {
-      res.status(404).json({ error: `Speaker not found: ${speaker}` })
-      return
-    }
-    await sonosClient.playNextSOAP(speakerInfo.ip, parsed.data.uri)
+    await withSpeakerByRoom(speaker, ({ ip }) => sonosClient.playNextSOAP(ip, parsed.data.uri))
     emit('sonos:playback-update', { speaker })
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'playnext', queue })
     res.json({ speaker, action: 'play-next' })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -634,12 +678,6 @@ router.post('/queue/:speaker/add-album', async (req: Request, res: Response) => 
     }
 
     // NAS: fetch all tracks and add to queue via SOAP
-    const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
-    if (!speakerInfo) {
-      res.status(404).json({ error: `Speaker not found: ${speaker}` })
-      return
-    }
-
     const tracks = await sonosClient.getGenreAlbumTracks(uri)
     if (tracks.length === 0) {
       res.status(404).json({ error: 'No tracks found for this album' })
@@ -647,22 +685,23 @@ router.post('/queue/:speaker/add-album', async (req: Request, res: Response) => 
     }
 
     let queued = 0
-    for (const track of tracks) {
-      try {
-        await sonosClient.addToQueueSOAP(speakerInfo.ip, track.uri)
-        queued++
-      } catch (err) {
-        console.error(`[sonos] add-album: failed to add "${track.title}": ${err instanceof Error ? err.message : err}`)
+    await withSpeakerByRoom(speaker, async ({ ip }) => {
+      for (const track of tracks) {
+        try {
+          await sonosClient.addToQueueSOAP(ip, track.uri)
+          queued++
+        } catch (err) {
+          console.error(`[sonos] add-album: failed to add "${track.title}": ${err instanceof Error ? err.message : err}`)
+        }
       }
-    }
+    })
 
     emit('sonos:playback-update', { speaker })
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'add', queue })
     res.json({ speaker, action: 'add-album-to-queue', tracksQueued: queued })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -685,33 +724,28 @@ router.post('/queue/:speaker/playnext-album', async (req: Request, res: Response
     }
 
     // NAS: fetch tracks and add in reverse order so track 1 lands right after current
-    const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
-    if (!speakerInfo) {
-      res.status(404).json({ error: `Speaker not found: ${speaker}` })
-      return
-    }
-
     const tracks = await sonosClient.getGenreAlbumTracks(uri)
     if (tracks.length === 0) {
       res.status(404).json({ error: 'No tracks found for this album' })
       return
     }
 
-    for (const track of [...tracks].reverse()) {
-      try {
-        await sonosClient.playNextSOAP(speakerInfo.ip, track.uri)
-      } catch (err) {
-        console.error(`[sonos] playnext-album: failed for "${track.title}": ${err instanceof Error ? err.message : err}`)
+    await withSpeakerByRoom(speaker, async ({ ip }) => {
+      for (const track of [...tracks].reverse()) {
+        try {
+          await sonosClient.playNextSOAP(ip, track.uri)
+        } catch (err) {
+          console.error(`[sonos] playnext-album: failed for "${track.title}": ${err instanceof Error ? err.message : err}`)
+        }
       }
-    }
+    })
 
     emit('sonos:playback-update', { speaker })
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'playnext', queue })
     res.json({ speaker, action: 'playnext-album' })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -725,19 +759,13 @@ router.delete('/queue/:speaker/remove/:index', async (req: Request, res: Respons
       res.status(400).json({ error: 'index must be a non-negative integer' })
       return
     }
-    const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
-    if (!speakerInfo) {
-      res.status(404).json({ error: `Speaker not found: ${speaker}` })
-      return
-    }
     // Convert 0-based frontend index to 1-based Sonos queue position
-    await sonosClient.removeFromQueueSOAP(speakerInfo.ip, index + 1)
+    await withSpeakerByRoom(speaker, ({ ip }) => sonosClient.removeFromQueueSOAP(ip, index + 1))
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'remove', queue })
     res.json({ speaker, action: 'remove-from-queue', index })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -751,24 +779,18 @@ router.post('/queue/:speaker/reorder', async (req: Request, res: Response) => {
       return
     }
     const { from, to } = parsed.data
-    const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
-    if (!speakerInfo) {
-      res.status(404).json({ error: `Speaker not found: ${speaker}` })
-      return
-    }
     // Convert 0-based frontend indices to 1-based Sonos positions.
     // ReorderTracksInQueue uses insertBefore semantics:
     //   moving forward (from < to): insertBefore = to + 2 (accounts for index shift after removal)
     //   moving backward (from > to): insertBefore = to + 1
     const startIndex = from + 1
     const insertBefore = from < to ? to + 2 : to + 1
-    await sonosClient.reorderQueueSOAP(speakerInfo.ip, startIndex, insertBefore)
+    await withSpeakerByRoom(speaker, ({ ip }) => sonosClient.reorderQueueSOAP(ip, startIndex, insertBefore))
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'reorder', queue })
     res.json({ speaker, action: 'reorder-queue', from, to })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -782,17 +804,11 @@ router.post('/queue/:speaker/seek/:trackNumber', async (req: Request, res: Respo
       res.status(400).json({ error: 'trackNumber must be a positive integer' })
       return
     }
-    const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
-    if (!speakerInfo) {
-      res.status(404).json({ error: `Speaker not found: ${speaker}` })
-      return
-    }
-    await sonosClient.seekToTrackSOAP(speakerInfo.ip, trackNumber)
+    await withSpeakerByRoom(speaker, ({ ip }) => sonosClient.seekToTrackSOAP(ip, trackNumber))
     emit('sonos:playback-update', { speaker })
     res.json({ speaker, action: 'seek-to-track', trackNumber })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -804,8 +820,7 @@ router.delete('/queue/:speaker/clear', async (req: Request, res: Response) => {
     emit('sonos:queue-update', { speaker, action: 'clear', queue: [] })
     res.json({ speaker, action: 'clear-queue' })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -822,23 +837,20 @@ router.post('/queue/:speaker/restore', async (req: Request, res: Response) => {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
       return
     }
-    const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
-    if (!speakerInfo) {
-      res.status(404).json({ error: `Speaker not found: ${speaker}` })
-      return
-    }
     // Re-add each URI in order. We swallow individual failures so a single bad URI
     // (e.g. a stale Spotify track) doesn't abort the entire restore.
     let added = 0
     const failures: string[] = []
-    for (const uri of parsed.data.uris) {
-      try {
-        await sonosClient.addToQueueSOAP(speakerInfo.ip, uri)
-        added++
-      } catch (err) {
-        failures.push(uri)
+    await withSpeakerByRoom(speaker, async ({ ip }) => {
+      for (const uri of parsed.data.uris) {
+        try {
+          await sonosClient.addToQueueSOAP(ip, uri)
+          added++
+        } catch {
+          failures.push(uri)
+        }
       }
-    }
+    })
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'restore', queue })
     res.json({
@@ -848,8 +860,7 @@ router.post('/queue/:speaker/restore', async (req: Request, res: Response) => {
       failedCount: failures.length,
     })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -915,8 +926,7 @@ router.get('/library/genres', async (_req: Request, res: Response) => {
     const genres = await sonosClient.getGenres()
     res.json(genres)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -932,8 +942,7 @@ router.get('/library/genre/:genre', async (req: Request, res: Response) => {
     }))
     res.json(result)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -952,8 +961,7 @@ router.get('/library/genre-album-tracks', async (req: Request, res: Response) =>
     }))
     res.json(result)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -965,8 +973,7 @@ router.get('/library/status', async (_req: Request, res: Response) => {
     const artists = sonosClient.getLibraryArtists()
     res.json({ available: artists.length > 0, artistCount: artists.length })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -976,8 +983,7 @@ router.post('/library/reload', async (_req: Request, res: Response) => {
     const loaded = await sonosClient.ensureLibraryLoaded()
     res.json({ loaded })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -995,8 +1001,7 @@ router.get('/library/albums', async (_req: Request, res: Response) => {
       albumArtUri: rewriteAlbumArtUri(a.albumArtUri) ?? '',
     })))
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -1021,8 +1026,7 @@ router.get('/library/album-tracks', async (req: Request, res: Response) => {
       albumArtUri: rewriteAlbumArtUri(t.albumArtUri) ?? '',
     })))
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -1053,8 +1057,7 @@ router.get('/radio/stations', async (_req: Request, res: Response) => {
     const stations = await sonosClient.getRadioStations()
     res.json(stations.map(s => ({ ...s, albumArtUri: s.albumArtUri ? rewriteAlbumArtUri(s.albumArtUri) : undefined })))
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -1066,8 +1069,7 @@ router.post('/play/:speaker', async (req: Request, res: Response) => {
     emit('sonos:playback-update', { speaker })
     res.json({ speaker, action: 'play' })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -1079,8 +1081,7 @@ router.post('/pause/:speaker', async (req: Request, res: Response) => {
     emit('sonos:playback-update', { speaker })
     res.json({ speaker, action: 'pause' })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -1092,8 +1093,7 @@ router.post('/stop/:speaker', async (req: Request, res: Response) => {
     emit('sonos:playback-update', { speaker })
     res.json({ speaker, action: 'stop' })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -1105,8 +1105,7 @@ router.post('/next/:speaker', async (req: Request, res: Response) => {
     emit('sonos:playback-update', { speaker })
     res.json({ speaker, action: 'next' })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -1118,8 +1117,7 @@ router.post('/previous/:speaker', async (req: Request, res: Response) => {
     emit('sonos:playback-update', { speaker })
     res.json({ speaker, action: 'previous' })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -1253,8 +1251,7 @@ router.post('/play-all', async (_req: Request, res: Response) => {
     emit('sonos:playback-update', { allPlaying: true })
     res.json({ action: 'play', affectedSpeakers: coordinators.length })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -1267,8 +1264,7 @@ router.post('/pause-all', async (_req: Request, res: Response) => {
     emit('sonos:playback-update', { allPaused: true })
     res.json({ action: 'pause', affectedSpeakers: coordinators.length })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -1324,8 +1320,7 @@ router.get('/now-playing', async (_req: Request, res: Response) => {
     })
     res.json(nowPlaying)
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -1496,8 +1491,7 @@ router.post('/group/:speaker/join/:target', async (req: Request, res: Response) 
     emit('sonos:playback-update', { speaker })
     res.json({ speaker, target, action: 'join' })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -1509,8 +1503,7 @@ router.post('/group/:speaker/leave', async (req: Request, res: Response) => {
     emit('sonos:playback-update', { speaker })
     res.json({ speaker, action: 'leave' })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -1558,8 +1551,7 @@ router.post('/play-spotify/:speaker', async (req: Request, res: Response) => {
     emit('sonos:playback-update', { speaker })
     res.json({ speaker, uri, action: safeAction })
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 
@@ -1588,30 +1580,28 @@ router.put('/play-uri/:speaker', async (req: Request, res: Response) => {
         res.status(404).json({ error: 'No tracks found in this container' })
         return
       }
-      // Get speaker IP + UUID for direct UPnP SOAP calls (bypasses node-sonos-http-api
-      // which mangles URIs with special characters like accents and spaces)
-      const speakerInfo = await sonosClient.getSpeakerInfoByName(speaker)
-      if (!speakerInfo) {
-        res.status(424).json({ error: 'Could not resolve speaker IP address' })
-        return
-      }
+      // Direct UPnP SOAP calls bypass node-sonos-http-api which mangles URIs
+      // with special characters like accents and spaces. The SpeakerRegistry
+      // gives us a fresh IP and UUID, with auto-recovery on DHCP rotation.
       await sonosClient.clearQueue(speaker)
-      // Add tracks sequentially via UPnP SOAP — preserves album order exactly
       let queued = 0
-      for (const track of tracks) {
-        try {
-          await sonosClient.addToQueueSOAP(speakerInfo.ip, track.uri)
-          queued++
-        } catch (err) {
-          console.error(`[sonos] play-uri: SOAP addToQueue failed for "${track.title}": ${err instanceof Error ? err.message : err}`)
+      await withSpeakerByRoom(speaker, async ({ ip, uuid }) => {
+        for (const track of tracks) {
+          try {
+            await sonosClient.addToQueueSOAP(ip, track.uri)
+            queued++
+          } catch (err) {
+            console.error(`[sonos] play-uri: SOAP addToQueue failed for "${track.title}": ${err instanceof Error ? err.message : err}`)
+          }
         }
-      }
+        if (queued === 0) return
+        // Switch transport to the queue and start from track 1
+        await sonosClient.playQueueFromStart(ip, uuid)
+      })
       if (queued === 0) {
         res.status(424).json({ error: 'Could not add any tracks to queue' })
         return
       }
-      // Switch transport to the queue and start from track 1
-      await sonosClient.playQueueFromStart(speakerInfo.ip, speakerInfo.uuid)
       emit('sonos:playback-update', { speaker })
       const queue = await sonosClient.getQueue(speaker)
       emit('sonos:queue-update', { speaker, action: 'replace', queue })
@@ -1724,8 +1714,7 @@ router.get('/library/albums/enriched', async (_req: Request, res: Response) => {
     })
     triggerNasAutoBackfill()
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+    sendSonosError(res, err)
   }
 })
 

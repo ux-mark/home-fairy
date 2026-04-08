@@ -2,6 +2,7 @@ import axios, { type AxiosInstance, AxiosError } from 'axios'
 import { readFileSync, statSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
+import { speakerRegistry } from './speaker-registry.js'
 
 const SONOS_API_URL = process.env.SONOS_API_URL || 'http://localhost:3003'
 const TIMEOUT = 5000
@@ -645,33 +646,22 @@ class SonosClient {
   }
 
   /**
-   * Resolve a speaker room name to its IP and UUID via node-sonos-http-api zones.
+   * Resolve a speaker room name to its IP and UUID via the SpeakerRegistry,
+   * which queries each speaker's xml/device_description.xml directly. The
+   * registry is the authoritative source — we no longer parse IPs from
+   * absoluteAlbumArtUri because those can be stale (DHCP rotation) or wrong
+   * (group coordinator pollution).
    */
   async getSpeakerInfoByName(speakerName: string): Promise<{ ip: string; uuid: string } | null> {
-    try {
-      const { data } = await this.api.get('/zones')
-      for (const zone of data as Array<Record<string, unknown>>) {
-        for (const member of (zone.members ?? []) as Array<Record<string, unknown>>) {
-          if (member.roomName === speakerName) {
-            const uuid = member.uuid as string | undefined
-            // Try to get IP from album art URI
-            const state = member.state as Record<string, unknown> | undefined
-            const ct = state?.currentTrack as Record<string, unknown> | undefined
-            const absUri = ct?.absoluteAlbumArtUri
-            if (typeof absUri === 'string' && uuid) {
-              const match = absUri.match(/https?:\/\/([\d.]+)/)
-              if (match) return { ip: match[1], uuid }
-            }
-            // Fallback: use any known speaker IP
-            if (uuid) {
-              const ip = await this.getSpeakerIp()
-              if (ip) return { ip, uuid }
-            }
-          }
-        }
-      }
-    } catch { /* fall through */ }
-    return null
+    if (!speakerName) {
+      // Empty name = "any speaker is fine" (used by art proxy warm-up)
+      const ip = speakerRegistry.anyIp()
+      if (!ip) return null
+      const first = speakerRegistry.list()[0]
+      return first ? { ip: first.ip, uuid: first.uuid } : null
+    }
+    const info = await speakerRegistry.resolveByRoom(speakerName)
+    return info ? { ip: info.ip, uuid: info.uuid } : null
   }
 
   // Backwards-compat wrapper
@@ -728,46 +718,18 @@ class SonosClient {
 
   // ── Sonos UPnP browse (genre browsing) ─────────────────────────────────────
 
-  private speakerIpCache: string | null = null
-
+  /**
+   * Returns any known speaker IP. Used by UPnP browse calls (genre, album,
+   * artist listing) which can be served by any speaker on the network — they
+   * all expose the same MediaServer/ContentDirectory view of the shared NAS
+   * library. The registry guarantees this IP is currently reachable.
+   */
   private async getSpeakerIp(): Promise<string | null> {
-    if (this.speakerIpCache) return this.speakerIpCache
-    try {
-      const { data } = await this.api.get('/zones')
-      // Extract IP from absoluteAlbumArtUri in any zone's coordinator state
-      for (const zone of data as Array<Record<string, unknown>>) {
-        const coord = zone.coordinator as Record<string, unknown> | undefined
-        const state = coord?.state as Record<string, unknown> | undefined
-        const ct = state?.currentTrack as Record<string, unknown> | undefined
-        const absUri = ct?.absoluteAlbumArtUri
-        if (typeof absUri === 'string') {
-          const match = absUri.match(/https?:\/\/([\d.]+)/)
-          if (match) {
-            this.speakerIpCache = match[1]
-            return match[1]
-          }
-        }
-      }
-      // Fallback: try each speaker's state endpoint for album art URIs
-      for (const zone of data as Array<Record<string, unknown>>) {
-        const coord = zone.coordinator as Record<string, unknown> | undefined
-        const room = coord?.roomName as string | undefined
-        if (!room) continue
-        try {
-          const { data: stateData } = await this.api.get(`/${encodeURIComponent(room)}/state`)
-          const absUri = (stateData as Record<string, unknown>)?.currentTrack
-          const uri = (absUri as Record<string, unknown>)?.absoluteAlbumArtUri
-          if (typeof uri === 'string') {
-            const match = uri.match(/https?:\/\/([\d.]+)/)
-            if (match) {
-              this.speakerIpCache = match[1]
-              return match[1]
-            }
-          }
-        } catch { /* try next speaker */ }
-      }
-    } catch { /* fall through */ }
-    return null
+    const cached = speakerRegistry.anyIp()
+    if (cached) return cached
+    // Registry not yet warm — kick a refresh and try once more
+    await speakerRegistry.refresh()
+    return speakerRegistry.anyIp()
   }
 
   private xmlEscape(s: string): string {
