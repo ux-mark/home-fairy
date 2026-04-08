@@ -24,6 +24,7 @@ interface SpeakerCardSoloProps {
   focusSpeaker?: string
   showVolume?: boolean
   showQueue?: boolean
+  showFullQueue?: boolean
 }
 
 // ── Group speaker props ───────────────────────────────────────────────────────
@@ -37,6 +38,7 @@ interface SpeakerCardGroupProps {
   focusSpeaker?: string
   showVolume?: boolean
   showQueue?: boolean
+  showFullQueue?: boolean
 }
 
 export type SpeakerCardProps = SpeakerCardSoloProps | SpeakerCardGroupProps
@@ -73,7 +75,7 @@ function PlaybackBadge({ state }: { state: SonosPlaybackState | null }) {
  */
 export function SpeakerCard(props: SpeakerCardProps) {
   const { toast } = useToast()
-  const { showVolume = true, showQueue = true } = props
+  const { showVolume = true, showQueue = true, showFullQueue = false } = props
   const cardRef = useRef<HTMLDivElement>(null)
   const [groupManagerOpen, setGroupManagerOpen] = useState(false)
 
@@ -206,7 +208,7 @@ export function SpeakerCard(props: SpeakerCardProps) {
         onRefresh={onRefresh}
         variant="card"
         showVolume={false}
-        showFullQueue={false}
+        showFullQueue={showFullQueue}
         showQueue={showQueue}
         showGroupSpeakers={true}
       />
