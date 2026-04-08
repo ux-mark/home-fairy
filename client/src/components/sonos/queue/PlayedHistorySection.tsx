@@ -13,7 +13,6 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { SonosQueueItem } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { QueueItemRow } from '../QueueItemRow'
@@ -40,8 +39,9 @@ export interface PlayedHistorySectionProps {
 }
 
 // ── PlayedHistorySection ──────────────────────────────────────────────────────
-// Collapsed by default. When expanded, shows the most recent N played tracks
-// with upward pagination ("Show 10 earlier"). Rows are rendered dimmed.
+// Rendered inline above NowPlayingCard so the timeline reads top-down: past →
+// now → next. Shows the most recently played tracks (dimmed) with upward
+// pagination ("Show 10 earlier") at the top of the list.
 
 export function PlayedHistorySection({
   speaker,
@@ -55,7 +55,6 @@ export function PlayedHistorySection({
   swipedIndex,
   onSwipeOpen,
 }: PlayedHistorySectionProps) {
-  const [expanded, setExpanded] = useState(false)
   // How many tracks from the end of history are currently visible (shows the
   // most recently played first). Increases with "Show 10 earlier".
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
@@ -81,6 +80,7 @@ export function PlayedHistorySection({
   }, [historyAll, historyCount, visibleCount])
 
   const hiddenEarlier = historyCount - visibleItems.length
+  const windowStart = Math.max(0, historyCount - visibleItems.length)
 
   // Sensors for the (no-op) sortable context so QueueItemRow's useSortable
   // hook has a provider. Cross-window reordering is not supported by design.
@@ -93,96 +93,79 @@ export function PlayedHistorySection({
   // Nothing played yet — render nothing at all.
   if (historyCount === 0) return null
 
-  const toggleLabel = expanded
-    ? `Hide played tracks`
-    : `Show ${historyCount} played ${historyCount === 1 ? 'track' : 'tracks'}`
-
   return (
     <div
-      className="border-b"
-      style={{ borderColor: 'var(--border-secondary)' }}
+      id={`queue-history-${speaker}`}
+      className="border-b opacity-75"
+      style={{ borderColor: 'var(--border-secondary)', background: 'var(--bg-primary)' }}
     >
-      <button
-        onClick={() => setExpanded(v => !v)}
-        aria-expanded={expanded}
-        aria-controls={`queue-history-${speaker}`}
-        className={cn(
-          'flex min-h-[44px] w-full items-center justify-between px-4 py-2 text-xs font-medium text-caption',
-          'hover:text-body transition-colors',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-        )}
+      {/* Section label */}
+      <div
+        className="border-b px-4 py-2"
+        style={{ borderColor: 'var(--border-secondary)' }}
       >
-        <span>{toggleLabel}</span>
-        {expanded ? (
-          <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
-        ) : (
-          <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-        )}
-      </button>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-caption">
+          Recently played
+        </p>
+        <p className="mt-0.5 text-[11px] text-caption tabular-nums">
+          {historyCount} {historyCount === 1 ? 'track' : 'tracks'}
+        </p>
+      </div>
 
-      {expanded && (
-        <div
-          id={`queue-history-${speaker}`}
-          className="opacity-75"
-          style={{ background: 'var(--bg-primary)' }}
-        >
-          {hiddenEarlier > 0 && (
-            <div className="px-4 py-2">
-              <button
-                onClick={() =>
-                  setVisibleCount(c => Math.min(c + PAGE_SIZE, historyCount))
-                }
-                className={cn(
-                  'flex w-full min-h-[40px] items-center justify-center rounded-lg px-3 text-xs text-caption',
-                  'hover:bg-[var(--bg-tertiary)] hover:text-body transition-colors',
-                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                )}
-              >
-                Show {Math.min(PAGE_SIZE, hiddenEarlier)} earlier
-                <span className="ml-2 text-caption">({hiddenEarlier} earlier)</span>
-              </button>
-            </div>
-          )}
-
-          <DndContext sensors={sensors} collisionDetection={closestCenter}>
-            <SortableContext
-              items={visibleItems.map((item, i) => {
-                const windowStart = Math.max(0, historyCount - visibleItems.length)
-                return item.uri + ':' + (windowStart + i)
-              })}
-              strategy={verticalListSortingStrategy}
-            >
-              <ul
-                className="divide-y divide-[var(--border-secondary)]"
-                aria-label="Recently played tracks"
-              >
-                {visibleItems.map((item, i) => {
-                  // Absolute queue index = (start of window) + i
-                  const windowStart = Math.max(0, historyCount - visibleItems.length)
-                  const absIndex = windowStart + i
-                  return (
-                    <QueueItemRow
-                      key={item.uri + ':' + absIndex}
-                      item={item}
-                      index={absIndex}
-                      isCurrentTrack={false}
-                      speaker={speaker}
-                      dndId={item.uri + ':' + absIndex}
-                      onRemove={onRemove}
-                      swipedIndex={swipedIndex}
-                      onSwipeOpen={onSwipeOpen}
-                      isSelecting={isSelecting}
-                      isSelected={isSelected(absIndex)}
-                      onSelect={onSelectToggle}
-                      onEnterSelectMode={onEnterSelectMode}
-                    />
-                  )
-                })}
-              </ul>
-            </SortableContext>
-          </DndContext>
+      {/* Show-earlier sits at the top so scrolling up reveals older tracks */}
+      {hiddenEarlier > 0 && (
+        <div className="px-4 py-3">
+          <button
+            onClick={() =>
+              setVisibleCount(c => Math.min(c + PAGE_SIZE, historyCount))
+            }
+            className={cn(
+              'flex w-full min-h-[44px] items-center justify-center rounded-lg',
+              'border border-[var(--border-primary)] px-4 text-sm font-medium text-body',
+              'hover:brightness-95 dark:hover:brightness-110 transition-colors',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            )}
+          >
+            Show {Math.min(PAGE_SIZE, hiddenEarlier)} earlier
+            <span className="ml-2 text-xs text-caption">
+              ({hiddenEarlier} earlier)
+            </span>
+          </button>
         </div>
       )}
+
+      <DndContext sensors={sensors} collisionDetection={closestCenter}>
+        <SortableContext
+          items={visibleItems.map((item, i) => item.uri + ':' + (windowStart + i))}
+          strategy={verticalListSortingStrategy}
+        >
+          <ul
+            className="divide-y divide-[var(--border-secondary)]"
+            aria-label="Recently played tracks"
+          >
+            {visibleItems.map((item, i) => {
+              const absIndex = windowStart + i
+              return (
+                <QueueItemRow
+                  key={item.uri + ':' + absIndex}
+                  item={item}
+                  index={absIndex}
+                  isCurrentTrack={false}
+                  speaker={speaker}
+                  dndId={item.uri + ':' + absIndex}
+                  onRemove={onRemove}
+                  swipedIndex={swipedIndex}
+                  onSwipeOpen={onSwipeOpen}
+                  isSelecting={isSelecting}
+                  isSelected={isSelected(absIndex)}
+                  onSelect={onSelectToggle}
+                  onEnterSelectMode={onEnterSelectMode}
+                />
+              )
+            })}
+          </ul>
+        </SortableContext>
+      </DndContext>
     </div>
   )
 }

@@ -83,6 +83,30 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
     return () => observer.disconnect()
   }, [queue, currentIndex, open])
 
+  // ── Initial scroll anchoring ──────────────────────────────────────────────
+  // When the sheet first opens with a non-trivial history, the scroll starts
+  // at the top (Recently Played) and the user would have to scroll down to see
+  // what's playing. Anchor to the now-playing card instead so the timeline
+  // reads naturally: a slice of history peeks above, the current track sits
+  // in the viewport, and Up Next continues below.
+  const didInitialScroll = useRef(false)
+  useEffect(() => {
+    if (!open) {
+      didInitialScroll.current = false
+      return
+    }
+    if (didInitialScroll.current) return
+    if (isLoading || !queue || queue.length === 0 || currentIndex < 0) return
+    const card = nowPlayingCardRef.current
+    if (!card) return
+    // Use requestAnimationFrame so the layout has settled before scrolling.
+    const id = requestAnimationFrame(() => {
+      card.scrollIntoView({ behavior: 'auto', block: 'start' })
+      didInitialScroll.current = true
+    })
+    return () => cancelAnimationFrame(id)
+  }, [open, isLoading, queue, currentIndex])
+
   const handleJumpToNowPlaying = useCallback(() => {
     nowPlayingCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     setTimeout(() => nowPlayingCardRef.current?.focus(), 300)
