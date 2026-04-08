@@ -146,6 +146,7 @@ export function NowPlayingTab({ focusSpeaker }: { focusSpeaker?: string }) {
             focusSpeaker={focusSpeaker}
             showVolume={true}
             showQueue={true}
+            showFullQueue={true}
           />
         )
       })}
@@ -165,6 +166,7 @@ export function NowPlayingTab({ focusSpeaker }: { focusSpeaker?: string }) {
           focusSpeaker={focusSpeaker}
           showVolume={true}
           showQueue={true}
+          showFullQueue={true}
         />
       ))}
     </div>

@@ -34,6 +34,7 @@ import { startHistoryCollector, stopHistoryCollector } from './lib/history-colle
 import { notificationService } from './lib/notification-service.js'
 import { startKasaPoller, stopKasaPoller } from './lib/kasa-poller.js'
 import { sonosManager } from './lib/sonos-manager.js'
+import { speakerRegistry } from './lib/speaker-registry.js'
 import { log } from './lib/logger.js'
 import { setSocketServer } from './lib/socket.js'
 import { auth } from './lib/auth.js'
@@ -410,6 +411,7 @@ httpServer.listen(PORT, () => {
   startKasaPoller(io)
   sonosManager.setIsRoomLocked((room) => motionHandler.isRoomLocked(room))
   sonosManager.init()
+  speakerRegistry.init()
 })
 
 // Graceful shutdown
@@ -426,6 +428,7 @@ function shutdown(signal: string): void {
   stopHistoryCollector()
   stopKasaPoller()
   sonosManager.shutdown()
+  speakerRegistry.shutdown()
   motionHandler.shutdown()
   weatherIndicator.stop()
   sunModeScheduler.shutdown()
