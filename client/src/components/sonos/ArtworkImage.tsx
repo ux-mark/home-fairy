@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Wrap any image URL through the art-proxy for server-side disk caching + PWA offline */
+// eslint-disable-next-line react-refresh/only-export-components
 export function proxyArtUrl(url: string | undefined | null): string | undefined {
   if (!url) return undefined
   // Already proxied
