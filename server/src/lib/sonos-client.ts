@@ -132,6 +132,7 @@ export interface SonosLibraryTrack {
   album: string
   albumArtUri: string
   uri: string
+  duration_ms?: number
 }
 
 export interface SonosSearchArtist {
@@ -176,6 +177,7 @@ interface NasLibraryTrack {
   artist: string
   album: string
   uri: string
+  duration_ms?: number
 }
 
 class SonosClient {
@@ -969,12 +971,27 @@ class SonosClient {
       }
       const raw = JSON.parse(readFileSync(cachePath, 'utf-8'))
       const items = raw?.tracks?.items ?? []
-      this.libraryCache = items.map((t: Record<string, unknown>) => ({
-        title: String(t.trackName ?? ''),
-        artist: String(t.artistName ?? ''),
-        album: String(t.albumName ?? ''),
-        uri: String(t.uri ?? ''),
-      }))
+      this.libraryCache = items.map((t: Record<string, unknown>) => {
+        // duration may be stored as seconds (number) or HH:MM:SS string
+        let duration_ms: number | undefined
+        if (typeof t.duration === 'number' && t.duration > 0) {
+          duration_ms = Math.round(t.duration * 1000)
+        } else if (typeof t.duration === 'string' && t.duration) {
+          const parts = t.duration.split(':').map(Number)
+          if (parts.length === 3) {
+            duration_ms = ((parts[0] * 3600) + (parts[1] * 60) + parts[2]) * 1000
+          } else if (parts.length === 2) {
+            duration_ms = ((parts[0] * 60) + parts[1]) * 1000
+          }
+        }
+        return {
+          title: String(t.trackName ?? ''),
+          artist: String(t.artistName ?? ''),
+          album: String(t.albumName ?? ''),
+          uri: String(t.uri ?? ''),
+          ...(duration_ms !== undefined ? { duration_ms } : {}),
+        }
+      })
       this.libraryCacheMtime = stat.mtimeMs
       return this.libraryCache!
     } catch {
