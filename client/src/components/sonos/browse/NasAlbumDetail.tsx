@@ -78,7 +78,7 @@ export function NasAlbumDetail() {
         <button
           type="button"
           onClick={() => navigate(backUrl)}
-          aria-label="Back"
+          aria-label={fromArtist ? 'Back to artist' : 'Back to albums'}
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
             'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
