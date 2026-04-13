@@ -154,11 +154,21 @@ interface BrowseTabProps {
 }
 
 export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
-  const [activeSource, setActiveSource] = usePersistedState<SourceFilter>('browse-source-filter', 'all')
-  const [searchQuery, setSearchQuery] = usePersistedState<string>('browse-search-query', '')
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const { selectedSpeaker, setSelectedSpeaker } = usePlaybackState()
+
+  // When navigating back from a routed detail page (e.g. SpotifyArtistDetail
+  // goes back to /sonos/browse?source=spotify), use the URL param as the
+  // default so the correct source tab is active on mount.
+  const sourceFromUrl = searchParams.get('source') as SourceFilter | null
+  const initialSource: SourceFilter =
+    sourceFromUrl && ['nas', 'spotify', 'radio'].includes(sourceFromUrl)
+      ? sourceFromUrl
+      : 'all'
+
+  const [activeSource, setActiveSource] = usePersistedState<SourceFilter>('browse-source-filter', initialSource)
+  const [searchQuery, setSearchQuery] = usePersistedState<string>('browse-search-query', '')
 
   // Sync URL targetSpeaker into global speaker selection so the dropdown reflects it
   useEffect(() => {
@@ -166,15 +176,6 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
       setSelectedSpeaker(targetSpeaker)
     }
   }, [targetSpeaker])
-
-  // Restore the source tab from the ?source URL param when navigating back from a
-  // routed detail page (e.g. SpotifyArtistDetail goes back to /sonos/browse?source=spotify).
-  useEffect(() => {
-    const source = searchParams.get('source') as SourceFilter | null
-    if (source && ['nas', 'spotify', 'radio'].includes(source)) {
-      setActiveSource(source)
-    }
-  }, [searchParams])
 
   // Use context speaker unless a targetSpeaker override is provided
   const effectiveSpeaker = targetSpeaker ?? selectedSpeaker ?? undefined

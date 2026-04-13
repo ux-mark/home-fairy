@@ -103,9 +103,8 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
     if (!card) return
     // Double-rAF ensures the browser has both laid out and painted queue items
     // before scrolling, preventing a scroll to position 0 during layout.
-    let id1: number
     let id2: number
-    id1 = requestAnimationFrame(() => {
+    const id1 = requestAnimationFrame(() => {
       id2 = requestAnimationFrame(() => {
         card.scrollIntoView({ behavior: 'auto', block: 'start' })
         didInitialScroll.current = true
