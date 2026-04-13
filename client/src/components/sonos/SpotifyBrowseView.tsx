@@ -1,10 +1,10 @@
 import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ArrowDown01,
   ArrowDownAZ,
-  ArrowLeft,
   ChevronDown,
   ChevronRight,
   Clock,
@@ -14,7 +14,6 @@ import {
   MapPin,
   Mic2,
   Music2,
-  Pause,
   Play,
   RefreshCw,
 } from 'lucide-react'
@@ -22,11 +21,8 @@ import { api } from '@/lib/api'
 import type {
   SpotifyPlaylist,
   SpotifyTrack,
-  SpotifyPlaylistTrackItem,
   SpotifyAlbum,
-  SpotifyAlbumTrack,
   SpotifyShow,
-  SpotifyEpisode,
   SpotifyArtist,
   EnrichedAlbumItem,
   EnrichmentProgress,
@@ -41,13 +37,12 @@ import { cn } from '@/lib/utils'
 import { CountryList, CountryArtistList, type CountryArtistItem } from './CountryBrowse'
 import { ArtworkImage } from './ArtworkImage'
 import { ActiveTrackIndicator } from './ActiveTrackIndicator'
-import { AlbumPlaylistMenu } from './AlbumPlaylistMenu'
 import { MusicItemMenu } from './MusicItemMenu'
 import { MusicListItem } from './MusicListItem'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type SpotifyView = 'home' | 'playlist-detail' | 'album-detail' | 'show-detail' | 'artist-detail' | 'country-artists'
+type SpotifyView = 'home' | 'country-artists'
 type BrowseMode = 'playlists' | 'countries' | 'podcasts' | 'albums' | 'artists' | 'songs'
 type PlaylistSort = 'recent' | 'a-z' | 'z-a'
 
@@ -58,14 +53,6 @@ function formatDuration(ms: number): string {
   const mins = Math.floor(totalSecs / 60)
   const secs = totalSecs % 60
   return `${mins}:${secs.toString().padStart(2, '0')}`
-}
-
-function formatDate(dateStr: string): string {
-  try {
-    return new Date(dateStr).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-  } catch {
-    return dateStr
-  }
 }
 
 // ── Skeleton helpers ─────────────────────────────────────────────────────────
@@ -327,208 +314,6 @@ function SpotifyTrackRow({
   )
 }
 
-// ── Spotify album track row ───────────────────────────────────────────────────
-
-function SpotifyAlbumTrackRow({
-  track,
-  speaker,
-  isActive = false,
-  isPlaying = false,
-}: {
-  track: SpotifyAlbumTrack
-  speaker: string | null
-  isActive?: boolean
-  isPlaying?: boolean
-}) {
-  const queryClient = useQueryClient()
-  const { toast } = useToast()
-
-  const playNow = useMutation({
-    mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'now'),
-    onSuccess: () => toast({ message: `Playing "${track.name}"` }),
-    onError: () => toast({ message: 'Failed to play track', type: 'error' }),
-  })
-
-  const addToQueue = useMutation({
-    mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'queue'),
-    onSuccess: () => {
-      toast({ message: `Added "${track.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
-    },
-    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
-  })
-
-  const playNext = useMutation({
-    mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'next'),
-    onSuccess: () => {
-      toast({ message: `"${track.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
-    },
-    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
-  })
-
-  const addToFavourites = useMutation({
-    mutationFn: () => api.favourites.add({
-      source: 'spotify',
-      source_uri: track.uri,
-      title: track.name,
-    }),
-    onSuccess: () => toast({ message: `Added "${track.name}" to favourites` }),
-    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
-  })
-
-  const artistNames = track.artists.map(a => a.name).join(', ')
-
-  return (
-    <li className={cn('flex items-center gap-3 px-4 py-2.5', isActive && 'bg-fairy-500/10')}>
-      <div className="w-6 shrink-0 flex items-center justify-end">
-        {isActive
-          ? <ActiveTrackIndicator isActive={isActive} isPlaying={isPlaying} />
-          : (
-            <span
-              className="text-right text-xs tabular-nums text-caption/50"
-              aria-label={`Track ${track.track_number}`}
-            >
-              {track.track_number}
-            </span>
-          )
-        }
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">{track.name}</p>
-        <p className="truncate text-xs text-caption">{artistNames}</p>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-1">
-        <span className="mr-1 text-xs text-caption/70">{formatDuration(track.duration_ms)}</span>
-
-        <button
-          type="button"
-          disabled={!speaker || playNow.isPending}
-          onClick={() => playNow.mutate()}
-          aria-label={`Play ${track.name}`}
-          className={cn(
-            'flex h-11 w-11 items-center justify-center rounded-lg',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'disabled:opacity-40',
-          )}
-        >
-          <Play className="h-4 w-4" aria-hidden="true" />
-        </button>
-
-        <MusicItemMenu
-          label={track.name}
-          disabled={!speaker}
-          onPlayNext={() => playNext.mutate()}
-          onAddToQueue={() => addToQueue.mutate()}
-          onAddToFavourites={() => addToFavourites.mutate()}
-          fairylistTrack={{
-            source: 'spotify',
-            source_uri: track.uri,
-            title: track.name,
-            artist: artistNames,
-          }}
-          spotifyTrack={{ trackUri: track.uri, trackName: track.name }}
-        />
-      </div>
-    </li>
-  )
-}
-
-// ── Episode row ───────────────────────────────────────────────────────────────
-
-function EpisodeRow({
-  episode,
-  speaker,
-}: {
-  episode: SpotifyEpisode
-  speaker: string | null
-}) {
-  const queryClient = useQueryClient()
-  const { toast } = useToast()
-
-  const playNow = useMutation({
-    mutationFn: () => api.sonos.playSpotify(speaker!, episode.uri, 'now'),
-    onSuccess: () => toast({ message: `Playing "${episode.name}"` }),
-    onError: () => toast({ message: 'Failed to play episode', type: 'error' }),
-  })
-
-  const addToQueue = useMutation({
-    mutationFn: () => api.sonos.playSpotify(speaker!, episode.uri, 'queue'),
-    onSuccess: () => {
-      toast({ message: `Added "${episode.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
-    },
-    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
-  })
-
-  const playNext = useMutation({
-    mutationFn: () => api.sonos.playSpotify(speaker!, episode.uri, 'next'),
-    onSuccess: () => {
-      toast({ message: `"${episode.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
-    },
-    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
-  })
-
-  const addToFavourites = useMutation({
-    mutationFn: () => api.favourites.add({
-      source: 'spotify',
-      source_uri: episode.uri,
-      title: episode.name,
-      album_art_uri: episode.images?.[0]?.url,
-    }),
-    onSuccess: () => toast({ message: `Added "${episode.name}" to favourites` }),
-    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
-  })
-
-  return (
-    <li className="flex items-center gap-3 px-4 py-2.5">
-      <ArtworkImage images={episode.images} size={48} />
-
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-heading">{episode.name}</p>
-        <p className="truncate text-xs text-caption">
-          {[formatDate(episode.release_date), formatDuration(episode.duration_ms)].filter(Boolean).join(' · ')}
-        </p>
-      </div>
-
-      <div className="flex shrink-0 items-center gap-1">
-        <button
-          type="button"
-          disabled={!speaker || playNow.isPending}
-          onClick={() => playNow.mutate()}
-          aria-label={`Play ${episode.name}`}
-          className={cn(
-            'flex h-11 w-11 items-center justify-center rounded-lg',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'disabled:opacity-40',
-          )}
-        >
-          <Play className="h-4 w-4" aria-hidden="true" />
-        </button>
-
-        <MusicItemMenu
-          label={episode.name}
-          disabled={!speaker}
-          onPlayNext={() => playNext.mutate()}
-          onAddToQueue={() => addToQueue.mutate()}
-          onAddToFavourites={() => addToFavourites.mutate()}
-          fairylistTrack={{
-            source: 'spotify',
-            source_uri: episode.uri,
-            title: episode.name,
-            album_art_uri: episode.images?.[0]?.url,
-          }}
-        />
-      </div>
-    </li>
-  )
-}
-
 // ── Playlist list ─────────────────────────────────────────────────────────────
 
 const PLAYLIST_SORT_OPTIONS: Array<{ value: PlaylistSort; label: string; icon: typeof Clock }> = [
@@ -683,129 +468,6 @@ function PlaylistList({
           <PlaylistRow key={playlist.id} playlist={playlist} speaker={speaker} onSelect={onSelect} />
         ))}
       </ul>
-    </div>
-  )
-}
-
-// ── Playlist detail ───────────────────────────────────────────────────────────
-
-function PlaylistDetail({
-  playlist,
-  speaker,
-  onBack,
-}: {
-  playlist: SpotifyPlaylist
-  speaker: string | null
-  onBack: () => void
-}) {
-  const { toast } = useToast()
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['spotify-playlist-tracks', playlist.id],
-    queryFn: () => api.spotify.getPlaylistTracks(playlist.id),
-    staleTime: 5 * 60_000,
-  })
-
-  const playPlaylist = useMutation({
-    mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'now'),
-    onSuccess: () => toast({ message: `Playing "${playlist.name}"` }),
-    onError: () => toast({ message: 'Failed to play playlist', type: 'error' }),
-  })
-
-  const pausePlaylist = useMutation({
-    mutationFn: () => api.sonos.pause(speaker!),
-    onSuccess: () => { /* state updates via polling */ },
-    onError: () => toast({ message: 'Failed to pause', type: 'error' }),
-  })
-
-  const { isSelectedPlaying, isPlaylistPlaying, isTrackActive } = usePlaybackState()
-  const isThisPlaylistPlaying = isPlaylistPlaying(playlist.uri)
-  const isPlaying = isSelectedPlaying
-
-  const tracks = (data?.items ?? [])
-    .map((item: SpotifyPlaylistTrackItem) => item.track)
-    .filter((t): t is SpotifyTrack => t !== null)
-
-  return (
-    <div>
-      {/* Header */}
-      <div className="mb-4 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back to playlists"
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
-        >
-          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <ArtworkImage images={playlist.images} size={44} />
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-lg font-semibold leading-snug text-heading">{playlist.name}</h2>
-          <p className="text-xs text-caption">
-            {playlist.tracks.total} {playlist.tracks.total === 1 ? 'track' : 'tracks'}
-          </p>
-        </div>
-        <AlbumPlaylistMenu
-          uri={playlist.uri}
-          title={playlist.name}
-          artUri={playlist.images?.[0]?.url}
-          source="spotify"
-          speaker={speaker}
-        />
-        <button
-          type="button"
-          disabled={!speaker || playPlaylist.isPending || pausePlaylist.isPending}
-          onClick={() => (isThisPlaylistPlaying && isPlaying) ? pausePlaylist.mutate() : playPlaylist.mutate()}
-          aria-label={(isThisPlaylistPlaying && isPlaying) ? `Pause ${playlist.name}` : `Play playlist ${playlist.name}`}
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
-            'text-white transition-colors hover:bg-fairy-400',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'disabled:opacity-40',
-          )}
-        >
-          {isThisPlaylistPlaying && isPlaying
-            ? <Pause className="h-5 w-5" aria-hidden="true" />
-            : <Play className="h-5 w-5" aria-hidden="true" />
-          }
-        </button>
-      </div>
-
-      {isLoading && <TrackListSkeleton />}
-
-      {isError && (
-        <ErrorState
-          message={(error as Error).message ?? 'Failed to load tracks'}
-          onRetry={() => refetch()}
-        />
-      )}
-
-      {!isLoading && !isError && tracks.length === 0 && (
-        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-          <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
-          <p className="text-sm text-caption">No tracks in this playlist</p>
-        </div>
-      )}
-
-      {tracks.length > 0 && (
-        <ul className="-mx-4">
-          {tracks.map((track, i) => {
-            const active = isTrackActive(track.uri, track.name)
-            return (
-              <SpotifyTrackRow
-                key={track.id + ':' + i}
-                track={track}
-                speaker={speaker}
-                isActive={active}
-                isPlaying={active && isPlaying}
-              />
-            )
-          })}
-        </ul>
-      )}
     </div>
   )
 }
@@ -1189,126 +851,6 @@ function AlbumRow({
   )
 }
 
-// ── Album detail ──────────────────────────────────────────────────────────────
-
-function AlbumDetail({
-  album,
-  speaker,
-  onBack,
-}: {
-  album: SpotifyAlbum
-  speaker: string | null
-  onBack: () => void
-}) {
-  const { toast } = useToast()
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['spotify-album-tracks', album.id],
-    queryFn: () => api.spotify.getAlbumTracks(album.id),
-    staleTime: 5 * 60_000,
-  })
-
-  const playAlbum = useMutation({
-    mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'now'),
-    onSuccess: () => toast({ message: `Playing "${album.name}"` }),
-    onError: () => toast({ message: 'Failed to play album', type: 'error' }),
-  })
-
-  const pauseAlbum = useMutation({
-    mutationFn: () => api.sonos.pause(speaker!),
-    onSuccess: () => { /* state updates via polling */ },
-    onError: () => toast({ message: 'Failed to pause', type: 'error' }),
-  })
-
-  const { isSelectedPlaying, isAlbumPlaying, isTrackActive } = usePlaybackState()
-  const isThisAlbumPlaying = isAlbumPlaying(album.name)
-  const isPlaying = isSelectedPlaying
-
-  const tracks = data?.items ?? []
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back to albums"
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
-        >
-          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <ArtworkImage images={album.images} size={44} />
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-lg font-semibold leading-snug text-heading">{album.name}</h2>
-          <p className="truncate text-xs text-caption">
-            {album.artists.map(a => a.name).join(', ')}
-          </p>
-        </div>
-        <AlbumPlaylistMenu
-          uri={album.uri}
-          title={album.name}
-          artUri={album.images?.[0]?.url}
-          source="spotify"
-          speaker={speaker}
-        />
-        <button
-          type="button"
-          disabled={!speaker || playAlbum.isPending || pauseAlbum.isPending}
-          onClick={() => (isThisAlbumPlaying && isPlaying) ? pauseAlbum.mutate() : playAlbum.mutate()}
-          aria-label={(isThisAlbumPlaying && isPlaying) ? `Pause ${album.name}` : `Play album ${album.name}`}
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
-            'text-white transition-colors hover:bg-fairy-400',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'disabled:opacity-40',
-          )}
-        >
-          {isThisAlbumPlaying && isPlaying
-            ? <Pause className="h-5 w-5" aria-hidden="true" />
-            : <Play className="h-5 w-5" aria-hidden="true" />
-          }
-        </button>
-      </div>
-
-      {isLoading && <TrackListSkeleton />}
-
-      {isError && (
-        <ErrorState
-          message={(error as Error).message ?? 'Failed to load tracks'}
-          onRetry={() => refetch()}
-        />
-      )}
-
-      {!isLoading && !isError && tracks.length === 0 && (
-        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-          <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
-          <p className="text-sm text-caption">No tracks found</p>
-        </div>
-      )}
-
-      {tracks.length > 0 && (
-        <ul className="-mx-4">
-          {tracks.map((track, i) => {
-            const active = isTrackActive(track.uri, track.name)
-            return (
-              <SpotifyAlbumTrackRow
-                key={track.id + ':' + i}
-                track={track}
-                speaker={speaker}
-                isActive={active}
-                isPlaying={active && isPlaying}
-              />
-            )
-          })}
-        </ul>
-      )}
-    </div>
-  )
-}
-
 // ── Show (podcast) list ───────────────────────────────────────────────────────
 
 function ShowRow({
@@ -1427,74 +969,6 @@ function ShowList({
   )
 }
 
-// ── Show detail ───────────────────────────────────────────────────────────────
-
-function ShowDetail({
-  show,
-  speaker,
-  onBack,
-}: {
-  show: SpotifyShow
-  speaker: string | null
-  onBack: () => void
-}) {
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['spotify-show-episodes', show.id],
-    queryFn: () => api.spotify.getShowEpisodes(show.id),
-    staleTime: 5 * 60_000,
-  })
-
-  const episodes = data?.items ?? []
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back to podcasts"
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
-        >
-          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <ArtworkImage images={show.images} size={44} />
-        <div className="min-w-0 flex-1">
-          <h2 className="truncate text-lg font-semibold leading-snug text-heading">{show.name}</h2>
-          <p className="truncate text-xs text-caption">{show.publisher}</p>
-        </div>
-      </div>
-
-      {isLoading && <ListSkeleton />}
-
-      {isError && (
-        <ErrorState
-          message={(error as Error).message ?? 'Failed to load episodes'}
-          onRetry={() => refetch()}
-        />
-      )}
-
-      {!isLoading && !isError && episodes.length === 0 && (
-        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-          <Mic2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
-          <p className="text-sm text-caption">No episodes found</p>
-        </div>
-      )}
-
-      {episodes.length > 0 && (
-        <ul className="-mx-4">
-          {episodes.map((episode, i) => (
-            <EpisodeRow key={episode.id + ':' + i} episode={episode} speaker={speaker} />
-          ))}
-        </ul>
-      )}
-    </div>
-  )
-}
-
 // ── Songs (liked tracks) ──────────────────────────────────────────────────────
 
 function SongsList({ speaker }: { speaker: string | null }) {
@@ -1609,139 +1083,6 @@ function ArtistList({ onSelect }: { onSelect: (artist: SpotifyArtist) => void })
             </li>
           ))}
         </ul>
-      )}
-    </div>
-  )
-}
-
-// ── Artist album row ──────────────────────────────────────────────────────────
-
-function ArtistAlbumRow({
-  album,
-  speaker,
-  onSelectAlbum,
-}: {
-  album: SpotifyAlbum
-  speaker: string | null
-  onSelectAlbum: (album: SpotifyAlbum) => void
-}) {
-  const queryClient = useQueryClient()
-  const { toast } = useToast()
-
-  const playNow = useMutation({
-    mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'now'),
-    onSuccess: () => toast({ message: `Playing "${album.name}"` }),
-    onError: () => toast({ message: 'Failed to play album', type: 'error' }),
-  })
-
-  const playNext = useMutation({
-    mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'next'),
-    onSuccess: () => {
-      toast({ message: `"${album.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
-    },
-    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
-  })
-
-  const addToQueue = useMutation({
-    mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'queue'),
-    onSuccess: () => {
-      toast({ message: `Added "${album.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
-    },
-    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
-  })
-
-  const albumType = album.album_type.charAt(0).toUpperCase() + album.album_type.slice(1)
-  const year = album.release_date.slice(0, 4)
-  const songCount = album.total_tracks
-  const subtitle = `${albumType} · ${year} · ${songCount} ${songCount === 1 ? 'song' : 'songs'}`
-
-  return (
-    <MusicListItem
-      artwork={{ images: album.images, size: 48 }}
-      title={album.name}
-      subtitle={subtitle}
-      onTap={() => onSelectAlbum(album)}
-      onPlay={() => playNow.mutate()}
-      playPending={playNow.isPending}
-      disabled={!speaker}
-      menuProps={{
-        label: album.name,
-        onPlayNext: () => playNext.mutate(),
-        onAddToQueue: () => addToQueue.mutate(),
-        fairylistTrack: {
-          source: 'spotify',
-          source_uri: album.uri,
-          title: album.name,
-          album_art_uri: album.images?.[0]?.url,
-        },
-      }}
-    />
-  )
-}
-
-// ── Artist detail ─────────────────────────────────────────────────────────────
-
-function ArtistDetail({
-  artist,
-  speaker,
-  onBack,
-  onSelectAlbum,
-}: {
-  artist: SpotifyArtist
-  speaker: string | null
-  onBack: () => void
-  onSelectAlbum: (album: SpotifyAlbum) => void
-}) {
-  const { data, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['spotify-artist-albums', artist.id],
-    queryFn: () => api.spotify.getArtistAlbums(artist.id),
-    staleTime: 5 * 60_000,
-  })
-
-  const albums = data?.items ?? []
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back to artists"
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
-        >
-          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <h2 className="truncate text-lg font-semibold text-heading">{artist.name}</h2>
-      </div>
-
-      {isLoading && <ListSkeleton />}
-
-      {isError && (
-        <ErrorState
-          message={(error as Error).message ?? 'Failed to load albums'}
-          onRetry={() => refetch()}
-        />
-      )}
-
-      {!isLoading && !isError && albums.length === 0 && (
-        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-          <Disc3 className="h-10 w-10 text-caption/40" aria-hidden="true" />
-          <p className="text-sm text-caption">No albums found</p>
-        </div>
-      )}
-
-      {albums.length > 0 && (
-        <div className="-mx-4">
-          {albums.map(album => (
-            <ArtistAlbumRow key={album.id} album={album} speaker={speaker} onSelectAlbum={onSelectAlbum} />
-          ))}
-        </div>
       )}
     </div>
   )
@@ -2207,14 +1548,12 @@ interface SpotifyBrowseViewProps {
 export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseViewProps) {
   const [view, setView] = useState<SpotifyView>('home')
   const [browseMode, setBrowseMode] = usePersistedState<BrowseMode>('spotify-browse-mode', 'playlists')
-  const [selectedPlaylist, setSelectedPlaylist] = useState<SpotifyPlaylist | null>(null)
-  const [selectedAlbum, setSelectedAlbum] = useState<SpotifyAlbum | null>(null)
-  const [selectedShow, setSelectedShow] = useState<SpotifyShow | null>(null)
-  const [selectedArtist, setSelectedArtist] = useState<SpotifyArtist | null>(null)
   const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
 
   const { selectedSpeaker } = usePlaybackState()
   const speaker = targetSpeaker ?? selectedSpeaker
+  const navigate = useNavigate()
+  const speakerQuery = speaker ? `?speaker=${encodeURIComponent(speaker)}` : ''
 
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
   const isSearching = debouncedQuery.length > 0
@@ -2232,28 +1571,19 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
   })
 
   function handleSelectPlaylist(playlist: SpotifyPlaylist) {
-    setSelectedPlaylist(playlist)
-    setView('playlist-detail')
+    navigate(`/sonos/browse/spotify/playlist/${encodeURIComponent(playlist.id)}${speakerQuery}`)
   }
 
   function handleSelectAlbum(album: SpotifyAlbum) {
-    setSelectedAlbum(album)
-    setView('album-detail')
+    navigate(`/sonos/browse/spotify/album/${encodeURIComponent(album.id)}${speakerQuery}`)
   }
 
   function handleSelectShow(show: SpotifyShow) {
-    setSelectedShow(show)
-    setView('show-detail')
+    navigate(`/sonos/browse/spotify/show/${encodeURIComponent(show.id)}${speakerQuery}`)
   }
 
   function handleSelectArtist(artist: SpotifyArtist) {
-    setSelectedArtist(artist)
-    setView('artist-detail')
-  }
-
-  function handleSelectArtistAlbum(album: SpotifyAlbum) {
-    setSelectedAlbum(album)
-    setView('album-detail')
+    navigate(`/sonos/browse/spotify/artist/${encodeURIComponent(artist.id)}${speakerQuery}`)
   }
 
   function handleSelectCountry(code: string, name: string) {
@@ -2262,22 +1592,8 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
   }
 
   function handleBack() {
-    if (view === 'album-detail' && selectedCountry && selectedArtist) {
-      setView('artist-detail')
-      setSelectedAlbum(null)
-    } else if (view === 'album-detail' && selectedArtist) {
-      setView('artist-detail')
-      setSelectedAlbum(null)
-    } else if (view === 'artist-detail' && selectedCountry) {
-      setView('country-artists')
-      setSelectedArtist(null)
-      setSelectedAlbum(null)
-    } else {
+    if (view === 'country-artists') {
       setView('home')
-      setSelectedPlaylist(null)
-      setSelectedAlbum(null)
-      setSelectedShow(null)
-      setSelectedArtist(null)
       setSelectedCountry(null)
     }
   }
@@ -2306,35 +1622,6 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
         query={debouncedQuery}
         speaker={speaker}
         onSelectArtist={handleSelectArtist}
-      />
-    )
-  }
-
-  if (view === 'playlist-detail' && selectedPlaylist) {
-    return (
-      <PlaylistDetail playlist={selectedPlaylist} speaker={speaker} onBack={handleBack} />
-    )
-  }
-
-  if (view === 'album-detail' && selectedAlbum) {
-    return (
-      <AlbumDetail album={selectedAlbum} speaker={speaker} onBack={handleBack} />
-    )
-  }
-
-  if (view === 'show-detail' && selectedShow) {
-    return (
-      <ShowDetail show={selectedShow} speaker={speaker} onBack={handleBack} />
-    )
-  }
-
-  if (view === 'artist-detail' && selectedArtist) {
-    return (
-      <ArtistDetail
-        artist={selectedArtist}
-        speaker={speaker}
-        onBack={handleBack}
-        onSelectAlbum={handleSelectArtistAlbum}
       />
     )
   }

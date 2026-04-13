@@ -97,13 +97,13 @@ class SonosManager {
         this.consecutiveFailures = 0
         if (changed) {
           emit('sonos:zones-update', this.injectPodcastArtIntoZones(newZones))
-
-          // Also detect playback-specific changes (track change, play/pause from external source)
-          const newFingerprint = this.getPlaybackFingerprint(newZones)
-          if (newFingerprint !== this.lastPlaybackFingerprint) {
-            this.lastPlaybackFingerprint = newFingerprint
-            emit('sonos:playback-update', { source: 'zone-poll' })
-          }
+        }
+        // Check for playback changes on every poll — a track advance or external
+        // play/pause changes the fingerprint without necessarily changing zone membership.
+        const newFingerprint = this.getPlaybackFingerprint(newZones)
+        if (newFingerprint !== this.lastPlaybackFingerprint) {
+          this.lastPlaybackFingerprint = newFingerprint
+          emit('sonos:playback-update', { source: 'zone-poll' })
         }
       } catch {
         this.consecutiveFailures++

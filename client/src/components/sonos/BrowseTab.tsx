@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { usePersistedState } from '@/hooks/usePersistedState'
 import { AlertTriangle, CheckCircle2, Search, X, Music, Radio, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -157,6 +157,7 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
   const [activeSource, setActiveSource] = usePersistedState<SourceFilter>('browse-source-filter', 'all')
   const [searchQuery, setSearchQuery] = usePersistedState<string>('browse-search-query', '')
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const { selectedSpeaker, setSelectedSpeaker } = usePlaybackState()
 
   // Sync URL targetSpeaker into global speaker selection so the dropdown reflects it
@@ -165,6 +166,15 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
       setSelectedSpeaker(targetSpeaker)
     }
   }, [targetSpeaker])
+
+  // Restore the source tab from the ?source URL param when navigating back from a
+  // routed detail page (e.g. SpotifyArtistDetail goes back to /sonos/browse?source=spotify).
+  useEffect(() => {
+    const source = searchParams.get('source') as SourceFilter | null
+    if (source && ['nas', 'spotify', 'radio'].includes(source)) {
+      setActiveSource(source)
+    }
+  }, [searchParams])
 
   // Use context speaker unless a targetSpeaker override is provided
   const effectiveSpeaker = targetSpeaker ?? selectedSpeaker ?? undefined

@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowUp } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
 import { useQueueSync } from '@/hooks/useQueueSync'
+import { normalizeUri } from '@/lib/normalizeUri'
 import { useQueueSelection } from '@/hooks/useQueueSelection'
 import { useUndoableQueueAction } from '@/hooks/useUndoableQueueAction'
 import { useToast } from '@/hooks/useToast'
@@ -56,7 +57,8 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
   const currentIndex = useMemo(() => {
     if (!queue || queue.length === 0) return -1
     if (currentTrackUri) {
-      const idx = queue.findIndex(item => item.uri === currentTrackUri)
+      const normalizedUri = normalizeUri(currentTrackUri)
+      const idx = queue.findIndex(item => item.uri && normalizeUri(item.uri) === normalizedUri)
       if (idx >= 0) return idx
     }
     const trackNo = playbackState?.trackNo
@@ -99,12 +101,17 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
     if (isLoading || !queue || queue.length === 0 || currentIndex < 0) return
     const card = nowPlayingCardRef.current
     if (!card) return
-    // Use requestAnimationFrame so the layout has settled before scrolling.
-    const id = requestAnimationFrame(() => {
-      card.scrollIntoView({ behavior: 'auto', block: 'start' })
-      didInitialScroll.current = true
+    // Double-rAF ensures the browser has both laid out and painted queue items
+    // before scrolling, preventing a scroll to position 0 during layout.
+    let id1: number
+    let id2: number
+    id1 = requestAnimationFrame(() => {
+      id2 = requestAnimationFrame(() => {
+        card.scrollIntoView({ behavior: 'auto', block: 'start' })
+        didInitialScroll.current = true
+      })
     })
-    return () => cancelAnimationFrame(id)
+    return () => { cancelAnimationFrame(id1); cancelAnimationFrame(id2) }
   }, [open, isLoading, queue, currentIndex])
 
   const handleJumpToNowPlaying = useCallback(() => {

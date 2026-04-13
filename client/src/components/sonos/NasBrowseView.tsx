@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
-  ArrowLeft,
   ChevronDown,
   ChevronRight,
   Disc3,
@@ -10,7 +10,6 @@ import {
   Loader2,
   MapPin,
   Music2,
-  Pause,
   Play,
   RefreshCw,
   User,
@@ -36,13 +35,12 @@ import { ArtworkImage } from './ArtworkImage'
 import { CountryList, CountryArtistList, type CountryArtistItem } from './CountryBrowse'
 import { isValidIsoCode } from './countryUtils'
 import { ActiveTrackIndicator } from './ActiveTrackIndicator'
-import { AlbumPlaylistMenu } from './AlbumPlaylistMenu'
 import { MusicItemMenu } from './MusicItemMenu'
 import { MusicListItem } from './MusicListItem'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type NasView = 'home' | 'artist-detail' | 'album-detail' | 'country-artists'
+type NasView = 'home' | 'country-artists'
 type BrowseMode = 'countries' | 'albums' | 'artists' | 'songs'
 
 // ── Track row ─────────────────────────────────────────────────────────────────
@@ -820,221 +818,6 @@ function NasAlbumRow({
   )
 }
 
-// ── Artist detail view ───────────────────────────────────────────────────────
-
-function ArtistDetail({
-  artist,
-  speaker,
-  onBack,
-  onSelectAlbum,
-}: {
-  artist: string
-  speaker: string | null
-  onBack: () => void
-  onSelectAlbum: (album: SonosGenreAlbum) => void
-}) {
-  const { data: tracks, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['sonos-library-artist-tracks', artist],
-    queryFn: () => api.sonos.getArtistTracks(artist),
-    staleTime: 5 * 60_000,
-  })
-
-  // Group tracks by album
-  const albums = new Map<string, SonosLibraryTrack[]>()
-  if (tracks) {
-    for (const t of tracks) {
-      const key = t.album || 'Unknown Album'
-      const list = albums.get(key) ?? []
-      list.push(t)
-      albums.set(key, list)
-    }
-  }
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back to artists"
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
-        >
-          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <h2 className="truncate text-lg font-semibold text-heading">{artist}</h2>
-      </div>
-
-      {isLoading && <ListSkeleton />}
-
-      {isError && (
-        <ErrorState
-          message={(error as Error).message ?? 'Failed to load tracks'}
-          onRetry={() => refetch()}
-        />
-      )}
-
-      {!isLoading && !isError && albums.size > 0 && (
-        <div className="-mx-4">
-          {Array.from(albums.entries()).map(([albumName, albumTracks]) => (
-            <section key={albumName} aria-label={albumName}>
-              <button
-                type="button"
-                onClick={() => onSelectAlbum({ name: albumName, artist, albumArtUri: '', objectId: `A:ALBUMARTIST/${encodeURIComponent(artist)}/${encodeURIComponent(albumName)}` })}
-                className={cn(
-                  'flex w-full items-center gap-2 px-4 pb-1 pt-4 text-left',
-                  'transition-colors hover:bg-[var(--bg-secondary)]',
-                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                )}
-              >
-                <Disc3 className="h-3.5 w-3.5 text-fairy-400" aria-hidden="true" />
-                <h3 className="text-xs font-semibold text-fairy-400">{albumName}</h3>
-                <span className="text-xs text-caption">· {albumTracks.length} tracks</span>
-                <ChevronRight className="ml-auto h-3 w-3 text-caption/40" aria-hidden="true" />
-              </button>
-              <ul>
-                {albumTracks.slice(0, 5).map((track, i) => (
-                  <TrackRow key={track.uri + ':' + i} track={track} speaker={speaker} />
-                ))}
-                {albumTracks.length > 5 && (
-                  <li className="px-4 py-2">
-                    <button
-                      type="button"
-                      onClick={() => onSelectAlbum({ name: albumName, artist, albumArtUri: '', objectId: `A:ALBUMARTIST/${encodeURIComponent(artist)}/${encodeURIComponent(albumName)}` })}
-                      className="text-xs font-medium text-fairy-400 hover:text-fairy-300"
-                    >
-                      Show all {albumTracks.length} tracks
-                    </button>
-                  </li>
-                )}
-              </ul>
-            </section>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── Album detail view ────────────────────────────────────────────────────────
-
-function AlbumDetail({
-  album,
-  speaker,
-  onBack,
-}: {
-  album: SonosGenreAlbum
-  speaker: string | null
-  onBack: () => void
-}) {
-  const { toast } = useToast()
-  const { data: tracks, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['sonos-library-album-tracks', album.objectId],
-    queryFn: () => api.sonos.getAlbumTracks(album.objectId),
-    staleTime: 5 * 60_000,
-  })
-
-  const playAlbum = useMutation({
-    mutationFn: () => api.sonos.playUri(speaker!, album.objectId),
-    onSuccess: () => toast({ message: `Playing "${album.name}"` }),
-    onError: () => toast({ message: 'Failed to play album', type: 'error' }),
-  })
-
-  const pauseAlbum = useMutation({
-    mutationFn: () => api.sonos.pause(speaker!),
-    onSuccess: () => { /* state updates via polling */ },
-    onError: () => toast({ message: 'Failed to pause', type: 'error' }),
-  })
-
-  const { isSelectedPlaying, isAlbumPlaying, isTrackActive } = usePlaybackState()
-  const isPlaying = isSelectedPlaying
-  const isThisAlbumPlaying = isAlbumPlaying(album.name)
-
-  return (
-    <div>
-      <div className="mb-4 flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back"
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
-            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          )}
-        >
-          <ArrowLeft className="h-5 w-5" aria-hidden="true" />
-        </button>
-        <ArtworkImage src={album.albumArtUri} size={44} fallback="disc" />
-        <div className="min-w-0 flex-1">
-          <h2 className="text-lg font-semibold leading-snug text-heading">{album.name}</h2>
-          <p className="text-xs text-caption">{album.artist}</p>
-        </div>
-        <AlbumPlaylistMenu
-          uri={album.objectId}
-          title={album.name}
-          artUri={album.albumArtUri}
-          source="nas"
-          speaker={speaker}
-        />
-        <button
-          type="button"
-          disabled={!speaker || playAlbum.isPending || pauseAlbum.isPending}
-          onClick={() => (isThisAlbumPlaying && isPlaying) ? pauseAlbum.mutate() : playAlbum.mutate()}
-          aria-label={(isThisAlbumPlaying && isPlaying) ? `Pause ${album.name}` : `Play album ${album.name}`}
-          className={cn(
-            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-fairy-500',
-            'text-white transition-colors hover:bg-fairy-400',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            'disabled:opacity-40',
-          )}
-        >
-          {isThisAlbumPlaying && isPlaying
-            ? <Pause className="h-5 w-5" aria-hidden="true" />
-            : <Play className="h-5 w-5" aria-hidden="true" />
-          }
-        </button>
-      </div>
-
-      {isLoading && <ListSkeleton />}
-
-      {isError && (
-        <ErrorState
-          message={(error as Error).message ?? 'Failed to load tracks'}
-          onRetry={() => refetch()}
-        />
-      )}
-
-      {!isLoading && !isError && tracks && tracks.length > 0 && (
-        <ul className="-mx-4">
-          {tracks.map((track, i) => {
-            const active = isTrackActive(track.uri, track.title)
-            return (
-              <TrackRow
-                key={track.uri + ':' + i}
-                track={track}
-                speaker={speaker}
-                isActive={active}
-                isPlaying={active && isPlaying}
-              />
-            )
-          })}
-        </ul>
-      )}
-
-      {!isLoading && !isError && (!tracks || tracks.length === 0) && (
-        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-          <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
-          <p className="text-sm text-caption">No tracks found</p>
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── NAS country wrappers (data-fetching shells around shared CountryBrowse components) ──
 
 function NasCountryList({
@@ -1408,23 +1191,24 @@ interface NasBrowseViewProps {
 export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps) {
   const [view, setView] = useState<NasView>('home')
   const [browseMode, setBrowseMode] = usePersistedState<BrowseMode>('nas-browse-mode', 'countries')
-  const [selectedArtist, setSelectedArtist] = useState<string | null>(null)
-  const [selectedAlbum, setSelectedAlbum] = useState<SonosGenreAlbum | null>(null)
   const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
   const { selectedSpeaker } = usePlaybackState()
   const speaker = targetSpeaker ?? selectedSpeaker
+  const navigate = useNavigate()
+  const speakerQuery = speaker ? `?speaker=${encodeURIComponent(speaker)}` : ''
 
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
   const isSearching = debouncedQuery.length > 0
 
   function handleSelectArtist(name: string) {
-    setSelectedArtist(name)
-    setView('artist-detail')
+    navigate(`/sonos/browse/nas/artist/${encodeURIComponent(name)}${speakerQuery}`)
   }
 
   function handleSelectAlbum(album: SonosGenreAlbum) {
-    setSelectedAlbum(album)
-    setView('album-detail')
+    navigate(
+      `/sonos/browse/nas/album/${encodeURIComponent(album.artist)}/${encodeURIComponent(album.name)}${speakerQuery}`,
+      { state: { objectId: album.objectId } },
+    )
   }
 
   function handleSelectCountry(code: string, name: string) {
@@ -1435,18 +1219,6 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
   function handleBack() {
     if (view === 'country-artists') {
       setView('home')
-      setSelectedCountry(null)
-    } else if (view === 'album-detail' && selectedArtist) {
-      setView('artist-detail')
-      setSelectedAlbum(null)
-    } else if (view === 'artist-detail' && selectedCountry) {
-      setView('country-artists')
-      setSelectedArtist(null)
-      setSelectedAlbum(null)
-    } else {
-      setView('home')
-      setSelectedArtist(null)
-      setSelectedAlbum(null)
       setSelectedCountry(null)
     }
   }
@@ -1469,27 +1241,6 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
         countryName={selectedCountry.name}
         onSelectArtist={handleSelectArtist}
         onBack={handleBack}
-      />
-    )
-  }
-
-  if (view === 'album-detail' && selectedAlbum) {
-    return (
-      <AlbumDetail
-        album={selectedAlbum}
-        speaker={speaker}
-        onBack={handleBack}
-      />
-    )
-  }
-
-  if (view === 'artist-detail' && selectedArtist) {
-    return (
-      <ArtistDetail
-        artist={selectedArtist}
-        speaker={speaker}
-        onBack={handleBack}
-        onSelectAlbum={handleSelectAlbum}
       />
     )
   }
