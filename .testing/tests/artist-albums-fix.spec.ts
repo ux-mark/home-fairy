@@ -68,7 +68,7 @@ const MOCK_ARTISTS = {
       genres: ['folk rock'],
       uri: 'spotify:artist:3gd8FJtBJtkRxdfbTu19U2',
       external_urls: { spotify: 'https://open.spotify.com/artist/3gd8FJtBJtkRxdfbTu19U2' },
-      followers: { total: 5000000 },
+      // No followers field — verifies NAS-style layout shows song counts, not follower counts
     },
   ],
   total: 1,
@@ -207,8 +207,8 @@ test('Country artist with Spotify ID loads albums page', async ({ page }) => {
   await expect(page.getByText('Sigh No More')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText('Babel')).toBeVisible()
 
-  // Verify NAS-style layout: track counts visible, no follower counts
-  await expect(page.getByText(/12 tracks/).first()).toBeVisible()
+  // Verify NAS-style layout: song counts visible (shown as "songs"), no follower counts
+  await expect(page.getByText(/12 songs/).first()).toBeVisible()
   await expect(page.getByText(/followers/)).not.toBeVisible()
 
   // Verify simple header: artist name visible, no album artwork images

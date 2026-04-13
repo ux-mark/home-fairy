@@ -34,23 +34,6 @@ function collectConsoleErrors(page: Page, pageName: string) {
 
 // ── Shared mock payloads ──────────────────────────────────────────────────────
 
-const STOPPED_NOW_PLAYING = [
-  {
-    roomName: 'Living Room',
-    speakerName: 'Living Room',
-    state: {
-      playbackState: 'STOPPED',
-      currentTrack: { artist: '', title: '', album: '', albumArtUri: '', type: 'track' },
-      volume: 30,
-      mute: false,
-      trackNo: 0,
-      elapsedTime: 0,
-      duration: 0,
-    },
-    error: false,
-  },
-]
-
 const FAVOURITES = [
   {
     id: 1,
@@ -74,12 +57,11 @@ const FAVOURITES = [
   },
 ]
 
-// ── Helper: navigate to Favourites tab ───────────────────────────────────────
+// ── Helper: navigate to Favourites page ──────────────────────────────────────
 
 async function goToFavourites(page: Page) {
-  await page.goto('/sonos')
+  await page.goto('/sonos/favourites')
   await page.waitForLoadState('networkidle')
-  await page.getByRole('tab', { name: 'Favourites' }).click()
 }
 
 // ── Test (a): Favourites tab shows favourites list with items ─────────────────
@@ -90,9 +72,6 @@ test('Favourites tab shows the favourites list with items', async ({ page }) => 
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   await page.route('**/api/favourites', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FAVOURITES) }),
   )
@@ -116,9 +95,6 @@ test('Favourites tab items show their titles', async ({ page }) => {
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   await page.route('**/api/favourites', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FAVOURITES) }),
   )
@@ -139,9 +115,6 @@ test('Favourites context menu opens and sets aria-expanded when triggered', asyn
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   await page.route('**/api/favourites', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FAVOURITES) }),
   )
@@ -169,9 +142,6 @@ test('Favourites context menu contains Play next, Add to queue, Remove items', a
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   await page.route('**/api/favourites', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FAVOURITES) }),
   )
@@ -196,9 +166,6 @@ test('Favourites Remove menu item removes the item from the list', async ({ page
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   // Intercept all /api/favourites* requests and route based on method + path
   await page.route('**/api/favourites**', route => {
     const method = route.request().method()
@@ -243,9 +210,6 @@ test('Favourites "Add from Browse" button navigates to the Browse tab', async ({
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   await page.route('**/api/favourites', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FAVOURITES) }),
   )
@@ -257,9 +221,13 @@ test('Favourites "Add from Browse" button navigates to the Browse tab', async ({
 
   await page.getByRole('button', { name: 'Add from Browse' }).click()
 
-  // Browse tab should now be active
-  const browseTab = page.getByRole('tab', { name: 'Browse' })
-  await expect(browseTab).toHaveAttribute('aria-selected', 'true')
+  // After clicking "Add from Browse", the app navigates to /sonos/browse
+  await page.waitForURL('**/sonos/browse')
+  await page.waitForLoadState('networkidle')
+
+  // Browse nav link should now be aria-current=page
+  const browseLink = page.getByRole('link', { name: 'Browse' })
+  await expect(browseLink).toHaveAttribute('aria-current', 'page')
 
   // Browse source filter tabs should be visible
   await expect(page.getByRole('tablist', { name: 'Browse by source' })).toBeVisible()
@@ -275,16 +243,14 @@ test('Favourites empty state shows "No favourites yet" heading and Browse music 
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   await page.route('**/api/favourites', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
   )
 
   await goToFavourites(page)
 
-  await expect(page.getByRole('heading', { name: 'No favourites yet' })).toBeVisible()
+  // "No favourites yet." is a paragraph (not a heading)
+  await expect(page.getByText('No favourites yet.')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Browse music' })).toBeVisible()
 
   await page.screenshot({ path: '.testing/results/sonos-favourites-07-empty.png', fullPage: true })
@@ -298,9 +264,6 @@ test('Favourites error state shows error message and Retry button', async ({ pag
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   await page.route('**/api/favourites', route =>
     route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Server error' }) }),
   )
