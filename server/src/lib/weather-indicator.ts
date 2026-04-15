@@ -2,6 +2,7 @@ import { lifxClient } from './lifx-client.js'
 import { getCurrentWeather } from './weather-client.js'
 import { getOne, run } from '../db/index.js'
 import { log } from './logger.js'
+import { isHushingActive } from './hushing.js'
 
 /**
  * Weather condition → light colour mapping
@@ -197,6 +198,11 @@ class WeatherIndicator {
   async checkAndUpdate(): Promise<{ condition: string; color: string } | null> {
     const config = this.getConfig()
     if (!config.enabled || !config.lightId) return null
+
+    if (isHushingActive()) {
+      log('Hushing Home active — suppressing weather indicator update', 'weather')
+      return null
+    }
 
     // Skip if the light's room is blocked
     if (this.isLightRoomBlocked(config.lightId)) return null

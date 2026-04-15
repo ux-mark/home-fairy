@@ -1887,6 +1887,10 @@ router.post('/hushing', async (req: Request, res: Response) => {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
     )
 
+    // Cancel all in-flight automation timers so nothing turns lights off during hush
+    timerManager.cancelAll()
+    motionHandler.cancelAllRoomTimers()
+
     const allRooms = getAll<{ name: string }>('SELECT name FROM rooms')
     motionHandler.lockRooms(allRooms.map(r => r.name))
     sonosManager.onLockedStateActivated().catch(() => {})
@@ -1910,6 +1914,11 @@ router.post('/hushing/deactivate', (req: Request, res: Response) => {
        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
     )
     motionHandler.unlockAllRooms()
+
+    // Resume schedulers — catch up to whatever mode should be active now
+    sunModeScheduler.refreshFromDb()
+    timeTriggerScheduler.refreshFromDb()
+
     log(`${user.name} deactivated Hushing Home`, 'system', user)
     emit('scene:change', { action: 'hushing_deactivate' })
     res.json({ success: true })

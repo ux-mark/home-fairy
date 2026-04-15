@@ -11,6 +11,7 @@ import { deviceHealthService } from './device-health-service.js'
 import { FAIRY_QUEEN } from './constants.js'
 import { logUserAction } from './user-action-logger.js'
 import { log } from './logger.js'
+import { isHushingActive } from './hushing.js'
 
 interface LightCommand {
   type: 'lifx_light'
@@ -488,6 +489,10 @@ export async function activateScene(
         }
 
         case 'scene_timer': {
+          if (isHushingActive()) {
+            log(`Hushing Home active — suppressing scene_timer command (would activate "${cmd.command || cmd.name}")`, undefined, undefined, undefined, parentLogId)
+            break
+          }
           const delaySec = cmd.duration ?? 300
           const targetScene = cmd.command || cmd.name
           timerManager.createTimer(sceneName, targetScene, delaySec)
