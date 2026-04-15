@@ -227,11 +227,15 @@ test('Now Playing tab shows View queue button', async ({ page }) => {
   await page.route('**/api/sonos/now-playing', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(PLAYING_NOW_PLAYING) }),
   )
+  await page.route('**/api/sonos/queue/**', route =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(QUEUE_ITEMS) }),
+  )
 
   await page.goto('/sonos')
   await page.waitForLoadState('networkidle')
 
-  const viewQueueBtn = page.getByRole('button', { name: 'View playback queue' })
+  // Button label is "See full queue — N tracks" (aria-label in InlineQueue.tsx)
+  const viewQueueBtn = page.getByRole('button', { name: /See full queue/ })
   await expect(viewQueueBtn).toBeVisible()
 
   await page.screenshot({ path: '.testing/results/sonos-now-playing-04-queue-btn.png', fullPage: true })
@@ -255,9 +259,10 @@ test('Queue modal opens when View queue button is clicked', async ({ page }) => 
   await page.goto('/sonos')
   await page.waitForLoadState('networkidle')
 
-  await page.getByRole('button', { name: 'View playback queue' }).click()
+  await page.getByRole('button', { name: /See full queue/ }).click()
 
-  const dialog = page.getByRole('dialog', { name: 'Queue' })
+  // Dialog title is "Queue (N)" when items are loaded, or "Queue" while loading
+  const dialog = page.getByRole('dialog', { name: /Queue/ })
   await expect(dialog).toBeVisible()
 
   await page.screenshot({ path: '.testing/results/sonos-now-playing-05-queue-modal-open.png', fullPage: true })
@@ -281,9 +286,9 @@ test('Queue modal shows track titles from mocked queue', async ({ page }) => {
   await page.goto('/sonos')
   await page.waitForLoadState('networkidle')
 
-  await page.getByRole('button', { name: 'View playback queue' }).click()
+  await page.getByRole('button', { name: /See full queue/ }).click()
 
-  const dialog = page.getByRole('dialog', { name: 'Queue' })
+  const dialog = page.getByRole('dialog', { name: /Queue/ })
   await expect(dialog).toBeVisible()
 
   // Both queue items should be visible
@@ -311,12 +316,13 @@ test('Queue modal can be closed with Cancel button', async ({ page }) => {
   await page.goto('/sonos')
   await page.waitForLoadState('networkidle')
 
-  await page.getByRole('button', { name: 'View playback queue' }).click()
+  await page.getByRole('button', { name: /See full queue/ }).click()
 
-  const dialog = page.getByRole('dialog', { name: 'Queue' })
+  const dialog = page.getByRole('dialog', { name: /Queue/ })
   await expect(dialog).toBeVisible()
 
-  await dialog.getByRole('button', { name: 'Cancel' }).click()
+  // QueueView has "Close" and "Done" buttons (not "Cancel")
+  await dialog.getByRole('button', { name: 'Close' }).click()
 
   // The SortableOverlay slides the panel off-screen with translate-y-full (CSS animation).
   // The dialog element stays in the DOM but moves off-screen — verify it no longer has
@@ -341,12 +347,13 @@ test('Now Playing shows "Nothing playing" heading when speaker is stopped', asyn
   await page.goto('/sonos')
   await page.waitForLoadState('networkidle')
 
-  await expect(page.getByRole('heading', { name: 'Nothing playing' })).toBeVisible()
+  // "Nothing playing" renders as a paragraph, not a heading
+  await expect(page.getByText('Nothing playing').first()).toBeVisible()
 
   await page.screenshot({ path: '.testing/results/sonos-now-playing-08-empty.png', fullPage: true })
 })
 
-// ── Test (i): Error state shows "Cannot reach this speaker" ──────────────────
+// ── Test (i): Error state shows "Could not reach this speaker." ──────────────
 
 test('Now Playing shows error heading when API returns error entry', async ({ page }) => {
   test.setTimeout(30_000)
@@ -361,7 +368,7 @@ test('Now Playing shows error heading when API returns error entry', async ({ pa
   await page.goto('/sonos')
   await page.waitForLoadState('networkidle')
 
-  await expect(page.getByRole('heading', { name: 'Cannot reach this speaker' })).toBeVisible()
+  await expect(page.getByText(/Could not reach this speaker/)).toBeVisible()
 
   await page.screenshot({ path: '.testing/results/sonos-now-playing-09-error.png', fullPage: true })
 })

@@ -110,8 +110,8 @@ test('Settings Music section shows connected username and Disconnect button when
   // Disconnect button should be present
   await expect(page.getByRole('button', { name: 'Disconnect Spotify' })).toBeVisible()
 
-  // Connect link should NOT be visible
-  await expect(page.getByRole('link', { name: 'Connect Spotify' })).toBeHidden()
+  // When connected, a "Reconnect Spotify" link is shown (not "Connect Spotify")
+  await expect(page.getByRole('link', { name: 'Reconnect Spotify' })).toBeVisible()
 
   await page.screenshot({ path: '.testing/results/sonos-spotify-03-connected.png', fullPage: true })
 })

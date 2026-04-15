@@ -50,7 +50,7 @@ const STOPPED_NOW_PLAYING = [
   },
 ]
 
-// ── Test (a): Sonos page loads with 3 tabs visible ────────────────────────────
+// ── Test (a): Sonos page loads with 3 nav links visible ──────────────────────
 
 test('Sonos page loads with 3 tabs visible', async ({ page }) => {
   test.setTimeout(30_000)
@@ -64,21 +64,22 @@ test('Sonos page loads with 3 tabs visible', async ({ page }) => {
   await page.goto('/sonos')
   await page.waitForLoadState('networkidle')
 
-  const tablist = page.getByRole('tablist', { name: 'Sonos sections' })
-  await expect(tablist).toBeVisible()
+  // Navigation uses NavLink elements (not a tablist) in the bottom nav
+  const nav = page.locator('nav').filter({ has: page.getByRole('link', { name: 'Playing' }) })
+  await expect(nav).toBeVisible()
 
-  const nowPlayingTab = page.getByRole('tab', { name: 'Now Playing' })
-  const browseTab = page.getByRole('tab', { name: 'Browse' })
-  const favouritesTab = page.getByRole('tab', { name: 'Favourites' })
+  const playingLink = page.getByRole('link', { name: 'Playing' })
+  const browseLink = page.getByRole('link', { name: 'Browse' })
+  const favouritesLink = page.getByRole('link', { name: 'Favourites' })
 
-  await expect(nowPlayingTab).toBeVisible()
-  await expect(browseTab).toBeVisible()
-  await expect(favouritesTab).toBeVisible()
+  await expect(playingLink).toBeVisible()
+  await expect(browseLink).toBeVisible()
+  await expect(favouritesLink).toBeVisible()
 
   await page.screenshot({ path: '.testing/results/sonos-nav-01-three-tabs.png', fullPage: true })
 })
 
-// ── Test (b): Each tab can be clicked and switches content ────────────────────
+// ── Test (b): Each route shows different content ──────────────────────────────
 
 test('Sonos tabs switch visible content when clicked', async ({ page }) => {
   test.setTimeout(30_000)
@@ -92,34 +93,27 @@ test('Sonos tabs switch visible content when clicked', async ({ page }) => {
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([]) }),
   )
 
-  await page.goto('/sonos')
+  // Navigate to Browse route — Browse panel should show its search input
+  await page.goto('/sonos/browse')
   await page.waitForLoadState('networkidle')
-
-  // Scope to the bottom nav tablist to avoid ambiguity with Browse's source tabs
-  const sonosNav = page.getByRole('tablist', { name: 'Sonos sections' })
-  const nowPlayingTab = sonosNav.getByRole('tab', { name: 'Now Playing' })
-  const browseTab = sonosNav.getByRole('tab', { name: 'Browse' })
-  const favouritesTab = sonosNav.getByRole('tab', { name: 'Favourites' })
-
-  // Switch to Browse
-  await browseTab.click()
-  // Browse panel should show its search input
   await expect(page.getByLabel('Search music')).toBeVisible()
 
-  // Switch to Favourites — scope to Sonos nav to avoid Browse source "Favourites" tab
-  await favouritesTab.click()
-  // Favourites empty state visible (we mocked empty array)
-  await expect(page.getByRole('heading', { name: 'No favourites yet' })).toBeVisible()
+  // Navigate to Favourites route — Favourites empty state visible (we mocked empty array)
+  await page.goto('/sonos/favourites')
+  await page.waitForLoadState('networkidle')
+  // "No favourites yet." is a paragraph (not a heading)
+  await expect(page.getByText('No favourites yet.')).toBeVisible()
 
-  // Switch back to Now Playing
-  await nowPlayingTab.click()
-  // Nothing playing heading visible (stopped state)
-  await expect(page.getByRole('heading', { name: 'Nothing playing' })).toBeVisible()
+  // Navigate to Now Playing route — Nothing playing text visible (stopped state)
+  await page.goto('/sonos/playing')
+  await page.waitForLoadState('networkidle')
+  // "Nothing playing" renders as a paragraph, not a heading
+  await expect(page.getByText('Nothing playing')).toBeVisible()
 
   await page.screenshot({ path: '.testing/results/sonos-nav-02-tab-switching.png', fullPage: true })
 })
 
-// ── Test (c): Active tab has aria-selected=true ───────────────────────────────
+// ── Test (c): Active nav link has aria-current=page ──────────────────────────
 
 test('Active Sonos tab has aria-selected true', async ({ page }) => {
   test.setTimeout(30_000)
@@ -130,30 +124,28 @@ test('Active Sonos tab has aria-selected true', async ({ page }) => {
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
   )
 
-  await page.goto('/sonos')
+  // At /sonos/playing, the "Playing" link should be aria-current=page
+  await page.goto('/sonos/playing')
   await page.waitForLoadState('networkidle')
+  const playingLink = page.getByRole('link', { name: 'Playing' })
+  await expect(playingLink).toHaveAttribute('aria-current', 'page')
 
-  // Scope to the bottom nav tablist to avoid ambiguity with Browse's source tabs
-  const sonosNav = page.getByRole('tablist', { name: 'Sonos sections' })
-  const nowPlayingTab = sonosNav.getByRole('tab', { name: 'Now Playing' })
-  const browseTab = sonosNav.getByRole('tab', { name: 'Browse' })
-  const favouritesTab = sonosNav.getByRole('tab', { name: 'Favourites' })
+  // At /sonos/browse, the "Browse" link should be aria-current=page
+  await page.goto('/sonos/browse')
+  await page.waitForLoadState('networkidle')
+  const browseLink = page.getByRole('link', { name: 'Browse' })
+  await expect(browseLink).toHaveAttribute('aria-current', 'page')
 
-  // Now Playing is the default active tab
-  await expect(nowPlayingTab).toHaveAttribute('aria-selected', 'true')
-
-  // Click Browse — it becomes active
-  await browseTab.click()
-  await expect(browseTab).toHaveAttribute('aria-selected', 'true')
-
-  // Click Favourites — it becomes active (scoped to Sonos nav, not Browse source tabs)
-  await favouritesTab.click()
-  await expect(favouritesTab).toHaveAttribute('aria-selected', 'true')
+  // At /sonos/favourites, the "Favourites" link should be aria-current=page
+  await page.goto('/sonos/favourites')
+  await page.waitForLoadState('networkidle')
+  const favouritesLink = page.getByRole('link', { name: 'Favourites' })
+  await expect(favouritesLink).toHaveAttribute('aria-current', 'page')
 
   await page.screenshot({ path: '.testing/results/sonos-nav-03-aria-selected.png', fullPage: true })
 })
 
-// ── Test (d): Non-active tabs have aria-selected=false ───────────────────────
+// ── Test (d): Non-active nav links do NOT have aria-current=page ─────────────
 
 test('Non-active Sonos tabs have aria-selected false', async ({ page }) => {
   test.setTimeout(30_000)
@@ -164,23 +156,24 @@ test('Non-active Sonos tabs have aria-selected false', async ({ page }) => {
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
   )
 
-  await page.goto('/sonos')
+  // At /sonos/playing, Browse and Favourites links should NOT be aria-current=page
+  await page.goto('/sonos/playing')
   await page.waitForLoadState('networkidle')
 
-  // Scope to the bottom nav tablist to avoid ambiguity with Browse's source tabs
-  const sonosNav = page.getByRole('tablist', { name: 'Sonos sections' })
-  const browseTab = sonosNav.getByRole('tab', { name: 'Browse' })
-  const favouritesTab = sonosNav.getByRole('tab', { name: 'Favourites' })
+  const browseLink = page.getByRole('link', { name: 'Browse' })
+  const favouritesLink = page.getByRole('link', { name: 'Favourites' })
 
-  // Browse and Favourites are not active on load
-  await expect(browseTab).toHaveAttribute('aria-selected', 'false')
-  await expect(favouritesTab).toHaveAttribute('aria-selected', 'false')
+  await expect(browseLink).not.toHaveAttribute('aria-current', 'page')
+  await expect(favouritesLink).not.toHaveAttribute('aria-current', 'page')
 
-  // After clicking Browse, Now Playing and Favourites are still inactive
-  await browseTab.click()
-  const nowPlayingTab = sonosNav.getByRole('tab', { name: 'Now Playing' })
-  await expect(nowPlayingTab).toHaveAttribute('aria-selected', 'false')
-  await expect(favouritesTab).toHaveAttribute('aria-selected', 'false')
+  // At /sonos/browse, Playing and Favourites links should NOT be aria-current=page
+  await page.goto('/sonos/browse')
+  await page.waitForLoadState('networkidle')
+
+  const playingLink = page.getByRole('link', { name: 'Playing' })
+  const favouritesLink2 = page.getByRole('link', { name: 'Favourites' })
+  await expect(playingLink).not.toHaveAttribute('aria-current', 'page')
+  await expect(favouritesLink2).not.toHaveAttribute('aria-current', 'page')
 
   await page.screenshot({ path: '.testing/results/sonos-nav-04-aria-not-selected.png', fullPage: true })
 })

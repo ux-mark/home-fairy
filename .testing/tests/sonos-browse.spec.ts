@@ -34,23 +34,6 @@ function collectConsoleErrors(page: Page, pageName: string) {
 
 // ── Shared mock payloads ──────────────────────────────────────────────────────
 
-const STOPPED_NOW_PLAYING = [
-  {
-    roomName: 'Living Room',
-    speakerName: 'Living Room',
-    state: {
-      playbackState: 'STOPPED',
-      currentTrack: { artist: '', title: '', album: '', albumArtUri: '', type: 'track' },
-      volume: 30,
-      mute: false,
-      trackNo: 0,
-      elapsedTime: 0,
-      duration: 0,
-    },
-    error: false,
-  },
-]
-
 const LIBRARY_GENRES = [
   { title: 'Rock', id: 'rock' },
   { title: 'Jazz', id: 'jazz' },
@@ -63,12 +46,11 @@ const RADIO_STATIONS = [
 const SPOTIFY_DISCONNECTED = { connected: false }
 const SPOTIFY_CONNECTED = { connected: true, display_name: 'testuser' }
 
-// ── Helper: navigate to Browse tab ───────────────────────────────────────────
+// ── Helper: navigate to Browse page ──────────────────────────────────────────
 
 async function goToBrowse(page: Page) {
-  await page.goto('/sonos')
+  await page.goto('/sonos/browse')
   await page.waitForLoadState('networkidle')
-  await page.getByRole('tab', { name: 'Browse' }).click()
 }
 
 // ── Test (a): Browse tab shows search input and source filter tabs ─────────────
@@ -79,9 +61,6 @@ test('Browse tab shows search input and source filter tabs', async ({ page }) =>
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   await page.route('**/api/spotify/status', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(SPOTIFY_DISCONNECTED) }),
   )
@@ -104,15 +83,12 @@ test('Browse tab shows search input and source filter tabs', async ({ page }) =>
 
 // ── Test (b): Source filter tabs All, NAS, Spotify, Radio, Favourites ─────────
 
-test('Browse source filter shows All, NAS, Spotify, Radio, Favourites tabs', async ({ page }) => {
+test('Browse source filter shows All, NAS, Spotify, Radio tabs', async ({ page }) => {
   test.setTimeout(30_000)
   collectConsoleErrors(page, 'Browse-source-tabs')
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   await page.route('**/api/spotify/status', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(SPOTIFY_DISCONNECTED) }),
   )
@@ -125,30 +101,24 @@ test('Browse source filter shows All, NAS, Spotify, Radio, Favourites tabs', asy
 
   await goToBrowse(page)
 
+  // Source filter tabs: All, NAS, Spotify, Radio (no Favourites source in BrowseTab)
   const sourceTablist = page.getByRole('tablist', { name: 'Browse by source' })
   await expect(sourceTablist.getByRole('tab', { name: 'All' })).toBeVisible()
   await expect(sourceTablist.getByRole('tab', { name: 'NAS' })).toBeVisible()
   await expect(sourceTablist.getByRole('tab', { name: 'Spotify' })).toBeVisible()
   await expect(sourceTablist.getByRole('tab', { name: 'Radio' })).toBeVisible()
-  await expect(sourceTablist.getByRole('tab', { name: 'Favourites' })).toBeVisible()
 
   await page.screenshot({ path: '.testing/results/sonos-browse-02-source-tabs.png', fullPage: true })
 })
 
-// ── Test (c): Clicking NAS tab switches to NAS content (genres load) ──────────
+// ── Test (c): Clicking NAS tab switches to NAS content ───────────────────────
 
-test('Browse NAS tab shows genres from mocked library', async ({ page }) => {
+test('Browse NAS tab shows browse mode tabs', async ({ page }) => {
   test.setTimeout(30_000)
   collectConsoleErrors(page, 'Browse-nas')
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
-  await page.route('**/api/sonos/library/genres', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(LIBRARY_GENRES) }),
-  )
   await page.route('**/api/spotify/status', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(SPOTIFY_DISCONNECTED) }),
   )
@@ -161,11 +131,12 @@ test('Browse NAS tab shows genres from mocked library', async ({ page }) => {
   await page.getByRole('tablist', { name: 'Browse by source' }).getByRole('tab', { name: 'NAS' }).click()
   await page.waitForLoadState('networkidle')
 
-  // Genre items from mock should appear
-  await expect(page.getByText('Rock')).toBeVisible()
-  await expect(page.getByText('Jazz')).toBeVisible()
+  // NAS view shows browse mode tabs: Countries, Albums, Artists, Songs
+  await expect(page.getByRole('tab', { name: 'Countries' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Albums' })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Artists' })).toBeVisible()
 
-  await page.screenshot({ path: '.testing/results/sonos-browse-03-nas-genres.png', fullPage: true })
+  await page.screenshot({ path: '.testing/results/sonos-browse-03-nas-browse-modes.png', fullPage: true })
 })
 
 // ── Test (d): Clicking Radio tab switches to Radio content ────────────────────
@@ -176,9 +147,6 @@ test('Browse Radio tab shows stations from mocked response', async ({ page }) =>
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   await page.route('**/api/sonos/radio/stations', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(RADIO_STATIONS) }),
   )
@@ -207,9 +175,6 @@ test('Browse Spotify tab shows SpotifyBrowseView when disconnected', async ({ pa
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   await page.route('**/api/spotify/status', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(SPOTIFY_DISCONNECTED) }),
   )
@@ -242,9 +207,6 @@ test('Browse search input updates and shows clear button when non-empty', async 
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   await page.route('**/api/spotify/status', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(SPOTIFY_DISCONNECTED) }),
   )
@@ -280,9 +242,6 @@ test('Browse clear search button clears the search input', async ({ page }) => {
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   await page.route('**/api/spotify/status', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(SPOTIFY_DISCONNECTED) }),
   )
@@ -309,15 +268,12 @@ test('Browse clear search button clears the search input', async ({ page }) => {
 
 // ── Test (h): All source view shows source preview cards ─────────────────────
 
-test('Browse All source view shows NAS, Spotify, Radio, Favourites cards', async ({ page }) => {
+test('Browse All source view shows NAS, Spotify, Radio cards', async ({ page }) => {
   test.setTimeout(30_000)
   collectConsoleErrors(page, 'Browse-all-sources')
 
   await mockSession(page)
 
-  await page.route('**/api/sonos/now-playing', route =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(STOPPED_NOW_PLAYING) }),
-  )
   await page.route('**/api/spotify/status', route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(SPOTIFY_CONNECTED) }),
   )
@@ -330,12 +286,11 @@ test('Browse All source view shows NAS, Spotify, Radio, Favourites cards', async
 
   await goToBrowse(page)
 
-  // "All" tab is active by default — source preview cards should be visible
-  // Each card is a button containing the source name text
+  // "All" tab is active by default — source preview cards (NAS, Spotify, Radio) should be visible
+  // Each card is a button containing the source name text (no Favourites source in BrowseTab)
   await expect(page.getByRole('button', { name: /NAS/i }).first()).toBeVisible()
   await expect(page.getByRole('button', { name: /Spotify/i }).first()).toBeVisible()
   await expect(page.getByRole('button', { name: /Radio/i }).first()).toBeVisible()
-  await expect(page.getByRole('button', { name: /Favourites/i }).first()).toBeVisible()
 
   await page.screenshot({ path: '.testing/results/sonos-browse-08-all-sources.png', fullPage: true })
 })

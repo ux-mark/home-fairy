@@ -28,8 +28,8 @@ export function useQueueSync({ speaker, enabled }: UseQueueSyncOptions): UseQueu
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: queueKey,
     queryFn: () => api.sonos.getQueue(speaker),
-    refetchInterval: 30_000,
-    staleTime: 29_000,
+    refetchInterval: 10_000,
+    staleTime: 9_000,
     enabled: enabled && !!speaker,
     retry: 1,
   })

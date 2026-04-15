@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { usePersistedState } from '@/hooks/usePersistedState'
 import { AlertTriangle, CheckCircle2, Search, X, Music, Radio, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -154,10 +154,21 @@ interface BrowseTabProps {
 }
 
 export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
-  const [activeSource, setActiveSource] = usePersistedState<SourceFilter>('browse-source-filter', 'all')
-  const [searchQuery, setSearchQuery] = usePersistedState<string>('browse-search-query', '')
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { selectedSpeaker, setSelectedSpeaker } = usePlaybackState()
+
+  // When navigating back from a routed detail page (e.g. SpotifyArtistDetail
+  // goes back to /sonos/browse?source=spotify), use the URL param as the
+  // default so the correct source tab is active on mount.
+  const sourceFromUrl = searchParams.get('source') as SourceFilter | null
+  const initialSource: SourceFilter =
+    sourceFromUrl && ['nas', 'spotify', 'radio'].includes(sourceFromUrl)
+      ? sourceFromUrl
+      : 'all'
+
+  const [activeSource, setActiveSource] = usePersistedState<SourceFilter>('browse-source-filter', initialSource)
+  const [searchQuery, setSearchQuery] = usePersistedState<string>('browse-search-query', '')
 
   // Sync URL targetSpeaker into global speaker selection so the dropdown reflects it
   useEffect(() => {
