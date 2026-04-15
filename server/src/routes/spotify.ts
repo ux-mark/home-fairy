@@ -308,6 +308,21 @@ router.get('/artists', requireAuth, async (req: Request, res: Response) => {
   res.json(result)
 })
 
+// GET /spotify/artists/:id — fetch a single artist by Spotify ID (requires auth + connected)
+router.get('/artists/:id', requireAuth, async (req: Request, res: Response) => {
+  if (!spotifyClient.isConnected()) {
+    res.status(401).json({ error: 'Spotify not connected' })
+    return
+  }
+  try {
+    const artistId = String(req.params.id)
+    const artist = await spotifyClient.getArtist(artistId)
+    res.json(artist)
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
 // GET /spotify/artists/:id/albums — fetch albums for an artist (requires auth + connected)
 router.get('/artists/:id/albums', requireAuth, async (req: Request, res: Response) => {
   if (!spotifyClient.isConnected()) {
