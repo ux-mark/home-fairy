@@ -4,6 +4,7 @@ import { FAIRY_QUEEN } from './constants.js'
 import type { Server as SocketServer } from 'socket.io'
 import { motionHandler } from './motion-handler.js'
 import { sonosManager } from './sonos-manager.js'
+import { isHushingActive } from './hushing.js'
 
 interface TimeTrigger {
   id: number
@@ -110,6 +111,10 @@ class TimeTriggerScheduler {
   }
 
   private transitionMode(mode: string, trigger: string) {
+    if (isHushingActive()) {
+      log(`Hushing Home active — suppressing time-trigger mode transition to "${mode}" (${trigger})`, 'system', FAIRY_QUEEN)
+      return
+    }
     try {
       // Check if current mode is the sleep mode — don't override it
       // UNLESS this transition IS the wake mode (which should unlock from sleep)

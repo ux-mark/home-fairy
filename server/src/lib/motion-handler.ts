@@ -5,6 +5,7 @@ import { activateScene, deactivateScene } from './scene-executor.js'
 import { mtaIndicator } from './mta-indicator.js'
 import { weatherIndicator } from './weather-indicator.js'
 import { sonosManager } from './sonos-manager.js'
+import { isHushingActive } from './hushing.js'
 
 interface RoomTimer {
   timeout: NodeJS.Timeout
@@ -397,6 +398,12 @@ export class MotionHandler {
 
       const timeout = setTimeout(async () => {
         this.roomTimers.delete(roomName)
+
+        if (isHushingActive()) {
+          log(`Hushing Home active — suppressing room timer deactivation for ${roomName}`, 'motion', FAIRY_QUEEN)
+          return
+        }
+
         const timerParentId = log(`Timer expired for ${roomName}, deactivating scene`, 'motion', FAIRY_QUEEN)
 
         const currentRoom = getOne<RoomRow>(
@@ -431,6 +438,14 @@ export class MotionHandler {
       this.roomTimers.delete(roomName)
       log(`Cancelled timer for ${roomName}`, 'motion', FAIRY_QUEEN, undefined, parentId)
     }
+  }
+
+  cancelAllRoomTimers(): void {
+    for (const [roomName, timer] of this.roomTimers) {
+      clearTimeout(timer.timeout)
+      log(`Hushing Home active — cancelled room inactivity timer for ${roomName}`, 'motion', FAIRY_QUEEN)
+    }
+    this.roomTimers.clear()
   }
 
   getTimerStatus(): { roomName: string; remainingMs: number }[] {

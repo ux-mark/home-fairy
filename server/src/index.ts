@@ -29,6 +29,7 @@ import { sunModeScheduler } from './lib/sun-mode-scheduler.js'
 import { timeTriggerScheduler } from './lib/time-trigger-scheduler.js'
 import { timerManager } from './lib/timer-manager.js'
 import { activateScene } from './lib/scene-executor.js'
+import { isHushingActive } from './lib/hushing.js'
 import { weatherIndicator } from './lib/weather-indicator.js'
 import { startHistoryCollector, stopHistoryCollector } from './lib/history-collector.js'
 import { notificationService } from './lib/notification-service.js'
@@ -391,6 +392,10 @@ notificationService.setEmitter((event, data) => io.emit(event, data))
 
 // Wire up scene timer expiry — activate the target scene when the timer fires
 timerManager.setOnExpire(async (targetScene, sceneName) => {
+  if (isHushingActive()) {
+    log(`Hushing Home active — suppressing scene timer (${sceneName} -> ${targetScene})`, 'timer')
+    return
+  }
   try {
     console.log(`Scene timer expired: ${sceneName} -> activating ${targetScene}`)
     log(`Scene timer expired (${sceneName}): activating "${targetScene}"`, 'timer')
