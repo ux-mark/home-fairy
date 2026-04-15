@@ -490,6 +490,20 @@ class SpotifyClient {
     }
   }
 
+  async getArtist(id: string): Promise<SpotifyArtist> {
+    const token = await this.getAccessToken()
+    try {
+      const response = await this.api.get<SpotifyArtist>(
+        `/artists/${encodeURIComponent(id)}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
+      return response.data
+    } catch (err) {
+      const status = err instanceof AxiosError ? err.response?.status : undefined
+      throw new SpotifyApiError(`Failed to fetch artist ${id}`, status)
+    }
+  }
+
   async getArtistsByIds(ids: string[]): Promise<SpotifyArtist[]> {
     if (ids.length === 0) return []
     const token = await this.getAccessToken()

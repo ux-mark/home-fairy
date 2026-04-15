@@ -91,13 +91,14 @@ export function SpotifyArtistDetail() {
 
   const backUrl = `/sonos/browse?source=spotify${speakerParam ? `&speaker=${encodeURIComponent(speakerParam)}` : ''}`
 
-  // Load artist metadata from the artists list (cached)
-  const { data: artistsData } = useQuery({
-    queryKey: ['spotify-artists'],
-    queryFn: () => api.spotify.getArtists(),
-    staleTime: 5 * 60_000,
+  // Load artist metadata from the dedicated endpoint — works for any artist,
+  // including search results that are not in the followed/top-artists cache.
+  const { data: artist } = useQuery({
+    queryKey: ['spotify-artist', id],
+    queryFn: () => api.spotify.getArtist(id!),
+    staleTime: 10 * 60_000,
+    enabled: !!id,
   })
-  const artist = (artistsData?.items ?? []).find(a => a.id === id)
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['spotify-artist-albums', id],
@@ -111,6 +112,16 @@ export function SpotifyArtistDetail() {
     onSuccess: () => toast({ message: `Playing ${artist?.name}` }),
     onError: () => toast({ message: 'Failed to play artist', type: 'error' }),
   })
+
+  function handleBack() {
+    // Prefer navigate(-1) so scroll position is restored by useScrollRestoration.
+    // Fall back to the browse URL only if there's no history to go back to.
+    if (window.history.length > 1) {
+      navigate(-1)
+    } else {
+      navigate(backUrl)
+    }
+  }
 
   if (!id) return null
 
@@ -129,7 +140,7 @@ export function SpotifyArtistDetail() {
       <div className="mb-4 flex items-center gap-3">
         <button
           type="button"
-          onClick={() => navigate(backUrl)}
+          onClick={handleBack}
           aria-label="Back to artists"
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',

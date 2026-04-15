@@ -1940,6 +1940,8 @@ export const api = {
         '/spotify/artists' + (qs ? '?' + qs : ''),
       )
     },
+    getArtist: (id: string) =>
+      fetchApi<SpotifyArtist>('/spotify/artists/' + encodeURIComponent(id)),
     getArtistAlbums: (id: string, limit?: number, offset?: number) => {
       const params = new URLSearchParams()
       if (limit !== undefined) params.set('limit', String(limit))
