@@ -49,6 +49,16 @@ async function mockSettingsApis(page: Page, spotifyPayload: object) {
   )
 }
 
+// Open the Music category accordion on the Settings page so its contents are visible.
+// The Settings page collapses all categories except "Preferences" by default.
+async function openMusicAccordion(page: Page) {
+  const musicAccordion = page.getByRole('button', { name: /Music/i }).first()
+  await expect(musicAccordion).toBeVisible({ timeout: 5_000 })
+  await musicAccordion.click()
+  // Wait for the accordion animation to complete and content to be visible
+  await page.waitForTimeout(350)
+}
+
 // ── Test (a): Settings Music section shows "Connect Spotify" link when disconnected
 
 test('Settings Music section shows Connect Spotify link when Spotify is disconnected', async ({ page }) => {
@@ -61,6 +71,9 @@ test('Settings Music section shows Connect Spotify link when Spotify is disconne
 
   await page.goto('/settings')
   await page.waitForLoadState('networkidle')
+
+  // Music is inside a collapsed accordion — open it first
+  await openMusicAccordion(page)
 
   // The Spotify section heading
   await expect(page.getByRole('heading', { name: 'Spotify' })).toBeVisible()
@@ -85,6 +98,8 @@ test('Connect Spotify link points to /api/spotify/auth', async ({ page }) => {
   await page.goto('/settings')
   await page.waitForLoadState('networkidle')
 
+  await openMusicAccordion(page)
+
   const connectLink = page.getByRole('link', { name: 'Connect Spotify' })
   await expect(connectLink).toHaveAttribute('href', '/api/spotify/auth')
 
@@ -103,6 +118,8 @@ test('Settings Music section shows connected username and Disconnect button when
 
   await page.goto('/settings')
   await page.waitForLoadState('networkidle')
+
+  await openMusicAccordion(page)
 
   // Should show "Connected as testuser"
   await expect(page.getByText(/Connected as testuser/i)).toBeVisible()
@@ -132,6 +149,8 @@ test('Settings page with ?spotify=connected query param loads without crashing',
 
   // Page should load and show Settings heading without crashing
   await expect(page.getByRole('heading', { name: 'Settings' }).first()).toBeVisible()
+
+  await openMusicAccordion(page)
 
   // Connected state (since we mocked connected) should be shown
   await expect(page.getByText(/Connected as testuser/i)).toBeVisible()
