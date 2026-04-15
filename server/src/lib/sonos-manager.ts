@@ -103,7 +103,16 @@ class SonosManager {
         const newFingerprint = this.getPlaybackFingerprint(newZones)
         if (newFingerprint !== this.lastPlaybackFingerprint) {
           this.lastPlaybackFingerprint = newFingerprint
-          emit('sonos:playback-update', { source: 'zone-poll' })
+          // Include the currently-playing speaker and track info so clients can
+          // update their queue highlight without waiting for a full now-playing fetch.
+          const playingZone = newZones.find(z => z.coordinator.state.playbackState === 'PLAYING')
+          const coordinator = playingZone?.coordinator
+          emit('sonos:playback-update', {
+            source: 'zone-poll',
+            speaker: coordinator?.roomName ?? null,
+            trackNo: coordinator?.state?.trackNo ?? null,
+            uri: coordinator?.state?.currentTrack?.uri ?? null,
+          })
         }
       } catch {
         this.consecutiveFailures++

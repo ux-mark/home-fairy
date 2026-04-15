@@ -85,16 +85,20 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
     return () => observer.disconnect()
   }, [queue, currentIndex, open])
 
+  // ── Scroll refs ───────────────────────────────────────────────────────────
+  const didInitialScroll = useRef(false)
+  const prevCurrentIndex = useRef(-1)
+
   // ── Initial scroll anchoring ──────────────────────────────────────────────
   // When the sheet first opens with a non-trivial history, the scroll starts
   // at the top (Recently Played) and the user would have to scroll down to see
   // what's playing. Anchor to the now-playing card instead so the timeline
   // reads naturally: a slice of history peeks above, the current track sits
   // in the viewport, and Up Next continues below.
-  const didInitialScroll = useRef(false)
   useEffect(() => {
     if (!open) {
       didInitialScroll.current = false
+      prevCurrentIndex.current = -1
       return
     }
     if (didInitialScroll.current) return
@@ -108,10 +112,23 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
       id2 = requestAnimationFrame(() => {
         card.scrollIntoView({ behavior: 'auto', block: 'start' })
         didInitialScroll.current = true
+        prevCurrentIndex.current = currentIndex
       })
     })
     return () => { cancelAnimationFrame(id1); cancelAnimationFrame(id2) }
   }, [open, isLoading, queue, currentIndex])
+
+  // ── Auto-scroll on track advance ─────────────────────────────────────────
+  // After the initial anchor scroll, if the user is watching the queue and the
+  // track advances, smoothly follow the now-playing card so it stays visible.
+  useEffect(() => {
+    if (!open || !didInitialScroll.current) return
+    if (currentIndex < 0 || currentIndex === prevCurrentIndex.current) return
+    prevCurrentIndex.current = currentIndex
+    // Only auto-scroll if the now-playing card is out of view
+    if (!showJumpPill) return
+    nowPlayingCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [open, currentIndex, showJumpPill])
 
   const handleJumpToNowPlaying = useCallback(() => {
     nowPlayingCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })

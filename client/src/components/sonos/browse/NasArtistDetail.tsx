@@ -44,6 +44,14 @@ export function NasArtistDetail() {
     }
   }
 
+  function handleBack() {
+    if (window.history.length > 1) {
+      navigate(-1)
+    } else {
+      navigate(backUrl)
+    }
+  }
+
   if (!artist) return null
 
   function handleSelectAlbum(albumName: string) {
@@ -60,7 +68,7 @@ export function NasArtistDetail() {
       <div className="mb-4 flex items-center gap-3">
         <button
           type="button"
-          onClick={() => navigate(backUrl)}
+          onClick={handleBack}
           aria-label="Back to artists"
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
