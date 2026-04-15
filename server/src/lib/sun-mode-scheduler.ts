@@ -5,6 +5,7 @@ import { FAIRY_QUEEN } from './constants.js'
 import type { Server as SocketServer } from 'socket.io'
 import { motionHandler } from './motion-handler.js'
 import { sonosManager } from './sonos-manager.js'
+import { isHushingActive } from './hushing.js'
 
 interface SunModeMapping {
   sunPhase: string
@@ -114,6 +115,10 @@ class SunModeScheduler {
   }
 
   private transitionMode(mode: string, sunPhase: string) {
+    if (isHushingActive()) {
+      log(`Hushing Home active — suppressing sun mode transition to "${mode}" (${sunPhase})`, 'system', FAIRY_QUEEN)
+      return
+    }
     try {
       run(
         `INSERT INTO current_state (key, value, updated_at) VALUES ('mode', ?, datetime('now'))

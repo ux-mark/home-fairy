@@ -6,6 +6,7 @@ import { getOne, run } from '../db/index.js'
 import { log as logToDb } from './logger.js'
 import { lifxClient } from './lifx-client.js'
 import { mtaClient } from './mta-client.js'
+import { isHushingActive } from './hushing.js'
 
 interface CurrentStateRow {
   key: string
@@ -112,6 +113,11 @@ class MtaIndicatorManager {
    */
   private async updateLight(): Promise<string> {
     if (!this.isActive || !this.currentLightId) return 'none'
+
+    if (isHushingActive()) {
+      log('Hushing Home active — suppressing MTA indicator update')
+      return 'none'
+    }
 
     const { enabledStops, maxWaitMinutes } = this.readStopsConfig()
     if (enabledStops.length === 0) {
