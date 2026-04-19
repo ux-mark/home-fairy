@@ -47,6 +47,7 @@ __pycache__/
 # Testing output (Playwright, Jest, etc.)
 # -----------------------------------------------------------------------------
 .testing/results/
+.testing/node_modules
 test-results/
 playwright-report/
 playwright/.cache/
@@ -107,16 +108,12 @@ artifacts/generated/
 *.sqlite-shm
 *.sqlite-wal
 *.sqlite-journal
+*.db
 
 # -----------------------------------------------------------------------------
 # Album art disk cache
 # -----------------------------------------------------------------------------
 server/data/art-cache/
-
-# -----------------------------------------------------------------------------
-# PM2 (machine-specific dev config)
-# -----------------------------------------------------------------------------
-ecosystem.config.js
 
 # -----------------------------------------------------------------------------
 # Misc
