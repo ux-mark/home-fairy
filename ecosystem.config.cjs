@@ -1,7 +1,7 @@
 module.exports = {
   apps: [
     {
-      name: 'thefairies',
+      name: 'home-fairy',
       cwd: './server',
       script: 'dist/index.js',
       env: {
