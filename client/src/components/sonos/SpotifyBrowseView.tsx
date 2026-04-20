@@ -333,14 +333,28 @@ function sortPlaylists(playlists: SpotifyPlaylist[], sort: PlaylistSort): Spotif
   return sort === 'z-a' ? sorted.reverse() : sorted
 }
 
+const PINNED_BADGE_CLS =
+  'inline-flex items-center gap-1 rounded-md bg-fairy-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-fairy-400'
+
+function PinnedBadge({ label = 'Pinned', title }: { label?: string; title?: string }) {
+  return (
+    <span className={PINNED_BADGE_CLS} title={title ?? label}>
+      <Pin className="h-2.5 w-2.5" aria-hidden="true" />
+      {label}
+    </span>
+  )
+}
+
 function PlaylistRow({
   playlist,
   speaker,
   onSelect,
+  isPinned,
 }: {
   playlist: SpotifyPlaylist
   speaker: string | null
   onSelect: (playlist: SpotifyPlaylist) => void
+  isPinned: boolean
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
@@ -392,9 +406,10 @@ function PlaylistRow({
       onPlay={() => playNow.mutate()}
       playPending={playNow.isPending}
       disabled={!speaker}
+      badge={isPinned ? <PinnedBadge /> : undefined}
       menuProps={{
         label: playlist.name,
-        onPin: () => pinPlaylist.mutate(),
+        onPin: isPinned ? undefined : () => pinPlaylist.mutate(),
         onPlayNext: () => playNext.mutate(),
         onAddToQueue: () => addToQueue.mutate(),
         fairylistTrack: {
@@ -473,15 +488,6 @@ function PinnedPlaylistRow({
       onPlay={() => playNow.mutate()}
       playPending={playNow.isPending}
       disabled={!speaker}
-      badge={
-        <span
-          className="inline-flex items-center gap-1 rounded-md bg-fairy-400/10 px-1.5 py-0.5 text-[10px] font-medium text-fairy-300"
-          title={pinned.is_editorial ? 'Pinned from Spotify — tracks hidden by Spotify API' : 'Pinned'}
-        >
-          <Pin className="h-2.5 w-2.5" aria-hidden="true" />
-          Pinned
-        </span>
-      }
       menuProps={{
         label: pinned.name,
         onPlayNext: () => playNext.mutate(),
@@ -517,7 +523,8 @@ function PlaylistList({
     queryFn: () => api.spotify.getPinnedPlaylists(),
     staleTime: 5 * 60_000,
   })
-  const pinned = pinnedData ?? []
+  const pinned = useMemo(() => pinnedData ?? [], [pinnedData])
+  const pinnedIdSet = useMemo(() => new Set(pinned.map(p => p.playlist_id)), [pinned])
 
   const {
     data,
@@ -665,7 +672,13 @@ function PlaylistList({
       )}
       <ul className="-mx-4">
         {playlists.map(playlist => (
-          <PlaylistRow key={playlist.id} playlist={playlist} speaker={speaker} onSelect={onSelect} />
+          <PlaylistRow
+            key={playlist.id}
+            playlist={playlist}
+            speaker={speaker}
+            onSelect={onSelect}
+            isPinned={pinnedIdSet.has(playlist.id)}
+          />
         ))}
       </ul>
       {hasMoreToLoad && (
@@ -1383,9 +1396,11 @@ type SpotifySearchArtistItem = {
 function SearchPlaylistRow({
   playlist,
   speaker,
+  isPinned,
 }: {
   playlist: SpotifyPlaylist
   speaker: string | null
+  isPinned: boolean
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
@@ -1437,9 +1452,10 @@ function SearchPlaylistRow({
       onPlay={() => playNow.mutate()}
       playPending={playNow.isPending}
       disabled={!speaker}
+      badge={isPinned ? <PinnedBadge /> : undefined}
       menuProps={{
         label: playlist.name,
-        onPin: () => pinPlaylist.mutate(),
+        onPin: isPinned ? undefined : () => pinPlaylist.mutate(),
         onPlayNext: () => playNext.mutate(),
         onAddToQueue: () => addToQueue.mutate(),
         fairylistTrack: {
@@ -1571,6 +1587,16 @@ function SpotifySearchResults({
     enabled: query.length > 0,
   })
 
+  const { data: pinnedData } = useQuery({
+    queryKey: ['spotify-pinned'],
+    queryFn: () => api.spotify.getPinnedPlaylists(),
+    staleTime: 5 * 60_000,
+  })
+  const pinnedIdSet = useMemo(
+    () => new Set((pinnedData ?? []).map(p => p.playlist_id)),
+    [pinnedData],
+  )
+
   if (isLoading) return <TrackListSkeleton />
 
   if (isError) {
@@ -1661,7 +1687,12 @@ function SpotifySearchResults({
         >
           <ul className="-mx-4">
             {playlistItems.map(pl => (
-              <SearchPlaylistRow key={pl.id} playlist={pl} speaker={speaker} />
+              <SearchPlaylistRow
+                key={pl.id}
+                playlist={pl}
+                speaker={speaker}
+                isPinned={pinnedIdSet.has(pl.id)}
+              />
             ))}
           </ul>
         </Accordion>
