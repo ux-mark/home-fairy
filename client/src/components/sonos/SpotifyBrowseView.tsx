@@ -10,16 +10,20 @@ import {
   Clock,
   Disc3,
   Globe,
+  Info,
   Loader2,
   MapPin,
   Mic2,
   Music2,
+  Pin,
   Play,
+  Plus,
   RefreshCw,
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type {
   SpotifyPlaylist,
+  SpotifyPinnedPlaylist,
   SpotifyTrack,
   SpotifyAlbum,
   SpotifyShow,
@@ -27,6 +31,7 @@ import type {
   EnrichedAlbumItem,
   EnrichmentProgress,
 } from '@/lib/api'
+import { PinSpotifyPlaylistDialog } from './PinSpotifyPlaylistDialog'
 import { useToast } from '@/hooks/useToast'
 import { useDebounce } from '@/hooks/useBrowseShared'
 import { usePersistedState } from '@/hooks/usePersistedState'
@@ -364,8 +369,19 @@ function PlaylistRow({
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
 
+  const pinPlaylist = useMutation({
+    mutationFn: () => api.spotify.pinPlaylist(playlist.uri),
+    onSuccess: () => {
+      toast({ message: `Pinned "${playlist.name}"` })
+      queryClient.invalidateQueries({ queryKey: ['spotify-pinned'] })
+    },
+    onError: (err: Error) =>
+      toast({ message: err.message || 'Failed to pin playlist', type: 'error' }),
+  })
+
   const songCount = playlist.tracks.total
-  const subtitle = `${songCount} ${songCount === 1 ? 'song' : 'songs'}`
+  const ownerName = playlist.owner?.display_name?.trim() || 'Unknown'
+  const subtitle = `${songCount} ${songCount === 1 ? 'song' : 'songs'} · ${ownerName}`
 
   return (
     <MusicListItem
@@ -378,6 +394,7 @@ function PlaylistRow({
       disabled={!speaker}
       menuProps={{
         label: playlist.name,
+        onPin: () => pinPlaylist.mutate(),
         onPlayNext: () => playNext.mutate(),
         onAddToQueue: () => addToQueue.mutate(),
         fairylistTrack: {
@@ -393,15 +410,114 @@ function PlaylistRow({
 
 const PLAYLIST_PAGE_SIZE = 50
 
+function PinnedPlaylistRow({
+  pinned,
+  speaker,
+  onSelect,
+}: {
+  pinned: SpotifyPinnedPlaylist
+  speaker: string | null
+  onSelect: (pinned: SpotifyPinnedPlaylist) => void
+}) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, pinned.uri, 'now'),
+    onSuccess: () => toast({ message: `Playing "${pinned.name}"` }),
+    onError: () => toast({ message: 'Failed to play playlist', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, pinned.uri, 'next'),
+    onSuccess: () => {
+      toast({ message: `"${pinned.name}" will play next` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, pinned.uri, 'queue'),
+    onSuccess: () => {
+      toast({ message: `Added "${pinned.name}" to queue` })
+      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const unpin = useMutation({
+    mutationFn: () => api.spotify.unpinPlaylist(pinned.playlist_id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['spotify-pinned'] })
+      toast({ message: `Unpinned "${pinned.name}"` })
+    },
+    onError: () => toast({ message: 'Could not unpin', type: 'error' }),
+  })
+
+  const ownerName = pinned.owner_display_name?.trim() || (pinned.is_editorial ? 'Spotify' : 'Unknown')
+  const countPart = pinned.track_total != null
+    ? `${pinned.track_total} ${pinned.track_total === 1 ? 'song' : 'songs'} · `
+    : ''
+  const subtitle = `${countPart}${ownerName}`
+  const images = pinned.image_url
+    ? [{ url: pinned.image_url, height: null, width: null }]
+    : []
+
+  return (
+    <MusicListItem
+      artwork={{ images, size: 48 }}
+      title={pinned.name}
+      subtitle={subtitle}
+      onTap={() => onSelect(pinned)}
+      onPlay={() => playNow.mutate()}
+      playPending={playNow.isPending}
+      disabled={!speaker}
+      badge={
+        <span
+          className="inline-flex items-center gap-1 rounded-md bg-fairy-400/10 px-1.5 py-0.5 text-[10px] font-medium text-fairy-300"
+          title={pinned.is_editorial ? 'Pinned from Spotify — tracks hidden by Spotify API' : 'Pinned'}
+        >
+          <Pin className="h-2.5 w-2.5" aria-hidden="true" />
+          Pinned
+        </span>
+      }
+      menuProps={{
+        label: pinned.name,
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
+        fairylistTrack: {
+          source: 'spotify',
+          source_uri: pinned.uri,
+          title: pinned.name,
+          album_art_uri: pinned.image_url ?? undefined,
+        },
+        onRemove: () => unpin.mutate(),
+        removeLabel: 'Unpin playlist',
+      }}
+    />
+  )
+}
+
 function PlaylistList({
   onSelect,
+  onSelectPinned,
   speaker,
 }: {
   onSelect: (playlist: SpotifyPlaylist) => void
+  onSelectPinned: (pinned: SpotifyPinnedPlaylist) => void
   speaker: string | null
 }) {
   const [sort, setSort] = useState<PlaylistSort>('recent')
+  const [pinDialogOpen, setPinDialogOpen] = useState(false)
   const sentinelRef = useRef<HTMLDivElement | null>(null)
+
+  const { data: pinnedData } = useQuery({
+    queryKey: ['spotify-pinned'],
+    queryFn: () => api.spotify.getPinnedPlaylists(),
+    staleTime: 5 * 60_000,
+  })
+  const pinned = pinnedData ?? []
 
   const {
     data,
@@ -456,17 +572,23 @@ function PlaylistList({
   }
 
   const playlists = sortPlaylists(allPlaylists, sort)
+  const hasAnything = playlists.length > 0 || pinned.length > 0
 
-  if (playlists.length === 0) {
+  if (!hasAnything) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
-        <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
-        <div>
-          <p className="text-sm font-medium text-heading">No playlists found</p>
-          <p className="mt-1 max-w-xs text-xs text-caption">
-            Your Spotify account doesn't have any playlists yet.
-          </p>
+      <div>
+        <PinnedHeader onPin={() => setPinDialogOpen(true)} count={0} />
+        {pinned.length === 0 && <SpotifyApiInfoNote />}
+        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+          <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-medium text-heading">No playlists found</p>
+            <p className="mt-1 max-w-xs text-xs text-caption">
+              Your Spotify account doesn't have any playlists yet. Paste a share link above to pin one.
+            </p>
+          </div>
         </div>
+        <PinSpotifyPlaylistDialog open={pinDialogOpen} onOpenChange={setPinDialogOpen} />
       </div>
     )
   }
@@ -477,7 +599,21 @@ function PlaylistList({
 
   return (
     <div>
-      <div className="mb-2 flex items-center justify-between gap-2 px-1">
+      <PinnedHeader onPin={() => setPinDialogOpen(true)} count={pinned.length} />
+      {pinned.length > 0 && (
+        <ul className="-mx-4 mb-2">
+          {pinned.map(p => (
+            <PinnedPlaylistRow
+              key={p.playlist_id}
+              pinned={p}
+              speaker={speaker}
+              onSelect={onSelectPinned}
+            />
+          ))}
+        </ul>
+      )}
+      {pinned.length === 0 && <SpotifyApiInfoNote />}
+      <div className="mb-2 flex items-center justify-between gap-2 px-1 pt-1">
         <p className="text-xs text-caption" aria-live="polite">
           {totalCount > 0
             ? `${loadedCount.toLocaleString()} of ${totalCount.toLocaleString()} ${totalCount === 1 ? 'playlist' : 'playlists'}`
@@ -560,6 +696,50 @@ function PlaylistList({
           All {totalCount.toLocaleString()} playlists loaded
         </p>
       )}
+      <PinSpotifyPlaylistDialog open={pinDialogOpen} onOpenChange={setPinDialogOpen} />
+    </div>
+  )
+}
+
+function PinnedHeader({ onPin, count }: { onPin: () => void; count: number }) {
+  return (
+    <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-heading">
+        <Pin className="h-3.5 w-3.5 text-fairy-400" aria-hidden="true" />
+        <span>
+          Pinned
+          {count > 0 && <span className="ml-1 text-caption/70">({count})</span>}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onPin}
+        className={cn(
+          'inline-flex items-center gap-1 rounded-lg bg-[var(--bg-secondary)] px-2.5 py-1.5',
+          'text-xs font-medium text-body transition-colors hover:bg-[var(--bg-tertiary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[32px]',
+        )}
+      >
+        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+        <span>Pin playlist</span>
+      </button>
+    </div>
+  )
+}
+
+function SpotifyApiInfoNote() {
+  return (
+    <div className="mb-3 mx-1 rounded-lg border border-fairy-400/20 bg-fairy-400/5 px-3 py-2.5 text-xs text-caption">
+      <div className="flex items-start gap-2">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fairy-400" aria-hidden="true" />
+        <p>
+          <span className="font-medium text-heading">Missing Discover Weekly or Release Radar?</span>{' '}
+          Spotify stopped letting third-party apps list their own playlists in 2024. Tap{' '}
+          <span className="font-medium">Pin playlist</span> and paste the share link — we'll still
+          play it on your speakers.
+        </p>
+      </div>
     </div>
   )
 }
@@ -1234,8 +1414,19 @@ function SearchPlaylistRow({
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
 
+  const pinPlaylist = useMutation({
+    mutationFn: () => api.spotify.pinPlaylist(playlist.uri),
+    onSuccess: () => {
+      toast({ message: `Pinned "${playlist.name}"` })
+      queryClient.invalidateQueries({ queryKey: ['spotify-pinned'] })
+    },
+    onError: (err: Error) =>
+      toast({ message: err.message || 'Failed to pin playlist', type: 'error' }),
+  })
+
   const songCount = playlist.tracks.total
-  const subtitle = `${songCount} ${songCount === 1 ? 'song' : 'songs'}`
+  const ownerName = playlist.owner?.display_name?.trim() || 'Unknown'
+  const subtitle = `${songCount} ${songCount === 1 ? 'song' : 'songs'} · ${ownerName}`
 
   return (
     <MusicListItem
@@ -1248,6 +1439,7 @@ function SearchPlaylistRow({
       disabled={!speaker}
       menuProps={{
         label: playlist.name,
+        onPin: () => pinPlaylist.mutate(),
         onPlayNext: () => playNext.mutate(),
         onAddToQueue: () => addToQueue.mutate(),
         fairylistTrack: {
@@ -1666,6 +1858,10 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
     navigate(`/sonos/browse/spotify/playlist/${encodeURIComponent(playlist.id)}${speakerQuery}`)
   }
 
+  function handleSelectPinned(pinned: SpotifyPinnedPlaylist) {
+    navigate(`/sonos/browse/spotify/playlist/${encodeURIComponent(pinned.playlist_id)}${speakerQuery}`)
+  }
+
   function handleSelectAlbum(album: SpotifyAlbum) {
     navigate(`/sonos/browse/spotify/album/${encodeURIComponent(album.id)}${speakerQuery}`)
   }
@@ -1732,7 +1928,13 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
   return (
     <div>
       <BrowseModeTabs mode={browseMode} onChangeMode={m => { setBrowseMode(m); setView('home') }} />
-      {browseMode === 'playlists' && <PlaylistList onSelect={handleSelectPlaylist} speaker={speaker} />}
+      {browseMode === 'playlists' && (
+        <PlaylistList
+          onSelect={handleSelectPlaylist}
+          onSelectPinned={handleSelectPinned}
+          speaker={speaker}
+        />
+      )}
       {browseMode === 'countries' && <SpotifyCountryList onSelectCountry={handleSelectCountry} />}
       {browseMode === 'podcasts' && <ShowList onSelect={handleSelectShow} speaker={speaker} />}
       {browseMode === 'albums' && <AlbumList onSelect={handleSelectAlbum} speaker={speaker} />}
