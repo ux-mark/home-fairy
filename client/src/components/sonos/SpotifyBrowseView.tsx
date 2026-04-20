@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle,
   ArrowDown01,
@@ -391,6 +391,8 @@ function PlaylistRow({
   )
 }
 
+const PLAYLIST_PAGE_SIZE = 50
+
 function PlaylistList({
   onSelect,
   speaker,
@@ -399,11 +401,47 @@ function PlaylistList({
   speaker: string | null
 }) {
   const [sort, setSort] = useState<PlaylistSort>('recent')
-  const { data, isLoading, isError, error, refetch } = useQuery({
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ['spotify-playlists'],
-    queryFn: () => api.spotify.getPlaylists(),
+    queryFn: ({ pageParam }) => api.spotify.getPlaylists(PLAYLIST_PAGE_SIZE, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage.next) return undefined
+      return allPages.length * PLAYLIST_PAGE_SIZE
+    },
     staleTime: 5 * 60_000,
   })
+
+  const allPlaylists = useMemo(
+    () => data?.pages.flatMap(p => p.items) ?? [],
+    [data],
+  )
+  const totalCount = data?.pages[0]?.total ?? allPlaylists.length
+  const loadedCount = allPlaylists.length
+
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || !hasNextPage || isFetchingNextPage) return
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0]?.isIntersecting) fetchNextPage()
+      },
+      { rootMargin: '200px 0px' },
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, loadedCount])
 
   if (isLoading) return <ListSkeleton />
 
@@ -417,7 +455,7 @@ function PlaylistList({
     )
   }
 
-  const playlists = sortPlaylists(data?.items ?? [], sort)
+  const playlists = sortPlaylists(allPlaylists, sort)
 
   if (playlists.length === 0) {
     return (
@@ -433,9 +471,18 @@ function PlaylistList({
     )
   }
 
+  const isAlphaSort = sort === 'a-z' || sort === 'z-a'
+  const hasMoreToLoad = !!hasNextPage
+  const allLoaded = loadedCount >= totalCount && totalCount > 0
+
   return (
     <div>
-      <div className="mb-2 flex items-center justify-end px-1">
+      <div className="mb-2 flex items-center justify-between gap-2 px-1">
+        <p className="text-xs text-caption" aria-live="polite">
+          {totalCount > 0
+            ? `${loadedCount.toLocaleString()} of ${totalCount.toLocaleString()} ${totalCount === 1 ? 'playlist' : 'playlists'}`
+            : ''}
+        </p>
         <div className="flex items-center gap-1 rounded-lg bg-[var(--bg-secondary)] p-0.5">
           {PLAYLIST_SORT_OPTIONS.map(opt => {
             const Icon = opt.icon
@@ -463,11 +510,56 @@ function PlaylistList({
           })}
         </div>
       </div>
+      {isAlphaSort && hasMoreToLoad && (
+        <div className="mx-1 mb-2 rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-xs text-caption">
+          Sorting {sort === 'a-z' ? 'A – Z' : 'Z – A'} only covers the {loadedCount.toLocaleString()} playlists loaded so far.{' '}
+          <button
+            type="button"
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+            className={cn(
+              'font-medium text-fairy-400 underline underline-offset-2 hover:text-fairy-300',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              'disabled:opacity-50',
+            )}
+          >
+            {isFetchingNextPage ? 'Loading…' : 'Load more'}
+          </button>
+        </div>
+      )}
       <ul className="-mx-4">
         {playlists.map(playlist => (
           <PlaylistRow key={playlist.id} playlist={playlist} speaker={speaker} onSelect={onSelect} />
         ))}
       </ul>
+      {hasMoreToLoad && (
+        <div ref={sentinelRef} className="flex items-center justify-center py-6" aria-hidden={!isFetchingNextPage}>
+          {isFetchingNextPage ? (
+            <div className="flex items-center gap-2 text-xs text-caption">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              <span>Loading more playlists…</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fetchNextPage()}
+              className={cn(
+                'rounded-lg bg-[var(--bg-secondary)] px-4 py-2 text-xs font-medium text-body',
+                'transition-colors hover:bg-[var(--bg-tertiary)]',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                'min-h-[36px]',
+              )}
+            >
+              Load more
+            </button>
+          )}
+        </div>
+      )}
+      {allLoaded && loadedCount > PLAYLIST_PAGE_SIZE && (
+        <p className="py-6 text-center text-xs text-caption/70">
+          All {totalCount.toLocaleString()} playlists loaded
+        </p>
+      )}
     </div>
   )
 }
