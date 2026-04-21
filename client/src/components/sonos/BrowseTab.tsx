@@ -32,6 +32,20 @@ const SOURCES: SourceConfig[] = [
   { id: 'radio', label: 'Radio', Icon: Radio },
 ]
 
+// Read a value from sessionStorage written by usePersistedState. Used to
+// seed initial state on PUSH navigation (where usePersistedState falls back
+// to its default). Returns undefined if no saved value matches the guard.
+function readSessionValue<T>(storageKey: string, guard: (v: unknown) => v is T): T | undefined {
+  try {
+    const raw = sessionStorage.getItem(storageKey)
+    if (raw == null) return undefined
+    const parsed = JSON.parse(raw) as unknown
+    return guard(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
 // ── Source status subtitle helpers ────────────────────────────────────────────
 
 function SpotifyStatusSubtitle() {
@@ -158,17 +172,27 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
   const navigate = useNavigate()
   const { selectedSpeaker, setSelectedSpeaker } = usePlaybackState()
 
-  // When navigating back from a routed detail page (e.g. SpotifyArtistDetail
-  // goes back to /sonos/browse?source=spotify), use the URL param as the
-  // default so the correct source tab is active on mount.
+  // Entry precedence for the source tab:
+  //   1. ?source= URL param (set by detail pages when their back button falls
+  //      back to a hardcoded URL).
+  //   2. The value from this session's previous visit (sessionStorage) so
+  //      that tapping "Browse" or "Change music" after leaving resumes at
+  //      the same source tab.
+  //   3. Default to "all" on first entry.
   const sourceFromUrl = searchParams.get('source') as SourceFilter | null
   const initialSource: SourceFilter =
     sourceFromUrl && ['nas', 'spotify', 'radio'].includes(sourceFromUrl)
       ? sourceFromUrl
-      : 'all'
+      : (readSessionValue<SourceFilter>('pageState:browse-source-filter', (v): v is SourceFilter =>
+          typeof v === 'string' && ['all', 'nas', 'spotify', 'radio'].includes(v),
+        ) ?? 'all')
+
+  // Search query likewise resumes from sessionStorage across PUSH navigation.
+  const initialSearch =
+    readSessionValue<string>('pageState:browse-search-query', (v): v is string => typeof v === 'string') ?? ''
 
   const [activeSource, setActiveSource] = usePersistedState<SourceFilter>('browse-source-filter', initialSource)
-  const [searchQuery, setSearchQuery] = usePersistedState<string>('browse-search-query', '')
+  const [searchQuery, setSearchQuery] = usePersistedState<string>('browse-search-query', initialSearch)
 
   // Sync URL targetSpeaker into global speaker selection so the dropdown reflects it
   useEffect(() => {

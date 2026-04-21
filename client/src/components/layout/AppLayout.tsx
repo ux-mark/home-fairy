@@ -1,11 +1,15 @@
-import React from 'react'
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import React, { useCallback } from 'react'
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Home, DoorOpen, Sparkles, LayoutGrid, Settings, BarChart3, User, Play, Search, Heart } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useDashboardSocket } from '@/hooks/useSocket'
 import { useScrollRestoration } from '@/hooks/useScrollRestoration'
+import {
+  useTrackSonosBrowsePath,
+  getSonosBrowseEntryPath,
+} from '@/hooks/useSonosBrowseMemory'
 import ToastContainer from '@/components/ui/Toast'
 import NotificationBell from '@/components/notifications/NotificationBell'
 import { LucideIcon } from '@/components/ui/LucideIcon'
@@ -42,8 +46,26 @@ function isNavActive(itemTo: string, pathname: string, isRouterActive: boolean):
 
 export default function AppLayout() {
   const location = useLocation()
+  const navigate = useNavigate()
   useDashboardSocket()
   useScrollRestoration()
+  useTrackSonosBrowsePath()
+
+  // Clicking "Browse" in the Sonos nav resumes at the last-visited browse
+  // location within this session (e.g. the playlist/album the user was last
+  // inside). Falls back to `/sonos/browse` on a fresh session.
+  const handleBrowseNavClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>) => {
+      if (e.defaultPrevented) return
+      if (e.button !== 0) return
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      const target = getSonosBrowseEntryPath()
+      if (target === location.pathname + location.search) return
+      e.preventDefault()
+      navigate(target)
+    },
+    [navigate, location.pathname, location.search],
+  )
 
   const { data: session } = authClient.useSession()
   const role = session?.user?.role
@@ -105,6 +127,7 @@ export default function AppLayout() {
               <NavLink
                 to={to}
                 end={to === '/'}
+                onClick={to === '/sonos/browse' ? handleBrowseNavClick : undefined}
                 className={({ isActive }) => {
                   const active = isNavActive(to, location.pathname, isActive)
                   return cn(
@@ -198,6 +221,7 @@ export default function AppLayout() {
               <NavLink
                 to={to}
                 end={to === '/'}
+                onClick={to === '/sonos/browse' ? handleBrowseNavClick : undefined}
                 className={({ isActive }) => {
                   const active = isNavActive(to, location.pathname, isActive)
                   return cn(

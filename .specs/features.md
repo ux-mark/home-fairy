@@ -335,6 +335,8 @@ Speaker cards showing now-playing information (album art, track title, artist) w
 
 Browse and search for music across multiple sources from a single screen. A horizontal source filter strip lets you narrow to a specific source: NAS/Pi local library (by genre), Spotify playlists, Sonos Radio, and Sonos Favourites. An "All" view shows a preview of each source. A search bar at the top finds content across all selected sources. Tap any item to play it on the active speaker.
 
+Leaving Browse and coming back within the same session (via the Browse nav link, or the "Change music" / "Browse music" buttons on speaker cards) resumes at the exact location you left — the same source filter, search query, and, if you had drilled into a playlist, album, or artist, the same detail page.
+
 ### Favourites Tab
 **Status**: available
 

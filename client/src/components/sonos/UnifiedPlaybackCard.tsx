@@ -5,6 +5,7 @@ import { Music, Music2, Tv, ImageOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
+import { getSonosBrowseEntryPath } from '@/hooks/useSonosBrowseMemory'
 import { Skeleton } from '@/components/ui/Skeleton'
 import type { SonosPlaybackState, SonosGroupInfo, SonosNowPlayingEntry } from '@/lib/api'
 import { ProgressBar } from './ProgressBar'
@@ -122,7 +123,7 @@ export function UnifiedPlaybackCard({
   // ── Empty ────────────────────────────────────────────────────────────────
 
   if (!state || (state.playbackState === 'STOPPED' && !state.currentTrack.title && !state.currentTrack.stationName)) {
-    const browseUrl = `/sonos/browse?speaker=${encodeURIComponent(speaker)}`
+    const browseUrl = getSonosBrowseEntryPath(speaker)
     if (variant === 'full') {
       return (
         <div className={cn('flex flex-col items-center justify-center gap-6 py-12 text-center', className)}>

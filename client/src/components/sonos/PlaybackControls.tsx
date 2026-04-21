@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
+import { getSonosBrowseEntryPath } from '@/hooks/useSonosBrowseMemory'
 import type { SonosPlaybackState } from '@/lib/api'
 
 interface PlaybackControlsProps {
@@ -187,7 +188,7 @@ export function PlaybackControls({ speaker, state, onInvalidate, showChange = tr
       {/* Change music — navigates to Browse tab */}
       {showChange && (
         <button
-          onClick={() => navigate(`/sonos/browse?speaker=${encodeURIComponent(speaker)}`)}
+          onClick={() => navigate(getSonosBrowseEntryPath(speaker))}
           className={cn(
             'flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors',
             'surface text-body hover:brightness-95 dark:hover:brightness-110',

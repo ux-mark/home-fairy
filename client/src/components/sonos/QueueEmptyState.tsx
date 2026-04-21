@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { Music, Music2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { getSonosBrowseEntryPath } from '@/hooks/useSonosBrowseMemory'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -16,7 +17,7 @@ export function QueueEmptyState({ speaker, compact = false }: QueueEmptyStatePro
   const navigate = useNavigate()
 
   function handleBrowse() {
-    navigate(`/sonos/browse?speaker=${encodeURIComponent(speaker)}`)
+    navigate(getSonosBrowseEntryPath(speaker))
   }
 
   if (compact) {
