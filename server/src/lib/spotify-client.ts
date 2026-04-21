@@ -294,6 +294,20 @@ class SpotifyClient {
     }
   }
 
+  async getPlaylist(playlistId: string): Promise<SpotifyPlaylist> {
+    const token = await this.getAccessToken()
+    try {
+      const response = await this.api.get<SpotifyPlaylist>(
+        `/playlists/${playlistId}`,
+        { headers: { Authorization: `Bearer ${token}` } },
+      )
+      return response.data
+    } catch (err) {
+      const status = err instanceof AxiosError ? err.response?.status : undefined
+      throw new SpotifyApiError(`Failed to fetch playlist ${playlistId}`, status)
+    }
+  }
+
   async getPlaylistTracks(
     playlistId: string,
     limit = 100,
@@ -609,3 +623,97 @@ class SpotifyClient {
 }
 
 export const spotifyClient = new SpotifyClient()
+
+export interface SpotifyPublicPlaylistMeta {
+  name: string
+  description: string | null
+  image_url: string | null
+  owner_display_name: string | null
+  track_total: number | null
+}
+
+/**
+ * Fetch public playlist metadata by scraping the open.spotify.com share page.
+ * Used as a fallback when the Web API refuses (e.g. Spotify-owned editorial playlists
+ * blocked for third-party apps since Nov 2024).
+ */
+export async function fetchPublicPlaylistMetadata(
+  playlistId: string,
+): Promise<SpotifyPublicPlaylistMeta | null> {
+  try {
+    const response = await axios.get<string>(
+      `https://open.spotify.com/playlist/${playlistId}`,
+      {
+        timeout: TIMEOUT,
+        responseType: 'text',
+        headers: {
+          // Spotify serves the JS-only Web Player shell (no OG tags) to most
+          // browser-looking UAs. Identifying as a link-preview bot gets the
+          // lightweight metadata shell with the Open Graph tags we need.
+          'User-Agent': 'facebookexternalhit/1.1',
+          Accept: 'text/html',
+        },
+        maxRedirects: 5,
+      },
+    )
+    const html = response.data
+    const pickMeta = (property: string): string | null => {
+      const re = new RegExp(
+        `<meta\\s+property="${property}"\\s+content="([^"]*)"`,
+        'i',
+      )
+      const m = html.match(re)
+      if (!m) return null
+      // Decode a few common HTML entities.
+      return m[1]
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+    }
+
+    const title = pickMeta('og:title')
+    if (!title) return null
+    const description = pickMeta('og:description')
+    const image = pickMeta('og:image')
+
+    // og:description is like: "Playlist · Spotify · 30 items" or "Playlist · Marc · 123 items"
+    let ownerName: string | null = null
+    let trackTotal: number | null = null
+    if (description) {
+      const parts = description.split('·').map(s => s.trim())
+      // parts[0] is the type (Playlist), parts[1] is owner, parts[2] is "N items"
+      if (parts.length >= 2) ownerName = parts[1] || null
+      if (parts.length >= 3) {
+        const m = parts[2].match(/(\d[\d,]*)/)
+        if (m) trackTotal = Number(m[1].replace(/,/g, ''))
+      }
+    }
+
+    return {
+      name: title,
+      description,
+      image_url: image,
+      owner_display_name: ownerName,
+      track_total: trackTotal,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** Parse a Spotify playlist URL, URI, or bare ID into a playlist ID. */
+export function parsePlaylistInput(input: string): string | null {
+  if (!input) return null
+  const trimmed = input.trim()
+  // bare id (22 chars base62)
+  if (/^[A-Za-z0-9]{22}$/.test(trimmed)) return trimmed
+  // spotify:playlist:<id>
+  const uriMatch = trimmed.match(/^spotify:playlist:([A-Za-z0-9]{22})$/)
+  if (uriMatch) return uriMatch[1]
+  // https://open.spotify.com/playlist/<id>?...
+  const urlMatch = trimmed.match(/open\.spotify\.com\/(?:intl-[a-z]{2}\/)?playlist\/([A-Za-z0-9]{22})/)
+  if (urlMatch) return urlMatch[1]
+  return null
+}

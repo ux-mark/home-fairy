@@ -47,6 +47,7 @@ __pycache__/
 # Testing output (Playwright, Jest, etc.)
 # -----------------------------------------------------------------------------
 .testing/results/
+.testing/node_modules
 test-results/
 playwright-report/
 playwright/.cache/
@@ -114,6 +115,14 @@ artifacts/generated/
 server/data/art-cache/
 
 # -----------------------------------------------------------------------------
+# Local SQLite databases (runtime data)
+# -----------------------------------------------------------------------------
+server/data/*.db
+server/data/*.db-journal
+server/data/*.db-wal
+server/data/*.db-shm
+
+# -----------------------------------------------------------------------------
 # PM2 (machine-specific dev config)
 # -----------------------------------------------------------------------------
 ecosystem.config.js
@@ -128,10 +137,7 @@ ecosystem.config.js
 
 # --- Coding Fairy (managed) ---
 /CLAUDE.md
-/.claude/agents/builder.md
-/.claude/agents/reviewer.md
-/.claude/agents/planner.md
-/.claude/settings.json
+/.claude/
 /.specs/UX_STANDARDS.md
 /.specs/PLAYWRIGHT_PROTOCOL.md
 /.specs/REPO_HYGIENE.md

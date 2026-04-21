@@ -381,6 +381,25 @@ export function initDb(): void {
 
     CREATE INDEX IF NOT EXISTS idx_fairylist_items_list
       ON fairylist_items (fairylist_id, sort_order);
+
+    CREATE TABLE IF NOT EXISTS spotify_pinned_playlists (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      playlist_id TEXT NOT NULL,
+      uri TEXT NOT NULL,
+      name TEXT NOT NULL,
+      image_url TEXT,
+      owner_display_name TEXT,
+      owner_id TEXT,
+      track_total INTEGER,
+      is_editorial INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id, playlist_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_spotify_pinned_user
+      ON spotify_pinned_playlists (user_id, sort_order);
   `)
 
   // Migration: add user tracking columns to scenes

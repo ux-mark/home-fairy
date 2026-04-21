@@ -1,5 +1,12 @@
 import { Router, type Request, type Response } from 'express'
-import { spotifyClient, SpotifyApiError, type SpotifyArtist } from '../lib/spotify-client.js'
+import { z } from 'zod'
+import {
+  spotifyClient,
+  SpotifyApiError,
+  fetchPublicPlaylistMetadata,
+  parsePlaylistInput,
+  type SpotifyArtist,
+} from '../lib/spotify-client.js'
 import { musicBrainzClient, type ArtistCountryRow } from '../lib/musicbrainz-client.js'
 import { db } from '../db/index.js'
 import { requireAuth } from '../middleware/requireAuth.js'
@@ -142,6 +149,247 @@ router.post('/playlists', requireAuth, async (req: Request, res: Response) => {
   try {
     const result = await spotifyClient.createPlaylist(name.trim())
     res.status(201).json(result)
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// ── Pinned playlists ────────────────────────────────────────────────────────
+// Lets users "pin" any Spotify playlist by pasting its share URL. Used to
+// surface playlists the Web API won't return (Discover Weekly, Release Radar,
+// Daily Mix, Today's Top Hits — all blocked for third-party apps since the
+// Spotify Web API changes of 27 Nov 2024), and as a user-controlled quick-
+// access shelf for favourites.
+
+interface PinnedPlaylistRow {
+  id: number
+  user_id: string
+  playlist_id: string
+  uri: string
+  name: string
+  image_url: string | null
+  owner_display_name: string | null
+  owner_id: string | null
+  track_total: number | null
+  is_editorial: number
+  sort_order: number
+  created_at: string
+}
+
+function rowToPinned(row: PinnedPlaylistRow) {
+  return {
+    id: row.id,
+    playlist_id: row.playlist_id,
+    uri: row.uri,
+    name: row.name,
+    image_url: row.image_url,
+    owner_display_name: row.owner_display_name,
+    owner_id: row.owner_id,
+    track_total: row.track_total,
+    is_editorial: row.is_editorial === 1,
+    sort_order: row.sort_order,
+    created_at: row.created_at,
+  }
+}
+
+// GET /spotify/pinned — list the user's pinned Spotify playlists
+router.get('/pinned', requireAuth, (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id
+    const rows = db
+      .prepare(
+        'SELECT * FROM spotify_pinned_playlists WHERE user_id = ? ORDER BY sort_order ASC, created_at ASC',
+      )
+      .all(userId) as PinnedPlaylistRow[]
+    res.json(rows.map(rowToPinned))
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+const pinSchema = z.object({
+  input: z.string().min(1, 'Paste a Spotify playlist URL'),
+})
+
+// POST /spotify/pinned — pin a playlist by URL / URI / ID
+router.post('/pinned', requireAuth, async (req: Request, res: Response) => {
+  const parsed = pinSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.errors[0].message })
+    return
+  }
+  const playlistId = parsePlaylistInput(parsed.data.input)
+  if (!playlistId) {
+    res.status(400).json({ error: "That doesn't look like a Spotify playlist link. Try the Share → Copy link option in Spotify." })
+    return
+  }
+
+  try {
+    const userId = (req as any).user.id
+
+    // Already pinned? Return it.
+    const existing = db
+      .prepare('SELECT * FROM spotify_pinned_playlists WHERE user_id = ? AND playlist_id = ?')
+      .get(userId, playlistId) as PinnedPlaylistRow | undefined
+    if (existing) {
+      res.status(200).json(rowToPinned(existing))
+      return
+    }
+
+    // Try the Web API first — works for user-owned/followed playlists
+    let name: string | null = null
+    let image: string | null = null
+    let ownerName: string | null = null
+    let ownerId: string | null = null
+    let trackTotal: number | null = null
+    let isEditorial = false
+
+    if (spotifyClient.isConnected()) {
+      try {
+        const pl = await spotifyClient.getPlaylist(playlistId)
+        name = pl.name
+        image = pl.images?.[0]?.url ?? null
+        ownerName = pl.owner?.display_name ?? null
+        ownerId = pl.owner?.id ?? null
+        trackTotal = pl.tracks?.total ?? null
+      } catch (err) {
+        // Fall through to OG scrape
+        if (err instanceof SpotifyApiError && err.status !== 404) {
+          // A real API error — still try OG scrape, since editorial playlists also 404
+        }
+      }
+    }
+
+    // Fallback / supplement: OG scrape (works for editorial playlists + unauthenticated)
+    if (!name || !image) {
+      const og = await fetchPublicPlaylistMetadata(playlistId)
+      if (og) {
+        name = name ?? og.name
+        image = image ?? og.image_url
+        ownerName = ownerName ?? og.owner_display_name
+        trackTotal = trackTotal ?? og.track_total
+        // If the OG description says "Playlist · Spotify · ..." the owner is
+        // Spotify itself, meaning this is an editorial/algorithmic playlist.
+        if (
+          (og.owner_display_name ?? '').trim().toLowerCase() === 'spotify' &&
+          !ownerId
+        ) {
+          ownerId = 'spotify'
+          isEditorial = true
+        }
+      }
+    }
+
+    if (ownerId === 'spotify') isEditorial = true
+
+    if (!name) {
+      res.status(404).json({
+        error: "Couldn't find that playlist — check the link is correct and the playlist is public.",
+      })
+      return
+    }
+
+    const maxRow = db
+      .prepare(
+        'SELECT COALESCE(MAX(sort_order), -1) AS max_order FROM spotify_pinned_playlists WHERE user_id = ?',
+      )
+      .get(userId) as { max_order: number }
+    const nextOrder = maxRow.max_order + 1
+
+    const result = db
+      .prepare(
+        `INSERT INTO spotify_pinned_playlists
+           (user_id, playlist_id, uri, name, image_url, owner_display_name, owner_id, track_total, is_editorial, sort_order)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        userId,
+        playlistId,
+        `spotify:playlist:${playlistId}`,
+        name,
+        image,
+        ownerName,
+        ownerId,
+        trackTotal,
+        isEditorial ? 1 : 0,
+        nextOrder,
+      )
+
+    const created = db
+      .prepare('SELECT * FROM spotify_pinned_playlists WHERE id = ?')
+      .get(result.lastInsertRowid) as PinnedPlaylistRow
+    res.status(201).json(rowToPinned(created))
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// DELETE /spotify/pinned/:playlist_id — unpin a playlist for the current user
+router.delete('/pinned/:playlist_id', requireAuth, (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.id
+    const playlistId = String(req.params.playlist_id)
+    const result = db
+      .prepare('DELETE FROM spotify_pinned_playlists WHERE user_id = ? AND playlist_id = ?')
+      .run(userId, playlistId)
+    if (result.changes === 0) {
+      res.status(404).json({ error: 'Not pinned' })
+      return
+    }
+    res.status(204).send()
+  } catch (err) {
+    handleError(res, err)
+  }
+})
+
+// GET /spotify/playlists/:id/metadata — resolve playlist metadata with fallback.
+// Tries the Web API first (works for user-owned/followed) and, on failure,
+// falls back to scraping the public open.spotify.com share page. This lets the
+// detail page render a cheeky "Spotify won't let us show the tracks" state for
+// editorial playlists while still offering Play/Queue/Play next.
+router.get('/playlists/:id/metadata', requireAuth, async (req: Request, res: Response) => {
+  const playlistId = String(req.params.id)
+  try {
+    if (spotifyClient.isConnected()) {
+      try {
+        const pl = await spotifyClient.getPlaylist(playlistId)
+        res.json({
+          playlist_id: pl.id,
+          uri: pl.uri,
+          name: pl.name,
+          image_url: pl.images?.[0]?.url ?? null,
+          owner_display_name: pl.owner?.display_name ?? null,
+          owner_id: pl.owner?.id ?? null,
+          track_total: pl.tracks?.total ?? null,
+          is_editorial: pl.owner?.id === 'spotify',
+          via: 'api',
+        })
+        return
+      } catch (err) {
+        if (!(err instanceof SpotifyApiError) || err.status !== 404) {
+          throw err
+        }
+        // 404 from Spotify API — likely an editorial playlist. Fall through.
+      }
+    }
+    const og = await fetchPublicPlaylistMetadata(playlistId)
+    if (!og) {
+      res.status(404).json({ error: 'Playlist not found' })
+      return
+    }
+    const ownerIsSpotify =
+      (og.owner_display_name ?? '').trim().toLowerCase() === 'spotify'
+    res.json({
+      playlist_id: playlistId,
+      uri: `spotify:playlist:${playlistId}`,
+      name: og.name,
+      image_url: og.image_url,
+      owner_display_name: og.owner_display_name,
+      owner_id: ownerIsSpotify ? 'spotify' : null,
+      track_total: og.track_total,
+      is_editorial: ownerIsSpotify,
+      via: 'og',
+    })
   } catch (err) {
     handleError(res, err)
   }
