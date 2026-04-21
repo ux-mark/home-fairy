@@ -125,10 +125,7 @@ server/data/art-cache/
 
 # --- Coding Fairy (managed) ---
 /CLAUDE.md
-/.claude/agents/builder.md
-/.claude/agents/reviewer.md
-/.claude/agents/planner.md
-/.claude/settings.json
+/.claude/
 /.specs/UX_STANDARDS.md
 /.specs/PLAYWRIGHT_PROTOCOL.md
 /.specs/REPO_HYGIENE.md

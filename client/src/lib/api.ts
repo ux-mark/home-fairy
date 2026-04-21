@@ -653,6 +653,9 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
       }
       throw new Error(message)
     }
+    if (res.status === 204 || res.headers.get('content-length') === '0') {
+      return undefined as T
+    }
     return res.json()
   } finally {
     clearTimeout(timeoutId)
@@ -875,6 +878,32 @@ export interface SpotifyPlaylist {
   uri: string
   external_urls: { spotify: string }
   owner: { display_name: string; id: string }
+}
+
+export interface SpotifyPinnedPlaylist {
+  id: number
+  playlist_id: string
+  uri: string
+  name: string
+  image_url: string | null
+  owner_display_name: string | null
+  owner_id: string | null
+  track_total: number | null
+  is_editorial: boolean
+  sort_order: number
+  created_at: string
+}
+
+export interface SpotifyPlaylistMetadata {
+  playlist_id: string
+  uri: string
+  name: string
+  image_url: string | null
+  owner_display_name: string | null
+  owner_id: string | null
+  track_total: number | null
+  is_editorial: boolean
+  via: 'api' | 'og'
 }
 
 export interface UserFavourite {
@@ -1878,6 +1907,21 @@ export const api = {
         '/spotify/playlists/' + encodeURIComponent(id) + '/tracks' + (qs ? '?' + qs : ''),
       )
     },
+    getPlaylistMetadata: (id: string) =>
+      fetchApi<SpotifyPlaylistMetadata>(
+        '/spotify/playlists/' + encodeURIComponent(id) + '/metadata',
+      ),
+    getPinnedPlaylists: () => fetchApi<SpotifyPinnedPlaylist[]>('/spotify/pinned'),
+    pinPlaylist: (input: string) =>
+      fetchApi<SpotifyPinnedPlaylist>('/spotify/pinned', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input }),
+      }),
+    unpinPlaylist: (playlistId: string) =>
+      fetchApi<void>('/spotify/pinned/' + encodeURIComponent(playlistId), {
+        method: 'DELETE',
+      }),
     search: (q: string, types?: string[], limit?: number, offset?: number) => {
       const params = new URLSearchParams()
       params.set('q', q)

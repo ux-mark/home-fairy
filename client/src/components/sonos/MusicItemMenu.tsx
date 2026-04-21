@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Heart, ListEnd, ListPlus, ListStart, ListMusic, MoreVertical, Trash2 } from 'lucide-react'
+import { Heart, ListEnd, ListPlus, ListStart, ListMusic, MoreVertical, Pin, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { AddToFairylistDialog } from './AddToFairylistDialog'
 import { AddToSpotifyPlaylistDialog } from './AddToSpotifyPlaylistDialog'
@@ -23,6 +23,10 @@ export interface SpotifyPlaylistTrackData {
 export interface MusicItemMenuProps {
   /** Label for accessibility */
   label: string
+  /** Handler for "Pin playlist" — omit to hide this option (shown first) */
+  onPin?: () => void
+  /** Label override for the pin option (default: "Pin playlist") */
+  pinLabel?: string
   /** Handler for "Play next" — omit to hide this option */
   onPlayNext?: () => void
   /** Handler for "Add to queue" — omit to hide this option */
@@ -59,6 +63,8 @@ const menuItemCls =
 
 export function MusicItemMenu({
   label,
+  onPin,
+  pinLabel = 'Pin playlist',
   onPlayNext,
   onAddToQueue,
   fairylistTrack,
@@ -77,6 +83,7 @@ export function MusicItemMenu({
 
   // Count menu items for height estimation
   let itemCount = 1 // Add to Fairylist (always shown)
+  if (onPin) itemCount++
   if (onAddToQueue) itemCount++
   if (onPlayNext) itemCount++
   if (spotifyTrack) itemCount++
@@ -125,6 +132,21 @@ export function MusicItemMenu({
               style={{ position: 'fixed', top: menuPos.top, right: menuPos.right }}
               className="z-[200] min-w-[200px] overflow-hidden rounded-xl border border-[var(--border-primary)] bg-[var(--bg-secondary)] py-1 shadow-lg"
             >
+              {onPin && (
+                <li role="none">
+                  <button
+                    role="menuitem"
+                    onClick={() => {
+                      setMenuOpen(false)
+                      onPin()
+                    }}
+                    className={menuItemCls}
+                  >
+                    <Pin className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    {pinLabel}
+                  </button>
+                </li>
+              )}
               {onAddToQueue && (
                 <li role="none">
                   <button
