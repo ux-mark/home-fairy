@@ -27,29 +27,51 @@ export function useScrollRestoration() {
       // Back/forward — restore saved position
       const saved = scrollPositions.current.get(location.key)
       if (saved !== undefined) {
-        // Attempt scroll restoration multiple times to handle content that
-        // renders progressively (e.g. accordions expanding, data loading).
-        // The first rAF handles synchronous renders; the later timeouts
-        // catch CSS transitions and async data that increases page height.
-        const attempts = [0, 50, 150, 350]
+        // Restoration strategy:
+        //   1. Retry `window.scrollTo(0, saved)` at escalating delays so
+        //      short progressive renders (accordions, lazy images) settle.
+        //   2. Observe `<html>` for size changes so slow async data loads
+        //      (e.g. a NAS library fetch) still land the user back where
+        //      they were, even if it takes several seconds.
+        //   3. Give up after 5s so we don't fight a user scroll forever.
+        const attempts = [0, 50, 150, 350, 600, 1000, 1500, 2200, 3000, 4000]
         const timers: number[] = []
+        let cancelled = false
 
         const tryScroll = () => {
+          if (cancelled) return
           if (document.documentElement.scrollHeight >= saved + window.innerHeight * 0.5) {
             window.scrollTo(0, saved)
           }
         }
 
-        // First attempt: next frame (covers synchronous state restoration)
         requestAnimationFrame(tryScroll)
-
-        // Follow-up attempts cover accordion transitions (300ms) and async data
         for (const delay of attempts) {
-          timers.push(window.setTimeout(() => window.scrollTo(0, saved), delay))
+          timers.push(window.setTimeout(tryScroll, delay))
         }
 
+        // Keep scrolling whenever the page grows — e.g., when the NAS
+        // library or a long list finishes loading after our timers have
+        // fired.
+        let resizeObserver: ResizeObserver | null = null
+        if (typeof ResizeObserver !== 'undefined') {
+          resizeObserver = new ResizeObserver(() => tryScroll())
+          resizeObserver.observe(document.documentElement)
+        }
+
+        // Hard stop so we don't hijack the page if the user has started
+        // interacting with it.
+        timers.push(
+          window.setTimeout(() => {
+            cancelled = true
+            resizeObserver?.disconnect()
+          }, 5000),
+        )
+
         return () => {
+          cancelled = true
           for (const t of timers) clearTimeout(t)
+          resizeObserver?.disconnect()
         }
       }
     } else {

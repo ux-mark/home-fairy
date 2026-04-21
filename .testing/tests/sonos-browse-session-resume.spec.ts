@@ -216,6 +216,62 @@ test('Back from a resumed Browse location skips over Now Playing', async ({ page
   await expect(page).toHaveURL(/\/sonos\/browse/)
 })
 
+// ── User's reported flow: Browse > NAS > Albums > scroll > album > Playing > Change music > Back ──
+
+test('Back from a Change-music resume restores source and mode at the library', async ({ page }) => {
+  test.setTimeout(30_000)
+
+  await mockSession(page)
+  await mockBrowseBackends(page)
+
+  await page.route('**/api/sonos/nas/albums/Some%20Artist/Some%20Album*', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ name: 'Some Album', artist: 'Some Artist', tracks: [] }),
+    }),
+  )
+
+  // Seed the browse state the user has built up: NAS source + albums mode
+  await page.goto('/sonos/browse')
+  await expect(page.getByLabel('Search music')).toBeVisible()
+  await page.evaluate(() => {
+    sessionStorage.setItem('pageState:browse-source-filter', JSON.stringify('nas'))
+    sessionStorage.setItem('pageState:nas-browse-mode', JSON.stringify('albums'))
+  })
+  await page.reload()
+  await expect(page.getByRole('tab', { name: 'NAS' })).toHaveAttribute('aria-selected', 'true')
+
+  // Drill into an album
+  await page.goto('/sonos/browse/nas/album/Some%20Artist/Some%20Album')
+  await expect(visibleLink(page, 'Browse')).toBeVisible()
+  await expect
+    .poll(() =>
+      page.evaluate(() => sessionStorage.getItem('sonos:lastBrowsePath')),
+    )
+    .toContain('/sonos/browse/nas/album/')
+
+  // Peek at Playing (via the tab nav — this is the user's described step)
+  await visibleLink(page, 'Playing').click()
+  await page.waitForURL('**/sonos/playing')
+
+  // Resume to the album via Change music — here we simulate by clicking
+  // Browse nav (same logic via handleBrowseNavClick).
+  await visibleLink(page, 'Browse').click()
+  await expect(page).toHaveURL(/\/sonos\/browse\/nas\/album\//, { timeout: 10_000 })
+
+  // Press Back — land on the library with NAS + albums mode restored
+  await page.goBack()
+  await expect(page).toHaveURL(/\/sonos\/browse(\?|$)/, { timeout: 10_000 })
+  await expect(page.getByRole('tab', { name: 'NAS' })).toHaveAttribute('aria-selected', 'true')
+  // And the NAS-mode sessionStorage value is still 'albums' (the internal
+  // NasBrowseView will render accordingly when mounted)
+  const mode = await page.evaluate(() =>
+    sessionStorage.getItem('pageState:nas-browse-mode'),
+  )
+  expect(mode).toBe('"albums"')
+})
+
 // ── Back skips Playing even when Playing was pushed (not replaced) ───────────
 
 test('Back skips Playing even when Playing ended up in history via a push', async ({ page }) => {
