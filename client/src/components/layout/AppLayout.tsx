@@ -1,5 +1,5 @@
-import React, { useCallback } from 'react'
-import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import React, { useCallback, useEffect, useRef } from 'react'
+import { Outlet, NavLink, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Home, DoorOpen, Sparkles, LayoutGrid, Settings, BarChart3, User, Play, Search, Heart } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -47,9 +47,28 @@ function isNavActive(itemTo: string, pathname: string, isRouterActive: boolean):
 export default function AppLayout() {
   const location = useLocation()
   const navigate = useNavigate()
+  const navigationType = useNavigationType()
   useDashboardSocket()
   useScrollRestoration()
   useTrackSonosBrowsePath()
+
+  // Skip /sonos/playing when the user presses Back from a /sonos/browse*
+  // page. Pressing Back after "Change music" or the Browse nav should keep
+  // the user inside their browse history rather than bouncing through Now
+  // Playing. We detect a POP that lands on Playing coming from Browse and
+  // immediately call navigate(-1) again.
+  const prevPathnameRef = useRef<string>(location.pathname)
+  useEffect(() => {
+    const prev = prevPathnameRef.current
+    prevPathnameRef.current = location.pathname
+    if (
+      navigationType === 'POP' &&
+      location.pathname === '/sonos/playing' &&
+      prev.startsWith('/sonos/browse')
+    ) {
+      navigate(-1)
+    }
+  }, [location.pathname, navigationType, navigate])
 
   // Sonos nav (Playing / Browse / Favourites / Insights) behaves like a tab
   // bar: switching between sections while already inside Sonos should not
