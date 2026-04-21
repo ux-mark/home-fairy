@@ -9,8 +9,7 @@ import { Skeleton } from '@/components/ui/Skeleton'
 import type { SonosPlaybackState, SonosGroupInfo, SonosNowPlayingEntry } from '@/lib/api'
 import { ProgressBar } from './ProgressBar'
 import { PlaybackControls } from './PlaybackControls'
-import { SonosVolumeControl } from './SonosVolumeControl'
-import { VolumeGroupPopover } from './VolumeGroupPopover'
+import { SpeakerVolumeControl } from './SpeakerVolumeControl'
 import { InlineQueue } from './InlineQueue'
 import { QueueView } from './QueueView'
 import { GroupSpeakersPanel } from './GroupSpeakersPanel'
@@ -77,11 +76,6 @@ export function UnifiedPlaybackCard({
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
   }, [queryClient])
-
-  const volumeMutation = useMutation({
-    mutationFn: (level: number) => api.sonos.setVolume(speaker, level),
-    onError: () => toast({ message: 'Could not update volume', type: 'error' }),
-  })
 
   const seekMutation = useMutation({
     mutationFn: (seconds: number) => api.sonos.seek(speaker, seconds),
@@ -275,13 +269,12 @@ export function UnifiedPlaybackCard({
         {showVolume && (
           <div>
             <p className="mb-2 text-xs font-medium text-caption">Volume</p>
-            <VolumeGroupPopover
+            <SpeakerVolumeControl
               speaker={speaker}
-              value={state.volume}
-              onChange={level => volumeMutation.mutate(level)}
+              roomName={roomName}
+              volume={state.volume}
               group={group}
               allSpeakers={allSpeakers}
-              label={`${roomName} volume`}
             />
           </div>
         )}
@@ -383,10 +376,12 @@ export function UnifiedPlaybackCard({
       {showVolume && (
         <div>
           <p className="mb-1.5 text-xs font-medium text-caption">Volume</p>
-          <SonosVolumeControl
-            value={state.volume}
-            onChange={level => volumeMutation.mutate(level)}
-            label={`${roomName} volume`}
+          <SpeakerVolumeControl
+            speaker={speaker}
+            roomName={roomName}
+            volume={state.volume}
+            group={group}
+            allSpeakers={allSpeakers}
           />
         </div>
       )}

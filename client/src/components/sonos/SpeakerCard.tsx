@@ -1,12 +1,8 @@
 import { useRef, useEffect, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
 import { Link2, Radio, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { api } from '@/lib/api'
-import { useToast } from '@/hooks/useToast'
 import type { SonosPlaybackState, SonosGroupInfo, SonosNowPlayingEntry } from '@/lib/api'
-import { SonosVolumeControl } from './SonosVolumeControl'
-import { VolumeGroupPopover } from './VolumeGroupPopover'
+import { SpeakerVolumeControl } from './SpeakerVolumeControl'
 import { UnifiedPlaybackCard } from './UnifiedPlaybackCard'
 import { GroupManager } from './GroupManager'
 
@@ -74,7 +70,6 @@ function PlaybackBadge({ state }: { state: SonosPlaybackState | null }) {
  * Both `showVolume` and `showQueue` default to `true`.
  */
 export function SpeakerCard(props: SpeakerCardProps) {
-  const { toast } = useToast()
   const { showVolume = true, showQueue = true, showFullQueue = false } = props
   const cardRef = useRef<HTMLDivElement>(null)
   const [groupManagerOpen, setGroupManagerOpen] = useState(false)
@@ -103,17 +98,6 @@ export function SpeakerCard(props: SpeakerCardProps) {
       cardRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
     }
   }, [isFocused])
-
-  const volumeMutation = useMutation({
-    mutationFn: (level: number) => api.sonos.setVolume(speakerName, level),
-    onError: () =>
-      toast({
-        message: isSolo
-          ? `Couldn't update volume for ${props.roomName}`
-          : `Couldn't update group volume`,
-        type: 'error',
-      }),
-  })
 
   // ── Solo-specific values ────────────────────────────────────────────────────
 
@@ -217,24 +201,16 @@ export function SpeakerCard(props: SpeakerCardProps) {
       {showVolume && (
         <div className="mt-3">
           <p className="mb-1.5 text-xs font-medium text-caption">Volume</p>
-          {isSolo ? (
-            <SonosVolumeControl
-              value={state?.volume ?? 0}
-              onChange={level => volumeMutation.mutate(level)}
-              label={`${props.roomName} volume`}
-              disabled={!!props.error}
-              loading={volumeMutation.isPending}
-            />
-          ) : (
-            <VolumeGroupPopover
-              speaker={speakerName}
-              value={state?.volume ?? 0}
-              onChange={level => volumeMutation.mutate(level)}
-              group={groupInfo}
-              allSpeakers={allSpeakers}
-              label="Group volume"
-            />
-          )}
+          <SpeakerVolumeControl
+            speaker={speakerName}
+            roomName={isSolo ? props.roomName : props.coordinator.roomName}
+            volume={state?.volume ?? 0}
+            group={isSolo ? soloGroup : groupInfo}
+            allSpeakers={allSpeakers}
+            label={isSolo ? undefined : 'Group volume'}
+            errorMessage={isSolo ? undefined : "Couldn't update group volume"}
+            disabled={isSolo ? !!props.error : false}
+          />
         </div>
       )}
 
