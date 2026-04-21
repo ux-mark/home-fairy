@@ -17,7 +17,7 @@ export function QueueEmptyState({ speaker, compact = false }: QueueEmptyStatePro
   const navigate = useNavigate()
 
   function handleBrowse() {
-    navigate(getSonosBrowseEntryPath(speaker))
+    navigate(getSonosBrowseEntryPath(speaker), { replace: true })
   }
 
   if (compact) {

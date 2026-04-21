@@ -135,7 +135,7 @@ export function UnifiedPlaybackCard({
             </p>
           </div>
           <button
-            onClick={() => navigate(browseUrl)}
+            onClick={() => navigate(browseUrl, { replace: true })}
             className={cn(
               'flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-5 text-sm font-medium transition-colors',
               'surface text-body hover:brightness-95 dark:hover:brightness-110',
@@ -159,7 +159,7 @@ export function UnifiedPlaybackCard({
           <p className="text-xs text-caption">Nothing playing</p>
         </div>
         <button
-          onClick={() => navigate(browseUrl)}
+          onClick={() => navigate(browseUrl, { replace: true })}
           className={cn(
             'flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors',
             'surface text-body hover:brightness-95 dark:hover:brightness-110',

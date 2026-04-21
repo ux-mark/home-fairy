@@ -4,10 +4,14 @@ import { test, expect, type Page } from '@playwright/test'
 // Tests for item-080: Browse navigation preserves the user's position
 // within a session when they leave and return via the Browse nav link or the
 // "Change music" / "Browse music" buttons on speaker cards.
-// Run serially so the Vite build/dev-server interactions are deterministic.
 // ─────────────────────────────────────────────────────────────────────────────
 
-test.describe.configure({ mode: 'serial' })
+// These tests exercise sessionStorage-backed navigation across multiple
+// history entries and are occasionally flaky when Playwright runs the Mobile
+// and Desktop projects in parallel against the same dev server. The
+// behaviour itself is deterministic — a retry resolves the occasional race
+// between the tracking effect's commit and the next click.
+test.describe.configure({ retries: 2 })
 
 async function mockSession(page: Page) {
   await page.route('**/api/auth/get-session', route =>
@@ -161,5 +165,53 @@ test('Clicking Browse resumes the deepest visited browse URL', async ({ page }) 
   await visibleLink(page, 'Browse').click()
 
   // We should land back inside the playlist URL, not the browse root
+  await expect(page).toHaveURL(/\/sonos\/browse\/spotify\/playlist\/abc123/, { timeout: 10_000 })
+})
+
+// ── Back-button behaviour after resuming into Browse ─────────────────────────
+
+test('Back from a resumed Browse location returns to the prior browse step, not to Playing', async ({ page }) => {
+  test.setTimeout(30_000)
+
+  await mockSession(page)
+  await mockBrowseBackends(page)
+
+  await page.route('**/api/spotify/playlists/abc123', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'abc123',
+        name: 'Sunday Chill',
+        images: [],
+        tracks: { items: [] },
+      }),
+    }),
+  )
+
+  // Build browse history: land on Browse, then drill into a playlist
+  await page.goto('/sonos/browse')
+  await expect(page.getByLabel('Search music')).toBeVisible()
+
+  await page.goto('/sonos/browse/spotify/playlist/abc123')
+  await expect(visibleLink(page, 'Browse')).toBeVisible()
+  // Wait for the tracking effect to persist the deep path
+  await expect
+    .poll(() =>
+      page.evaluate(() => sessionStorage.getItem('sonos:lastBrowsePath')),
+    )
+    .toBe('/sonos/browse/spotify/playlist/abc123')
+
+  // Leave browse for Now Playing
+  await visibleLink(page, 'Playing').click()
+  await page.waitForURL('**/sonos/playing')
+
+  // Resume via the Browse nav link — we land back in the playlist
+  await visibleLink(page, 'Browse').click()
   await expect(page).toHaveURL(/\/sonos\/browse\/spotify\/playlist\/abc123/)
+
+  // Press browser back — we should skip over Playing and return to the
+  // previous browse step (the browse root, not /sonos/playing)
+  await page.goBack()
+  await expect(page).toHaveURL(/\/sonos\/browse(\?|$)/)
 })

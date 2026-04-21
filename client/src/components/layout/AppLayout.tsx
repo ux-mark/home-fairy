@@ -51,6 +51,13 @@ export default function AppLayout() {
   useScrollRestoration()
   useTrackSonosBrowsePath()
 
+  // Sonos nav (Playing / Browse / Favourites / Insights) behaves like a tab
+  // bar: switching between sections while already inside Sonos should not
+  // accumulate history entries. That way, pressing Back from a resumed
+  // browse location returns to the prior *browse* step rather than the Now
+  // Playing page the user had briefly peeked at.
+  const isSonosPath = location.pathname.startsWith('/sonos')
+
   // Clicking "Browse" in the Sonos nav resumes at the last-visited browse
   // location within this session (e.g. the playlist/album the user was last
   // inside). Falls back to `/sonos/browse` on a fresh session.
@@ -62,9 +69,25 @@ export default function AppLayout() {
       const target = getSonosBrowseEntryPath()
       if (target === location.pathname + location.search) return
       e.preventDefault()
-      navigate(target)
+      navigate(target, { replace: isSonosPath })
     },
-    [navigate, location.pathname, location.search],
+    [navigate, location.pathname, location.search, isSonosPath],
+  )
+
+  // For the other Sonos nav items, switch tab-style: replace when already
+  // inside Sonos so that browser Back skips the intra-Sonos switch.
+  const handleSonosTabNavClick = useCallback(
+    (to: string) =>
+      (e: React.MouseEvent<HTMLAnchorElement>) => {
+        if (e.defaultPrevented) return
+        if (e.button !== 0) return
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+        if (!isSonosPath) return
+        if (to === location.pathname) return
+        e.preventDefault()
+        navigate(to, { replace: true })
+      },
+    [navigate, location.pathname, isSonosPath],
   )
 
   const { data: session } = authClient.useSession()
@@ -78,6 +101,16 @@ export default function AppLayout() {
   // Detect Sonos context
   const isSonosContext = location.pathname.startsWith('/sonos')
   const activeNavItems = isSonosContext ? SONOS_NAV_ITEMS : HOME_NAV_ITEMS
+
+  // Pick the correct click handler for a Sonos-nav item. `/` (Home) is a
+  // real exit from Sonos so we leave it alone; the other items swap like
+  // tabs when the user is already inside Sonos.
+  function sonosNavOnClick(to: string) {
+    if (to === '/sonos/browse') return handleBrowseNavClick
+    if (to === '/') return undefined
+    if (SONOS_NAV_ITEMS.some(n => n.to === to)) return handleSonosTabNavClick(to)
+    return undefined
+  }
 
   // Build nav items based on role (home context only)
   const navItems: { to: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement>>; label: string }[] = [
@@ -127,7 +160,7 @@ export default function AppLayout() {
               <NavLink
                 to={to}
                 end={to === '/'}
-                onClick={to === '/sonos/browse' ? handleBrowseNavClick : undefined}
+                onClick={sonosNavOnClick(to)}
                 className={({ isActive }) => {
                   const active = isNavActive(to, location.pathname, isActive)
                   return cn(
@@ -221,7 +254,7 @@ export default function AppLayout() {
               <NavLink
                 to={to}
                 end={to === '/'}
-                onClick={to === '/sonos/browse' ? handleBrowseNavClick : undefined}
+                onClick={sonosNavOnClick(to)}
                 className={({ isActive }) => {
                   const active = isNavActive(to, location.pathname, isActive)
                   return cn(
