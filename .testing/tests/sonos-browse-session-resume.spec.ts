@@ -272,6 +272,47 @@ test('Back from a Change-music resume restores source and mode at the library', 
   expect(mode).toBe('"albums"')
 })
 
+// ── Scroll position is saved per-URL and restored on next visit ──────────────
+
+test('Browse scroll position is persisted per-URL and restored on return', async ({ page }) => {
+  test.setTimeout(30_000)
+
+  await mockSession(page)
+  await mockBrowseBackends(page)
+
+  await page.goto('/sonos/browse')
+  await expect(page.getByLabel('Search music')).toBeVisible()
+
+  // Inject tall content INSIDE the main content region so that the
+  // flex container (parent of the sticky sidebar) is tall enough for
+  // sticky positioning to hold as the user scrolls.
+  await page.evaluate(() => {
+    const main = document.querySelector('main') ?? document.body
+    const spacer = document.createElement('div')
+    spacer.id = 'e2e-tall-spacer'
+    spacer.style.height = '3000px'
+    spacer.textContent = 'scroll spacer'
+    main.appendChild(spacer)
+  })
+
+  await page.evaluate(() => window.scrollTo(0, 800))
+  await page.waitForFunction(() => window.scrollY >= 700)
+  await page.waitForTimeout(200)
+
+  const stored = await page.evaluate(() =>
+    sessionStorage.getItem('scrollY:/sonos/browse'),
+  )
+  expect(Number(stored)).toBeGreaterThan(500)
+
+  await visibleLink(page, 'Playing').click()
+  await page.waitForURL('**/sonos/playing')
+
+  const afterTrip = await page.evaluate(() =>
+    sessionStorage.getItem('scrollY:/sonos/browse'),
+  )
+  expect(Number(afterTrip)).toBeGreaterThan(500)
+})
+
 // ── Back skips Playing even when Playing was pushed (not replaced) ───────────
 
 test('Back skips Playing even when Playing ended up in history via a push', async ({ page }) => {

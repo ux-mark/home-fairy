@@ -158,7 +158,7 @@ export default function AppLayout() {
   return (
     <div className="flex min-h-svh flex-col md:flex-row">
       {/* Desktop sidebar */}
-      <aside className="sidebar hidden w-56 shrink-0 border-r md:flex md:flex-col">
+      <aside className="sidebar hidden w-56 shrink-0 border-r md:sticky md:top-0 md:flex md:max-h-svh md:flex-col md:self-start md:overflow-y-auto">
         <div className="flex items-center gap-2 border-b px-5 py-4">
           <HomeFairyIcon className="h-6 w-6" />
           <h1 className="text-heading text-lg font-semibold">Home Fairy</h1>

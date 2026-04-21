@@ -3,37 +3,77 @@ import { useLocation, useNavigationType } from 'react-router-dom'
 
 /**
  * Saves scroll position on navigation and restores it on back/forward.
- * New navigations (PUSH) scroll to top. Back/forward (POP) restore the saved position.
+ * New navigations (PUSH/REPLACE) scroll to top. Back/forward (POP) restore
+ * the saved position.
  *
- * Uses multiple deferred attempts to handle pages where restored state (e.g.
- * accordion expansions) changes the scrollable height after the initial render.
+ * Implementation notes:
+ *   - We key scroll by URL (`location.pathname + location.search`), not by
+ *     `location.key`. React Router's `replace` creates a new key even for
+ *     the same URL, and our Sonos flow deliberately uses `replace` to hide
+ *     intermediate pages from Back. Keying by URL means the saved scroll
+ *     position survives those replace chains.
+ *   - We record scroll via a passive `scroll` listener. Reading
+ *     `window.scrollY` only at navigation time is unreliable — when React
+ *     commits a shorter route, the browser clamps `scrollY` before our
+ *     effect runs. The scroll listener captures the value while the user
+ *     is actually on the page.
+ *   - We also mirror to `sessionStorage` so scroll survives page reloads
+ *     within a session.
  *
  * Call this once in AppLayout.
  */
+
+const STORAGE_PREFIX = 'scrollY:'
+
+function storageKey(url: string): string {
+  return STORAGE_PREFIX + url
+}
+
+function readStoredScroll(url: string): number | undefined {
+  try {
+    const raw = sessionStorage.getItem(storageKey(url))
+    if (raw == null) return undefined
+    const n = Number(raw)
+    return Number.isFinite(n) ? n : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function writeStoredScroll(url: string, y: number): void {
+  try {
+    sessionStorage.setItem(storageKey(url), String(y))
+  } catch {
+    // sessionStorage quota or unavailable — ignore
+  }
+}
+
 export function useScrollRestoration() {
   const location = useLocation()
   const navigationType = useNavigationType()
-  const scrollPositions = useRef<Map<string, number>>(new Map())
-  const prevKey = useRef<string | null>(null)
+  const currentUrl = useRef<string>(location.pathname + location.search)
+
+  // Update currentUrl during render so scroll events fired by the browser
+  // after DOM commit (e.g. clamp when a new shorter route renders) write
+  // to the NEW url, not to the outgoing page.
+  currentUrl.current = location.pathname + location.search
 
   useEffect(() => {
-    // Save scroll position of the page we're leaving
-    if (prevKey.current) {
-      scrollPositions.current.set(prevKey.current, window.scrollY)
+    const handler = () => {
+      writeStoredScroll(currentUrl.current, window.scrollY)
     }
-    prevKey.current = location.key
+    window.addEventListener('scroll', handler, { passive: true })
+    return () => window.removeEventListener('scroll', handler)
+  }, [])
 
+  useEffect(() => {
     if (navigationType === 'POP') {
-      // Back/forward — restore saved position
-      const saved = scrollPositions.current.get(location.key)
-      if (saved !== undefined) {
-        // Restoration strategy:
-        //   1. Retry `window.scrollTo(0, saved)` at escalating delays so
-        //      short progressive renders (accordions, lazy images) settle.
-        //   2. Observe `<html>` for size changes so slow async data loads
-        //      (e.g. a NAS library fetch) still land the user back where
-        //      they were, even if it takes several seconds.
-        //   3. Give up after 5s so we don't fight a user scroll forever.
+      const url = location.pathname + location.search
+      const saved = readStoredScroll(url)
+      if (saved !== undefined && saved > 0) {
+        // Retry scrolling over a long window so slow async data loads can
+        // finish laying out before we give up. Also observe <html> size
+        // changes so we re-scroll whenever more content arrives.
         const attempts = [0, 50, 150, 350, 600, 1000, 1500, 2200, 3000, 4000]
         const timers: number[] = []
         let cancelled = false
@@ -50,17 +90,12 @@ export function useScrollRestoration() {
           timers.push(window.setTimeout(tryScroll, delay))
         }
 
-        // Keep scrolling whenever the page grows — e.g., when the NAS
-        // library or a long list finishes loading after our timers have
-        // fired.
         let resizeObserver: ResizeObserver | null = null
         if (typeof ResizeObserver !== 'undefined') {
           resizeObserver = new ResizeObserver(() => tryScroll())
           resizeObserver.observe(document.documentElement)
         }
 
-        // Hard stop so we don't hijack the page if the user has started
-        // interacting with it.
         timers.push(
           window.setTimeout(() => {
             cancelled = true
@@ -78,5 +113,5 @@ export function useScrollRestoration() {
       // New navigation (PUSH/REPLACE) — scroll to top
       window.scrollTo(0, 0)
     }
-  }, [location.key, navigationType])
+  }, [location.key, location.pathname, location.search, navigationType])
 }
