@@ -1,9 +1,10 @@
-import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
+import { useParams, useSearchParams, useLocation } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { ArrowLeft, Music2, Pause, Play } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { useFirstSpeaker } from '@/hooks/useBrowseShared'
+import { useSmartBack } from '@/hooks/useSmartBack'
 import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from '../ArtworkImage'
@@ -14,7 +15,6 @@ import { SpotifyAlbumTrackRow } from './SpotifyTrackRow'
 export function SpotifyAlbumDetail() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
   const location = useLocation()
   const { toast } = useToast()
 
@@ -28,6 +28,7 @@ export function SpotifyAlbumDetail() {
   const backUrl = fromArtistId
     ? `/sonos/browse/spotify/artist/${encodeURIComponent(fromArtistId)}${speakerParam ? `?speaker=${encodeURIComponent(speakerParam)}` : ''}`
     : `/sonos/browse?source=spotify${speakerParam ? `&speaker=${encodeURIComponent(speakerParam)}` : ''}`
+  const handleBack = useSmartBack(backUrl)
 
   // Load album metadata from the enriched albums list (cached)
   const { data: albumsData } = useQuery({
@@ -67,7 +68,7 @@ export function SpotifyAlbumDetail() {
       <div className="mb-4 flex items-center gap-3">
         <button
           type="button"
-          onClick={() => navigate(backUrl)}
+          onClick={handleBack}
           aria-label={fromArtistId ? 'Back to artist' : 'Back to albums'}
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',

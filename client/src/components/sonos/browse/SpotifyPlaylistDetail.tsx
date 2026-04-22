@@ -1,4 +1,4 @@
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { ArrowLeft, ListPlus, ListStart, Music2, Pause, Play, Sparkles, Wand2 } from 'lucide-react'
 import { api } from '@/lib/api'
@@ -9,6 +9,7 @@ import type {
 } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { useFirstSpeaker } from '@/hooks/useBrowseShared'
+import { useSmartBack } from '@/hooks/useSmartBack'
 import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from '../ArtworkImage'
@@ -19,7 +20,6 @@ import { SpotifyTrackRow } from './SpotifyTrackRow'
 export function SpotifyPlaylistDetail() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
   const { toast } = useToast()
 
   const speakerParam = searchParams.get('speaker')
@@ -27,6 +27,7 @@ export function SpotifyPlaylistDetail() {
   const speaker = speakerParam ?? firstSpeaker
 
   const backUrl = `/sonos/browse?source=spotify${speakerParam ? `&speaker=${encodeURIComponent(speakerParam)}` : ''}`
+  const handleBack = useSmartBack(backUrl)
 
   const {
     data: playlist,
@@ -95,7 +96,7 @@ export function SpotifyPlaylistDetail() {
         <div className="mb-4 flex items-center gap-3">
           <button
             type="button"
-            onClick={() => navigate(backUrl)}
+            onClick={handleBack}
             aria-label="Back to playlists"
             className={cn(
               'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',
@@ -131,7 +132,7 @@ export function SpotifyPlaylistDetail() {
       <div className="mb-4 flex items-center gap-3">
         <button
           type="button"
-          onClick={() => navigate(backUrl)}
+          onClick={handleBack}
           aria-label="Back to playlists"
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',

@@ -4,6 +4,7 @@ import { ArrowLeft, ChevronRight, Disc3 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosLibraryTrack } from '@/lib/api'
 import { useFirstSpeaker } from '@/hooks/useBrowseShared'
+import { useSmartBack } from '@/hooks/useSmartBack'
 import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { cn } from '@/lib/utils'
 import { ListSkeleton, ErrorState } from './BrowseShared'
@@ -23,6 +24,7 @@ export function NasArtistDetail() {
   const artist = name ? decodeURIComponent(name) : null
 
   const backUrl = `/sonos/browse?source=nas${speakerParam ? `&speaker=${encodeURIComponent(speakerParam)}` : ''}`
+  const handleBack = useSmartBack(backUrl)
 
   const { data: tracks, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['sonos-library-artist-tracks', artist],
@@ -41,14 +43,6 @@ export function NasArtistDetail() {
       const list = albums.get(key) ?? []
       list.push(t)
       albums.set(key, list)
-    }
-  }
-
-  function handleBack() {
-    if (window.history.length > 1) {
-      navigate(-1)
-    } else {
-      navigate(backUrl)
     }
   }
 
