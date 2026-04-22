@@ -35,8 +35,12 @@ export function AddToSpotifyPlaylistDialog({
     enabled: open,
   })
 
+  // NOTE: deliberately distinct from the ['spotify-playlists'] key used by
+  // SpotifyBrowseView's useInfiniteQuery. The infinite query stores data as
+  // { pages, pageParams }, which would crash this dialog's
+  // `playlists.items.length` read if both keys collided.
   const { data: playlists, isLoading: playlistsLoading } = useQuery({
-    queryKey: ['spotify-playlists'],
+    queryKey: ['spotify-playlists', 'add-to-dialog'],
     queryFn: () => api.spotify.getPlaylists(50, 0),
     staleTime: 60_000,
     enabled: open && !!status?.connected && !status?.needs_reauth,
@@ -61,6 +65,8 @@ export function AddToSpotifyPlaylistDialog({
       return name
     },
     onSuccess: (name) => {
+      // Invalidate both the dialog's local query and any other consumers
+      // (e.g. SpotifyBrowseView's infinite query).
       queryClient.invalidateQueries({ queryKey: ['spotify-playlists'] })
       toast({ message: `Created "${name}" and added track on Spotify` })
       setNewName('')
@@ -146,13 +152,13 @@ export function AddToSpotifyPlaylistDialog({
             )}
 
             {/* Playlists list */}
-            {!isLoading && !status?.needs_reauth && status?.connected && playlists && playlists.items.length === 0 && !showCreate && (
+            {!isLoading && !status?.needs_reauth && status?.connected && playlists?.items?.length === 0 && !showCreate && (
               <p className="py-4 text-center text-sm text-caption">No playlists found. Create one below.</p>
             )}
 
-            {!isLoading && !status?.needs_reauth && playlists && playlists.items.length > 0 && (
+            {!isLoading && !status?.needs_reauth && (playlists?.items?.length ?? 0) > 0 && (
               <ul className="divide-y divide-[var(--border-secondary)] mb-2" aria-label="Your Spotify playlists">
-                {playlists.items.map(pl => (
+                {playlists!.items.map(pl => (
                   <li key={pl.id} className="flex items-center justify-between gap-3 py-3">
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-heading">{pl.name}</p>
