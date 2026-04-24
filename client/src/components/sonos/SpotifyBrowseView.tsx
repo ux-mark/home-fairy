@@ -1229,7 +1229,9 @@ function ShowList({
     )
   }
 
-  const shows = (data?.items ?? []).map(item => item.show)
+  const shows = (data?.items ?? [])
+    .map(item => item.show)
+    .filter((s): s is SpotifyShow => s !== null && s !== undefined)
 
   if (shows.length === 0) {
     return (

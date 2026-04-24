@@ -133,7 +133,9 @@ export function SpotifyShowDetail() {
     queryFn: () => api.spotify.getSavedShows(),
     staleTime: 5 * 60_000,
   })
-  const show = (showsData?.items ?? []).map(item => item.show).find(s => s.id === id)
+  // Spotify can return items with `show: null` for podcasts unavailable in
+  // the current market. Filter those out before matching by id.
+  const show = (showsData?.items ?? []).find(item => item.show?.id === id)?.show
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['spotify-show-episodes', id],
@@ -144,7 +146,11 @@ export function SpotifyShowDetail() {
 
   if (!id) return null
 
-  const episodes = data?.items ?? []
+  // Spotify can return null episodes for items unavailable in the current
+  // market or removed from the show. Filter them out before rendering.
+  const episodes = (data?.items ?? []).filter(
+    (e): e is SpotifyEpisode => e !== null && e !== undefined,
+  )
 
   return (
     <div>

@@ -36,8 +36,9 @@ export function SpotifyAlbumDetail() {
     queryFn: () => api.spotify.getEnrichedAlbums(),
     staleTime: 5 * 60_000,
   })
-  const albumItem = (albumsData?.items ?? []).find(item => item.album.id === id)
-  const album = albumItem?.album
+  // Spotify can return items with `album: null` for entries unavailable in
+  // the current market. Skip those safely.
+  const album = (albumsData?.items ?? []).find(item => item.album?.id === id)?.album
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['spotify-album-tracks', id],
