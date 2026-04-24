@@ -6,10 +6,9 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useDashboardSocket } from '@/hooks/useSocket'
 import { useScrollRestoration } from '@/hooks/useScrollRestoration'
-import {
-  useTrackSonosBrowsePath,
-  getSonosBrowseEntryPath,
-} from '@/hooks/useSonosBrowseMemory'
+import { useTrackSonosBrowsePath, getSonosBrowseEntryPath } from '@/hooks/useSonosBrowseMemory'
+import { useNavStack } from '@/hooks/useNavStack'
+import { NavStackContext } from '@/contexts/NavStackContext'
 import ToastContainer from '@/components/ui/Toast'
 import NotificationBell from '@/components/notifications/NotificationBell'
 import { LucideIcon } from '@/components/ui/LucideIcon'
@@ -51,6 +50,7 @@ export default function AppLayout() {
   useDashboardSocket()
   useScrollRestoration()
   useTrackSonosBrowsePath()
+  const navStack = useNavStack()
 
   // Skip /sonos/playing when the user presses Back from a /sonos/browse*
   // page. Pressing Back after "Change music" or the Browse nav should keep
@@ -77,9 +77,11 @@ export default function AppLayout() {
   // than accumulating intermediate tab-switches in history.
   const isSonosPath = location.pathname.startsWith('/sonos')
 
-  // Clicking "Browse" resumes at the last-visited browse location within
-  // this session (e.g. the playlist/album the user was last inside). Falls
-  // back to `/sonos/browse` on a fresh session.
+  // Clicking "Browse" uses the smart resume hook: if the target URL exists in
+  // the in-app nav stack, walk back to it (preserving the full history chain
+  // behind it); otherwise push a fresh entry. Never use { replace: true }
+  // here — REPLACE would overwrite the current entry and create duplicate-
+  // entry Back traps where the first press appears to do nothing.
   const handleBrowseNavClick = useCallback(
     (e: React.MouseEvent<HTMLAnchorElement>) => {
       if (e.defaultPrevented) return
@@ -88,9 +90,18 @@ export default function AppLayout() {
       const target = getSonosBrowseEntryPath()
       if (target === location.pathname + location.search) return
       e.preventDefault()
-      navigate(target, { replace: isSonosPath })
+      // If the target URL is in the in-app nav stack, walk back to it so the
+      // full history chain behind it is preserved. Otherwise push a new entry.
+      // Never use replace:true — REPLACE overwrites the current entry and
+      // creates duplicate-entry Back traps.
+      const depth = navStack.findDepth(target)
+      if (depth != null && depth > 0) {
+        navigate(-depth)
+      } else {
+        navigate(target)
+      }
     },
-    [navigate, location.pathname, location.search, isSonosPath],
+    [navigate, location.pathname, location.search, navStack],
   )
 
   // For the other Sonos nav items, replace when already inside Sonos so
@@ -156,6 +167,7 @@ export default function AppLayout() {
   )?.label ?? (isSonosContext ? 'Sonos' : 'Home Fairy')
 
   return (
+    <NavStackContext.Provider value={navStack}>
     <div className="flex min-h-svh flex-col md:flex-row">
       {/* Desktop sidebar */}
       <aside className="sidebar hidden w-56 shrink-0 border-r md:sticky md:top-0 md:flex md:max-h-svh md:flex-col md:self-start md:overflow-y-auto">
@@ -301,5 +313,6 @@ export default function AppLayout() {
 
       <ToastContainer />
     </div>
+    </NavStackContext.Provider>
   )
 }

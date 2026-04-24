@@ -1,7 +1,6 @@
-import { useNavigate } from 'react-router-dom'
 import { Music, Music2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { getSonosBrowseEntryPath } from '@/hooks/useSonosBrowseMemory'
+import { useGoToBrowseResumed } from '@/hooks/useGoToBrowseResumed'
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
@@ -14,10 +13,10 @@ interface QueueEmptyStateProps {
 // ── QueueEmptyState ───────────────────────────────────────────────────────────
 
 export function QueueEmptyState({ speaker, compact = false }: QueueEmptyStateProps) {
-  const navigate = useNavigate()
+  const goToBrowseResumed = useGoToBrowseResumed()
 
   function handleBrowse() {
-    navigate(getSonosBrowseEntryPath(speaker), { replace: true })
+    goToBrowseResumed(speaker)
   }
 
   if (compact) {

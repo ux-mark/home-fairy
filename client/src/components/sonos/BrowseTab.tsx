@@ -1,7 +1,6 @@
-import { useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { usePersistedState } from '@/hooks/usePersistedState'
 import { AlertTriangle, CheckCircle2, Search, X, Music, Radio, HardDrive } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
@@ -168,38 +167,122 @@ interface BrowseTabProps {
 }
 
 export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const { selectedSpeaker, setSelectedSpeaker } = usePlaybackState()
 
-  // Entry precedence for the source tab:
-  //   1. ?source= URL param (set by detail pages when their back button falls
-  //      back to a hardcoded URL).
-  //   2. The value from this session's previous visit (sessionStorage) so
-  //      that tapping "Browse" or "Change music" after leaving resumes at
-  //      the same source tab.
-  //   3. Default to "all" on first entry.
+  // ── Source filter: URL param is the canonical source of truth ────────────
+  // Precedence on entry:
+  //   1. ?source= URL param (set by tab clicks and by back-nav fallback URLs).
+  //   2. sessionStorage — resume when the URL has no param (e.g. bare
+  //      /sonos/browse after a hard reload or nav via a stored path).
+  //   3. 'all' — fresh session default.
   const sourceFromUrl = searchParams.get('source') as SourceFilter | null
-  const initialSource: SourceFilter =
-    sourceFromUrl && ['nas', 'spotify', 'radio'].includes(sourceFromUrl)
-      ? sourceFromUrl
-      : (readSessionValue<SourceFilter>('pageState:browse-source-filter', (v): v is SourceFilter =>
-          typeof v === 'string' && ['all', 'nas', 'spotify', 'radio'].includes(v),
+  const activeSource: SourceFilter =
+    sourceFromUrl && ['all', 'nas', 'spotify', 'radio'].includes(sourceFromUrl)
+      ? (sourceFromUrl as SourceFilter)
+      : (readSessionValue<SourceFilter>(
+          'pageState:browse-source-filter',
+          (v): v is SourceFilter =>
+            typeof v === 'string' && ['all', 'nas', 'spotify', 'radio'].includes(v),
         ) ?? 'all')
 
-  // Search query likewise resumes from sessionStorage across PUSH navigation.
-  const initialSearch =
-    readSessionValue<string>('pageState:browse-search-query', (v): v is string => typeof v === 'string') ?? ''
+  // ── Search query: URL param is the canonical source of truth ─────────────
+  // The input box is driven by local React state for instant response.
+  // The URL ?q= param is updated after 300 ms debounce (replace: true so we
+  // don't push a new history entry per keystroke). On mount, seed local state
+  // from the URL (if present) or from sessionStorage (for cross-tab / reload).
+  const qFromUrl = searchParams.get('q') ?? ''
+  const initialSearch = (() => {
+    if (qFromUrl !== '') return qFromUrl
+    return readSessionValue<string>(
+      'pageState:browse-search-query',
+      (v): v is string => typeof v === 'string',
+    ) ?? ''
+  })()
 
-  const [activeSource, setActiveSource] = usePersistedState<SourceFilter>('browse-source-filter', initialSource)
-  const [searchQuery, setSearchQuery] = usePersistedState<string>('browse-search-query', initialSearch)
+  // localSearch: controlled input value (instant). searchQuery: debounced
+  // value used for actual queries and for the URL mirror.
+  const [localSearch, setLocalSearch] = useState<string>(initialSearch)
+  // Track debounce timer
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Sync URL targetSpeaker into global speaker selection so the dropdown reflects it
+  // searchQuery is derived: if the URL has ?q=, that's authoritative (handles
+  // Back navigation restoring a search). Otherwise fall back to localSearch so
+  // the input remains usable even before the debounce fires.
+  const searchQuery = qFromUrl !== '' ? qFromUrl : localSearch
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setLocalSearch(value)
+      try { sessionStorage.setItem('pageState:browse-search-query', JSON.stringify(value)) } catch { /* ignore */ }
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        setSearchParams(
+          prev => {
+            const next = new URLSearchParams(prev)
+            if (value) {
+              next.set('q', value)
+            } else {
+              next.delete('q')
+            }
+            return next
+          },
+          { replace: true },
+        )
+      }, 300)
+    },
+    [setSearchParams],
+  )
+
+  const handleSearchClear = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    setLocalSearch('')
+    try { sessionStorage.setItem('pageState:browse-search-query', JSON.stringify('')) } catch { /* ignore */ }
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev)
+        next.delete('q')
+        return next
+      },
+      { replace: true },
+    )
+  }, [setSearchParams])
+
+  const handleSetActiveSource = useCallback(
+    (source: SourceFilter) => {
+      try { sessionStorage.setItem('pageState:browse-source-filter', JSON.stringify(source)) } catch { /* ignore */ }
+      setSearchParams(
+        prev => {
+          const next = new URLSearchParams(prev)
+          next.set('source', source)
+          return next
+        },
+        { replace: true },
+      )
+    },
+    [setSearchParams],
+  )
+
+  // ── Sync URL back to local state when navigating back ────────────────────
+  // When user pops back to /sonos/browse?q=countries, the URL changes but
+  // localSearch stays stale. Sync it here.
+  useEffect(() => {
+    if (qFromUrl !== localSearch) {
+      setLocalSearch(qFromUrl)
+    }
+    // Only sync on URL-driven changes, not on every local keystroke
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qFromUrl])
+
+  // ── Sync targetSpeaker into global selection ──────────────────────────────
   useEffect(() => {
     if (targetSpeaker && targetSpeaker !== selectedSpeaker) {
       setSelectedSpeaker(targetSpeaker)
     }
-  }, [targetSpeaker])
+  }, [targetSpeaker, selectedSpeaker, setSelectedSpeaker])
 
   // Use context speaker unless a targetSpeaker override is provided
   const effectiveSpeaker = targetSpeaker ?? selectedSpeaker ?? undefined
@@ -218,8 +301,8 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
         />
         <input
           type="search"
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
+          value={localSearch}
+          onChange={e => handleSearchChange(e.target.value)}
           placeholder="Search music…"
           aria-label="Search music"
           className={cn(
@@ -229,10 +312,10 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
             'border-none ring-0',
           )}
         />
-        {searchQuery && (
+        {localSearch && (
           <button
             type="button"
-            onClick={() => setSearchQuery('')}
+            onClick={handleSearchClear}
             aria-label="Clear search"
             className={cn(
               'absolute right-3 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--bg-tertiary)]',
@@ -259,7 +342,7 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
               role="tab"
               aria-selected={isActive}
               aria-controls={`browse-panel-${id}`}
-              onClick={() => setActiveSource(id)}
+              onClick={() => handleSetActiveSource(id)}
               className={cn(
                 'shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors',
                 'min-h-[36px]',
@@ -286,31 +369,31 @@ export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
             searchQuery={searchQuery}
             targetSpeaker={effectiveSpeaker}
             onSelectNasArtist={(name) => {
-              setSearchQuery('')
+              handleSearchClear()
               navigate(`/sonos/browse/nas/artist/${encodeURIComponent(name)}${speakerQuery}`)
             }}
             onSelectNasAlbum={(album: SonosGenreAlbum) => {
-              setSearchQuery('')
+              handleSearchClear()
               navigate(
                 `/sonos/browse/nas/album/${encodeURIComponent(album.artist)}/${encodeURIComponent(album.name)}${speakerQuery}`,
                 { state: { objectId: album.objectId } },
               )
             }}
             onSelectSpotifyAlbum={(album: SpotifyAlbum) => {
-              setSearchQuery('')
+              handleSearchClear()
               navigate(`/sonos/browse/spotify/album/${encodeURIComponent(album.id)}${speakerQuery}`)
             }}
             onSelectSpotifyArtist={(artist: SpotifyArtist) => {
-              setSearchQuery('')
+              handleSearchClear()
               navigate(`/sonos/browse/spotify/artist/${encodeURIComponent(artist.id)}${speakerQuery}`)
             }}
             onSelectSpotifyPlaylist={(playlist: SpotifyPlaylist) => {
-              setSearchQuery('')
+              handleSearchClear()
               navigate(`/sonos/browse/spotify/playlist/${encodeURIComponent(playlist.id)}${speakerQuery}`)
             }}
           />
         ) : activeSource === 'all' ? (
-          <AllSourcesView onSelectSource={setActiveSource} />
+          <AllSourcesView onSelectSource={handleSetActiveSource} />
         ) : null}
         {activeSource === 'nas' && (
           <NasBrowseView

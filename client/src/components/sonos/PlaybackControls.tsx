@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { SkipBack, Play, Pause, SkipForward, Repeat1, Music, Loader2 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
-import { getSonosBrowseEntryPath } from '@/hooks/useSonosBrowseMemory'
+import { useGoToBrowseResumed } from '@/hooks/useGoToBrowseResumed'
 import type { SonosPlaybackState } from '@/lib/api'
 
 interface PlaybackControlsProps {
@@ -33,7 +32,7 @@ function parseRepeatOne(mode: string | undefined): boolean {
  */
 export function PlaybackControls({ speaker, state, onInvalidate, showChange = true }: PlaybackControlsProps) {
   const { toast } = useToast()
-  const navigate = useNavigate()
+  const goToBrowseResumed = useGoToBrowseResumed()
   const queryClient = useQueryClient()
 
   const isPlaying = state.playbackState === 'PLAYING'
@@ -188,7 +187,7 @@ export function PlaybackControls({ speaker, state, onInvalidate, showChange = tr
       {/* Change music — navigates to Browse tab */}
       {showChange && (
         <button
-          onClick={() => navigate(getSonosBrowseEntryPath(speaker), { replace: true })}
+          onClick={() => goToBrowseResumed(speaker)}
           className={cn(
             'flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors',
             'surface text-body hover:brightness-95 dark:hover:brightness-110',

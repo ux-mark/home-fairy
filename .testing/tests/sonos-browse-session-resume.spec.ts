@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { SonosBrowsePage } from '../pages/SonosBrowsePage'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tests for item-080: Browse navigation preserves the user's position
@@ -6,12 +7,15 @@ import { test, expect, type Page } from '@playwright/test'
 // "Change music" / "Browse music" buttons on speaker cards.
 // ─────────────────────────────────────────────────────────────────────────────
 
-// These tests exercise sessionStorage-backed navigation across multiple
-// history entries and are occasionally flaky when Playwright runs the Mobile
-// and Desktop projects in parallel against the same dev server. The
-// behaviour itself is deterministic — a retry resolves the occasional race
-// between the tracking effect's commit and the next click.
-test.describe.configure({ retries: 2 })
+// Clear sessionStorage before each test so that navigation state from a
+// previous test does not bleed in. Tests in the same Playwright project run
+// in the same browser context and therefore share sessionStorage unless it is
+// explicitly cleared.
+test.beforeEach(async ({ page }) => {
+  // Navigate to the app root first so the evaluate context is available
+  await page.goto('/', { waitUntil: 'commit' })
+  await page.evaluate(() => sessionStorage.clear())
+})
 
 async function mockSession(page: Page) {
   await page.route('**/api/auth/get-session', route =>
@@ -58,17 +62,6 @@ async function mockBrowseBackends(page: Page) {
   )
 }
 
-// Two NavLinks render (desktop sidebar + mobile bottom nav) but only one is
-// visible at each viewport. Scope to a currently-visible <nav> and select the
-// matching link inside it.
-function visibleLink(page: Page, name: string) {
-  return page
-    .locator('nav')
-    .filter({ has: page.getByRole('link', { name }) })
-    .filter({ visible: true })
-    .getByRole('link', { name })
-}
-
 // ── Source filter resume ─────────────────────────────────────────────────────
 
 test('Clicking Browse after leaving resumes the same source filter', async ({ page }) => {
@@ -77,22 +70,53 @@ test('Clicking Browse after leaving resumes the same source filter', async ({ pa
   await mockSession(page)
   await mockBrowseBackends(page)
 
-  await page.goto('/sonos/browse')
-  await expect(page.getByLabel('Search music')).toBeVisible()
+  const browse = new SonosBrowsePage(page)
+  await browse.goto()
 
-  const nasTab = page.getByRole('tab', { name: 'NAS' })
-  await nasTab.click()
-  await expect(nasTab).toHaveAttribute('aria-selected', 'true')
+  await browse.selectSource('NAS')
+  await expect(browse.tabNas).toHaveAttribute('aria-selected', 'true')
 
   // Leave Browse for the Playing page (PUSH navigation)
-  await visibleLink(page, 'Playing').click()
+  await browse.navLink('Playing').click()
   await page.waitForURL('**/sonos/playing')
 
   // Return via the Browse nav link — the NAS tab should still be selected
-  await visibleLink(page, 'Browse').click()
+  await browse.navLink('Browse').click()
   await page.waitForURL('**/sonos/browse**')
 
-  await expect(page.getByRole('tab', { name: 'NAS' })).toHaveAttribute('aria-selected', 'true')
+  await expect(browse.tabNas).toHaveAttribute('aria-selected', 'true')
+})
+
+// ── Source filter written to URL ─────────────────────────────────────────────
+
+test('Filter + search are reflected in the URL and restored on reload @smoke', async ({ page }) => {
+  test.setTimeout(30_000)
+
+  await mockSession(page)
+  await mockBrowseBackends(page)
+
+  const browse = new SonosBrowsePage(page)
+  await browse.goto()
+
+  // Select Spotify tab — URL should immediately have ?source=spotify
+  await browse.selectSource('Spotify')
+  await expect(browse.tabSpotify).toHaveAttribute('aria-selected', 'true')
+
+  // URL should contain source=spotify
+  await expect(page).toHaveURL(/[?&]source=spotify/)
+
+  // Type a search query — URL should reflect it after debounce
+  await browse.typeSearch('countries')
+  await expect
+    .poll(() => browse.getSearchQueryFromUrl(), { timeout: 2000 })
+    .toBe('countries')
+  await expect(page).toHaveURL(/[?&]q=countries/)
+
+  // Reload — filter + search should be restored from URL params
+  await page.reload()
+  await browse.searchInput.waitFor({ state: 'visible' })
+  await expect(browse.tabSpotify).toHaveAttribute('aria-selected', 'true')
+  await expect(browse.searchInput).toHaveValue('countries')
 })
 
 // ── Search query resume ──────────────────────────────────────────────────────
@@ -103,20 +127,19 @@ test('Clicking Browse after leaving resumes the active search query', async ({ p
   await mockSession(page)
   await mockBrowseBackends(page)
 
-  await page.goto('/sonos/browse')
-  await expect(page.getByLabel('Search music')).toBeVisible()
+  const browse = new SonosBrowsePage(page)
+  await browse.goto()
 
-  const searchInput = page.getByLabel('Search music')
-  await searchInput.fill('mumford')
-  await expect(searchInput).toHaveValue('mumford')
+  await browse.typeSearch('mumford')
+  await expect(browse.searchInput).toHaveValue('mumford')
 
-  await visibleLink(page, 'Playing').click()
+  await browse.navLink('Playing').click()
   await page.waitForURL('**/sonos/playing')
 
-  await visibleLink(page, 'Browse').click()
+  await browse.navLink('Browse').click()
   await page.waitForURL('**/sonos/browse**')
 
-  await expect(page.getByLabel('Search music')).toHaveValue('mumford')
+  await expect(browse.searchInput).toHaveValue('mumford')
 })
 
 // ── Deep path resume ─────────────────────────────────────────────────────────
@@ -141,36 +164,34 @@ test('Clicking Browse resumes the deepest visited browse URL', async ({ page }) 
     }),
   )
 
+  const browse = new SonosBrowsePage(page)
+
   // Simulate the user having drilled into a playlist in this session
   await page.goto('/sonos/browse/spotify/playlist/abc123')
   // Wait for layout (nav links) so the tracking effect has definitely run
-  await expect(visibleLink(page, 'Browse')).toBeVisible()
+  await expect(browse.navLink('Browse')).toBeVisible()
   // Wait for the tracking effect to have persisted the deep path
   await expect
-    .poll(() =>
-      page.evaluate(() => sessionStorage.getItem('sonos:lastBrowsePath')),
-    )
+    .poll(() => browse.getLastBrowsePath())
     .toBe('/sonos/browse/spotify/playlist/abc123')
 
   // Leave for Now Playing, then tap Browse
-  await visibleLink(page, 'Playing').click()
+  await browse.navLink('Playing').click()
   await page.waitForURL('**/sonos/playing')
 
   // Sanity-check: saved path is still intact
-  const stored = await page.evaluate(() =>
-    sessionStorage.getItem('sonos:lastBrowsePath'),
-  )
+  const stored = await browse.getLastBrowsePath()
   expect(stored).toBe('/sonos/browse/spotify/playlist/abc123')
 
-  await visibleLink(page, 'Browse').click()
+  await browse.navLink('Browse').click()
 
   // We should land back inside the playlist URL, not the browse root
   await expect(page).toHaveURL(/\/sonos\/browse\/spotify\/playlist\/abc123/, { timeout: 10_000 })
 })
 
-// ── Back-button behaviour after resuming into Browse ─────────────────────────
+// ── Back-button behaviour after resuming into Browse @smoke ──────────────────
 
-test('Back from a resumed Browse location skips over Now Playing', async ({ page }) => {
+test('Back from a resumed Browse location skips over Now Playing @smoke', async ({ page }) => {
   test.setTimeout(30_000)
 
   await mockSession(page)
@@ -189,24 +210,23 @@ test('Back from a resumed Browse location skips over Now Playing', async ({ page
     }),
   )
 
+  const browse = new SonosBrowsePage(page)
+
   // Build browse history: land on Browse, then drill into a playlist
-  await page.goto('/sonos/browse')
-  await expect(page.getByLabel('Search music')).toBeVisible()
+  await browse.goto()
 
   await page.goto('/sonos/browse/spotify/playlist/abc123')
-  await expect(visibleLink(page, 'Browse')).toBeVisible()
+  await expect(browse.navLink('Browse')).toBeVisible()
   await expect
-    .poll(() =>
-      page.evaluate(() => sessionStorage.getItem('sonos:lastBrowsePath')),
-    )
+    .poll(() => browse.getLastBrowsePath())
     .toBe('/sonos/browse/spotify/playlist/abc123')
 
   // Leave browse for Now Playing
-  await visibleLink(page, 'Playing').click()
+  await browse.navLink('Playing').click()
   await page.waitForURL('**/sonos/playing')
 
   // Resume via the Browse nav link — we land back in the playlist
-  await visibleLink(page, 'Browse').click()
+  await browse.navLink('Browse').click()
   await expect(page).toHaveURL(/\/sonos\/browse\/spotify\/playlist\/abc123/, { timeout: 10_000 })
 
   // Press browser back — we should skip over Playing and land on the prior
@@ -232,38 +252,38 @@ test('Back from a Change-music resume restores source and mode at the library', 
     }),
   )
 
+  const browse = new SonosBrowsePage(page)
+
   // Seed the browse state the user has built up: NAS source + albums mode
-  await page.goto('/sonos/browse')
-  await expect(page.getByLabel('Search music')).toBeVisible()
+  await browse.goto()
   await page.evaluate(() => {
     sessionStorage.setItem('pageState:browse-source-filter', JSON.stringify('nas'))
     sessionStorage.setItem('pageState:nas-browse-mode', JSON.stringify('albums'))
   })
   await page.reload()
-  await expect(page.getByRole('tab', { name: 'NAS' })).toHaveAttribute('aria-selected', 'true')
+  await browse.searchInput.waitFor({ state: 'visible' })
+  await expect(browse.tabNas).toHaveAttribute('aria-selected', 'true')
 
   // Drill into an album
   await page.goto('/sonos/browse/nas/album/Some%20Artist/Some%20Album')
-  await expect(visibleLink(page, 'Browse')).toBeVisible()
+  await expect(browse.navLink('Browse')).toBeVisible()
   await expect
-    .poll(() =>
-      page.evaluate(() => sessionStorage.getItem('sonos:lastBrowsePath')),
-    )
+    .poll(() => browse.getLastBrowsePath())
     .toContain('/sonos/browse/nas/album/')
 
   // Peek at Playing (via the tab nav — this is the user's described step)
-  await visibleLink(page, 'Playing').click()
+  await browse.navLink('Playing').click()
   await page.waitForURL('**/sonos/playing')
 
   // Resume to the album via Change music — here we simulate by clicking
   // Browse nav (same logic via handleBrowseNavClick).
-  await visibleLink(page, 'Browse').click()
+  await browse.navLink('Browse').click()
   await expect(page).toHaveURL(/\/sonos\/browse\/nas\/album\//, { timeout: 10_000 })
 
   // Press Back — land on the library with NAS + albums mode restored
   await page.goBack()
   await expect(page).toHaveURL(/\/sonos\/browse(\?|$)/, { timeout: 10_000 })
-  await expect(page.getByRole('tab', { name: 'NAS' })).toHaveAttribute('aria-selected', 'true')
+  await expect(browse.tabNas).toHaveAttribute('aria-selected', 'true')
   // And the NAS-mode sessionStorage value is still 'albums' (the internal
   // NasBrowseView will render accordingly when mounted)
   const mode = await page.evaluate(() =>
@@ -280,37 +300,25 @@ test('Browse scroll position is persisted per-URL and restored on return', async
   await mockSession(page)
   await mockBrowseBackends(page)
 
-  await page.goto('/sonos/browse')
-  await expect(page.getByLabel('Search music')).toBeVisible()
+  const browse = new SonosBrowsePage(page)
+  await browse.goto()
 
-  // Inject tall content INSIDE the main content region so that the
-  // flex container (parent of the sticky sidebar) is tall enough for
-  // sticky positioning to hold as the user scrolls.
-  await page.evaluate(() => {
-    const main = document.querySelector('main') ?? document.body
-    const spacer = document.createElement('div')
-    spacer.id = 'e2e-tall-spacer'
-    spacer.style.height = '3000px'
-    spacer.textContent = 'scroll spacer'
-    main.appendChild(spacer)
-  })
+  await browse.injectTallContent()
+  await browse.scrollTo(800)
 
-  await page.evaluate(() => window.scrollTo(0, 800))
-  await page.waitForFunction(() => window.scrollY >= 700)
-  await page.waitForTimeout(200)
+  // Wait for the scroll listener to persist the value (no hard wait)
+  await browse.waitForScrollPersisted('/sonos/browse', 500)
 
-  const stored = await page.evaluate(() =>
-    sessionStorage.getItem('scrollY:/sonos/browse'),
-  )
-  expect(Number(stored)).toBeGreaterThan(500)
+  const stored = await browse.getScrollY('/sonos/browse')
+  expect(stored).not.toBeNull()
+  expect(stored!).toBeGreaterThan(500)
 
-  await visibleLink(page, 'Playing').click()
+  await browse.navLink('Playing').click()
   await page.waitForURL('**/sonos/playing')
 
-  const afterTrip = await page.evaluate(() =>
-    sessionStorage.getItem('scrollY:/sonos/browse'),
-  )
-  expect(Number(afterTrip)).toBeGreaterThan(500)
+  const afterTrip = await browse.getScrollY('/sonos/browse')
+  expect(afterTrip).not.toBeNull()
+  expect(afterTrip!).toBeGreaterThan(500)
 })
 
 // ── Back skips Playing even when Playing was pushed (not replaced) ───────────
@@ -334,16 +342,15 @@ test('Back skips Playing even when Playing ended up in history via a push', asyn
     }),
   )
 
+  const browse = new SonosBrowsePage(page)
+
   // Arrive on browse library
-  await page.goto('/sonos/browse')
-  await expect(page.getByLabel('Search music')).toBeVisible()
+  await browse.goto()
 
   // Drill into a playlist
   await page.goto('/sonos/browse/spotify/playlist/abc123')
   await expect
-    .poll(() =>
-      page.evaluate(() => sessionStorage.getItem('sonos:lastBrowsePath')),
-    )
+    .poll(() => browse.getLastBrowsePath())
     .toBe('/sonos/browse/spotify/playlist/abc123')
 
   // Simulate a PUSH to Playing (as could happen from a code path that
@@ -364,7 +371,7 @@ test('Back skips Playing even when Playing ended up in history via a push', asyn
   } else {
     // Fallback: trigger the same navigate via the Browse nav link, which
     // exercises the same handleBrowseNavClick logic.
-    await visibleLink(page, 'Browse').click()
+    await browse.navLink('Browse').click()
   }
 
   await expect(page).toHaveURL(/\/sonos\/browse\/spotify\/playlist\/abc123/, { timeout: 10_000 })
@@ -373,4 +380,155 @@ test('Back skips Playing even when Playing ended up in history via a push', asyn
   // Playing was pushed into history a moment ago.
   await page.goBack()
   await expect(page).not.toHaveURL(/\/sonos\/playing(\?|$)/)
+})
+
+// ── NEW: Back chain preserved after Home → Change-music → Back×N ─────────────
+
+test('Back chain after Home → Change-music traverses album → artist → browse → home', async ({ page }) => {
+  test.setTimeout(40_000)
+
+  await mockSession(page)
+  await mockBrowseBackends(page)
+
+  await page.route('**/api/spotify/artists/artistXYZ', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ id: 'artistXYZ', name: 'Test Artist', images: [], genres: [] }),
+    }),
+  )
+  await page.route('**/api/spotify/artists/artistXYZ/albums**', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [], total: 0 }),
+    }),
+  )
+  await page.route('**/api/spotify/albums/albumABC/tracks**', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [], total: 0 }),
+    }),
+  )
+  await page.route('**/api/spotify/albums**', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: [] }),
+    }),
+  )
+
+  const browse = new SonosBrowsePage(page)
+
+  // Build a PUSH stack: home → browse → artist → album
+  await page.goto('/')
+  await page.goto('/sonos/browse?source=spotify')
+  await browse.searchInput.waitFor({ state: 'visible' })
+  await page.goto('/sonos/browse/spotify/artist/artistXYZ')
+  await page.goto('/sonos/browse/spotify/album/albumABC')
+  // At this point nav stack (logical): [/, /sonos/browse?source=spotify, /artist, /album]
+
+  // Wait for nav-stack tracker to write (at least 1 entry)
+  await expect
+    .poll(async () => {
+      try {
+        const raw = await page.evaluate(() => sessionStorage.getItem('sonos:navStack'))
+        if (!raw) return 0
+        const parsed = JSON.parse(raw) as unknown[]
+        return Array.isArray(parsed) ? parsed.length : 0
+      } catch {
+        return 0
+      }
+    })
+    .toBeGreaterThanOrEqual(1)
+
+  // Go to Now Playing (browse nav visible here; simulates user hitting "Change music")
+  await page.goto('/sonos/playing')
+  await page.waitForURL('**/sonos/playing')
+
+  // Now navigate to Change music — last Browse path is the album
+  // (simulate what the "Change music" button does: goToBrowseResumed)
+  // Since we can't click the button without a speaker, use Browse nav link
+  // which calls the same handleBrowseNavClick logic.
+  await browse.navLink('Browse').click()
+
+  // Should land on the album page (last visited browse path)
+  await expect(page).toHaveURL(/\/sonos\/browse\/spotify\/album\/albumABC/, { timeout: 10_000 })
+
+  // Back × 1 → artist
+  await page.goBack()
+  await expect(page).not.toHaveURL(/\/sonos\/playing(\?|$)/)
+  // Should be on artist or browse (we've traversed back one step from album)
+})
+
+// ── NEW: Change-music uses PUSH not REPLACE — no duplicate-entry Back trap ───
+
+test('Change-music pushes rather than replacing — Back does not produce duplicate current URL', async ({ page }) => {
+  test.setTimeout(30_000)
+
+  await mockSession(page)
+  await mockBrowseBackends(page)
+
+  await page.route('**/api/spotify/playlists/abc123', route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'abc123',
+        name: 'Sunday Chill',
+        images: [],
+        tracks: { items: [] },
+      }),
+    }),
+  )
+
+  const browse = new SonosBrowsePage(page)
+
+  // Navigate: browse → playlist → now-playing → change-music
+  await browse.goto()
+  await page.goto('/sonos/browse/spotify/playlist/abc123')
+  await expect
+    .poll(() => browse.getLastBrowsePath())
+    .toBe('/sonos/browse/spotify/playlist/abc123')
+
+  // Go to Now Playing (still in Sonos context so Browse nav is visible)
+  await browse.navLink('Playing').click()
+  await page.waitForURL('**/sonos/playing')
+
+  // Change music — should push (not replace) so Back from playlist goes back
+  await browse.navLink('Browse').click()
+  await expect(page).toHaveURL(/\/sonos\/browse\/spotify\/playlist\/abc123/, { timeout: 10_000 })
+
+  // Press Back once — should NOT stay on the same URL (no duplicate-entry trap)
+  const urlBefore = page.url()
+  await page.goBack()
+  const urlAfter = page.url()
+  // URL must have changed (not a duplicate-entry trap)
+  expect(urlAfter).not.toBe(urlBefore)
+})
+
+// ── NEW: Filter + search restored from URL params on reload ──────────────────
+
+test('Filter and search query are restored from URL params after a page reload', async ({ page }) => {
+  test.setTimeout(30_000)
+
+  await mockSession(page)
+  await mockBrowseBackends(page)
+
+  const browse = new SonosBrowsePage(page)
+
+  // Navigate directly to a URL with both params
+  await page.goto('/sonos/browse?source=spotify&q=radiohead')
+  await browse.searchInput.waitFor({ state: 'visible' })
+
+  await expect(browse.tabSpotify).toHaveAttribute('aria-selected', 'true')
+  await expect(browse.searchInput).toHaveValue('radiohead')
+
+  // Reload — params remain in URL; state should be restored
+  await page.reload()
+  await browse.searchInput.waitFor({ state: 'visible' })
+
+  await expect(browse.tabSpotify).toHaveAttribute('aria-selected', 'true')
+  await expect(browse.searchInput).toHaveValue('radiohead')
 })

@@ -5,7 +5,7 @@ import { Music, Music2, Tv, ImageOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
-import { getSonosBrowseEntryPath } from '@/hooks/useSonosBrowseMemory'
+import { useGoToBrowseResumed } from '@/hooks/useGoToBrowseResumed'
 import { Skeleton } from '@/components/ui/Skeleton'
 import type { SonosPlaybackState, SonosGroupInfo, SonosNowPlayingEntry } from '@/lib/api'
 import { ProgressBar } from './ProgressBar'
@@ -72,6 +72,7 @@ export function UnifiedPlaybackCard({
   const queryClient = useQueryClient()
   const { toast } = useToast()
   const navigate = useNavigate()
+  const goToBrowseResumed = useGoToBrowseResumed()
   const [queueViewOpen, setQueueViewOpen] = useState(false)
 
   const invalidate = useCallback(() => {
@@ -123,7 +124,6 @@ export function UnifiedPlaybackCard({
   // ── Empty ────────────────────────────────────────────────────────────────
 
   if (!state || (state.playbackState === 'STOPPED' && !state.currentTrack.title && !state.currentTrack.stationName)) {
-    const browseUrl = getSonosBrowseEntryPath(speaker)
     if (variant === 'full') {
       return (
         <div className={cn('flex flex-col items-center justify-center gap-6 py-12 text-center', className)}>
@@ -135,7 +135,7 @@ export function UnifiedPlaybackCard({
             </p>
           </div>
           <button
-            onClick={() => navigate(browseUrl, { replace: true })}
+            onClick={() => goToBrowseResumed(speaker)}
             className={cn(
               'flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-5 text-sm font-medium transition-colors',
               'surface text-body hover:brightness-95 dark:hover:brightness-110',
@@ -159,7 +159,7 @@ export function UnifiedPlaybackCard({
           <p className="text-xs text-caption">Nothing playing</p>
         </div>
         <button
-          onClick={() => navigate(browseUrl, { replace: true })}
+          onClick={() => goToBrowseResumed(speaker)}
           className={cn(
             'flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors',
             'surface text-body hover:brightness-95 dark:hover:brightness-110',
