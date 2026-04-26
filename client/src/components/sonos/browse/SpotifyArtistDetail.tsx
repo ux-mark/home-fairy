@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import type { SpotifyAlbum } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { useFirstSpeaker } from '@/hooks/useBrowseShared'
+import { useSmartBack } from '@/hooks/useSmartBack'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from '../ArtworkImage'
 import { MusicListItem } from '../MusicListItem'
@@ -90,6 +91,7 @@ export function SpotifyArtistDetail() {
   const speaker = speakerParam ?? firstSpeaker
 
   const backUrl = `/sonos/browse?source=spotify${speakerParam ? `&speaker=${encodeURIComponent(speakerParam)}` : ''}`
+  const handleBack = useSmartBack(backUrl)
 
   // Load artist metadata from the dedicated endpoint — works for any artist,
   // including search results that are not in the followed/top-artists cache.
@@ -112,16 +114,6 @@ export function SpotifyArtistDetail() {
     onSuccess: () => toast({ message: `Playing ${artist?.name}` }),
     onError: () => toast({ message: 'Failed to play artist', type: 'error' }),
   })
-
-  function handleBack() {
-    // Prefer navigate(-1) so scroll position is restored by useScrollRestoration.
-    // Fall back to the browse URL only if there's no history to go back to.
-    if (window.history.length > 1) {
-      navigate(-1)
-    } else {
-      navigate(backUrl)
-    }
-  }
 
   if (!id) return null
 

@@ -1,9 +1,10 @@
-import { useParams, useSearchParams, useNavigate, useLocation } from 'react-router-dom'
+import { useParams, useSearchParams, useLocation } from 'react-router-dom'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { ArrowLeft, Music2, Pause, Play } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { useFirstSpeaker } from '@/hooks/useBrowseShared'
+import { useSmartBack } from '@/hooks/useSmartBack'
 import { usePlaybackState } from '@/hooks/usePlaybackState'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from '../ArtworkImage'
@@ -16,7 +17,6 @@ import { NasTrackRow } from './NasTrackRow'
 export function NasAlbumDetail() {
   const { artist: artistParam, title: titleParam } = useParams<{ artist: string; title: string }>()
   const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
   const location = useLocation()
   const { toast } = useToast()
 
@@ -64,20 +64,24 @@ export function NasAlbumDetail() {
 
   const { isTrackPlaying: isTrackActive, isSelectedPlaying: isPlaying } = usePlaybackState()
 
-  if (!artist || !title || !objectId) return null
-
-  // Back goes to artist detail if came from there, else to browse
+  // Back goes to artist detail if came from there, else to browse.
+  // `backUrl` is only used when `artist` is present, but we must compute it
+  // before any conditional early-return so that `useSmartBack` is called
+  // unconditionally (rules of hooks).
   const fromArtist = location.state != null && (location.state as { fromArtist?: boolean }).fromArtist
-  const backUrl = fromArtist
+  const backUrl = fromArtist && artist
     ? `/sonos/browse/nas/artist/${encodeURIComponent(artist)}${speakerParam ? `?speaker=${encodeURIComponent(speakerParam)}` : ''}`
     : `/sonos/browse?source=nas${speakerParam ? `&speaker=${encodeURIComponent(speakerParam)}` : ''}`
+  const handleBack = useSmartBack(backUrl)
+
+  if (!artist || !title || !objectId) return null
 
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
         <button
           type="button"
-          onClick={() => navigate(backUrl)}
+          onClick={handleBack}
           aria-label={fromArtist ? 'Back to artist' : 'Back to albums'}
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',

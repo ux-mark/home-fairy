@@ -1,10 +1,11 @@
-import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
+import { useParams, useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Mic2, Play } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SpotifyEpisode } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { useFirstSpeaker } from '@/hooks/useBrowseShared'
+import { useSmartBack } from '@/hooks/useSmartBack'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from '../ArtworkImage'
 import { MusicItemMenu } from '../MusicItemMenu'
@@ -118,13 +119,13 @@ function EpisodeRow({ episode, speaker }: { episode: SpotifyEpisode; speaker: st
 export function SpotifyShowDetail() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
-  const navigate = useNavigate()
 
   const speakerParam = searchParams.get('speaker')
   const firstSpeaker = useFirstSpeaker()
   const speaker = speakerParam ?? firstSpeaker
 
   const backUrl = `/sonos/browse?source=spotify${speakerParam ? `&speaker=${encodeURIComponent(speakerParam)}` : ''}`
+  const handleBack = useSmartBack(backUrl)
 
   // Load show metadata from saved shows list (cached)
   const { data: showsData } = useQuery({
@@ -132,7 +133,9 @@ export function SpotifyShowDetail() {
     queryFn: () => api.spotify.getSavedShows(),
     staleTime: 5 * 60_000,
   })
-  const show = (showsData?.items ?? []).map(item => item.show).find(s => s.id === id)
+  // Spotify can return items with `show: null` for podcasts unavailable in
+  // the current market. Filter those out before matching by id.
+  const show = (showsData?.items ?? []).find(item => item.show?.id === id)?.show
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['spotify-show-episodes', id],
@@ -143,14 +146,18 @@ export function SpotifyShowDetail() {
 
   if (!id) return null
 
-  const episodes = data?.items ?? []
+  // Spotify can return null episodes for items unavailable in the current
+  // market or removed from the show. Filter them out before rendering.
+  const episodes = (data?.items ?? []).filter(
+    (e): e is SpotifyEpisode => e !== null && e !== undefined,
+  )
 
   return (
     <div>
       <div className="mb-4 flex items-center gap-3">
         <button
           type="button"
-          onClick={() => navigate(backUrl)}
+          onClick={handleBack}
           aria-label="Back to podcasts"
           className={cn(
             'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-secondary)]',

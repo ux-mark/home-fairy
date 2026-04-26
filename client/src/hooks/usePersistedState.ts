@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
-import { useNavigationType } from 'react-router-dom'
 
 /**
- * Like useState, but persists to sessionStorage and restores on back/forward navigation.
- * On POP navigation (back/forward), the saved value is used as the initial state.
- * On PUSH/REPLACE navigation, the provided defaultValue is used.
+ * Like useState, but persists to sessionStorage and restores whenever the
+ * consuming component mounts with a saved value for the given key.
+ *
+ * Restoration is navigation-type agnostic: a saved value is used as the
+ * initial state on every mount, whether the user arrived via browser back,
+ * a nav link click, or an in-app `navigate(..., { replace: true })`. The
+ * provided `defaultValue` is used only when no saved value exists.
  *
  * Supports primitives and Set<string>.
  */
@@ -33,19 +36,16 @@ export function usePersistedState<T>(
   key: string,
   defaultValue: T,
 ): [T, React.Dispatch<React.SetStateAction<T>>] {
-  const navigationType = useNavigationType()
   const storageKey = `pageState:${key}`
 
   const [value, setValue] = useState<T>(() => {
-    if (navigationType === 'POP') {
-      try {
-        const saved = sessionStorage.getItem(storageKey)
-        if (saved !== null) {
-          return deserializeValue(saved) as T
-        }
-      } catch {
-        // sessionStorage unavailable — ignore
+    try {
+      const saved = sessionStorage.getItem(storageKey)
+      if (saved !== null) {
+        return deserializeValue(saved) as T
       }
+    } catch {
+      // sessionStorage unavailable — ignore
     }
     return defaultValue
   })
