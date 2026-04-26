@@ -1,15 +1,18 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import * as Popover from '@radix-ui/react-popover'
 import {
   AlertTriangle,
-  ArrowDown01,
   ArrowDownAZ,
+  ArrowDownZA,
+  Check,
   ChevronDown,
   ChevronRight,
   Clock,
   Disc3,
   Globe,
+  History,
   Info,
   Loader2,
   MapPin,
@@ -49,7 +52,7 @@ import { MusicListItem } from './MusicListItem'
 
 type SpotifyView = 'home' | 'country-artists'
 type BrowseMode = 'playlists' | 'countries' | 'podcasts' | 'albums' | 'artists' | 'songs'
-type PlaylistSort = 'recent' | 'a-z' | 'z-a'
+type PlaylistSort = 'recent' | 'oldest' | 'a-z' | 'z-a'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -323,14 +326,115 @@ function SpotifyTrackRow({
 
 const PLAYLIST_SORT_OPTIONS: Array<{ value: PlaylistSort; label: string; icon: typeof Clock }> = [
   { value: 'recent', label: 'Recently added', icon: Clock },
+  { value: 'oldest', label: 'Oldest first', icon: History },
   { value: 'a-z', label: 'A – Z', icon: ArrowDownAZ },
-  { value: 'z-a', label: 'Z – A', icon: ArrowDown01 },
+  { value: 'z-a', label: 'Z – A', icon: ArrowDownZA },
 ]
+
+function playlistSortLabel(sort: PlaylistSort): string {
+  return PLAYLIST_SORT_OPTIONS.find(opt => opt.value === sort)?.label ?? 'Recently added'
+}
+
+// Sorts that only operate on the currently-loaded slice of playlists (not the
+// full remote library). The amber warning surfaces this trade-off to the user.
+const PARTIAL_PLAYLIST_SORTS: PlaylistSort[] = ['oldest', 'a-z', 'z-a']
 
 function sortPlaylists(playlists: SpotifyPlaylist[], sort: PlaylistSort): SpotifyPlaylist[] {
   if (sort === 'recent') return playlists
+  // Spotify returns playlists in reverse-chronological add order, so reversing
+  // the loaded slice yields oldest-first. No date field exists on SpotifyPlaylist.
+  if (sort === 'oldest') return [...playlists].reverse()
   const sorted = [...playlists].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
   return sort === 'z-a' ? sorted.reverse() : sorted
+}
+
+function PlaylistSortMenu({
+  sort,
+  onChange,
+}: {
+  sort: PlaylistSort
+  onChange: (value: PlaylistSort) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const active = PLAYLIST_SORT_OPTIONS.find(opt => opt.value === sort) ?? PLAYLIST_SORT_OPTIONS[0]
+  const ActiveIcon = active.icon
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          aria-label={`Sort playlists. Currently sorted by ${active.label}.`}
+          className={cn(
+            'group inline-flex min-h-[44px] items-center gap-2 rounded-lg px-3 py-2',
+            'bg-[var(--bg-secondary)] text-xs font-medium text-body',
+            'transition-colors hover:bg-[var(--bg-tertiary)]',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'data-[state=open]:bg-[var(--bg-tertiary)]',
+          )}
+        >
+          <ActiveIcon className="h-4 w-4 shrink-0 text-caption" aria-hidden="true" />
+          <span className="text-caption">Sort by</span>
+          <span className="text-heading">{active.label}</span>
+          <ChevronDown
+            className="h-4 w-4 shrink-0 text-caption transition-transform group-data-[state=open]:rotate-180"
+            aria-hidden="true"
+          />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="end"
+          sideOffset={6}
+          collisionPadding={12}
+          className={cn(
+            'z-50 min-w-[14rem] rounded-xl p-1',
+            'border border-[var(--border-primary)] bg-[var(--bg-secondary)] shadow-xl',
+            'data-[state=open]:animate-in data-[state=closed]:animate-out',
+            'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
+            'data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95',
+          )}
+          aria-label="Playlist sort options"
+        >
+          <div role="menu" aria-label="Sort playlists by" className="flex flex-col gap-0.5">
+            {PLAYLIST_SORT_OPTIONS.map(opt => {
+              const Icon = opt.icon
+              const isActive = sort === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={isActive}
+                  onClick={() => {
+                    onChange(opt.value)
+                    setOpen(false)
+                  }}
+                  className={cn(
+                    'flex min-h-[44px] w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm',
+                    'transition-colors',
+                    'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-fairy-500',
+                    isActive
+                      ? 'bg-[var(--bg-tertiary)] text-heading'
+                      : 'text-body hover:bg-[var(--bg-tertiary)] hover:text-heading',
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0 text-caption" aria-hidden="true" />
+                  <span className="flex-1">{opt.label}</span>
+                  {isActive ? (
+                    <Check className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+                  ) : (
+                    <span className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  )
 }
 
 const PINNED_BADGE_CLS =
@@ -600,7 +704,7 @@ function PlaylistList({
     )
   }
 
-  const isAlphaSort = sort === 'a-z' || sort === 'z-a'
+  const isPartialSort = PARTIAL_PLAYLIST_SORTS.includes(sort)
   const hasMoreToLoad = !!hasNextPage
   const allLoaded = loadedCount >= totalCount && totalCount > 0
 
@@ -620,42 +724,17 @@ function PlaylistList({
         </ul>
       )}
       {pinned.length === 0 && <SpotifyApiInfoNote />}
-      <div className="mb-2 flex items-center justify-between gap-2 px-1 pt-1">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-1 pt-1">
         <p className="text-xs text-caption" aria-live="polite">
           {totalCount > 0
             ? `${loadedCount.toLocaleString()} of ${totalCount.toLocaleString()} ${totalCount === 1 ? 'playlist' : 'playlists'}`
             : ''}
         </p>
-        <div className="flex items-center gap-1 rounded-lg bg-[var(--bg-secondary)] p-0.5">
-          {PLAYLIST_SORT_OPTIONS.map(opt => {
-            const Icon = opt.icon
-            const isActive = sort === opt.value
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => setSort(opt.value)}
-                title={opt.label}
-                aria-label={`Sort by ${opt.label}`}
-                aria-pressed={isActive}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors',
-                  'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-fairy-500',
-                  isActive
-                    ? 'bg-[var(--bg-primary)] text-heading shadow-sm'
-                    : 'text-caption hover:text-heading',
-                )}
-              >
-                <Icon className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span>{opt.label}</span>
-              </button>
-            )
-          })}
-        </div>
+        <PlaylistSortMenu sort={sort} onChange={setSort} />
       </div>
-      {isAlphaSort && hasMoreToLoad && (
+      {isPartialSort && hasMoreToLoad && (
         <div className="mx-1 mb-2 rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-xs text-caption">
-          Sorting {sort === 'a-z' ? 'A – Z' : 'Z – A'} only covers the {loadedCount.toLocaleString()} playlists loaded so far.{' '}
+          Sorting {playlistSortLabel(sort)} only covers the {loadedCount.toLocaleString()} playlists loaded so far.{' '}
           <button
             type="button"
             onClick={() => fetchNextPage()}
