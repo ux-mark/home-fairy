@@ -5,9 +5,13 @@ import { deviceHealthService } from './device-health-service.js'
 import type { Server as SocketServer } from 'socket.io'
 
 const POLL_INTERVAL_MS = 10_000
+// Time between sidecar reachability checks while waiting for first poll.
+// Mid-life outages still surface via the regular pollKasaDevices catch block;
+// only cold-boot startup noise is hushed here.
+const PROBE_INTERVAL_MS = 5_000
 
 let intervalId: ReturnType<typeof setInterval> | null = null
-let initTimeout: ReturnType<typeof setTimeout> | null = null
+let probeTimeout: ReturnType<typeof setTimeout> | null = null
 let io: SocketServer | null = null
 let previousStates: Record<string, { switch_state: string; power: number }> = {}
 
@@ -62,19 +66,39 @@ async function pollKasaDevices(): Promise<void> {
           runtime_month: device.runtime_month,
         })
 
-        upsert.run(
-          device.id,
-          device.label,
-          device.device_type,
-          device.model,
-          device.parent_id,
-          device.ip_address,
-          device.has_emeter ? 1 : 0,
-          device.firmware,
-          device.hardware,
-          device.rssi,
-          attributes,
-        )
+        // Coalesce required-NOT-NULL fields. The sidecar should always supply
+        // a label and device_type, but a transient empty-label response during
+        // its own startup once toppled the entire poll's transaction (every
+        // device's state was lost, not just the bad one).
+        const labelToWrite = device.label || device.id
+        const deviceTypeToWrite = device.device_type || 'unknown'
+        if (!device.label) {
+          console.warn(
+            `[kasa-poller] device ${device.id} has no label from sidecar; storing id as label`,
+          )
+        }
+
+        try {
+          upsert.run(
+            device.id,
+            labelToWrite,
+            deviceTypeToWrite,
+            device.model,
+            device.parent_id,
+            device.ip_address,
+            device.has_emeter ? 1 : 0,
+            device.firmware,
+            device.hardware,
+            device.rssi,
+            attributes,
+          )
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err)
+          console.warn(`[kasa-poller] upsert failed for ${device.id}: ${msg}`)
+          // Skip the Socket.io emit too — without a successful write we
+          // don't have authoritative state to broadcast.
+          continue
+        }
 
         // Emit Socket.io events for state changes
         if (io) {
@@ -148,23 +172,35 @@ async function pollKasaDevices(): Promise<void> {
   }
 }
 
+async function probeForSidecar(): Promise<void> {
+  probeTimeout = null
+  try {
+    await kasaClient.health()
+  } catch {
+    // Sidecar not yet reachable — quiet retry. On a cold Pi boot the Python
+    // venv + Discover.discover(timeout=10) take longer than the old fixed
+    // 5 s startup delay, which used to log every miss as an error.
+    probeTimeout = setTimeout(probeForSidecar, PROBE_INTERVAL_MS)
+    return
+  }
+  console.log('[kasa-poller] Sidecar reachable; starting poll loop')
+  pollKasaDevices()
+  intervalId = setInterval(pollKasaDevices, POLL_INTERVAL_MS)
+}
+
 export function startKasaPoller(socketIo: SocketServer): void {
-  if (intervalId) return
+  if (intervalId || probeTimeout) return
   io = socketIo
   console.log('[kasa-poller] Starting Kasa device poller (10s interval)')
-
-  // Initial poll after short delay
-  initTimeout = setTimeout(() => {
-    initTimeout = null
-    pollKasaDevices()
-    intervalId = setInterval(pollKasaDevices, POLL_INTERVAL_MS)
-  }, 5_000)
+  // First probe runs on the next tick so this function stays synchronous;
+  // probeForSidecar owns the retry loop until the sidecar answers /health.
+  probeTimeout = setTimeout(probeForSidecar, 0)
 }
 
 export function stopKasaPoller(): void {
-  if (initTimeout) {
-    clearTimeout(initTimeout)
-    initTimeout = null
+  if (probeTimeout) {
+    clearTimeout(probeTimeout)
+    probeTimeout = null
   }
   if (intervalId) {
     clearInterval(intervalId)
