@@ -44,7 +44,11 @@ module.exports = {
       cwd: '/home/queen/node-sonos-http-api',
       script: 'server.js',
       watch: false,
-      max_memory_restart: '128M',
+      // Steady-state RSS sits at ~135–140 MB after speaker discovery; the
+      // old 128 MB ceiling was always borderline and started a SIGINT
+      // restart loop after a fresh reload (every 30s, matching PM2's
+      // memory-monitor interval). 256 MB matches the other two apps.
+      max_memory_restart: '256M',
       restart_delay: 2000,
       min_uptime: '30s',
       exp_backoff_restart_delay: 1000,
