@@ -20,10 +20,11 @@ React SPA (PWA) --> Express API (port 3001)  |
                      +-----------------------+
 ```
 
-Two PM2-managed processes run on the Pi:
+Three PM2-managed processes run on the Pi:
 
-- **thefairies** (port 3001) -- Express server with React SPA, SQLite database, Socket.io for real-time updates
+- **home-fairy** (port 3001) -- Express server with React SPA, SQLite database, Socket.io for real-time updates
 - **kasa-sidecar** (port 3002) -- Python FastAPI service using python-kasa for direct local Kasa device communication
+- **sonos-http-api** (port 3003) -- [node-sonos-http-api](https://github.com/jishi/node-sonos-http-api) for Sonos speaker control
 
 ## Prerequisites
 
@@ -79,17 +80,23 @@ All integrations are optional. Leave a token blank to skip that integration.
 ### 4. Build and start
 
 ```bash
-# Build the React client
-cd client && npx vite build && cd ..
+# Build the client and the server
+npm run build
 
-# Start both services with PM2
+# Start all three services with PM2
 pm2 start ecosystem.config.cjs
 pm2 save
-
-# Enable auto-restart on reboot
-pm2 startup
-# Then run the command PM2 prints (requires sudo)
 ```
+
+To survive reboots, install PM2 as a systemd unit (one-time setup):
+
+```bash
+pm2 startup            # prints a sudo command — run it
+pm2 save               # snapshot the running process list
+```
+
+PM2 will then resurrect everything in the saved snapshot after every boot.
+Re-run `pm2 save` after any change to the running PM2 process list.
 
 Open `http://your-pi-ip:3001` in a browser.
 
@@ -111,10 +118,16 @@ The Vite dev server proxies API requests to the Express server. Hot reload works
 If you develop on another machine and deploy to the Pi:
 
 ```bash
-bash deploy-to-pi.sh
+bash deploy-to-pi.sh                   # default: do not copy the local DB
+bash deploy-to-pi.sh --include-db      # copy local DB to Pi (overwrites; up to 5 timestamped backups kept)
 ```
 
-This copies the database, installs dependencies, sets up the Python venv, builds the client, and starts both PM2 processes. Edit `PI_HOST` in the script to match your Pi's address.
+This installs dependencies, sets up the Python venv for the Kasa sidecar,
+clones/updates `node-sonos-http-api`, builds the client and server, and
+calls `pm2 startOrReload` on `ecosystem.config.cjs` so the three services
+are started or zero-downtime-reloaded without disturbing any unrelated
+PM2 apps on the same daemon. Edit `PI_HOST` in the script to match your
+Pi's address.
 
 ## Project structure
 

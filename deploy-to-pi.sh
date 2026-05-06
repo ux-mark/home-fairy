@@ -94,17 +94,26 @@ which pm2 > /dev/null 2>&1 || sudo npm install -g pm2
 
 echo ""
 echo "Starting services..."
-pm2 stop all 2>/dev/null || true
-pm2 start ecosystem.config.cjs
+# startOrReload: starts apps not yet running, reloads ones that are.
+# Touches only apps in this ecosystem file — leaves unrelated PM2 apps alone
+# (this Pi also runs code-fairy and coding-fairy under the same daemon).
+pm2 startOrReload ecosystem.config.cjs --update-env
 pm2 save
 
 echo ""
 echo "Running health check..."
 sleep 3
-if pm2 show thefairies | grep -q "online"; then
-  echo "Health check passed - thefairies is online"
-else
-  echo "WARNING: thefairies is not online! Check logs: pm2 logs thefairies"
+HEALTH_OK=true
+for app in home-fairy kasa-sidecar sonos-http-api; do
+  if pm2 jlist 2>/dev/null | grep -q "\"name\":\"$app\".*\"status\":\"online\""; then
+    echo "  $app: online"
+  else
+    echo "  $app: NOT ONLINE (check: pm2 logs $app)"
+    HEALTH_OK=false
+  fi
+done
+if [ "$HEALTH_OK" != true ]; then
+  echo "WARNING: one or more services failed health check."
 fi
 
 echo ""
