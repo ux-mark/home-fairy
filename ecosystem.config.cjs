@@ -24,7 +24,10 @@ module.exports = {
       script: 'venv/bin/uvicorn',
       args: 'main:app --host 127.0.0.1 --port 3002',
       interpreter: 'none',
-      max_memory_restart: '100M',
+      // Steady-state RSS sits ~75 MB; the 100 MB ceiling clipped python-kasa's
+      // discovery peak (29 devices, including HS300 strip children with their
+      // own emeter caches) and triggered a SIGINT restart loop on cold boot.
+      max_memory_restart: '256M',
       restart_delay: 2000,
       min_uptime: '30s',
       exp_backoff_restart_delay: 1000,
