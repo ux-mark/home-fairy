@@ -26,6 +26,7 @@ const KasaSetupPage = lazyWithRetry(() => import('@/pages/KasaSetupPage'))
 const LightsPage = lazyWithRetry(() => import('@/pages/LightsPage'))
 const SonosSetupPage = lazyWithRetry(() => import('@/pages/SonosSetupPage'))
 const SonosDetailPage = lazyWithRetry(() => import('@/pages/SonosDetailPage'))
+const SonosTrackPage = lazyWithRetry(() => import('@/pages/SonosTrackPage'))
 const SonosPlayingPage = lazyWithRetry(() => import('@/pages/SonosPlayingPage'))
 const SonosBrowsePage = lazyWithRetry(() => import('@/pages/SonosBrowsePage'))
 const SonosFavouritesPage = lazyWithRetry(() => import('@/pages/SonosFavouritesPage'))
@@ -98,6 +99,7 @@ export default function App() {
         <Route path="/sonos/favourites" element={<RouteShell scope="Favourites"><SonosFavouritesPage /></RouteShell>} />
         <Route path="/sonos/insights" element={<RouteShell scope="Sonos insights"><DashboardPage /></RouteShell>} />
         <Route path="/sonos/setup" element={<RouteShell scope="Sonos setup"><SonosSetupPage /></RouteShell>} />
+        <Route path="/sonos/track" element={<RouteShell scope="Track"><SonosTrackPage /></RouteShell>} />
         <Route path="/sonos/:speaker" element={<RouteShell scope="Speaker"><SonosDetailPage /></RouteShell>} />
       </Route>
       <Route element={<AuthGuard><WatchLayout /></AuthGuard>}>
