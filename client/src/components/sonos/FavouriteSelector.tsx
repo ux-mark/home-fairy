@@ -137,12 +137,12 @@ export function FavouriteSelector({
     for (const fav of playableFavourites) {
       seen.add(getContentType(fav))
     }
-    // Include Library tab if the caller supports NAS and there are albums
-    if (onNasUriChange && nasAlbums.length > 0) {
+    // Always include Library tab when the caller supports NAS, even while loading
+    if (onNasUriChange) {
       seen.add('Library')
     }
     return ALL_TYPES.filter(t => seen.has(t))
-  }, [playableFavourites, nasAlbums, onNasUriChange])
+  }, [playableFavourites, onNasUriChange])
 
   // Filter the displayed favourites based on the selected pill
   const filteredFavourites = useMemo<SonosFavourite[]>(() => {
