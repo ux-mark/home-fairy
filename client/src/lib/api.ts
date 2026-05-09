@@ -851,6 +851,7 @@ export interface AutoPlayRule {
   enabled: number
   max_plays: number | null
   podcast_feed_url: string | null
+  nas_uri: string | null
 }
 
 export interface FollowMeStatus {

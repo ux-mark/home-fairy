@@ -48,11 +48,14 @@ function formatPlaybackState(state: string): string {
 
 function formatRuleSentence(rule: AutoPlayRule): { main: string; condition?: string } {
   const isPodcast = !!rule.podcast_feed_url
+  const isNas = !!rule.nas_uri
   const action = rule.favourite_name === '__continue__'
     ? "Continue what's already playing"
     : isPodcast
       ? `Play latest "${rule.favourite_name}" episode`
-      : `Play "${rule.favourite_name}"`
+      : isNas
+        ? `Play "${rule.favourite_name}" from library`
+        : `Play "${rule.favourite_name}"`
   const main = `${action} when mode changes to "${rule.mode_name}".`
   let condition: string | undefined
   if (rule.trigger_type === 'if_not_playing') {
@@ -147,6 +150,7 @@ export default function SonosDetailPage() {
   const [podcastResolving, setPodcastResolving] = useState(false)
   const [podcastFailed, setPodcastFailed] = useState(false)
   const [manualFeedUrl, setManualFeedUrl] = useState('')
+  const [nasUri, setNasUri] = useState<string | null>(null)
 
   // Auto-detect podcast when favourite changes
   useEffect(() => {
@@ -341,6 +345,7 @@ export default function SonosDetailPage() {
     setPodcastFeedUrl(null)
     setPodcastFailed(false)
     setManualFeedUrl('')
+    setNasUri(null)
   }
 
   function openEditRule(rule: AutoPlayRule) {
@@ -354,6 +359,7 @@ export default function SonosDetailPage() {
     setPodcastFeedUrl(rule.podcast_feed_url ?? null)
     setPodcastFailed(false)
     setManualFeedUrl('')
+    setNasUri(rule.nas_uri ?? null)
   }
 
   // ── Live volume + mute mutations ────────────────────────────────────────────
@@ -716,6 +722,8 @@ export default function SonosDetailPage() {
                             value={newRuleFavourite}
                             onChange={setNewRuleFavourite}
                             id="edit-rule-favourite"
+                            nasUri={nasUri}
+                            onNasUriChange={setNasUri}
                           />
                           {podcastResolving && (
                             <p className="text-caption text-xs mt-1">Detecting podcast...</p>
@@ -815,6 +823,7 @@ export default function SonosDetailPage() {
                                   trigger_value: effectiveTrigger === 'if_source_not' ? newRuleSourceValue : null,
                                   max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
                                   podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
+                                  nas_uri: nasUri,
                                 },
                               })
                             }}
@@ -927,6 +936,8 @@ export default function SonosDetailPage() {
                     value={newRuleFavourite}
                     onChange={setNewRuleFavourite}
                     id="detail-rule-favourite"
+                    nasUri={nasUri}
+                    onNasUriChange={setNasUri}
                   />
                   {podcastResolving && (
                     <p className="text-caption text-xs mt-1">Detecting podcast...</p>
@@ -1028,6 +1039,7 @@ export default function SonosDetailPage() {
                         enabled: 1,
                         max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
                         podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
+                        nas_uri: nasUri,
                       })
                     }}
                     disabled={!newRuleFavourite || !newRuleMode || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || createRuleMutation.isPending}
