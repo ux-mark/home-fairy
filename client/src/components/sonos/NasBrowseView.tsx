@@ -578,10 +578,12 @@ function AlbumList({
   onSelectAlbum,
   speaker,
   onDrillIntoAlbum,
+  selectedObjectId,
 }: {
   onSelectAlbum: (album: SonosGenreAlbum) => void
   speaker: string | null
   onDrillIntoAlbum?: (album: SonosGenreAlbum) => void
+  selectedObjectId?: string
 }) {
   const [sort, setSort] = useState<NasAlbumSort>('a-z')
   const [collapsedCountries, setCollapsedCountries] = useState<Set<string>>(new Set())
@@ -719,7 +721,7 @@ function AlbumList({
                 {!isCollapsed && (
                   <ul>
                     {group.items.map(album => (
-                      <NasAlbumRow key={album.objectId} album={album} onSelect={onSelectAlbum} showCountry={false} speaker={speaker} onDrillDown={onDrillIntoAlbum ? () => onDrillIntoAlbum(album) : undefined} />
+                      <NasAlbumRow key={album.objectId} album={album} onSelect={onSelectAlbum} showCountry={false} speaker={speaker} onDrillDown={onDrillIntoAlbum ? () => onDrillIntoAlbum(album) : undefined} selectedObjectId={selectedObjectId} />
                     ))}
                   </ul>
                 )}
@@ -730,7 +732,7 @@ function AlbumList({
       ) : (
         <ul className="-mx-4">
           {albums.map(album => (
-            <NasAlbumRow key={album.objectId} album={album} onSelect={onSelectAlbum} showCountry={hasCountryData} speaker={speaker} onDrillDown={onDrillIntoAlbum ? () => onDrillIntoAlbum(album) : undefined} />
+            <NasAlbumRow key={album.objectId} album={album} onSelect={onSelectAlbum} showCountry={hasCountryData} speaker={speaker} onDrillDown={onDrillIntoAlbum ? () => onDrillIntoAlbum(album) : undefined} selectedObjectId={selectedObjectId} />
           ))}
         </ul>
       )}
@@ -744,12 +746,14 @@ function NasAlbumRow({
   showCountry,
   speaker,
   onDrillDown,
+  selectedObjectId,
 }: {
   album: NasEnrichedAlbum
   onSelect: (album: SonosGenreAlbum) => void
   showCountry: boolean
   speaker: string | null
   onDrillDown?: () => void
+  selectedObjectId?: string
 }) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -796,6 +800,7 @@ function NasAlbumRow({
   ].filter(Boolean).join(' · ')
 
   const pickMode = !!onDrillDown
+  const isSelected = pickMode && selectedObjectId === album.objectId
 
   return (
     <MusicListItem
@@ -805,6 +810,8 @@ function NasAlbumRow({
       onTap={() => onSelect(album)}
       pickMode={pickMode}
       onDrillDown={onDrillDown}
+      isCurrentTrack={isSelected}
+      isPlaying={false}
       {...(!pickMode && {
         onPlay: () => playAlbum.mutate(),
         playDisabled: !speaker,
@@ -1199,9 +1206,10 @@ interface NasBrowseViewProps {
   onPickAlbum?: (album: SonosGenreAlbum) => void
   onDrillIntoAlbum?: (album: SonosGenreAlbum) => void
   onPickArtist?: (name: string) => void
+  selectedObjectId?: string
 }
 
-export function NasBrowseView({ searchQuery, targetSpeaker, onPickAlbum, onDrillIntoAlbum, onPickArtist }: NasBrowseViewProps) {
+export function NasBrowseView({ searchQuery, targetSpeaker, onPickAlbum, onDrillIntoAlbum, onPickArtist, selectedObjectId }: NasBrowseViewProps) {
   const [view, setView] = useState<NasView>('home')
   const [browseMode, setBrowseMode] = usePersistedState<BrowseMode>('nas-browse-mode', 'countries')
   const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
@@ -1264,7 +1272,7 @@ export function NasBrowseView({ searchQuery, targetSpeaker, onPickAlbum, onDrill
     <div>
       <BrowseModeTabs mode={browseMode} onChangeMode={setBrowseMode} />
       {browseMode === 'countries' && <NasCountryList onSelectCountry={handleSelectCountry} />}
-      {browseMode === 'albums' && <AlbumList onSelectAlbum={handleSelectAlbum} speaker={speaker} onDrillIntoAlbum={onDrillIntoAlbum} />}
+      {browseMode === 'albums' && <AlbumList onSelectAlbum={handleSelectAlbum} speaker={speaker} onDrillIntoAlbum={onDrillIntoAlbum} selectedObjectId={selectedObjectId} />}
       {browseMode === 'artists' && <ArtistList onSelectArtist={handleSelectArtist} />}
       {browseMode === 'songs' && <SongsList speaker={speaker} />}
     </div>

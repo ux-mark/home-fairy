@@ -260,6 +260,7 @@ export function FavouriteSelector({
               searchQuery={search}
               onPickAlbum={pickNas}
               onDrillIntoAlbum={setDrillAlbum}
+              selectedObjectId={nasUri ?? undefined}
               onPickArtist={(name) => {
                 onChange(name)
                 onNasUriChange?.(`A:ALBUMARTIST/${name}`)
@@ -279,6 +280,7 @@ export function FavouriteSelector({
           <div className="px-4 py-3">
             <SpotifyBrowseView
               searchQuery={search}
+              selectedUri={spotifyUri ?? undefined}
               onPickPlaylist={pickSpotify}
               onPickAlbum={(title, uri) => {
                 onChange(title)
@@ -304,12 +306,13 @@ export function FavouriteSelector({
           <RadioBrowseView
             searchQuery={search}
             onPick={(station: SonosRadioStation) => pickRadio(station)}
+            selectedTitle={!nasUri && !spotifyUri ? value : undefined}
           />
         )}
       </div>
 
-      {/* Selected item indicator */}
-      {value && value !== '__continue__' && (
+      {/* Selected item indicator — removed, selection shown inline in the list */}
+      {false && value && value !== '__continue__' && (
         <div className="flex items-center gap-2 rounded-lg border border-fairy-500/30 bg-fairy-500/5 px-3 py-2">
           <Music2 className="h-3.5 w-3.5 shrink-0 text-fairy-400" />
           <span className="truncate text-xs text-fairy-400">{value}</span>

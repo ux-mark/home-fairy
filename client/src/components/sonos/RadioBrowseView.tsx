@@ -77,12 +77,14 @@ function StationRow({
   isActive = false,
   isPlaying = false,
   onPick,
+  selectedTitle,
 }: {
   station: SonosRadioStation
   speaker: string | null
   isActive?: boolean
   isPlaying?: boolean
   onPick?: (station: SonosRadioStation) => void
+  selectedTitle?: string
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
@@ -123,21 +125,23 @@ function StationRow({
   })
 
   if (onPick) {
+    const isSelected = selectedTitle === station.title
     return (
       <li>
         <button
           type="button"
           onClick={() => onPick(station)}
           aria-label={`Select ${station.title}`}
+          aria-pressed={isSelected}
           className={cn(
             'flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors',
             'min-h-[44px] hover:bg-[var(--bg-tertiary)]',
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            isActive && 'border-l-2 border-fairy-500 bg-fairy-500/10 pl-[14px]',
+            isSelected ? 'border-l-2 border-fairy-500 bg-fairy-500/10 pl-[14px]' : 'border-l-2 border-transparent',
           )}
         >
           <ArtworkImage src={station.albumArtUri} size={40} fallback="disc" />
-          <span className={cn('truncate text-sm font-medium', isActive ? 'text-fairy-400' : 'text-heading')}>
+          <span className={cn('truncate text-sm font-medium', isSelected ? 'text-fairy-400' : 'text-heading')}>
             {station.title}
           </span>
         </button>
@@ -202,9 +206,10 @@ interface RadioBrowseViewProps {
   searchQuery: string
   targetSpeaker?: string | null
   onPick?: (station: SonosRadioStation) => void
+  selectedTitle?: string
 }
 
-export function RadioBrowseView({ searchQuery, targetSpeaker, onPick }: RadioBrowseViewProps) {
+export function RadioBrowseView({ searchQuery, targetSpeaker, onPick, selectedTitle }: RadioBrowseViewProps) {
   const { selectedSpeaker, isTrackActive, isSelectedPlaying } = usePlaybackState()
   const speaker = targetSpeaker ?? selectedSpeaker
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
@@ -268,6 +273,7 @@ export function RadioBrowseView({ searchQuery, targetSpeaker, onPick }: RadioBro
             isActive={isActive}
             isPlaying={isActive && isSelectedPlaying}
             onPick={onPick}
+            selectedTitle={selectedTitle}
           />
         )
       })}

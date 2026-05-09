@@ -455,12 +455,14 @@ function PlaylistRow({
   onSelect,
   isPinned,
   pickMode = false,
+  isSelected = false,
 }: {
   playlist: SpotifyPlaylist
   speaker: string | null
   onSelect: (playlist: SpotifyPlaylist) => void
   isPinned: boolean
   pickMode?: boolean
+  isSelected?: boolean
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
@@ -510,6 +512,8 @@ function PlaylistRow({
       subtitle={subtitle}
       onTap={() => onSelect(playlist)}
       pickMode={pickMode}
+      isCurrentTrack={isSelected}
+      isPlaying={false}
       {...(!pickMode && {
         onPlay: () => playNow.mutate(),
         playPending: playNow.isPending,
@@ -619,11 +623,13 @@ function PlaylistList({
   onSelectPinned,
   speaker,
   pickMode = false,
+  selectedUri,
 }: {
   onSelect: (playlist: SpotifyPlaylist) => void
   onSelectPinned: (pinned: SpotifyPinnedPlaylist) => void
   speaker: string | null
   pickMode?: boolean
+  selectedUri?: string
 }) {
   const [sort, setSort] = useState<PlaylistSort>('recent')
   const [pinDialogOpen, setPinDialogOpen] = useState(false)
@@ -765,6 +771,7 @@ function PlaylistList({
             onSelect={onSelect}
             isPinned={pinnedIdSet.has(playlist.id)}
             pickMode={pickMode}
+            isSelected={selectedUri === playlist.uri}
           />
         ))}
       </ul>
@@ -1951,9 +1958,10 @@ interface SpotifyBrowseViewProps {
   onPickAlbum?: (title: string, uri: string) => void
   onPickShow?: (title: string, uri: string) => void
   onPickArtist?: (title: string, uri: string) => void
+  selectedUri?: string
 }
 
-export function SpotifyBrowseView({ searchQuery, targetSpeaker, onPickPlaylist, onPickAlbum, onPickShow, onPickArtist }: SpotifyBrowseViewProps) {
+export function SpotifyBrowseView({ searchQuery, targetSpeaker, onPickPlaylist, onPickAlbum, onPickShow, onPickArtist, selectedUri }: SpotifyBrowseViewProps) {
   const [view, setView] = useState<SpotifyView>('home')
   const [browseMode, setBrowseMode] = usePersistedState<BrowseMode>('spotify-browse-mode', 'playlists')
   const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
@@ -2063,6 +2071,7 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker, onPickPlaylist, 
           onSelectPinned={handleSelectPinned}
           speaker={speaker}
           pickMode={!!onPickPlaylist}
+          selectedUri={selectedUri}
         />
       )}
       {browseMode === 'countries' && <SpotifyCountryList onSelectCountry={handleSelectCountry} />}
