@@ -1651,7 +1651,7 @@ export default function RoomDetailPage() {
                               </div>
 
                               <div>
-                                <label htmlFor="room-edit-rule-favourite" className="text-heading text-sm mb-1.5 block">Favourite</label>
+                                <label htmlFor="room-edit-rule-favourite" className="sr-only">What to play</label>
                                 <FavouriteSelector favourites={sonosFavourites ?? []} value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-edit-rule-favourite" nasUri={nasUri} onNasUriChange={setNasUri} />
                                 {podcastResolving && (
                                   <p className="text-caption text-xs mt-1">Detecting podcast...</p>
@@ -1847,7 +1847,7 @@ export default function RoomDetailPage() {
                       </div>
 
                       <div>
-                        <label htmlFor="room-detail-rule-favourite" className="text-heading text-sm mb-1.5 block">Favourite</label>
+                        <label htmlFor="room-detail-rule-favourite" className="sr-only">What to play</label>
                         <FavouriteSelector favourites={sonosFavourites ?? []} value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-detail-rule-favourite" nasUri={nasUri} onNasUriChange={setNasUri} />
                         {podcastResolving && (
                           <p className="text-caption text-xs mt-1">Detecting podcast...</p>

@@ -196,6 +196,7 @@ function AddRuleForm({
       enabled: 1,
       max_plays: maxPlays ? Number(maxPlays) : null,
       podcast_feed_url: resolvedFeedUrl,
+      nas_uri: null,
     })
     setMaxPlays('')
     setPodcastFeedUrl(null)

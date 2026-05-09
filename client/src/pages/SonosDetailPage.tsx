@@ -716,7 +716,7 @@ export default function SonosDetailPage() {
 
                         {/* Favourite */}
                         <div>
-                          <label htmlFor="edit-rule-favourite" className="text-heading text-sm mb-1.5 block">Favourite</label>
+                          <label htmlFor="edit-rule-favourite" className="sr-only">What to play</label>
                           <FavouriteSelector
                             favourites={favourites ?? []}
                             value={newRuleFavourite}
@@ -928,9 +928,7 @@ export default function SonosDetailPage() {
 
                 {/* Favourite */}
                 <div>
-                  <label htmlFor="detail-rule-favourite" className="text-heading text-sm mb-1.5 block">
-                    Favourite
-                  </label>
+                  <label htmlFor="detail-rule-favourite" className="sr-only">What to play</label>
                   <FavouriteSelector
                     favourites={favourites ?? []}
                     value={newRuleFavourite}

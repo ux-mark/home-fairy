@@ -53,7 +53,7 @@ export function FavouriteSelector({
 
   const sources: { id: Source; label: string }[] = [
     { id: 'all', label: 'All' },
-    ...(supportsNas ? [{ id: 'nas' as Source, label: 'NAS' }] : []),
+    { id: 'nas', label: 'NAS' },
     { id: 'spotify', label: 'Spotify' },
     { id: 'radio', label: 'Radio' },
   ]
@@ -79,6 +79,19 @@ export function FavouriteSelector({
           <span className="text-sm font-medium">Continue what's already playing</span>
         </button>
       )}
+
+      {/* Search input — top, matching Browse tab order */}
+      <input
+        type="search"
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        placeholder="Search music..."
+        className={cn(
+          'w-full rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-secondary)]',
+          'h-11 px-3 text-sm text-heading placeholder:text-caption',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+        )}
+      />
 
       {/* Source tabs */}
       <div
@@ -106,25 +119,12 @@ export function FavouriteSelector({
         ))}
       </div>
 
-      {/* Search input */}
-      <input
-        type="search"
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        placeholder="Search music..."
-        className={cn(
-          'w-full rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-secondary)]',
-          'h-11 px-3 text-sm text-heading placeholder:text-caption',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-        )}
-      />
-
       {/* Browse view */}
       <div className="overflow-y-auto rounded-xl border border-[var(--border-secondary)]" style={{ maxHeight: '340px' }}>
-        {(source === 'all' || source === 'nas') && supportsNas && (
+        {(source === 'all' || source === 'nas') && (
           <NasBrowseView
-            searchQuery={source === 'nas' || source === 'all' ? search : ''}
-            onPickAlbum={pickNasAlbum}
+            searchQuery={search}
+            onPickAlbum={supportsNas ? pickNasAlbum : undefined}
           />
         )}
         {(source === 'all' || source === 'spotify') && (
