@@ -1948,9 +1948,12 @@ interface SpotifyBrowseViewProps {
   searchQuery: string
   targetSpeaker?: string | null
   onPickPlaylist?: (title: string, uri: string) => void
+  onPickAlbum?: (title: string, uri: string) => void
+  onPickShow?: (title: string, uri: string) => void
+  onPickArtist?: (title: string, uri: string) => void
 }
 
-export function SpotifyBrowseView({ searchQuery, targetSpeaker, onPickPlaylist }: SpotifyBrowseViewProps) {
+export function SpotifyBrowseView({ searchQuery, targetSpeaker, onPickPlaylist, onPickAlbum, onPickShow, onPickArtist }: SpotifyBrowseViewProps) {
   const [view, setView] = useState<SpotifyView>('home')
   const [browseMode, setBrowseMode] = usePersistedState<BrowseMode>('spotify-browse-mode', 'playlists')
   const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
@@ -1986,14 +1989,17 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker, onPickPlaylist }
   }
 
   function handleSelectAlbum(album: SpotifyAlbum) {
+    if (onPickAlbum) { onPickAlbum(album.name, album.uri); return }
     navigate(`/sonos/browse/spotify/album/${encodeURIComponent(album.id)}${speakerQuery}`)
   }
 
   function handleSelectShow(show: SpotifyShow) {
+    if (onPickShow) { onPickShow(show.name, show.uri); return }
     navigate(`/sonos/browse/spotify/show/${encodeURIComponent(show.id)}${speakerQuery}`)
   }
 
   function handleSelectArtist(artist: SpotifyArtist) {
+    if (onPickArtist) { onPickArtist(artist.name, artist.uri); return }
     navigate(`/sonos/browse/spotify/artist/${encodeURIComponent(artist.id)}${speakerQuery}`)
   }
 

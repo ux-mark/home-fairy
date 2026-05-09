@@ -260,6 +260,11 @@ export function FavouriteSelector({
               searchQuery={search}
               onPickAlbum={pickNas}
               onDrillIntoAlbum={setDrillAlbum}
+              onPickArtist={(name) => {
+                onChange(name)
+                onNasUriChange?.(`A:ALBUMARTIST/${name}`)
+                onSpotifyUriChange?.(null)
+              }}
             />
           </div>
         )}
@@ -275,6 +280,21 @@ export function FavouriteSelector({
             <SpotifyBrowseView
               searchQuery={search}
               onPickPlaylist={pickSpotify}
+              onPickAlbum={(title, uri) => {
+                onChange(title)
+                onNasUriChange?.(null)
+                onSpotifyUriChange?.(uri)
+              }}
+              onPickShow={(title, uri) => {
+                onChange(title)
+                onNasUriChange?.(null)
+                onSpotifyUriChange?.(uri)
+              }}
+              onPickArtist={(title, uri) => {
+                onChange(title)
+                onNasUriChange?.(null)
+                onSpotifyUriChange?.(uri)
+              }}
             />
           </div>
         )}
