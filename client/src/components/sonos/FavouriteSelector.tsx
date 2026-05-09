@@ -1,13 +1,11 @@
 import { useState } from 'react'
-import { ChevronLeft, Music2, RotateCcw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Music2, RotateCcw } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import type { SonosFavourite, SonosGenreAlbum, SonosLibraryTrack, SonosRadioStation } from '@/lib/api'
-import { NasBrowseView } from './NasBrowseView'
-import { SpotifyBrowseView } from './SpotifyBrowseView'
-import { RadioBrowseView } from './RadioBrowseView'
 import { ArtworkImage } from './ArtworkImage'
+import { RadioBrowseView } from './RadioBrowseView'
 
 type Source = 'all' | 'nas' | 'spotify' | 'radio'
 
@@ -21,7 +19,12 @@ interface FavouriteSelectorProps {
   onNasUriChange?: (uri: string | null) => void
 }
 
+function isSpotifyPlaylist(fav: SonosFavourite): boolean {
+  return (fav.contentClass?.toLowerCase() ?? '').includes('playlistcontainer')
+}
+
 export function FavouriteSelector({
+  favourites,
   value,
   onChange,
   id,
@@ -35,7 +38,15 @@ export function FavouriteSelector({
 
   const supportsNas = !!onNasUriChange
 
-  // Fetch album tracks when drilling into an album
+  // NAS albums — flat list
+  const { data: nasAlbums = [], isLoading: nasLoading } = useQuery({
+    queryKey: ['sonos', 'library', 'albums'],
+    queryFn: api.sonos.getLibraryAlbums,
+    staleTime: 300_000,
+    enabled: supportsNas,
+  })
+
+  // Album tracks when drilling in
   const { data: albumTracks = [], isLoading: tracksLoading } = useQuery({
     queryKey: ['sonos', 'album-tracks', drillAlbum?.objectId],
     queryFn: () => api.sonos.getAlbumTracks(drillAlbum!.objectId),
@@ -43,30 +54,27 @@ export function FavouriteSelector({
     staleTime: 300_000,
   })
 
-  function pickNasAlbum(album: SonosGenreAlbum) {
-    onChange(album.name)
-    onNasUriChange?.(album.objectId)
-  }
+  // Spotify playlists from the Sonos favourites already passed in
+  const spotifyPlaylists = favourites.filter(isSpotifyPlaylist)
 
-  function pickNasTrack(track: SonosLibraryTrack) {
-    onChange(track.title)
-    onNasUriChange?.(track.uri)
-    setDrillAlbum(null)
-  }
+  const q = search.trim().toLowerCase()
 
-  function pickSpotifyPlaylist(title: string) {
+  const filteredNas = q
+    ? nasAlbums.filter(a => a.name.toLowerCase().includes(q) || a.artist.toLowerCase().includes(q))
+    : nasAlbums
+
+  const filteredSpotify = q
+    ? spotifyPlaylists.filter(p => p.title.toLowerCase().includes(q))
+    : spotifyPlaylists
+
+  const filteredTracks = q
+    ? albumTracks.filter((t: SonosLibraryTrack) => t.title.toLowerCase().includes(q))
+    : albumTracks
+
+  function pick(title: string, uri?: string | null) {
     onChange(title)
-    onNasUriChange?.(null)
-  }
-
-  function pickRadioStation(station: SonosRadioStation) {
-    onChange(station.title)
-    onNasUriChange?.(null)
-  }
-
-  function pickContinue() {
-    onChange('__continue__')
-    onNasUriChange?.(null)
+    onNasUriChange?.(uri ?? null)
+    setDrillAlbum(null)
   }
 
   const sources: { id: Source; label: string }[] = [
@@ -76,7 +84,11 @@ export function FavouriteSelector({
     { id: 'radio', label: 'Radio' },
   ]
 
-  // ── Album track drill-down view ───────────────────────────────────────────
+  const showNas = source === 'all' || source === 'nas'
+  const showSpotify = source === 'all' || source === 'spotify'
+  const showRadio = source === 'all' || source === 'radio'
+
+  // ── Album track drill-down ─────────────────────────────────────────────────
 
   if (drillAlbum) {
     return (
@@ -84,116 +96,103 @@ export function FavouriteSelector({
         <button
           type="button"
           onClick={() => setDrillAlbum(null)}
-          aria-label="Back to albums"
           className={cn(
             'flex items-center gap-1.5 rounded-lg px-1 text-sm text-caption transition-colors',
             'min-h-[44px] hover:text-body',
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
           )}
         >
-          <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+          <ChevronLeft className="h-4 w-4" />
           {drillAlbum.name}
         </button>
 
-        <div className="overflow-y-auto rounded-xl border border-[var(--border-secondary)]" style={{ maxHeight: '340px' }}>
+        <input
+          type="search"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search tracks…"
+          className="w-full rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-secondary)] h-11 px-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        />
+
+        <ul className="overflow-y-auto rounded-xl border border-[var(--border-secondary)]" style={{ maxHeight: '340px' }}>
           {tracksLoading ? (
-            <p className="px-4 py-6 text-center text-sm text-caption">Loading tracks…</p>
-          ) : albumTracks.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-caption">No tracks found</p>
-          ) : (
-            <ul>
-              {albumTracks.map((track, i) => {
-                const isSelected = nasUri === track.uri
-                return (
-                  <li key={track.uri + i}>
-                    <button
-                      type="button"
-                      onClick={() => pickNasTrack(track)}
-                      className={cn(
-                        'flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors',
-                        'min-h-[44px] hover:bg-[var(--bg-tertiary)]',
-                        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                        isSelected && 'border-l-2 border-fairy-500 bg-fairy-500/10 pl-[14px]',
-                      )}
-                    >
-                      <span className="w-5 shrink-0 text-right text-xs tabular-nums text-caption/50">{i + 1}</span>
-                      <ArtworkImage src={track.albumArtUri} size={36} fallback="disc" />
-                      <span className="min-w-0 flex-1">
-                        <span className={cn('block truncate text-sm font-medium', isSelected ? 'text-fairy-400' : 'text-heading')}>{track.title}</span>
-                        {track.artist && <span className="block truncate text-xs text-caption">{track.artist}</span>}
-                      </span>
-                      {track.duration_ms && (
-                        <span className="shrink-0 text-xs text-caption/70">
-                          {Math.floor(track.duration_ms / 60000)}:{String(Math.floor((track.duration_ms % 60000) / 1000)).padStart(2, '0')}
-                        </span>
-                      )}
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          )}
-        </div>
+            <li className="px-4 py-6 text-center text-sm text-caption">Loading…</li>
+          ) : filteredTracks.length === 0 ? (
+            <li className="px-4 py-6 text-center text-sm text-caption">No tracks found</li>
+          ) : filteredTracks.map((track: SonosLibraryTrack, i: number) => {
+            const isSelected = nasUri === track.uri
+            return (
+              <li key={track.uri + i}>
+                <button
+                  type="button"
+                  onClick={() => pick(track.title, track.uri)}
+                  className={cn(
+                    'flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors min-h-[44px]',
+                    'hover:bg-[var(--bg-tertiary)]',
+                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                    isSelected && 'border-l-2 border-fairy-500 bg-fairy-500/10 pl-[14px]',
+                  )}
+                >
+                  <span className="w-5 shrink-0 text-right text-xs tabular-nums text-caption/50">{i + 1}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className={cn('block truncate text-sm font-medium', isSelected ? 'text-fairy-400' : 'text-heading')}>{track.title}</span>
+                    {track.artist && <span className="block truncate text-xs text-caption">{track.artist}</span>}
+                  </span>
+                  {track.duration_ms != null && (
+                    <span className="shrink-0 text-xs text-caption/70">
+                      {Math.floor(track.duration_ms / 60000)}:{String(Math.floor((track.duration_ms % 60000) / 1000)).padStart(2, '0')}
+                    </span>
+                  )}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
       </div>
     )
   }
 
-  // ── Main picker view ──────────────────────────────────────────────────────
+  // ── Main picker ────────────────────────────────────────────────────────────
 
   return (
     <div id={id} className="space-y-3">
-      {/* Continue what's already playing */}
       {includeContinue && (
         <button
           type="button"
-          onClick={pickContinue}
+          onClick={() => pick('__continue__')}
           aria-pressed={value === '__continue__'}
           className={cn(
-            'flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors',
-            'min-h-[44px]',
+            'flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors min-h-[44px]',
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
             value === '__continue__'
               ? 'border-fairy-500/40 bg-fairy-500/10 text-fairy-400'
               : 'border-[var(--border-secondary)] text-body hover:bg-[var(--bg-tertiary)]',
           )}
         >
-          <RotateCcw className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <RotateCcw className="h-4 w-4 shrink-0" />
           <span className="text-sm font-medium">Continue what's already playing</span>
         </button>
       )}
 
-      {/* Search input */}
       <input
         type="search"
         value={search}
         onChange={e => setSearch(e.target.value)}
-        placeholder="Search music..."
-        className={cn(
-          'w-full rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-secondary)]',
-          'h-11 px-3 text-sm text-heading placeholder:text-caption',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-        )}
+        placeholder="Search music…"
+        className="w-full rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-secondary)] h-11 px-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
       />
 
-      {/* Source tabs */}
-      <div
-        role="group"
-        aria-label="Music source"
-        className="flex gap-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
-      >
+      <div role="group" aria-label="Music source" className="flex gap-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
         {sources.map(s => (
           <button
             key={s.id}
             type="button"
             aria-pressed={source === s.id}
-            onClick={() => setSource(s.id)}
+            onClick={() => { setSource(s.id); setSearch('') }}
             className={cn(
-              'shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors',
-              'min-h-[44px]',
+              'shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors min-h-[44px]',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-              source === s.id
-                ? 'bg-fairy-500 text-white'
-                : 'bg-[var(--bg-tertiary)] text-caption hover:bg-[var(--bg-secondary)]',
+              source === s.id ? 'bg-fairy-500 text-white' : 'bg-[var(--bg-tertiary)] text-caption hover:bg-[var(--bg-secondary)]',
             )}
           >
             {s.label}
@@ -201,33 +200,107 @@ export function FavouriteSelector({
         ))}
       </div>
 
-      {/* Browse views */}
       <div className="overflow-y-auto rounded-xl border border-[var(--border-secondary)]" style={{ maxHeight: '340px' }}>
-        {(source === 'all' || source === 'nas') && (
-          <NasBrowseView
-            searchQuery={search}
-            onPickAlbum={supportsNas ? pickNasAlbum : undefined}
-            onDrillIntoAlbum={supportsNas ? setDrillAlbum : undefined}
-          />
+        {/* NAS albums */}
+        {showNas && supportsNas && (
+          <>
+            {source === 'all' && <p className="px-4 pt-3 pb-1 text-xs font-medium text-caption">NAS</p>}
+            {nasLoading ? (
+              <p className="px-4 py-4 text-sm text-caption">Loading library…</p>
+            ) : filteredNas.length === 0 ? (
+              <p className="px-4 py-4 text-sm text-caption">No albums found</p>
+            ) : (
+              <ul>
+                {filteredNas.map(album => {
+                  const isSelected = nasUri === album.objectId
+                  return (
+                    <li key={album.objectId} className="flex items-center gap-3 px-4 py-2 min-h-[44px]">
+                      <button
+                        type="button"
+                        onClick={() => pick(album.name, album.objectId)}
+                        className={cn(
+                          'flex min-w-0 flex-1 items-center gap-3 text-left rounded-md transition-colors',
+                          'hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                          isSelected && 'text-fairy-400',
+                        )}
+                      >
+                        <ArtworkImage src={album.albumArtUri} size={40} fallback="disc" />
+                        <span className="min-w-0 flex-1">
+                          <span className={cn('block truncate text-sm font-medium', isSelected ? 'text-fairy-400' : 'text-heading')}>{album.name}</span>
+                          <span className="block truncate text-xs text-caption">{album.artist}</span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDrillAlbum(album)}
+                        aria-label={`Browse tracks in ${album.name}`}
+                        className={cn(
+                          'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-caption',
+                          'hover:bg-[var(--bg-tertiary)] hover:text-body transition-colors',
+                          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                        )}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </>
         )}
-        {(source === 'all' || source === 'spotify') && (
-          <SpotifyBrowseView
-            searchQuery={search}
-            onPickPlaylist={pickSpotifyPlaylist}
-          />
+
+        {/* Spotify playlists */}
+        {showSpotify && (
+          <>
+            {source === 'all' && supportsNas && <p className="px-4 pt-3 pb-1 text-xs font-medium text-caption">Spotify</p>}
+            {filteredSpotify.length === 0 ? (
+              <p className="px-4 py-4 text-sm text-caption">No playlists found</p>
+            ) : (
+              <ul>
+                {filteredSpotify.map(fav => {
+                  const isSelected = value === fav.title && !nasUri
+                  return (
+                    <li key={fav.title}>
+                      <button
+                        type="button"
+                        onClick={() => pick(fav.title, null)}
+                        className={cn(
+                          'flex w-full items-center gap-3 px-4 py-2 text-left transition-colors min-h-[44px]',
+                          'hover:bg-[var(--bg-tertiary)]',
+                          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                          isSelected && 'border-l-2 border-fairy-500 bg-fairy-500/10 pl-[14px]',
+                        )}
+                      >
+                        {fav.albumArtURI && (
+                          <ArtworkImage src={fav.albumArtURI} size={40} fallback="disc" />
+                        )}
+                        <span className={cn('truncate text-sm font-medium', isSelected ? 'text-fairy-400' : 'text-heading')}>{fav.title}</span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </>
         )}
-        {(source === 'all' || source === 'radio') && (
-          <RadioBrowseView
-            searchQuery={search}
-            onPick={pickRadioStation}
-          />
+
+        {/* Radio stations — reuse RadioBrowseView which already supports onPick */}
+        {showRadio && (
+          <>
+            {source === 'all' && <p className="px-4 pt-3 pb-1 text-xs font-medium text-caption">Radio</p>}
+            <RadioBrowseView
+              searchQuery={search}
+              onPick={(station: SonosRadioStation) => pick(station.title, null)}
+            />
+          </>
         )}
       </div>
 
-      {/* Selected item summary (non-continue) */}
+      {/* Selected item indicator */}
       {value && value !== '__continue__' && (
         <div className="flex items-center gap-2 rounded-lg border border-fairy-500/30 bg-fairy-500/5 px-3 py-2">
-          <Music2 className="h-3.5 w-3.5 shrink-0 text-fairy-400" aria-hidden="true" />
+          <Music2 className="h-3.5 w-3.5 shrink-0 text-fairy-400" />
           <span className="truncate text-xs text-fairy-400">{value}</span>
         </div>
       )}
