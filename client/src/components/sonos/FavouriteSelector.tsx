@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, Music2, RotateCcw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, HardDrive, Music, Music2, Radio as RadioIcon, RotateCcw } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
@@ -201,99 +201,141 @@ export function FavouriteSelector({
       </div>
 
       <div className="overflow-y-auto rounded-xl border border-[var(--border-secondary)]" style={{ maxHeight: '340px' }}>
-        {/* NAS albums */}
-        {showNas && supportsNas && (
-          <>
-            {source === 'all' && <p className="px-4 pt-3 pb-1 text-xs font-medium text-caption">NAS</p>}
-            {nasLoading ? (
-              <p className="px-4 py-4 text-sm text-caption">Loading library…</p>
-            ) : filteredNas.length === 0 ? (
-              <p className="px-4 py-4 text-sm text-caption">No albums found</p>
-            ) : (
-              <ul>
-                {filteredNas.map(album => {
-                  const isSelected = nasUri === album.objectId
-                  return (
-                    <li key={album.objectId} className="flex items-center gap-3 px-4 py-2 min-h-[44px]">
-                      <button
-                        type="button"
-                        onClick={() => pick(album.name, album.objectId)}
-                        className={cn(
-                          'flex min-w-0 flex-1 items-center gap-3 text-left rounded-md transition-colors',
-                          'hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                          isSelected && 'text-fairy-400',
-                        )}
-                      >
-                        <ArtworkImage src={album.albumArtUri} size={40} fallback="disc" />
-                        <span className="min-w-0 flex-1">
-                          <span className={cn('block truncate text-sm font-medium', isSelected ? 'text-fairy-400' : 'text-heading')}>{album.name}</span>
-                          <span className="block truncate text-xs text-caption">{album.artist}</span>
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setDrillAlbum(album)}
-                        aria-label={`Browse tracks in ${album.name}`}
-                        className={cn(
-                          'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-caption',
-                          'hover:bg-[var(--bg-tertiary)] hover:text-body transition-colors',
-                          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                        )}
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
+        {/* All: source cards like Browse landing */}
+        {source === 'all' && (
+          <ul className="divide-y divide-[var(--border-secondary)]">
+            {supportsNas && (
+              <li>
+                <button type="button" onClick={() => setSource('nas')}
+                  className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[var(--bg-tertiary)] min-h-[56px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-tertiary)]">
+                    <HardDrive className="h-5 w-5 text-caption" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-medium text-heading">NAS</span>
+                    <span className="block text-xs text-caption">{nasLoading ? 'Loading…' : `${nasAlbums.length} albums`}</span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-caption" />
+                </button>
+              </li>
             )}
-          </>
+            <li>
+              <button type="button" onClick={() => setSource('spotify')}
+                className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[var(--bg-tertiary)] min-h-[56px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-tertiary)]">
+                  <Music className="h-5 w-5 text-caption" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-heading">Spotify</span>
+                  <span className="block text-xs text-caption">{spotifyPlaylists.length} playlists</span>
+                </span>
+                <ChevronRight className="h-4 w-4 text-caption" />
+              </button>
+            </li>
+            <li>
+              <button type="button" onClick={() => setSource('radio')}
+                className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-[var(--bg-tertiary)] min-h-[56px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--bg-tertiary)]">
+                  <RadioIcon className="h-5 w-5 text-caption" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-heading">Radio</span>
+                  <span className="block text-xs text-caption">Stations from your Sonos</span>
+                </span>
+                <ChevronRight className="h-4 w-4 text-caption" />
+              </button>
+            </li>
+          </ul>
+        )}
+
+        {/* NAS albums */}
+        {source === 'nas' && supportsNas && (
+          nasLoading ? (
+            <p className="px-4 py-4 text-sm text-caption">Loading library…</p>
+          ) : filteredNas.length === 0 ? (
+            <p className="px-4 py-4 text-sm text-caption">No albums found</p>
+          ) : (
+            <ul>
+              {filteredNas.map(album => {
+                const isSelected = nasUri === album.objectId
+                return (
+                  <li key={album.objectId} className="flex items-center gap-3 px-4 py-2 min-h-[44px]">
+                    <button
+                      type="button"
+                      onClick={() => pick(album.name, album.objectId)}
+                      className={cn(
+                        'flex min-w-0 flex-1 items-center gap-3 text-left rounded-md transition-colors',
+                        'hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                      )}
+                    >
+                      <ArtworkImage src={album.albumArtUri} size={40} fallback="disc" />
+                      <span className="min-w-0 flex-1">
+                        <span className={cn('block truncate text-sm font-medium', isSelected ? 'text-fairy-400' : 'text-heading')}>{album.name}</span>
+                        <span className="block truncate text-xs text-caption">{album.artist}</span>
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDrillAlbum(album)}
+                      aria-label={`Browse tracks in ${album.name}`}
+                      className={cn(
+                        'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-caption',
+                        'hover:bg-[var(--bg-tertiary)] hover:text-body transition-colors',
+                        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                      )}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )
+        )}
+
+        {/* NAS: show message when not supported */}
+        {source === 'nas' && !supportsNas && (
+          <p className="px-4 py-4 text-sm text-caption">NAS library not available here</p>
         )}
 
         {/* Spotify playlists */}
-        {showSpotify && (
-          <>
-            {source === 'all' && supportsNas && <p className="px-4 pt-3 pb-1 text-xs font-medium text-caption">Spotify</p>}
-            {filteredSpotify.length === 0 ? (
-              <p className="px-4 py-4 text-sm text-caption">No playlists found</p>
-            ) : (
-              <ul>
-                {filteredSpotify.map(fav => {
-                  const isSelected = value === fav.title && !nasUri
-                  return (
-                    <li key={fav.title}>
-                      <button
-                        type="button"
-                        onClick={() => pick(fav.title, null)}
-                        className={cn(
-                          'flex w-full items-center gap-3 px-4 py-2 text-left transition-colors min-h-[44px]',
-                          'hover:bg-[var(--bg-tertiary)]',
-                          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                          isSelected && 'border-l-2 border-fairy-500 bg-fairy-500/10 pl-[14px]',
-                        )}
-                      >
-                        {fav.albumArtURI && (
-                          <ArtworkImage src={fav.albumArtURI} size={40} fallback="disc" />
-                        )}
-                        <span className={cn('truncate text-sm font-medium', isSelected ? 'text-fairy-400' : 'text-heading')}>{fav.title}</span>
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </>
+        {source === 'spotify' && (
+          filteredSpotify.length === 0 ? (
+            <p className="px-4 py-4 text-sm text-caption">No playlists found</p>
+          ) : (
+            <ul>
+              {filteredSpotify.map(fav => {
+                const isSelected = value === fav.title && !nasUri
+                return (
+                  <li key={fav.title}>
+                    <button
+                      type="button"
+                      onClick={() => pick(fav.title, null)}
+                      className={cn(
+                        'flex w-full items-center gap-3 px-4 py-2 text-left transition-colors min-h-[44px]',
+                        'hover:bg-[var(--bg-tertiary)]',
+                        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                        isSelected && 'border-l-2 border-fairy-500 bg-fairy-500/10 pl-[14px]',
+                      )}
+                    >
+                      {fav.albumArtURI && (
+                        <ArtworkImage src={fav.albumArtURI} size={40} fallback="disc" />
+                      )}
+                      <span className={cn('truncate text-sm font-medium', isSelected ? 'text-fairy-400' : 'text-heading')}>{fav.title}</span>
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )
         )}
 
-        {/* Radio stations — reuse RadioBrowseView which already supports onPick */}
-        {showRadio && (
-          <>
-            {source === 'all' && <p className="px-4 pt-3 pb-1 text-xs font-medium text-caption">Radio</p>}
-            <RadioBrowseView
-              searchQuery={search}
-              onPick={(station: SonosRadioStation) => pick(station.title, null)}
-            />
-          </>
+        {/* Radio stations */}
+        {source === 'radio' && (
+          <RadioBrowseView
+            searchQuery={search}
+            onPick={(station: SonosRadioStation) => pick(station.title, null)}
+          />
         )}
       </div>
 
