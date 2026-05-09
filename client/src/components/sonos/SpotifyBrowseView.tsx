@@ -454,11 +454,13 @@ function PlaylistRow({
   speaker,
   onSelect,
   isPinned,
+  pickMode = false,
 }: {
   playlist: SpotifyPlaylist
   speaker: string | null
   onSelect: (playlist: SpotifyPlaylist) => void
   isPinned: boolean
+  pickMode?: boolean
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
@@ -507,22 +509,25 @@ function PlaylistRow({
       title={playlist.name}
       subtitle={subtitle}
       onTap={() => onSelect(playlist)}
-      onPlay={() => playNow.mutate()}
-      playPending={playNow.isPending}
-      disabled={!speaker}
-      badge={isPinned ? <PinnedBadge /> : undefined}
-      menuProps={{
-        label: playlist.name,
-        onPin: isPinned ? undefined : () => pinPlaylist.mutate(),
-        onPlayNext: () => playNext.mutate(),
-        onAddToQueue: () => addToQueue.mutate(),
-        fairylistTrack: {
-          source: 'spotify',
-          source_uri: playlist.uri,
-          title: playlist.name,
-          album_art_uri: playlist.images?.[0]?.url,
+      pickMode={pickMode}
+      {...(!pickMode && {
+        onPlay: () => playNow.mutate(),
+        playPending: playNow.isPending,
+        disabled: !speaker,
+        menuProps: {
+          label: playlist.name,
+          onPin: isPinned ? undefined : () => pinPlaylist.mutate(),
+          onPlayNext: () => playNext.mutate(),
+          onAddToQueue: () => addToQueue.mutate(),
+          fairylistTrack: {
+            source: 'spotify',
+            source_uri: playlist.uri,
+            title: playlist.name,
+            album_art_uri: playlist.images?.[0]?.url,
+          },
         },
-      }}
+      })}
+      badge={isPinned ? <PinnedBadge /> : undefined}
     />
   )
 }
@@ -613,10 +618,12 @@ function PlaylistList({
   onSelect,
   onSelectPinned,
   speaker,
+  pickMode = false,
 }: {
   onSelect: (playlist: SpotifyPlaylist) => void
   onSelectPinned: (pinned: SpotifyPinnedPlaylist) => void
   speaker: string | null
+  pickMode?: boolean
 }) {
   const [sort, setSort] = useState<PlaylistSort>('recent')
   const [pinDialogOpen, setPinDialogOpen] = useState(false)
@@ -757,6 +764,7 @@ function PlaylistList({
             speaker={speaker}
             onSelect={onSelect}
             isPinned={pinnedIdSet.has(playlist.id)}
+            pickMode={pickMode}
           />
         ))}
       </ul>
@@ -2048,6 +2056,7 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker, onPickPlaylist }
           onSelect={handleSelectPlaylist}
           onSelectPinned={handleSelectPinned}
           speaker={speaker}
+          pickMode={!!onPickPlaylist}
         />
       )}
       {browseMode === 'countries' && <SpotifyCountryList onSelectCountry={handleSelectCountry} />}
