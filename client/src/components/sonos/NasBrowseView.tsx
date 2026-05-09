@@ -1186,9 +1186,10 @@ function SearchResults({
 interface NasBrowseViewProps {
   searchQuery: string
   targetSpeaker?: string | null
+  onPickAlbum?: (album: SonosGenreAlbum) => void
 }
 
-export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps) {
+export function NasBrowseView({ searchQuery, targetSpeaker, onPickAlbum }: NasBrowseViewProps) {
   const [view, setView] = useState<NasView>('home')
   const [browseMode, setBrowseMode] = usePersistedState<BrowseMode>('nas-browse-mode', 'countries')
   const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
@@ -1205,6 +1206,7 @@ export function NasBrowseView({ searchQuery, targetSpeaker }: NasBrowseViewProps
   }
 
   function handleSelectAlbum(album: SonosGenreAlbum) {
+    if (onPickAlbum) { onPickAlbum(album); return }
     navigate(
       `/sonos/browse/nas/album/${encodeURIComponent(album.artist)}/${encodeURIComponent(album.name)}${speakerQuery}`,
       { state: { objectId: album.objectId } },
