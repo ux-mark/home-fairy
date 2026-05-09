@@ -76,8 +76,14 @@ export function MusicListItem({
 }: MusicListItemProps) {
   const showPause = isCurrentTrack && isPlaying && !!onPause
 
+  const isPickSelected = pickMode && isCurrentTrack
+
   return (
-    <li className={cn('flex items-center gap-3 px-4 py-2.5 min-h-[44px]', isCurrentTrack && 'bg-fairy-500/5')}>
+    <li className={cn(
+      'flex items-center gap-3 px-4 py-2.5 min-h-[44px]',
+      isPickSelected ? 'border-l-2 border-fairy-500 bg-fairy-500/10 pl-[14px]' :
+      isCurrentTrack ? 'bg-fairy-500/5' : '',
+    )}>
       {/* Tappable content area */}
       <button
         type="button"
