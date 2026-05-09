@@ -349,6 +349,7 @@ export default function RoomDetailPage() {
   const [podcastFailed, setPodcastFailed] = useState(false)
   const [manualFeedUrl, setManualFeedUrl] = useState('')
   const [nasUri, setNasUri] = useState<string | null>(null)
+  const [spotifyUri, setSpotifyUri] = useState<string | null>(null)
 
   // Auto-detect podcast when favourite changes
   useEffect(() => {
@@ -887,6 +888,7 @@ export default function RoomDetailPage() {
     setPodcastFailed(false)
     setManualFeedUrl('')
     setNasUri(null)
+    setSpotifyUri(null)
   }
 
   function openEditRule(rule: AutoPlayRule) {
@@ -901,6 +903,7 @@ export default function RoomDetailPage() {
     setPodcastFailed(false)
     setManualFeedUrl('')
     setNasUri(rule.nas_uri ?? null)
+    setSpotifyUri(rule.spotify_uri ?? null)
   }
 
   const createAutoPlayRuleMutation = useMutation({
@@ -1652,7 +1655,7 @@ export default function RoomDetailPage() {
 
                               <div>
                                 <label htmlFor="room-edit-rule-favourite" className="sr-only">What to play</label>
-                                <FavouriteSelector favourites={sonosFavourites ?? []} value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-edit-rule-favourite" nasUri={nasUri} onNasUriChange={setNasUri} />
+                                <FavouriteSelector favourites={sonosFavourites ?? []} value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-edit-rule-favourite" nasUri={nasUri} onNasUriChange={setNasUri} spotifyUri={spotifyUri} onSpotifyUriChange={setSpotifyUri} />
                                 {podcastResolving && (
                                   <p className="text-caption text-xs mt-1">Detecting podcast...</p>
                                 )}
@@ -1749,6 +1752,7 @@ export default function RoomDetailPage() {
                                         max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
                                         podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
                                         nas_uri: nasUri,
+                                        spotify_uri: spotifyUri,
                                       },
                                     })
                                   }}
@@ -1848,7 +1852,7 @@ export default function RoomDetailPage() {
 
                       <div>
                         <label htmlFor="room-detail-rule-favourite" className="sr-only">What to play</label>
-                        <FavouriteSelector favourites={sonosFavourites ?? []} value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-detail-rule-favourite" nasUri={nasUri} onNasUriChange={setNasUri} />
+                        <FavouriteSelector favourites={sonosFavourites ?? []} value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-detail-rule-favourite" nasUri={nasUri} onNasUriChange={setNasUri} spotifyUri={spotifyUri} onSpotifyUriChange={setSpotifyUri} />
                         {podcastResolving && (
                           <p className="text-caption text-xs mt-1">Detecting podcast...</p>
                         )}
@@ -1945,6 +1949,7 @@ export default function RoomDetailPage() {
                               max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
                               podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
                               nas_uri: nasUri,
+                              spotify_uri: spotifyUri,
                             })
                           }}
                           disabled={!newRuleFavourite || !newRuleMode || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || createAutoPlayRuleMutation.isPending}

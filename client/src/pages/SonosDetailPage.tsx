@@ -151,6 +151,7 @@ export default function SonosDetailPage() {
   const [podcastFailed, setPodcastFailed] = useState(false)
   const [manualFeedUrl, setManualFeedUrl] = useState('')
   const [nasUri, setNasUri] = useState<string | null>(null)
+  const [spotifyUri, setSpotifyUri] = useState<string | null>(null)
 
   // Auto-detect podcast when favourite changes
   useEffect(() => {
@@ -346,6 +347,7 @@ export default function SonosDetailPage() {
     setPodcastFailed(false)
     setManualFeedUrl('')
     setNasUri(null)
+    setSpotifyUri(null)
   }
 
   function openEditRule(rule: AutoPlayRule) {
@@ -360,6 +362,7 @@ export default function SonosDetailPage() {
     setPodcastFailed(false)
     setManualFeedUrl('')
     setNasUri(rule.nas_uri ?? null)
+    setSpotifyUri(rule.spotify_uri ?? null)
   }
 
   // ── Live volume + mute mutations ────────────────────────────────────────────
@@ -724,6 +727,8 @@ export default function SonosDetailPage() {
                             id="edit-rule-favourite"
                             nasUri={nasUri}
                             onNasUriChange={setNasUri}
+                            spotifyUri={spotifyUri}
+                            onSpotifyUriChange={setSpotifyUri}
                           />
                           {podcastResolving && (
                             <p className="text-caption text-xs mt-1">Detecting podcast...</p>
@@ -824,6 +829,7 @@ export default function SonosDetailPage() {
                                   max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
                                   podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
                                   nas_uri: nasUri,
+                                  spotify_uri: spotifyUri,
                                 },
                               })
                             }}
@@ -936,6 +942,8 @@ export default function SonosDetailPage() {
                     id="detail-rule-favourite"
                     nasUri={nasUri}
                     onNasUriChange={setNasUri}
+                    spotifyUri={spotifyUri}
+                    onSpotifyUriChange={setSpotifyUri}
                   />
                   {podcastResolving && (
                     <p className="text-caption text-xs mt-1">Detecting podcast...</p>
@@ -1038,6 +1046,7 @@ export default function SonosDetailPage() {
                         max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
                         podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
                         nas_uri: nasUri,
+                        spotify_uri: spotifyUri,
                       })
                     }}
                     disabled={!newRuleFavourite || !newRuleMode || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || createRuleMutation.isPending}

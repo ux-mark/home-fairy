@@ -1947,7 +1947,7 @@ function SpotifyCountryArtistList({
 interface SpotifyBrowseViewProps {
   searchQuery: string
   targetSpeaker?: string | null
-  onPickPlaylist?: (title: string) => void
+  onPickPlaylist?: (title: string, uri: string) => void
 }
 
 export function SpotifyBrowseView({ searchQuery, targetSpeaker, onPickPlaylist }: SpotifyBrowseViewProps) {
@@ -1976,12 +1976,12 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker, onPickPlaylist }
   })
 
   function handleSelectPlaylist(playlist: SpotifyPlaylist) {
-    if (onPickPlaylist) { onPickPlaylist(playlist.name); return }
+    if (onPickPlaylist) { onPickPlaylist(playlist.name, playlist.uri); return }
     navigate(`/sonos/browse/spotify/playlist/${encodeURIComponent(playlist.id)}${speakerQuery}`)
   }
 
   function handleSelectPinned(pinned: SpotifyPinnedPlaylist) {
-    if (onPickPlaylist) { onPickPlaylist(pinned.name); return }
+    if (onPickPlaylist) { onPickPlaylist(pinned.name, pinned.uri); return }
     navigate(`/sonos/browse/spotify/playlist/${encodeURIComponent(pinned.playlist_id)}${speakerQuery}`)
   }
 

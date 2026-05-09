@@ -4,7 +4,8 @@ import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import type { SonosFavourite, SonosGenreAlbum, SonosLibraryTrack, SonosRadioStation } from '@/lib/api'
-import { ArtworkImage } from './ArtworkImage'
+import { NasBrowseView } from './NasBrowseView'
+import { SpotifyBrowseView } from './SpotifyBrowseView'
 import { RadioBrowseView } from './RadioBrowseView'
 
 type Source = 'all' | 'nas' | 'spotify' | 'radio'
@@ -17,10 +18,8 @@ interface FavouriteSelectorProps {
   includeContinue?: boolean
   nasUri?: string | null
   onNasUriChange?: (uri: string | null) => void
-}
-
-function isSpotifyPlaylist(fav: SonosFavourite): boolean {
-  return (fav.contentClass?.toLowerCase() ?? '').includes('playlistcontainer')
+  spotifyUri?: string | null
+  onSpotifyUriChange?: (uri: string | null) => void
 }
 
 export function FavouriteSelector({
@@ -31,6 +30,8 @@ export function FavouriteSelector({
   includeContinue = true,
   nasUri,
   onNasUriChange,
+  spotifyUri,
+  onSpotifyUriChange,
 }: FavouriteSelectorProps) {
   const [source, setSource] = useState<Source>('all')
   const [search, setSearch] = useState('')
@@ -38,15 +39,7 @@ export function FavouriteSelector({
 
   const supportsNas = !!onNasUriChange
 
-  // NAS albums — flat list
-  const { data: nasAlbums = [], isLoading: nasLoading } = useQuery({
-    queryKey: ['sonos', 'library', 'albums'],
-    queryFn: api.sonos.getLibraryAlbums,
-    staleTime: 300_000,
-    enabled: supportsNas,
-  })
-
-  // Album tracks when drilling in
+  // Album tracks when drilling in (NAS track-level pick)
   const { data: albumTracks = [], isLoading: tracksLoading } = useQuery({
     queryKey: ['sonos', 'album-tracks', drillAlbum?.objectId],
     queryFn: () => api.sonos.getAlbumTracks(drillAlbum!.objectId),
@@ -54,18 +47,15 @@ export function FavouriteSelector({
     staleTime: 300_000,
   })
 
-  // Spotify playlists from the Sonos favourites already passed in
-  const spotifyPlaylists = favourites.filter(isSpotifyPlaylist)
+  // NAS album count for the "All" card
+  const { data: nasAlbums = [], isLoading: nasLoading } = useQuery({
+    queryKey: ['sonos', 'library', 'albums'],
+    queryFn: api.sonos.getLibraryAlbums,
+    staleTime: 300_000,
+    enabled: supportsNas,
+  })
 
   const q = search.trim().toLowerCase()
-
-  const filteredNas = q
-    ? nasAlbums.filter(a => a.name.toLowerCase().includes(q) || a.artist.toLowerCase().includes(q))
-    : nasAlbums
-
-  const filteredSpotify = q
-    ? spotifyPlaylists.filter(p => p.title.toLowerCase().includes(q))
-    : spotifyPlaylists
 
   const filteredTracks = q
     ? albumTracks.filter((t: SonosLibraryTrack) => t.title.toLowerCase().includes(q))
@@ -74,7 +64,26 @@ export function FavouriteSelector({
   function pick(title: string, uri?: string | null) {
     onChange(title)
     onNasUriChange?.(uri ?? null)
+    onSpotifyUriChange?.(null)
     setDrillAlbum(null)
+  }
+
+  function pickNas(album: SonosGenreAlbum) {
+    onChange(album.name)
+    onNasUriChange?.(album.objectId)
+    onSpotifyUriChange?.(null)
+  }
+
+  function pickSpotify(title: string, uri: string) {
+    onChange(title)
+    onNasUriChange?.(null)
+    onSpotifyUriChange?.(uri)
+  }
+
+  function pickRadio(station: SonosRadioStation) {
+    onChange(station.title)
+    onNasUriChange?.(null)
+    onSpotifyUriChange?.(null)
   }
 
   const sources: { id: Source; label: string }[] = [
@@ -83,10 +92,6 @@ export function FavouriteSelector({
     { id: 'spotify', label: 'Spotify' },
     { id: 'radio', label: 'Radio' },
   ]
-
-  const showNas = source === 'all' || source === 'nas'
-  const showSpotify = source === 'all' || source === 'spotify'
-  const showRadio = source === 'all' || source === 'radio'
 
   // ── Album track drill-down ─────────────────────────────────────────────────
 
@@ -200,7 +205,7 @@ export function FavouriteSelector({
         ))}
       </div>
 
-      <div className="overflow-y-auto rounded-xl border border-[var(--border-secondary)]" style={{ maxHeight: '340px' }}>
+      <div className="overflow-y-auto rounded-xl border border-[var(--border-secondary)]" style={{ maxHeight: '400px' }}>
         {/* All: source cards like Browse landing */}
         {source === 'all' && (
           <ul className="divide-y divide-[var(--border-secondary)]">
@@ -227,7 +232,7 @@ export function FavouriteSelector({
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium text-heading">Spotify</span>
-                  <span className="block text-xs text-caption">{spotifyPlaylists.length} playlists</span>
+                  <span className="block text-xs text-caption">Playlists and pinned content</span>
                 </span>
                 <ChevronRight className="h-4 w-4 text-caption" />
               </button>
@@ -248,49 +253,15 @@ export function FavouriteSelector({
           </ul>
         )}
 
-        {/* NAS albums */}
+        {/* NAS — full browse view */}
         {source === 'nas' && supportsNas && (
-          nasLoading ? (
-            <p className="px-4 py-4 text-sm text-caption">Loading library…</p>
-          ) : filteredNas.length === 0 ? (
-            <p className="px-4 py-4 text-sm text-caption">No albums found</p>
-          ) : (
-            <ul>
-              {filteredNas.map(album => {
-                const isSelected = nasUri === album.objectId
-                return (
-                  <li key={album.objectId} className="flex items-center gap-3 px-4 py-2 min-h-[44px]">
-                    <button
-                      type="button"
-                      onClick={() => pick(album.name, album.objectId)}
-                      className={cn(
-                        'flex min-w-0 flex-1 items-center gap-3 text-left rounded-md transition-colors',
-                        'hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                      )}
-                    >
-                      <ArtworkImage src={album.albumArtUri} size={40} fallback="disc" />
-                      <span className="min-w-0 flex-1">
-                        <span className={cn('block truncate text-sm font-medium', isSelected ? 'text-fairy-400' : 'text-heading')}>{album.name}</span>
-                        <span className="block truncate text-xs text-caption">{album.artist}</span>
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDrillAlbum(album)}
-                      aria-label={`Browse tracks in ${album.name}`}
-                      className={cn(
-                        'flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-caption',
-                        'hover:bg-[var(--bg-tertiary)] hover:text-body transition-colors',
-                        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                      )}
-                    >
-                      <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          )
+          <div className="px-4 py-3">
+            <NasBrowseView
+              searchQuery={search}
+              onPickAlbum={pickNas}
+              onDrillIntoAlbum={setDrillAlbum}
+            />
+          </div>
         )}
 
         {/* NAS: show message when not supported */}
@@ -298,43 +269,21 @@ export function FavouriteSelector({
           <p className="px-4 py-4 text-sm text-caption">NAS library not available here</p>
         )}
 
-        {/* Spotify playlists */}
+        {/* Spotify — full browse view */}
         {source === 'spotify' && (
-          filteredSpotify.length === 0 ? (
-            <p className="px-4 py-4 text-sm text-caption">No playlists found</p>
-          ) : (
-            <ul>
-              {filteredSpotify.map(fav => {
-                const isSelected = value === fav.title && !nasUri
-                return (
-                  <li key={fav.title}>
-                    <button
-                      type="button"
-                      onClick={() => pick(fav.title, null)}
-                      className={cn(
-                        'flex w-full items-center gap-3 px-4 py-2 text-left transition-colors min-h-[44px]',
-                        'hover:bg-[var(--bg-tertiary)]',
-                        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                        isSelected && 'border-l-2 border-fairy-500 bg-fairy-500/10 pl-[14px]',
-                      )}
-                    >
-                      {fav.albumArtURI && (
-                        <ArtworkImage src={fav.albumArtURI} size={40} fallback="disc" />
-                      )}
-                      <span className={cn('truncate text-sm font-medium', isSelected ? 'text-fairy-400' : 'text-heading')}>{fav.title}</span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          )
+          <div className="px-4 py-3">
+            <SpotifyBrowseView
+              searchQuery={search}
+              onPickPlaylist={pickSpotify}
+            />
+          </div>
         )}
 
         {/* Radio stations */}
         {source === 'radio' && (
           <RadioBrowseView
             searchQuery={search}
-            onPick={(station: SonosRadioStation) => pick(station.title, null)}
+            onPick={(station: SonosRadioStation) => pickRadio(station)}
           />
         )}
       </div>

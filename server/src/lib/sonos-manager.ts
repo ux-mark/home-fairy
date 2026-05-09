@@ -35,6 +35,7 @@ interface AutoPlayRow {
   max_plays: number | null
   podcast_feed_url: string | null
   nas_uri: string | null
+  spotify_uri: string | null
 }
 
 interface SpeakerTimer {
@@ -385,9 +386,12 @@ class SonosManager {
       return
     }
 
-    // NAS library, podcast, or Sonos favourite playback
+    // Spotify, NAS library, podcast, or Sonos favourite playback
     try {
-      if (rule.nas_uri) {
+      if (rule.spotify_uri) {
+        log(`Auto-play rule ${rule.id}: playing Spotify "${rule.favourite_name}" on ${targetSpeaker}`)
+        await sonosClient.playSpotifyUri(targetSpeaker, rule.spotify_uri, 'now')
+      } else if (rule.nas_uri) {
         log(`Auto-play rule ${rule.id}: playing NAS "${rule.favourite_name}" (${rule.nas_uri}) on ${targetSpeaker}`)
         const isContainer = rule.nas_uri.startsWith('A:') || rule.nas_uri.startsWith('S:') || rule.nas_uri.startsWith('SQ:')
         if (isContainer) {

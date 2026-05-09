@@ -492,14 +492,15 @@ const autoPlaySchema = z.object({
   max_plays: z.number().int().min(1).nullable().optional(),
   podcast_feed_url: z.string().url().nullable().optional(),
   nas_uri: z.string().nullable().optional(),
+  spotify_uri: z.string().nullable().optional(),
 })
 
 router.post('/auto-play', (req: Request, res: Response) => {
   try {
     const data = autoPlaySchema.parse(req.body)
     const result = run(
-      `INSERT INTO sonos_auto_play (room_name, mode_name, favourite_name, trigger_type, trigger_value, enabled, max_plays, podcast_feed_url, nas_uri)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO sonos_auto_play (room_name, mode_name, favourite_name, trigger_type, trigger_value, enabled, max_plays, podcast_feed_url, nas_uri, spotify_uri)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.room_name ?? null,
         data.mode_name,
@@ -510,6 +511,7 @@ router.post('/auto-play', (req: Request, res: Response) => {
         data.max_plays ?? null,
         data.podcast_feed_url ?? null,
         data.nas_uri ?? null,
+        data.spotify_uri ?? null,
       ],
     )
     const created = getOne('SELECT * FROM sonos_auto_play WHERE id = ?', [result.lastInsertRowid])
@@ -535,6 +537,7 @@ const autoPlayUpdateSchema = z.object({
   max_plays: z.number().int().min(1).nullable().optional(),
   podcast_feed_url: z.string().url().nullable().optional(),
   nas_uri: z.string().nullable().optional(),
+  spotify_uri: z.string().nullable().optional(),
 })
 
 router.put('/auto-play/:id', (req: Request, res: Response) => {
@@ -559,6 +562,7 @@ router.put('/auto-play/:id', (req: Request, res: Response) => {
     if (data.max_plays !== undefined) { updates.push('max_plays = ?'); params.push(data.max_plays) }
     if (data.podcast_feed_url !== undefined) { updates.push('podcast_feed_url = ?'); params.push(data.podcast_feed_url) }
     if (data.nas_uri !== undefined) { updates.push('nas_uri = ?'); params.push(data.nas_uri) }
+    if (data.spotify_uri !== undefined) { updates.push('spotify_uri = ?'); params.push(data.spotify_uri) }
 
     if (updates.length > 0) {
       updates.push("updated_at = datetime('now')")
