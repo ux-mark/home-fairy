@@ -14,13 +14,29 @@ export default defineConfig({
         // Only precache the HTML entry and CSS — JS chunks use runtime caching
         // to avoid preload warnings for lazy-loaded modules
         globPatterns: ['**/*.{css,ico,png,svg,webmanifest}', 'index.html'],
-        // Don't serve index.html for /api/ requests — let them through to the server
-        navigateFallbackDenylist: [/^\/api\//],
+        // Don't serve index.html for /api/ requests or socket.io upgrades —
+        // both must pass through to the server (the latter for the websocket
+        // upgrade to succeed in Safari).
+        navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//],
+        // Old hashed chunks become stale immediately after a deploy; without
+        // this, every old js-chunks entry sticks around in the cache forever.
+        cleanupOutdatedCaches: true,
         runtimeCaching: [
           {
             urlPattern: /\/assets\/.*\.js$/,
-            handler: 'StaleWhileRevalidate',
-            options: { cacheName: 'js-chunks' },
+            // CacheFirst because chunk URLs are content-hashed and immutable —
+            // a given chunk filename cannot semantically change. The previous
+            // StaleWhileRevalidate caused the SW's controllerchange handler in
+            // main.tsx to force a reload after every deploy, since SWR served
+            // the old chunk to the running tab while fetching the new one.
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'js-chunks',
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
+              },
+            },
           },
           {
             urlPattern: /\/api\/sonos\/art-proxy\?/,
