@@ -137,6 +137,13 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_device_history_lookup
       ON device_history (source, source_id, recorded_at);
 
+    -- hub_devices.label is used as a JOIN key by motion-handler's lux query
+    -- (device_rooms.device_label = h.label) and by several scene-executor
+    -- lookups for Twinkly / Fairy devices. Without this index those JOINs
+    -- scan the full hub_devices table on every motion event.
+    CREATE INDEX IF NOT EXISTS idx_hub_devices_label
+      ON hub_devices (label);
+
     CREATE TABLE IF NOT EXISTS room_activity (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       room_name TEXT NOT NULL,
