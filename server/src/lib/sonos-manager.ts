@@ -3,6 +3,7 @@ import { getAll, getOne, run } from '../db/index.js'
 import { emit } from './socket.js'
 import { getLatestEpisodeUrl } from './podcast-resolver.js'
 import { log as logToDb } from './logger.js'
+import { withSpeakerByRoom } from './speaker-registry.js'
 
 function log(msg: string): void {
   logToDb(msg, 'sonos')
@@ -33,6 +34,8 @@ interface AutoPlayRow {
   enabled: number
   max_plays: number | null
   podcast_feed_url: string | null
+  nas_uri: string | null
+  spotify_uri: string | null
 }
 
 interface SpeakerTimer {
@@ -383,9 +386,32 @@ class SonosManager {
       return
     }
 
-    // Podcast rules: fetch latest episode from RSS and play directly
+    // Spotify, NAS library, podcast, or Sonos favourite playback
     try {
-      if (rule.podcast_feed_url) {
+      if (rule.spotify_uri) {
+        log(`Auto-play rule ${rule.id}: playing Spotify "${rule.favourite_name}" on ${targetSpeaker}`)
+        await sonosClient.playSpotifyUri(targetSpeaker, rule.spotify_uri, 'now')
+      } else if (rule.nas_uri) {
+        log(`Auto-play rule ${rule.id}: playing NAS "${rule.favourite_name}" (${rule.nas_uri}) on ${targetSpeaker}`)
+        const isContainer = rule.nas_uri.startsWith('A:') || rule.nas_uri.startsWith('S:') || rule.nas_uri.startsWith('SQ:')
+        if (isContainer) {
+          const tracks = await sonosClient.getGenreAlbumTracks(rule.nas_uri)
+          if (tracks.length === 0) {
+            log(`Auto-play rule ${rule.id}: no tracks found in NAS container`)
+            return
+          }
+          await sonosClient.clearQueue(targetSpeaker)
+          await withSpeakerByRoom(targetSpeaker, async ({ ip, uuid }) => {
+            for (const track of tracks) {
+              try { await sonosClient.addToQueueSOAP(ip, track.uri) } catch { /* skip bad track */ }
+            }
+            await sonosClient.playQueueFromStart(ip, uuid)
+          })
+        } else {
+          await sonosClient.setAVTransportURI(targetSpeaker, rule.nas_uri)
+          await sonosClient.play(targetSpeaker)
+        }
+      } else if (rule.podcast_feed_url) {
         log(`Auto-play rule ${rule.id}: resolving podcast "${rule.favourite_name}" from RSS`)
         const episode = await getLatestEpisodeUrl(rule.podcast_feed_url)
         if (!episode) {

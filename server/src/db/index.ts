@@ -424,6 +424,12 @@ export function initDb(): void {
   if (!autoPlayColNames.includes('podcast_feed_url')) {
     db.exec('ALTER TABLE sonos_auto_play ADD COLUMN podcast_feed_url TEXT DEFAULT NULL')
   }
+  if (!autoPlayCols.some(c => c.name === 'nas_uri')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN nas_uri TEXT DEFAULT NULL')
+  }
+  if (!autoPlayCols.some(c => c.name === 'spotify_uri')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN spotify_uri TEXT DEFAULT NULL')
+  }
 
   // Migration: add user tracking columns to rooms
   const roomTrackCols = db.prepare("PRAGMA table_info('rooms')").all() as { name: string }[]

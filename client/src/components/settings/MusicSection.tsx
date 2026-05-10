@@ -141,6 +141,8 @@ function AddRuleForm({
 }) {
   const [targetRoom, setTargetRoom] = useState<string>('')
   const [favourite, setFavourite] = useState<string>('')
+  const [nasUri, setNasUri] = useState<string | null>(null)
+  const [spotifyUri, setSpotifyUri] = useState<string | null>(null)
   const [mode, setMode] = useState<string>(modes[0]?.name ?? '')
   const [triggerType, setTriggerType] = useState<TriggerType>('if_not_playing')
   const [sourceValue, setSourceValue] = useState<string>('')
@@ -196,7 +198,11 @@ function AddRuleForm({
       enabled: 1,
       max_plays: maxPlays ? Number(maxPlays) : null,
       podcast_feed_url: resolvedFeedUrl,
+      nas_uri: nasUri,
+      spotify_uri: spotifyUri,
     })
+    setNasUri(null)
+    setSpotifyUri(null)
     setMaxPlays('')
     setPodcastFeedUrl(null)
     setPodcastFailed(false)
@@ -223,16 +229,18 @@ function AddRuleForm({
         />
       </div>
 
-      {/* Favourite */}
+      {/* What to play */}
       <div>
-        <label htmlFor="rule-favourite" className="text-heading text-sm mb-1.5 block">
-          Favourite
-        </label>
+        <label htmlFor="rule-favourite" className="sr-only">What to play</label>
         <FavouriteSelector
           favourites={favourites}
           value={favourite}
           onChange={setFavourite}
           id="rule-favourite"
+          nasUri={nasUri}
+          onNasUriChange={setNasUri}
+          spotifyUri={spotifyUri}
+          onSpotifyUriChange={setSpotifyUri}
         />
         {podcastResolving && (
           <p className="text-caption text-xs mt-1">Detecting podcast...</p>
@@ -437,6 +445,8 @@ export function MusicSection() {
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
   const [editRoom, setEditRoom] = useState('')
   const [editFavourite, setEditFavourite] = useState('')
+  const [editNasUri, setEditNasUri] = useState<string | null>(null)
+  const [editSpotifyUri, setEditSpotifyUri] = useState<string | null>(null)
   const [editMode, setEditMode] = useState('')
   const [editTriggerType, setEditTriggerType] = useState<AutoPlayRule['trigger_type']>('if_not_playing')
   const [editSourceValue, setEditSourceValue] = useState('')
@@ -558,6 +568,8 @@ export function MusicSection() {
     setEditingRuleId(null)
     setEditRoom('')
     setEditFavourite('')
+    setEditNasUri(null)
+    setEditSpotifyUri(null)
     setEditMode('')
     setEditTriggerType('if_not_playing')
     setEditSourceValue('')
@@ -572,6 +584,8 @@ export function MusicSection() {
     setEditingRuleId(rule.id)
     setEditRoom(rule.room_name ?? '')
     setEditFavourite(rule.favourite_name)
+    setEditNasUri(rule.nas_uri ?? null)
+    setEditSpotifyUri(rule.spotify_uri ?? null)
     setEditMode(rule.mode_name)
     setEditTriggerType(rule.trigger_type)
     setEditSourceValue(rule.trigger_value ?? '')
@@ -671,8 +685,8 @@ export function MusicSection() {
                     </div>
 
                     <div>
-                      <label htmlFor="settings-edit-favourite" className="text-heading text-sm mb-1.5 block">Favourite</label>
-                      <FavouriteSelector favourites={favourites ?? []} value={editFavourite} onChange={setEditFavourite} id="settings-edit-favourite" />
+                      <label htmlFor="settings-edit-favourite" className="sr-only">What to play</label>
+                      <FavouriteSelector favourites={favourites ?? []} value={editFavourite} onChange={setEditFavourite} id="settings-edit-favourite" nasUri={editNasUri} onNasUriChange={setEditNasUri} spotifyUri={editSpotifyUri} onSpotifyUriChange={setEditSpotifyUri} />
                       {editPodcastResolving && (
                         <p className="text-caption text-xs mt-1">Detecting podcast...</p>
                       )}
@@ -768,6 +782,8 @@ export function MusicSection() {
                               trigger_value: effectiveTrigger === 'if_source_not' ? editSourceValue : null,
                               max_plays: editMaxPlays ? Number(editMaxPlays) : null,
                               podcast_feed_url: editPodcastFeedUrl ?? (editPodcastFailed && editManualFeedUrl ? editManualFeedUrl : null),
+                              nas_uri: editNasUri,
+                              spotify_uri: editSpotifyUri,
                             },
                           })
                         }}

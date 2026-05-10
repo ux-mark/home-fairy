@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Pause, Play } from 'lucide-react'
+import { ChevronRight, Pause, Play } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ArtworkImage, type ArtworkImageProps } from './ArtworkImage'
 import { MusicItemMenu, type MusicItemMenuProps } from './MusicItemMenu'
@@ -17,7 +17,7 @@ export interface MusicListItemProps {
   /** Called when the row body is tapped (navigation) */
   onTap: () => void
   /** Called when the play button is tapped */
-  onPlay: () => void
+  onPlay?: () => void
   /** Called when the pause button is tapped (only shown when isCurrentTrack && isPlaying) */
   onPause?: () => void
   /** Disable the play button */
@@ -25,7 +25,11 @@ export interface MusicListItemProps {
   /** Play mutation is pending */
   playPending?: boolean
   /** Menu props (forwarded to MusicItemMenu) */
-  menuProps: Omit<MusicItemMenuProps, 'disabled'>
+  menuProps?: Omit<MusicItemMenuProps, 'disabled'>
+  /** When true: hides play/menu buttons; row tap = select */
+  pickMode?: boolean
+  /** In pick mode: show a drill-down chevron that calls this instead of selecting */
+  onDrillDown?: () => void
   /** Disable all interactive controls (no speaker selected) */
   disabled?: boolean
   /** True if this track is the currently loaded track on the selected speaker */
@@ -67,12 +71,20 @@ export function MusicListItem({
   trackNumber,
   badge,
   duration,
+  pickMode = false,
+  onDrillDown,
 }: MusicListItemProps) {
   const showPause = isCurrentTrack && isPlaying && !!onPause
 
+  const isPickSelected = pickMode && isCurrentTrack
+
   return (
-    <li className={cn('flex items-center gap-3 px-4 py-2.5 min-h-[44px]', isCurrentTrack && 'bg-fairy-500/5')}>
-      {/* Tappable content area — navigates to detail */}
+    <li className={cn(
+      'flex items-center gap-3 px-4 py-2.5 min-h-[44px]',
+      isPickSelected ? 'border-l-2 border-fairy-500 bg-fairy-500/10 pl-[14px]' :
+      isCurrentTrack ? 'bg-fairy-500/5' : '',
+    )}>
+      {/* Tappable content area */}
       <button
         type="button"
         onClick={onTap}
@@ -109,35 +121,55 @@ export function MusicListItem({
         </div>
       </button>
 
-      {/* Active track indicator + duration + play/pause button + context menu */}
-      <div className="flex shrink-0 items-center gap-1">
-        {isCurrentTrack && trackNumber == null && (
-          <ActiveTrackIndicator
-            isActive={isCurrentTrack}
-            isPlaying={isPlaying}
-            className="mr-1"
-          />
-        )}
+      {/* Pick mode: chevron drill-down only */}
+      {pickMode ? (
+        onDrillDown && (
+          <button
+            type="button"
+            onClick={onDrillDown}
+            aria-label={`Browse tracks in ${title}`}
+            className={cn(
+              'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg',
+              'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            )}
+          >
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
+          </button>
+        )
+      ) : (
+        /* Normal mode: play/pause + context menu */
+        <div className="flex shrink-0 items-center gap-1">
+          {isCurrentTrack && trackNumber == null && (
+            <ActiveTrackIndicator
+              isActive={isCurrentTrack}
+              isPlaying={isPlaying}
+              className="mr-1"
+            />
+          )}
 
-        {duration && (
-          <span className="mr-1 text-xs text-caption/70">{duration}</span>
-        )}
+          {duration && (
+            <span className="mr-1 text-xs text-caption/70">{duration}</span>
+          )}
 
-        <button
-          type="button"
-          disabled={disabled || playDisabled || playPending}
-          onClick={showPause ? onPause : onPlay}
-          aria-label={showPause ? `Pause ${title}` : `Play ${title}`}
-          className={playBtnCls}
-        >
-          {showPause
-            ? <Pause className="h-4 w-4" aria-hidden="true" />
-            : <Play className="h-4 w-4" aria-hidden="true" />
-          }
-        </button>
+          {onPlay && (
+            <button
+              type="button"
+              disabled={disabled || playDisabled || playPending}
+              onClick={showPause ? onPause : onPlay}
+              aria-label={showPause ? `Pause ${title}` : `Play ${title}`}
+              className={playBtnCls}
+            >
+              {showPause
+                ? <Pause className="h-4 w-4" aria-hidden="true" />
+                : <Play className="h-4 w-4" aria-hidden="true" />
+              }
+            </button>
+          )}
 
-        <MusicItemMenu {...menuProps} disabled={disabled} />
-      </div>
+          {menuProps && <MusicItemMenu {...menuProps} disabled={disabled} />}
+        </div>
+      )}
     </li>
   )
 }

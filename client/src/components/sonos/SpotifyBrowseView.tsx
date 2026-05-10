@@ -454,11 +454,15 @@ function PlaylistRow({
   speaker,
   onSelect,
   isPinned,
+  pickMode = false,
+  isSelected = false,
 }: {
   playlist: SpotifyPlaylist
   speaker: string | null
   onSelect: (playlist: SpotifyPlaylist) => void
   isPinned: boolean
+  pickMode?: boolean
+  isSelected?: boolean
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
@@ -507,22 +511,27 @@ function PlaylistRow({
       title={playlist.name}
       subtitle={subtitle}
       onTap={() => onSelect(playlist)}
-      onPlay={() => playNow.mutate()}
-      playPending={playNow.isPending}
-      disabled={!speaker}
-      badge={isPinned ? <PinnedBadge /> : undefined}
-      menuProps={{
-        label: playlist.name,
-        onPin: isPinned ? undefined : () => pinPlaylist.mutate(),
-        onPlayNext: () => playNext.mutate(),
-        onAddToQueue: () => addToQueue.mutate(),
-        fairylistTrack: {
-          source: 'spotify',
-          source_uri: playlist.uri,
-          title: playlist.name,
-          album_art_uri: playlist.images?.[0]?.url,
+      pickMode={pickMode}
+      isCurrentTrack={isSelected}
+      isPlaying={false}
+      {...(!pickMode && {
+        onPlay: () => playNow.mutate(),
+        playPending: playNow.isPending,
+        disabled: !speaker,
+        menuProps: {
+          label: playlist.name,
+          onPin: isPinned ? undefined : () => pinPlaylist.mutate(),
+          onPlayNext: () => playNext.mutate(),
+          onAddToQueue: () => addToQueue.mutate(),
+          fairylistTrack: {
+            source: 'spotify',
+            source_uri: playlist.uri,
+            title: playlist.name,
+            album_art_uri: playlist.images?.[0]?.url,
+          },
         },
-      }}
+      })}
+      badge={isPinned ? <PinnedBadge /> : undefined}
     />
   )
 }
@@ -533,10 +542,14 @@ function PinnedPlaylistRow({
   pinned,
   speaker,
   onSelect,
+  pickMode = false,
+  isSelected = false,
 }: {
   pinned: SpotifyPinnedPlaylist
   speaker: string | null
   onSelect: (pinned: SpotifyPinnedPlaylist) => void
+  pickMode?: boolean
+  isSelected?: boolean
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
@@ -589,22 +602,27 @@ function PinnedPlaylistRow({
       title={pinned.name}
       subtitle={subtitle}
       onTap={() => onSelect(pinned)}
-      onPlay={() => playNow.mutate()}
-      playPending={playNow.isPending}
-      disabled={!speaker}
-      menuProps={{
-        label: pinned.name,
-        onPlayNext: () => playNext.mutate(),
-        onAddToQueue: () => addToQueue.mutate(),
-        fairylistTrack: {
-          source: 'spotify',
-          source_uri: pinned.uri,
-          title: pinned.name,
-          album_art_uri: pinned.image_url ?? undefined,
+      pickMode={pickMode}
+      isCurrentTrack={isSelected}
+      isPlaying={false}
+      {...(!pickMode && {
+        onPlay: () => playNow.mutate(),
+        playPending: playNow.isPending,
+        disabled: !speaker,
+        menuProps: {
+          label: pinned.name,
+          onPlayNext: () => playNext.mutate(),
+          onAddToQueue: () => addToQueue.mutate(),
+          fairylistTrack: {
+            source: 'spotify',
+            source_uri: pinned.uri,
+            title: pinned.name,
+            album_art_uri: pinned.image_url ?? undefined,
+          },
+          onRemove: () => unpin.mutate(),
+          removeLabel: 'Unpin playlist',
         },
-        onRemove: () => unpin.mutate(),
-        removeLabel: 'Unpin playlist',
-      }}
+      })}
     />
   )
 }
@@ -613,10 +631,14 @@ function PlaylistList({
   onSelect,
   onSelectPinned,
   speaker,
+  pickMode = false,
+  selectedUri,
 }: {
   onSelect: (playlist: SpotifyPlaylist) => void
   onSelectPinned: (pinned: SpotifyPinnedPlaylist) => void
   speaker: string | null
+  pickMode?: boolean
+  selectedUri?: string
 }) {
   const [sort, setSort] = useState<PlaylistSort>('recent')
   const [pinDialogOpen, setPinDialogOpen] = useState(false)
@@ -719,6 +741,8 @@ function PlaylistList({
               pinned={p}
               speaker={speaker}
               onSelect={onSelectPinned}
+              pickMode={pickMode}
+              isSelected={selectedUri === p.uri}
             />
           ))}
         </ul>
@@ -757,6 +781,8 @@ function PlaylistList({
             speaker={speaker}
             onSelect={onSelect}
             isPinned={pinnedIdSet.has(playlist.id)}
+            pickMode={pickMode}
+            isSelected={selectedUri === playlist.uri}
           />
         ))}
       </ul>
@@ -986,7 +1012,7 @@ function groupAlbumsByCountry(
   return sorted
 }
 
-function AlbumList({ onSelect, speaker }: { onSelect: (album: SpotifyAlbum) => void; speaker: string | null }) {
+function AlbumList({ onSelect, speaker, pickMode = false, selectedUri }: { onSelect: (album: SpotifyAlbum) => void; speaker: string | null; pickMode?: boolean; selectedUri?: string }) {
   const [sort, setSort] = useState<AlbumSort>('recent')
   const [collapsedCountries, setCollapsedCountries] = useState<Set<string>>(new Set())
   const queryClient = useQueryClient()
@@ -1124,7 +1150,7 @@ function AlbumList({ onSelect, speaker }: { onSelect: (album: SpotifyAlbum) => v
                 {!isCollapsed && (
                   <ul>
                     {group.albums.map(item => (
-                      <AlbumRow key={item.album.id} item={item} onSelect={onSelect} showCountry={false} speaker={speaker} />
+                      <AlbumRow key={item.album.id} item={item} onSelect={onSelect} showCountry={false} speaker={speaker} pickMode={pickMode} isSelected={selectedUri === item.album.uri} />
                     ))}
                   </ul>
                 )}
@@ -1136,7 +1162,7 @@ function AlbumList({ onSelect, speaker }: { onSelect: (album: SpotifyAlbum) => v
         // Flat list
         <ul className="-mx-4">
           {sortedItems.map(item => (
-            <AlbumRow key={item.album.id} item={item} onSelect={onSelect} showCountry={hasCountryData} speaker={speaker} />
+            <AlbumRow key={item.album.id} item={item} onSelect={onSelect} showCountry={hasCountryData} speaker={speaker} pickMode={pickMode} isSelected={selectedUri === item.album.uri} />
           ))}
         </ul>
       )}
@@ -1149,11 +1175,15 @@ function AlbumRow({
   onSelect,
   showCountry,
   speaker,
+  pickMode = false,
+  isSelected = false,
 }: {
   item: EnrichedAlbumItem
   onSelect: (album: SpotifyAlbum) => void
   showCountry: boolean
   speaker: string | null
+  pickMode?: boolean
+  isSelected?: boolean
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
@@ -1196,21 +1226,26 @@ function AlbumRow({
       title={item.album.name}
       subtitle={subtitle}
       onTap={() => onSelect(item.album)}
-      onPlay={() => playNow.mutate()}
-      playPending={playNow.isPending}
-      disabled={!speaker}
-      menuProps={{
-        label: item.album.name,
-        onPlayNext: () => playNext.mutate(),
-        onAddToQueue: () => addToQueue.mutate(),
-        fairylistTrack: {
-          source: 'spotify',
-          source_uri: item.album.uri,
-          title: item.album.name,
-          artist: artistNames,
-          album_art_uri: item.album.images?.[0]?.url,
+      pickMode={pickMode}
+      isCurrentTrack={isSelected}
+      isPlaying={false}
+      {...(!pickMode && {
+        onPlay: () => playNow.mutate(),
+        playPending: playNow.isPending,
+        disabled: !speaker,
+        menuProps: {
+          label: item.album.name,
+          onPlayNext: () => playNext.mutate(),
+          onAddToQueue: () => addToQueue.mutate(),
+          fairylistTrack: {
+            source: 'spotify',
+            source_uri: item.album.uri,
+            title: item.album.name,
+            artist: artistNames,
+            album_art_uri: item.album.images?.[0]?.url,
+          },
         },
-      }}
+      })}
     />
   )
 }
@@ -1221,10 +1256,14 @@ function ShowRow({
   show,
   speaker,
   onSelect,
+  pickMode = false,
+  isSelected = false,
 }: {
   show: SpotifyShow
   speaker: string | null
   onSelect: (show: SpotifyShow) => void
+  pickMode?: boolean
+  isSelected?: boolean
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
@@ -1265,20 +1304,25 @@ function ShowRow({
       title={show.name}
       subtitle={subtitle}
       onTap={() => onSelect(show)}
-      onPlay={() => playNow.mutate()}
-      playPending={playNow.isPending}
-      disabled={!speaker}
-      menuProps={{
-        label: show.name,
-        onPlayNext: () => playNext.mutate(),
-        onAddToQueue: () => addToQueue.mutate(),
-        fairylistTrack: {
-          source: 'spotify',
-          source_uri: show.uri,
-          title: show.name,
-          album_art_uri: show.images?.[0]?.url,
+      pickMode={pickMode}
+      isCurrentTrack={isSelected}
+      isPlaying={false}
+      {...(!pickMode && {
+        onPlay: () => playNow.mutate(),
+        playPending: playNow.isPending,
+        disabled: !speaker,
+        menuProps: {
+          label: show.name,
+          onPlayNext: () => playNext.mutate(),
+          onAddToQueue: () => addToQueue.mutate(),
+          fairylistTrack: {
+            source: 'spotify',
+            source_uri: show.uri,
+            title: show.name,
+            album_art_uri: show.images?.[0]?.url,
+          },
         },
-      }}
+      })}
     />
   )
 }
@@ -1286,9 +1330,13 @@ function ShowRow({
 function ShowList({
   onSelect,
   speaker,
+  pickMode = false,
+  selectedUri,
 }: {
   onSelect: (show: SpotifyShow) => void
   speaker: string | null
+  pickMode?: boolean
+  selectedUri?: string
 }) {
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['spotify-saved-shows'],
@@ -1329,7 +1377,7 @@ function ShowList({
   return (
     <ul className="-mx-4">
       {shows.map(show => (
-        <ShowRow key={show.id} show={show} speaker={speaker} onSelect={onSelect} />
+        <ShowRow key={show.id} show={show} speaker={speaker} onSelect={onSelect} pickMode={pickMode} isSelected={selectedUri === show.uri} />
       ))}
     </ul>
   )
@@ -1934,17 +1982,91 @@ function SpotifyCountryArtistList({
   )
 }
 
+// ── Pick-mode artist album drill-down ─────────────────────────────────────────
+
+function PickArtistAlbums({
+  artist,
+  onBack,
+  onPick,
+  selectedUri,
+}: {
+  artist: SpotifyArtist
+  onBack: () => void
+  onPick: (title: string, uri: string) => void
+  selectedUri?: string
+}) {
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['spotify-artist-albums-pick', artist.id],
+    queryFn: () => api.spotify.getArtistAlbums(artist.id),
+    staleTime: 5 * 60_000,
+  })
+
+  const albums = data?.items ?? []
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onBack}
+        className={cn(
+          'flex items-center gap-1.5 rounded-lg px-1 text-sm text-caption transition-colors',
+          'min-h-[44px] hover:text-body',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+        )}
+      >
+        <ChevronDown className="h-4 w-4 -rotate-90" aria-hidden="true" />
+        {artist.name}
+      </button>
+
+      {isLoading && <ListSkeleton count={5} />}
+      {isError && (
+        <ErrorState
+          message={(error as Error).message ?? 'Could not load albums'}
+          onRetry={() => refetch()}
+        />
+      )}
+      {!isLoading && !isError && albums.length === 0 && (
+        <p className="px-4 py-6 text-center text-sm text-caption">No albums found</p>
+      )}
+      {albums.length > 0 && (
+        <ul className="-mx-4">
+          {albums.map(album => (
+            <MusicListItem
+              key={album.id}
+              artwork={{ images: album.images, size: 48 }}
+              title={album.name}
+              subtitle={album.artists.map(a => a.name).join(', ')}
+              onTap={() => onPick(album.name, album.uri)}
+              pickMode
+              isCurrentTrack={selectedUri === album.uri}
+              isPlaying={false}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 // ── SpotifyBrowseView ─────────────────────────────────────────────────────────
 
 interface SpotifyBrowseViewProps {
   searchQuery: string
   targetSpeaker?: string | null
+  onPickPlaylist?: (title: string, uri: string) => void
+  onPickAlbum?: (title: string, uri: string) => void
+  onPickShow?: (title: string, uri: string) => void
+  onPickArtist?: (title: string, uri: string) => void
+  selectedUri?: string
 }
 
-export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseViewProps) {
+export function SpotifyBrowseView({ searchQuery, targetSpeaker, onPickPlaylist, onPickAlbum, onPickShow, onPickArtist, selectedUri }: SpotifyBrowseViewProps) {
   const [view, setView] = useState<SpotifyView>('home')
   const [browseMode, setBrowseMode] = usePersistedState<BrowseMode>('spotify-browse-mode', 'playlists')
   const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
+  const [drillArtist, setDrillArtist] = useState<SpotifyArtist | null>(null)
+
+  const inPickMode = !!(onPickPlaylist || onPickAlbum || onPickShow || onPickArtist)
 
   const { selectedSpeaker } = usePlaybackState()
   const speaker = targetSpeaker ?? selectedSpeaker
@@ -1967,22 +2089,27 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
   })
 
   function handleSelectPlaylist(playlist: SpotifyPlaylist) {
+    if (onPickPlaylist) { onPickPlaylist(playlist.name, playlist.uri); return }
     navigate(`/sonos/browse/spotify/playlist/${encodeURIComponent(playlist.id)}${speakerQuery}`)
   }
 
   function handleSelectPinned(pinned: SpotifyPinnedPlaylist) {
+    if (onPickPlaylist) { onPickPlaylist(pinned.name, pinned.uri); return }
     navigate(`/sonos/browse/spotify/playlist/${encodeURIComponent(pinned.playlist_id)}${speakerQuery}`)
   }
 
   function handleSelectAlbum(album: SpotifyAlbum) {
+    if (onPickAlbum) { onPickAlbum(album.name, album.uri); return }
     navigate(`/sonos/browse/spotify/album/${encodeURIComponent(album.id)}${speakerQuery}`)
   }
 
   function handleSelectShow(show: SpotifyShow) {
+    if (onPickShow) { onPickShow(show.name, show.uri); return }
     navigate(`/sonos/browse/spotify/show/${encodeURIComponent(show.id)}${speakerQuery}`)
   }
 
   function handleSelectArtist(artist: SpotifyArtist) {
+    if (inPickMode) { setDrillArtist(artist); return }
     navigate(`/sonos/browse/spotify/artist/${encodeURIComponent(artist.id)}${speakerQuery}`)
   }
 
@@ -2026,6 +2153,17 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
     )
   }
 
+  if (drillArtist && inPickMode && onPickAlbum) {
+    return (
+      <PickArtistAlbums
+        artist={drillArtist}
+        onBack={() => setDrillArtist(null)}
+        onPick={onPickAlbum}
+        selectedUri={selectedUri}
+      />
+    )
+  }
+
   if (view === 'country-artists' && selectedCountry) {
     return (
       <SpotifyCountryArtistList
@@ -2045,11 +2183,13 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker }: SpotifyBrowseV
           onSelect={handleSelectPlaylist}
           onSelectPinned={handleSelectPinned}
           speaker={speaker}
+          pickMode={!!onPickPlaylist}
+          selectedUri={selectedUri}
         />
       )}
       {browseMode === 'countries' && <SpotifyCountryList onSelectCountry={handleSelectCountry} />}
-      {browseMode === 'podcasts' && <ShowList onSelect={handleSelectShow} speaker={speaker} />}
-      {browseMode === 'albums' && <AlbumList onSelect={handleSelectAlbum} speaker={speaker} />}
+      {browseMode === 'podcasts' && <ShowList onSelect={handleSelectShow} speaker={speaker} pickMode={!!onPickShow} selectedUri={selectedUri} />}
+      {browseMode === 'albums' && <AlbumList onSelect={handleSelectAlbum} speaker={speaker} pickMode={!!onPickAlbum} selectedUri={selectedUri} />}
       {browseMode === 'artists' && <ArtistList onSelect={handleSelectArtist} />}
       {browseMode === 'songs' && <SongsList speaker={speaker} />}
     </div>

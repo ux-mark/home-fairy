@@ -1132,7 +1132,7 @@ class SonosClient {
     // doesn't exist in all node-sonos-http-api versions
     const favourites = await this.getFavourites()
     return favourites
-      .filter(f => f.contentClass === 'object.item.audioItem.audioBroadcast')
+      .filter(f => f.contentClass?.startsWith('object.item.audioItem.audioBroadcast'))
       .map(f => ({
         title: f.title,
         uri: f.uri ?? '',

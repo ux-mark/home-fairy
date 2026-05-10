@@ -32,9 +32,11 @@ export function GroupSpeakersPanel({
   const groupMembers = group?.members ?? [coordinatorSpeaker]
   const groupMemberSet = new Set(groupMembers)
 
-  // Speakers not in this group (and not this coordinator) — available to add
+  // Speakers not in this group and not already coordinated by a different group
   const availableSpeakers = allSpeakers.filter(
-    e => !groupMemberSet.has(e.speakerName),
+    e =>
+      !groupMemberSet.has(e.speakerName) &&
+      !(e.group && e.group.members.length > 1 && e.group.coordinator !== coordinatorSpeaker),
   )
 
   function invalidate() {
