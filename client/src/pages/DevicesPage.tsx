@@ -231,25 +231,28 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
   const [level, setLevel] = useState(() => (device.hubDevice?.attributes as Record<string, unknown> | undefined)?.level as number ?? 50)
 
   const isDeactivated = device.isDeactivated
-  const hubNewState = device.isOn ? 'off' : 'on'
 
+  // Pass desired state as the mutation variable so it stays consistent
+  // through onMutate/onSuccess/onError after the optimistic update flips
+  // device.isOn — see the matching pattern in KasaDeviceCard below.
   const toggleMutation = useMutation({
-    mutationFn: () => api.hubitat.sendCommand(device.hubDevice!.id.toString(), hubNewState),
-    onMutate: async () => {
+    mutationFn: (state: 'on' | 'off') =>
+      api.hubitat.sendCommand(device.hubDevice!.id.toString(), state),
+    onMutate: async (state: 'on' | 'off') => {
       await queryClient.cancelQueries({ queryKey: ['hubitat', 'devices'] })
       const previous = queryClient.getQueryData<HubDevice[]>(['hubitat', 'devices'])
       queryClient.setQueryData<HubDevice[]>(['hubitat', 'devices'], old => {
         if (!old) return old
         return old.map(d =>
           d.id === device.hubDevice!.id
-            ? { ...d, attributes: { ...(d.attributes as Record<string, unknown>), switch: hubNewState } }
+            ? { ...d, attributes: { ...(d.attributes as Record<string, unknown>), switch: state } }
             : d
         )
       })
       return { previous }
     },
-    onSuccess: () => {
-      toast({ message: `${device.label} turned ${hubNewState}` })
+    onSuccess: (_data, state) => {
+      toast({ message: `${device.label} turned ${state}` })
     },
     onError: (_err, _vars, context) => {
       if (context?.previous) {
@@ -363,7 +366,7 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
         </button>
 
         <button
-          onClick={() => toggleMutation.mutate()}
+          onClick={() => toggleMutation.mutate(device.isOn ? 'off' : 'on')}
           disabled={toggleMutation.isPending || isDeactivated}
           className={cn(
             'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
@@ -421,25 +424,28 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
   const kasa = device.kasaDevice!
 
   const isDeactivated = device.isDeactivated
-  const newState = device.isOn ? 'off' : 'on'
 
+  // The optimistic update flips device.isOn before onSuccess runs, so any
+  // value computed from device.isOn at render time is stale by the time the
+  // toast fires. Pass the desired state as the mutation variable so it
+  // travels with the request through onMutate, onSuccess, and onError.
   const toggleMutation = useMutation({
-    mutationFn: () => api.kasa.sendCommand(kasa.id, newState),
-    onMutate: async () => {
+    mutationFn: (state: 'on' | 'off') => api.kasa.sendCommand(kasa.id, state),
+    onMutate: async (state: 'on' | 'off') => {
       await queryClient.cancelQueries({ queryKey: ['kasa', 'devices'] })
       const previous = queryClient.getQueryData<KasaDevice[]>(['kasa', 'devices'])
       queryClient.setQueryData<KasaDevice[]>(['kasa', 'devices'], old => {
         if (!old) return old
         return old.map(d =>
           d.id === kasa.id
-            ? { ...d, attributes: { ...d.attributes, switch: newState } }
+            ? { ...d, attributes: { ...d.attributes, switch: state } }
             : d
         )
       })
       return { previous }
     },
-    onSuccess: () => {
-      toast({ message: `${device.label} turned ${newState}` })
+    onSuccess: (_data, state) => {
+      toast({ message: `${device.label} turned ${state}` })
     },
     onError: (_err, _vars, context) => {
       if (context?.previous) {
@@ -505,7 +511,7 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
             {device.label}
           </Link>
           <button
-            onClick={() => toggleMutation.mutate()}
+            onClick={() => toggleMutation.mutate(device.isOn ? 'off' : 'on')}
             disabled={toggleMutation.isPending || !kasa.is_online || isDeactivated}
             className={cn(
               'flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
