@@ -136,8 +136,30 @@ function LightCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[] })
 
   const toggleMutation = useMutation({
     mutationFn: () => api.lifx.toggle(`id:${light.id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }),
-    onError: () => toast({ message: 'Failed to toggle light', type: 'error' }),
+    // Optimistic toggle — same pattern as LightsPage. We deliberately don't
+    // invalidate on settle: the LIFX cloud GET /lights/all lags ~1–2 s behind
+    // a successful toggle ack, so an immediate refetch returns the pre-toggle
+    // state and stomps the optimistic value. The cache reconciles via the
+    // 30 s staleTime / next navigation.
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['lifx', 'lights'] })
+      const previous = queryClient.getQueryData<Light[]>(['lifx', 'lights'])
+      queryClient.setQueryData<Light[]>(['lifx', 'lights'], old => {
+        if (!old) return old
+        return old.map(l =>
+          l.id === light.id
+            ? { ...l, power: l.power === 'on' ? 'off' : 'on' }
+            : l,
+        )
+      })
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['lifx', 'lights'], context.previous)
+      }
+      toast({ message: 'Failed to toggle light', type: 'error' })
+    },
   })
 
   return (
@@ -235,9 +257,12 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
       }
       toast({ message: `Failed to control ${device.label}`, type: 'error' })
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['hubitat'] })
-    },
+    // No onSettled invalidate. The mutation ack is "command queued at the
+    // hub", not "device confirmed state". The hubitat:event webhook will
+    // arrive with eventName='switch' a moment later and the socket handler
+    // does the invalidate then — at which point the server DB has the new
+    // state. Invalidating immediately just stomps the optimistic value with
+    // the pre-toggle row.
   })
 
   const setLevelMutation = useMutation({
@@ -264,7 +289,7 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
         queryClient.setQueryData(['hubitat', 'devices'], context.previous)
       }
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['hubitat'] }),
+    // No onSettled invalidate — see comment on toggleMutation above.
   })
 
   const isKeepOn = !!device.deviceRoom?.config?.exclude_from_all_off
@@ -422,9 +447,11 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
       }
       toast({ message: `Failed to control ${device.label}`, type: 'error' })
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['kasa'] })
-    },
+    // No onSettled invalidate. The mutation ack is "command sent to sidecar";
+    // the sidecar's reported state lags up to one poll interval (10 s) before
+    // the server DB sees the new value. The kasa:state socket event fires when
+    // the poller actually reads the new state — that's when the cache should
+    // refetch, not on the mutation ack.
   })
 
   const isKeepOn = !!device.deviceRoom?.config?.exclude_from_all_off

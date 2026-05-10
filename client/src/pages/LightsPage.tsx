@@ -35,6 +35,12 @@ function LightRow({ light }: { light: Light }) {
     mutationFn: () => api.lifx.toggle(`id:${light.id}`),
     // Optimistic toggle — flip the cached power state immediately so the
     // power icon and brightness label react before the cloud round-trip.
+    //
+    // We deliberately do NOT invalidate the cache on settle. The mutation
+    // ack means "command queued at LIFX cloud", not "device state confirmed";
+    // an immediate refetch would pull pre-toggle state from /lights/all
+    // (LIFX cloud lags ~1–2 s behind acks) and stomp the optimistic value.
+    // The natural staleTime + the next user navigation eventually reconcile.
     onMutate: async () => {
       await queryClient.cancelQueries({ queryKey: ['lifx', 'lights'] })
       const previous = queryClient.getQueryData<Light[]>(['lifx', 'lights'])
@@ -54,7 +60,6 @@ function LightRow({ light }: { light: Light }) {
       }
       toast({ message: 'Failed to toggle light', type: 'error' })
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }),
   })
 
   const identifyMutation = useMutation({
@@ -65,8 +70,7 @@ function LightRow({ light }: { light: Light }) {
     mutationFn: (b: number) =>
       api.lifx.setState(`id:${light.id}`, { brightness: b / 100, duration: 0.3 }),
     // Optimistic brightness — keep the cached value in sync with the slider
-    // commit so the row's "X%" label doesn't snap back to the stale value
-    // between commit and refetch.
+    // commit. Same no-invalidate-on-settle reasoning as toggleMutation.
     onMutate: async (b: number) => {
       await queryClient.cancelQueries({ queryKey: ['lifx', 'lights'] })
       const previous = queryClient.getQueryData<Light[]>(['lifx', 'lights'])
@@ -83,7 +87,6 @@ function LightRow({ light }: { light: Light }) {
         queryClient.setQueryData(['lifx', 'lights'], context.previous)
       }
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }),
   })
 
   const handleBrightnessCommit = () => {
