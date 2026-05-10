@@ -1982,6 +1982,72 @@ function SpotifyCountryArtistList({
   )
 }
 
+// ── Pick-mode artist album drill-down ─────────────────────────────────────────
+
+function PickArtistAlbums({
+  artist,
+  onBack,
+  onPick,
+  selectedUri,
+}: {
+  artist: SpotifyArtist
+  onBack: () => void
+  onPick: (title: string, uri: string) => void
+  selectedUri?: string
+}) {
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['spotify-artist-albums-pick', artist.id],
+    queryFn: () => api.spotify.getArtistAlbums(artist.id),
+    staleTime: 5 * 60_000,
+  })
+
+  const albums = data?.items ?? []
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onBack}
+        className={cn(
+          'flex items-center gap-1.5 rounded-lg px-1 text-sm text-caption transition-colors',
+          'min-h-[44px] hover:text-body',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+        )}
+      >
+        <ChevronDown className="h-4 w-4 -rotate-90" aria-hidden="true" />
+        {artist.name}
+      </button>
+
+      {isLoading && <ListSkeleton count={5} />}
+      {isError && (
+        <ErrorState
+          message={(error as Error).message ?? 'Could not load albums'}
+          onRetry={() => refetch()}
+        />
+      )}
+      {!isLoading && !isError && albums.length === 0 && (
+        <p className="px-4 py-6 text-center text-sm text-caption">No albums found</p>
+      )}
+      {albums.length > 0 && (
+        <ul className="-mx-4">
+          {albums.map(album => (
+            <MusicListItem
+              key={album.id}
+              artwork={{ images: album.images, size: 48 }}
+              title={album.name}
+              subtitle={album.artists.map(a => a.name).join(', ')}
+              onTap={() => onPick(album.name, album.uri)}
+              pickMode
+              isCurrentTrack={selectedUri === album.uri}
+              isPlaying={false}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 // ── SpotifyBrowseView ─────────────────────────────────────────────────────────
 
 interface SpotifyBrowseViewProps {
@@ -1998,6 +2064,9 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker, onPickPlaylist, 
   const [view, setView] = useState<SpotifyView>('home')
   const [browseMode, setBrowseMode] = usePersistedState<BrowseMode>('spotify-browse-mode', 'playlists')
   const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
+  const [drillArtist, setDrillArtist] = useState<SpotifyArtist | null>(null)
+
+  const inPickMode = !!(onPickPlaylist || onPickAlbum || onPickShow || onPickArtist)
 
   const { selectedSpeaker } = usePlaybackState()
   const speaker = targetSpeaker ?? selectedSpeaker
@@ -2040,7 +2109,7 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker, onPickPlaylist, 
   }
 
   function handleSelectArtist(artist: SpotifyArtist) {
-    if (onPickArtist) { onPickArtist(artist.name, artist.uri); return }
+    if (inPickMode) { setDrillArtist(artist); return }
     navigate(`/sonos/browse/spotify/artist/${encodeURIComponent(artist.id)}${speakerQuery}`)
   }
 
@@ -2080,6 +2149,17 @@ export function SpotifyBrowseView({ searchQuery, targetSpeaker, onPickPlaylist, 
         query={debouncedQuery}
         speaker={speaker}
         onSelectArtist={handleSelectArtist}
+      />
+    )
+  }
+
+  if (drillArtist && inPickMode && onPickAlbum) {
+    return (
+      <PickArtistAlbums
+        artist={drillArtist}
+        onBack={() => setDrillArtist(null)}
+        onPick={onPickAlbum}
+        selectedUri={selectedUri}
       />
     )
   }
