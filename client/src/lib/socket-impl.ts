@@ -85,11 +85,15 @@ export function attachDashboardListeners(queryClient: QueryClient): () => void {
     queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] })
   }
 
-  // Device commands from another tab or automation
-  function handleDeviceCommand() {
-    queryClient.invalidateQueries({ queryKey: ['hubitat'] })
-    queryClient.invalidateQueries({ queryKey: ['kasa'] })
-  }
+  // device:command is emitted the moment a command is acked at the device
+  // route — i.e. before the underlying device state has actually propagated.
+  // Invalidating ['kasa']/['hubitat'] here would refetch BEFORE the sidecar
+  // poll or hub webhook has delivered the new state, stomping the
+  // optimistic update on the originating tab.
+  //
+  // Cross-tab sync still works because the state-change events that fire
+  // when state HAS propagated — `kasa:state` (poller) and `hubitat:event`
+  // with eventName='switch' (webhook) — already invalidate the right keys.
 
   function handleNotificationNew() {
     queryClient.invalidateQueries({ queryKey: ['notifications'] })
@@ -105,7 +109,6 @@ export function attachDashboardListeners(queryClient: QueryClient): () => void {
   s.on('scene:change', handleSceneChange)
   s.on('kasa:state', handleKasaState)
   s.on('kasa:power', handleKasaPower)
-  s.on('device:command', handleDeviceCommand)
   s.on('notification:new', handleNotificationNew)
   s.on('notification:update', handleNotificationUpdate)
 
@@ -116,7 +119,6 @@ export function attachDashboardListeners(queryClient: QueryClient): () => void {
     s.off('scene:change', handleSceneChange)
     s.off('kasa:state', handleKasaState)
     s.off('kasa:power', handleKasaPower)
-    s.off('device:command', handleDeviceCommand)
     s.off('notification:new', handleNotificationNew)
     s.off('notification:update', handleNotificationUpdate)
   }
