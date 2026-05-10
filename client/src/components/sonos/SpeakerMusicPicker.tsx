@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { Loader2, X } from 'lucide-react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { cn } from '@/lib/utils'
@@ -46,14 +46,6 @@ export function SpeakerMusicPicker({
       onClose()
     }
   }
-
-  // Sonos favourites
-  const { data: favourites = [] } = useQuery({
-    queryKey: ['sonos', 'favourites'],
-    queryFn: api.sonos.getFavourites,
-    staleTime: 5 * 60 * 1000,
-    retry: false,
-  })
 
   const playFavouriteMutation = useMutation({
     mutationFn: (name: string) => api.sonos.playFavourite(speakerName, name),
@@ -155,7 +147,6 @@ export function SpeakerMusicPicker({
               <div>
                 <FavouriteSelector
                   id={`fav-selector-picker-${speakerName}`}
-                  favourites={favourites}
                   value={selectedFavourite}
                   onChange={setSelectedFavourite}
                   includeContinue={isPlaying || isPaused}

@@ -207,11 +207,6 @@ export default function SonosDetailPage() {
     staleTime: 60_000,
   })
 
-  const { data: favourites } = useQuery({
-    queryKey: ['sonos', 'favourites'],
-    queryFn: api.sonos.getFavourites,
-    staleTime: 60_000,
-  })
 
   const { data: autoPlayRules } = useQuery({
     queryKey: ['sonos', 'auto-play'],
@@ -721,7 +716,6 @@ export default function SonosDetailPage() {
                         <div>
                           <label htmlFor="edit-rule-favourite" className="sr-only">What to play</label>
                           <FavouriteSelector
-                            favourites={favourites ?? []}
                             value={newRuleFavourite}
                             onChange={setNewRuleFavourite}
                             id="edit-rule-favourite"
@@ -936,7 +930,6 @@ export default function SonosDetailPage() {
                 <div>
                   <label htmlFor="detail-rule-favourite" className="sr-only">What to play</label>
                   <FavouriteSelector
-                    favourites={favourites ?? []}
                     value={newRuleFavourite}
                     onChange={setNewRuleFavourite}
                     id="detail-rule-favourite"

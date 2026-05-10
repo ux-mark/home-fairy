@@ -4,7 +4,7 @@ import { Link, useLocation } from 'react-router-dom'
 import { CheckCircle, AlertCircle, AlertTriangle, Pencil, Zap, CirclePause, CircleSlash } from 'lucide-react'
 import * as Switch from '@radix-ui/react-switch'
 import { api } from '@/lib/api'
-import type { AutoPlayRule, ModeWithTriggers, SonosFavourite } from '@/lib/api'
+import type { AutoPlayRule, ModeWithTriggers } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
@@ -126,7 +126,6 @@ function AddRuleForm({
   onSave,
   onCancel,
   rooms,
-  favourites,
   modes,
   isSaving,
   availableSources,
@@ -134,7 +133,6 @@ function AddRuleForm({
   onSave: (data: Omit<AutoPlayRule, 'id'>) => void
   onCancel: () => void
   rooms: string[]
-  favourites: SonosFavourite[]
   modes: ModeWithTriggers[]
   isSaving: boolean
   availableSources: string[]
@@ -233,7 +231,6 @@ function AddRuleForm({
       <div>
         <label htmlFor="rule-favourite" className="sr-only">What to play</label>
         <FavouriteSelector
-          favourites={favourites}
           value={favourite}
           onChange={setFavourite}
           id="rule-favourite"
@@ -499,12 +496,6 @@ export function MusicSection() {
   const followMeEnabled = prefs?.sonos_follow_me === 'true'
 
   // Sonos data
-  const { data: favourites } = useQuery({
-    queryKey: ['sonos', 'favourites'],
-    queryFn: api.sonos.getFavourites,
-    retry: false,
-  })
-
   const { data: speakers } = useQuery({
     queryKey: ['sonos', 'speakers'],
     queryFn: api.sonos.getSpeakers,
@@ -686,7 +677,7 @@ export function MusicSection() {
 
                     <div>
                       <label htmlFor="settings-edit-favourite" className="sr-only">What to play</label>
-                      <FavouriteSelector favourites={favourites ?? []} value={editFavourite} onChange={setEditFavourite} id="settings-edit-favourite" nasUri={editNasUri} onNasUriChange={setEditNasUri} spotifyUri={editSpotifyUri} onSpotifyUriChange={setEditSpotifyUri} />
+                      <FavouriteSelector value={editFavourite} onChange={setEditFavourite} id="settings-edit-favourite" nasUri={editNasUri} onNasUriChange={setEditNasUri} spotifyUri={editSpotifyUri} onSpotifyUriChange={setEditSpotifyUri} />
                       {editPodcastResolving && (
                         <p className="text-caption text-xs mt-1">Detecting podcast...</p>
                       )}
@@ -883,7 +874,6 @@ export function MusicSection() {
               onSave={(data) => createRuleMutation.mutate(data)}
               onCancel={() => setShowAddForm(false)}
               rooms={assignedRooms}
-              favourites={favourites ?? []}
               modes={modes ?? []}
               isSaving={createRuleMutation.isPending}
               availableSources={availableSources ?? []}
