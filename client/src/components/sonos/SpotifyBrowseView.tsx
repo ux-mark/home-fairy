@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
+import { useWindowVirtualizer } from '@tanstack/react-virtual'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as Popover from '@radix-ui/react-popover'
@@ -544,12 +545,15 @@ function PinnedPlaylistRow({
   onSelect,
   pickMode = false,
   isSelected = false,
+  wrapAs,
 }: {
   pinned: SpotifyPinnedPlaylist
   speaker: string | null
   onSelect: (pinned: SpotifyPinnedPlaylist) => void
   pickMode?: boolean
   isSelected?: boolean
+  /** Forwarded to MusicListItem so virtualised callers can use `'div'`. */
+  wrapAs?: 'li' | 'div'
 }) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
@@ -598,6 +602,7 @@ function PinnedPlaylistRow({
 
   return (
     <MusicListItem
+      as={wrapAs}
       artwork={{ images, size: 48 }}
       title={pinned.name}
       subtitle={subtitle}
@@ -624,6 +629,65 @@ function PinnedPlaylistRow({
         },
       })}
     />
+  )
+}
+
+// ── Virtualised pinned list ──────────────────────────────────────────────────
+function VirtualisedPinnedList({
+  pinned,
+  speaker,
+  onSelectPinned,
+  pickMode,
+  selectedUri,
+}: {
+  pinned: SpotifyPinnedPlaylist[]
+  speaker: string | null
+  onSelectPinned: (pinned: SpotifyPinnedPlaylist) => void
+  pickMode?: boolean
+  selectedUri?: string
+}) {
+  const parentRef = useRef<HTMLDivElement>(null)
+  const virtualizer = useWindowVirtualizer({
+    count: pinned.length,
+    estimateSize: () => 68,
+    overscan: 6,
+    scrollMargin: parentRef.current?.offsetTop ?? 0,
+    getItemKey: i => pinned[i].playlist_id,
+  })
+  return (
+    <div
+      ref={parentRef}
+      role="list"
+      className="-mx-4 mb-2"
+      style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
+    >
+      {virtualizer.getVirtualItems().map(item => {
+        const p = pinned[item.index]
+        return (
+          <div
+            key={item.key}
+            data-index={item.index}
+            ref={virtualizer.measureElement}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)`,
+            }}
+          >
+            <PinnedPlaylistRow
+              pinned={p}
+              speaker={speaker}
+              onSelect={onSelectPinned}
+              pickMode={pickMode}
+              isSelected={selectedUri === p.uri}
+              wrapAs="div"
+            />
+          </div>
+        )
+      })}
+    </div>
   )
 }
 
@@ -734,18 +798,13 @@ function PlaylistList({
     <div>
       <PinnedHeader onPin={() => setPinDialogOpen(true)} count={pinned.length} />
       {pinned.length > 0 && (
-        <ul className="-mx-4 mb-2">
-          {pinned.map(p => (
-            <PinnedPlaylistRow
-              key={p.playlist_id}
-              pinned={p}
-              speaker={speaker}
-              onSelect={onSelectPinned}
-              pickMode={pickMode}
-              isSelected={selectedUri === p.uri}
-            />
-          ))}
-        </ul>
+        <VirtualisedPinnedList
+          pinned={pinned}
+          speaker={speaker}
+          onSelectPinned={onSelectPinned}
+          pickMode={pickMode}
+          selectedUri={selectedUri}
+        />
       )}
       {pinned.length === 0 && <SpotifyApiInfoNote />}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-1 pt-1">

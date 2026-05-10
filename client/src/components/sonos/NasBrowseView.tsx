@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useWindowVirtualizer } from '@tanstack/react-virtual'
 import {
   AlertTriangle,
   ChevronDown,
@@ -514,7 +515,9 @@ function ArtistList({
                 {!isCollapsed && (
                   <ul>
                     {group.items.map(artist => (
-                      <NasArtistRow key={artist.name} artist={artist} onSelect={onSelectArtist} showCountry={false} />
+                      <li key={artist.name}>
+                        <NasArtistRow artist={artist} onSelect={onSelectArtist} showCountry={false} />
+                      </li>
                     ))}
                   </ul>
                 )}
@@ -523,16 +526,67 @@ function ArtistList({
           })}
         </div>
       ) : (
-        <ul className="-mx-4">
-          {artists.map(artist => (
-            <NasArtistRow key={artist.name} artist={artist} onSelect={onSelectArtist} showCountry={hasCountryData} />
-          ))}
-        </ul>
+        <VirtualisedArtistList
+          artists={artists}
+          onSelect={onSelectArtist}
+          showCountry={hasCountryData}
+        />
       )}
     </div>
   )
 }
 
+// ── Virtualised flat artist list ─────────────────────────────────────────────
+function VirtualisedArtistList({
+  artists,
+  onSelect,
+  showCountry,
+}: {
+  artists: NasEnrichedArtist[]
+  onSelect: (name: string) => void
+  showCountry: boolean
+}) {
+  const parentRef = useRef<HTMLDivElement>(null)
+  const virtualizer = useWindowVirtualizer({
+    count: artists.length,
+    estimateSize: () => 64,
+    overscan: 8,
+    scrollMargin: parentRef.current?.offsetTop ?? 0,
+    getItemKey: i => artists[i].name,
+  })
+  return (
+    <div
+      ref={parentRef}
+      role="list"
+      className="-mx-4"
+      style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
+    >
+      {virtualizer.getVirtualItems().map(item => {
+        const artist = artists[item.index]
+        return (
+          <div
+            key={item.key}
+            role="listitem"
+            data-index={item.index}
+            ref={virtualizer.measureElement}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)`,
+            }}
+          >
+            <NasArtistRow artist={artist} onSelect={onSelect} showCountry={showCountry} />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// Returns the button body without an outer wrapper so the caller chooses
+// `<li>` (country-grouped) or an absolutely-positioned virtual row (flat).
 function NasArtistRow({
   artist,
   onSelect,
@@ -543,30 +597,28 @@ function NasArtistRow({
   showCountry: boolean
 }) {
   return (
-    <li>
-      <button
-        type="button"
-        onClick={() => onSelect(artist.name)}
-        className={cn(
-          'flex w-full items-center gap-3 px-4 py-2.5 text-left',
-          'transition-colors hover:bg-[var(--bg-secondary)]',
-          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          'min-h-[44px]',
-        )}
-      >
-        <ArtworkImage src={artist.image_url} size={40} rounded="rounded-full" fallback="user" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
-          <p className="text-xs text-caption">
-            {artist.albumCount} {artist.albumCount === 1 ? 'album' : 'albums'} · {artist.trackCount} {artist.trackCount === 1 ? 'track' : 'tracks'}
-            {showCountry && artist.country_code && (
-              <span className="text-caption/60"> · {artist.country_code}</span>
-            )}
-          </p>
-        </div>
-        <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
-      </button>
-    </li>
+    <button
+      type="button"
+      onClick={() => onSelect(artist.name)}
+      className={cn(
+        'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+        'transition-colors hover:bg-[var(--bg-secondary)]',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+        'min-h-[44px]',
+      )}
+    >
+      <ArtworkImage src={artist.image_url} size={40} rounded="rounded-full" fallback="user" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
+        <p className="text-xs text-caption">
+          {artist.albumCount} {artist.albumCount === 1 ? 'album' : 'albums'} · {artist.trackCount} {artist.trackCount === 1 ? 'track' : 'tracks'}
+          {showCountry && artist.country_code && (
+            <span className="text-caption/60"> · {artist.country_code}</span>
+          )}
+        </p>
+      </div>
+      <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+    </button>
   )
 }
 
@@ -730,12 +782,80 @@ function AlbumList({
           })}
         </div>
       ) : (
-        <ul className="-mx-4">
-          {albums.map(album => (
-            <NasAlbumRow key={album.objectId} album={album} onSelect={onSelectAlbum} showCountry={hasCountryData} speaker={speaker} onDrillDown={onDrillIntoAlbum ? () => onDrillIntoAlbum(album) : undefined} selectedObjectId={selectedObjectId} />
-          ))}
-        </ul>
+        <VirtualisedAlbumList
+          albums={albums}
+          onSelectAlbum={onSelectAlbum}
+          showCountry={hasCountryData}
+          speaker={speaker}
+          onDrillIntoAlbum={onDrillIntoAlbum}
+          selectedObjectId={selectedObjectId}
+        />
       )}
+    </div>
+  )
+}
+
+// ── Virtualised flat album list ──────────────────────────────────────────────
+function VirtualisedAlbumList({
+  albums,
+  onSelectAlbum,
+  showCountry,
+  speaker,
+  onDrillIntoAlbum,
+  selectedObjectId,
+}: {
+  albums: NasEnrichedAlbum[]
+  onSelectAlbum: (album: SonosGenreAlbum) => void
+  showCountry: boolean
+  speaker: string | null
+  onDrillIntoAlbum?: (album: SonosGenreAlbum) => void
+  selectedObjectId?: string
+}) {
+  const parentRef = useRef<HTMLDivElement>(null)
+  // NasAlbumRow → MusicListItem; the row height is 48px artwork + 20px
+  // vertical padding ≈ 68px. measureElement on each rendered child will
+  // refine the actual height as items come into view.
+  const virtualizer = useWindowVirtualizer({
+    count: albums.length,
+    estimateSize: () => 68,
+    overscan: 8,
+    scrollMargin: parentRef.current?.offsetTop ?? 0,
+    getItemKey: i => albums[i].objectId,
+  })
+  return (
+    <div
+      ref={parentRef}
+      role="list"
+      className="-mx-4"
+      style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
+    >
+      {virtualizer.getVirtualItems().map(item => {
+        const album = albums[item.index]
+        return (
+          <div
+            key={item.key}
+            data-index={item.index}
+            ref={virtualizer.measureElement}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)`,
+            }}
+          >
+            <NasAlbumRow
+              album={album}
+              onSelect={onSelectAlbum}
+              showCountry={showCountry}
+              speaker={speaker}
+              onDrillDown={onDrillIntoAlbum ? () => onDrillIntoAlbum(album) : undefined}
+              selectedObjectId={selectedObjectId}
+              wrapAs="div"
+            />
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -747,6 +867,7 @@ function NasAlbumRow({
   speaker,
   onDrillDown,
   selectedObjectId,
+  wrapAs,
 }: {
   album: NasEnrichedAlbum
   onSelect: (album: SonosGenreAlbum) => void
@@ -754,6 +875,8 @@ function NasAlbumRow({
   speaker: string | null
   onDrillDown?: () => void
   selectedObjectId?: string
+  /** Wrapper element for the row — forwarded to MusicListItem. Default `'li'`. */
+  wrapAs?: 'li' | 'div'
 }) {
   const { toast } = useToast()
   const queryClient = useQueryClient()
@@ -804,6 +927,7 @@ function NasAlbumRow({
 
   return (
     <MusicListItem
+      as={wrapAs}
       artwork={{ src: album.albumArtUri, size: 48, fallback: 'disc' }}
       title={album.name}
       subtitle={subtitle}
