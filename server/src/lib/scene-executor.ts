@@ -274,7 +274,13 @@ export async function activateScene(
             }
           }
         }
-        await retryFailedLights(response, states)
+        // Fire-and-forget: retryFailedLights sleeps 2 s before each attempt
+        // and isn't on the user-visible critical path. Awaiting it added up
+        // to 4 s of pure setTimeout delay between motion and light response.
+        void retryFailedLights(response, states).catch(err => {
+          const msg = err instanceof Error ? err.message : String(err)
+          log(`retryFailedLights threw: ${msg}`, undefined, undefined, undefined, parentLogId)
+        })
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -600,7 +606,13 @@ export async function deactivateScene(sceneName: string, user?: { id: string; na
             }
           }
         }
-        await retryFailedLights(response, states)
+        // Fire-and-forget: retryFailedLights sleeps 2 s before each attempt
+        // and isn't on the user-visible critical path. Awaiting it added up
+        // to 4 s of pure setTimeout delay between motion and light response.
+        void retryFailedLights(response, states).catch(err => {
+          const msg = err instanceof Error ? err.message : String(err)
+          log(`retryFailedLights threw: ${msg}`, undefined, undefined, undefined, parentLogId)
+        })
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -759,7 +771,11 @@ export async function deactivateScene(sceneName: string, user?: { id: string; na
             }
           }
         }
-        await retryFailedLights(batchResponse, batch)
+        // Fire-and-forget — see comment at the activateScene call site.
+        void retryFailedLights(batchResponse, batch).catch(err => {
+          const msg = err instanceof Error ? err.message : String(err)
+          log(`retryFailedLights threw: ${msg}`, undefined, undefined, undefined, parentLogId)
+        })
       }
       log(`Batch turned off ${roomLightStates.length} room light(s)`, undefined, undefined, undefined, parentLogId)
     } catch (err) {
