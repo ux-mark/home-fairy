@@ -4,6 +4,9 @@ import { Link } from 'react-router-dom'
 import { useQuery, useQueries } from '@tanstack/react-query'
 import { PeriodSelector } from '@/components/ui/PeriodSelector'
 import type { Period } from '@/components/ui/PeriodSelector'
+// Side-effect import: registers chart.js components on first render. See
+// TimeSeriesChart.tsx for context.
+import '@/lib/chartSetup'
 import { Line } from 'react-chartjs-2'
 import type { ChartOptions, ChartData } from 'chart.js'
 import { api } from '@/lib/api'

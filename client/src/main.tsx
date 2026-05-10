@@ -7,7 +7,6 @@ import { ErrorBoundary } from '@/components/ErrorBoundary'
 import { ThemeProvider } from '@/hooks/useTheme'
 import { ToastProvider } from '@/hooks/useToast'
 import { clearChunkReloadFlag } from '@/lib/lazyWithRetry'
-import '@/lib/chartSetup'
 import './index.css'
 
 const queryClient = new QueryClient({
