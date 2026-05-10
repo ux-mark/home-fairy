@@ -672,7 +672,7 @@ function seedDefaults(): void {
 // Statements bind parameters at `.run/.get/.all` time, so a cached
 // statement is safe to reuse across callers and across transactions.
 const _stmtCache = new Map<string, Database.Statement>()
-function prepareCached(sql: string): Database.Statement {
+export function prepareCached(sql: string): Database.Statement {
   let stmt = _stmtCache.get(sql)
   if (!stmt) {
     stmt = db.prepare(sql)

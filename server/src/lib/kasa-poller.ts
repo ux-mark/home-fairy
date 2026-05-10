@@ -1,5 +1,5 @@
 import { kasaClient, type KasaSidecarDevice } from './kasa-client.js'
-import { db, run } from '../db/index.js'
+import { db, prepareCached } from '../db/index.js'
 import { log } from './logger.js'
 import { deviceHealthService } from './device-health-service.js'
 import type { Server as SocketServer } from 'socket.io'
@@ -15,11 +15,17 @@ let probeTimeout: ReturnType<typeof setTimeout> | null = null
 let io: SocketServer | null = null
 let previousStates: Record<string, { switch_state: string; power: number }> = {}
 
-// Prepare statements once at module scope for performance.
-// The upsert does NOT update the label on conflict — labels are only changed
-// via the rename endpoint. This prevents the poller from reverting a rename
-// while the sidecar's cache is stale.
-const upsert = db.prepare(`
+// Upsert SQL — kept as a string constant and prepared on demand via the
+// shared statement cache. Doing the prepare lazily avoids a boot-order
+// race: ESM imports execute before index.ts can call initDb(), so a
+// module-level db.prepare() crashes on a fresh DB ("no such table:
+// kasa_devices"). Once initDb has run, prepareCached resolves the same
+// statement on every call.
+//
+// The upsert does NOT update the label on conflict — labels are only
+// changed via the rename endpoint. This prevents the poller from
+// reverting a rename while the sidecar's cache is stale.
+const UPSERT_SQL = `
   INSERT INTO kasa_devices (id, label, device_type, model, parent_id, ip_address, has_emeter, firmware, hardware, rssi, is_online, attributes, last_seen, updated_at)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, datetime('now'), datetime('now'))
   ON CONFLICT(id) DO UPDATE SET
@@ -29,7 +35,7 @@ const upsert = db.prepare(`
     attributes = excluded.attributes,
     last_seen = datetime('now'),
     updated_at = datetime('now')
-`)
+`
 
 // Devices missing an `id` are unwriteable (`kasa_devices.id` is the primary
 // key) and would also trip every NOT NULL constraint downstream. We skip them
@@ -123,7 +129,7 @@ async function pollKasaDevices(): Promise<void> {
         const deviceTypeToWrite = device.device_type || 'unknown'
 
         try {
-          upsert.run(
+          prepareCached(UPSERT_SQL).run(
             device.id,
             labelToWrite,
             deviceTypeToWrite,
