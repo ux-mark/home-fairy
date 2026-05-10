@@ -313,26 +313,29 @@ export async function activateScene(
               }
             }
           }
-          // Also turn off Hubitat switches and Kasa devices assigned to rooms in this scene
+          // Also turn off Hubitat switches and Kasa devices assigned to rooms
+          // in this scene — fired in parallel so one offline device can't park
+          // the whole scene behind its 10 s timeout.
+          const allOffTargets: { id: string; isKasa: boolean }[] = []
           for (const room of rooms) {
             const hubDevices = getAll<{ device_id: string; device_type: string }>(
               "SELECT device_id, device_type FROM device_rooms WHERE room_name = ? AND device_type IN ('switch', 'dimmer', 'light', 'kasa_plug', 'kasa_strip', 'kasa_outlet', 'kasa_switch', 'kasa_dimmer')",
               [room.name],
             )
             for (const dev of hubDevices) {
-              try {
-                const healthType = dev.device_type.startsWith('kasa_') ? 'kasa' : 'hub'
-                if (!deviceHealthService.isDeviceActive(healthType, dev.device_id)) continue
-                if (dev.device_type.startsWith('kasa_')) {
-                  await kasaClient.sendCommand(dev.device_id, 'off')
-                } else {
-                  await hubitatClient.sendCommand(dev.device_id, 'off')
-                }
-              } catch {
-                // best effort
-              }
+              const isKasa = dev.device_type.startsWith('kasa_')
+              const healthType = isKasa ? 'kasa' : 'hub'
+              if (!deviceHealthService.isDeviceActive(healthType, dev.device_id)) continue
+              allOffTargets.push({ id: dev.device_id, isKasa })
             }
           }
+          await Promise.allSettled(
+            allOffTargets.map(t =>
+              t.isKasa
+                ? kasaClient.sendCommand(t.id, 'off')
+                : hubitatClient.sendCommand(t.id, 'off'),
+            ),
+          )
           log('Turned off lights in scene rooms, Hubitat switches, and Kasa devices', undefined, undefined, undefined, parentLogId)
           break
         }
@@ -605,109 +608,125 @@ export async function deactivateScene(sceneName: string, user?: { id: string; na
     }
   }
 
-  // Turn off Hubitat devices referenced in scene commands
+  // Turn off Hubitat devices referenced in scene commands. Fired in parallel
+  // so one offline device can't park the whole deactivation behind its 10 s
+  // timeout — same pattern applied to Kasa, Twinkly, Fairy, and effects below.
   const hubitatCommands = commands.filter(
     (cmd): cmd is HubitatDeviceCommand => cmd.type === 'hubitat_device',
   )
-  for (const cmd of hubitatCommands) {
-    try {
-      if (!deviceHealthService.isDeviceActive('hub', String(cmd.device_id))) {
-        log(`Skipping deactivated device: ${cmd.device_id}`, undefined, undefined, undefined, parentLogId)
-        continue
-      }
-      await hubitatClient.sendCommand(cmd.device_id, 'off')
-      log(`Turned off Hubitat device ${cmd.device_id}`, undefined, undefined, undefined, parentLogId)
-      deviceHealthService.recordSuccess('hub', String(cmd.device_id))
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      log(`Error turning off Hubitat device: ${msg}`, undefined, undefined, undefined, parentLogId)
-      deviceHealthService.recordFailure('hub', String(cmd.device_id), msg)
+  const hubitatActive = hubitatCommands.filter(cmd => {
+    if (!deviceHealthService.isDeviceActive('hub', String(cmd.device_id))) {
+      log(`Skipping deactivated device: ${cmd.device_id}`, undefined, undefined, undefined, parentLogId)
+      return false
     }
-  }
+    return true
+  })
+  await Promise.allSettled(
+    hubitatActive.map(async cmd => {
+      try {
+        await hubitatClient.sendCommand(cmd.device_id, 'off')
+        log(`Turned off Hubitat device ${cmd.device_id}`, undefined, undefined, undefined, parentLogId)
+        deviceHealthService.recordSuccess('hub', String(cmd.device_id))
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        log(`Error turning off Hubitat device: ${msg}`, undefined, undefined, undefined, parentLogId)
+        deviceHealthService.recordFailure('hub', String(cmd.device_id), msg)
+      }
+    }),
+  )
 
   // Turn off Kasa devices referenced in scene commands
   const kasaCommands = commands.filter(
     (cmd): cmd is KasaDeviceCommand => cmd.type === 'kasa_device',
   )
-  for (const cmd of kasaCommands) {
-    try {
-      if (!deviceHealthService.isDeviceActive('kasa', cmd.device_id)) {
-        log(`Skipping deactivated device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
-        continue
-      }
-      await kasaClient.sendCommand(cmd.device_id, 'off')
-      log(`Turned off Kasa device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
-      deviceHealthService.recordSuccess('kasa', cmd.device_id)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      log(`Error turning off Kasa device: ${msg}`, undefined, undefined, undefined, parentLogId)
-      deviceHealthService.recordFailure('kasa', cmd.device_id, msg)
+  const kasaActive = kasaCommands.filter(cmd => {
+    if (!deviceHealthService.isDeviceActive('kasa', cmd.device_id)) {
+      log(`Skipping deactivated device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
+      return false
     }
-  }
+    return true
+  })
+  await Promise.allSettled(
+    kasaActive.map(async cmd => {
+      try {
+        await kasaClient.sendCommand(cmd.device_id, 'off')
+        log(`Turned off Kasa device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
+        deviceHealthService.recordSuccess('kasa', cmd.device_id)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        log(`Error turning off Kasa device: ${msg}`, undefined, undefined, undefined, parentLogId)
+        deviceHealthService.recordFailure('kasa', cmd.device_id, msg)
+      }
+    }),
+  )
 
   // Turn off Twinkly devices
   const twinklyCommands = commands.filter(
     (cmd): cmd is TwinklyCommand => cmd.type === 'twinkly',
   )
-  for (const cmd of twinklyCommands) {
-    try {
-      const dev = getOne<{ id: string; ip: string | null }>(
-        "SELECT id, json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'twinkly'",
-        [cmd.name],
-      )
-      if (dev?.ip) {
+  await Promise.allSettled(
+    twinklyCommands.map(async cmd => {
+      try {
+        const dev = getOne<{ id: string; ip: string | null }>(
+          "SELECT id, json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'twinkly'",
+          [cmd.name],
+        )
+        if (!dev?.ip) return
         if (!deviceHealthService.isDeviceActive('hub', String(dev.id))) {
           log(`Skipping deactivated device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
-          continue
+          return
         }
         await twinklyClient.turnOff(dev.ip)
         log(`Turned off Twinkly: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
         deviceHealthService.recordSuccess('hub', String(dev.id))
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        log(`Error turning off Twinkly: ${msg}`, undefined, undefined, undefined, parentLogId)
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      log(`Error turning off Twinkly: ${msg}`, undefined, undefined, undefined, parentLogId)
-    }
-  }
+    }),
+  )
 
   // Turn off Fairy devices
   const fairyCommands = commands.filter(
     (cmd): cmd is FairyDeviceCommand => cmd.type === 'fairy_device',
   )
-  for (const cmd of fairyCommands) {
-    try {
-      const dev = getOne<{ id: string; ip: string | null }>(
-        "SELECT id, json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'fairy'",
-        [cmd.name],
-      )
-      if (dev?.ip) {
+  await Promise.allSettled(
+    fairyCommands.map(async cmd => {
+      try {
+        const dev = getOne<{ id: string; ip: string | null }>(
+          "SELECT id, json_extract(attributes, '$.IPAddress') as ip FROM hub_devices WHERE label = ? AND device_type = 'fairy'",
+          [cmd.name],
+        )
+        if (!dev?.ip) return
         if (!deviceHealthService.isDeviceActive('hub', String(dev.id))) {
           log(`Skipping deactivated device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
-          continue
+          return
         }
         await fairyDeviceClient.turnOff(dev.ip)
         log(`Turned off Fairy device: ${cmd.name}`, undefined, undefined, undefined, parentLogId)
         deviceHealthService.recordSuccess('hub', String(dev.id))
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        log(`Error turning off Fairy device: ${msg}`, undefined, undefined, undefined, parentLogId)
       }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      log(`Error turning off Fairy device: ${msg}`, undefined, undefined, undefined, parentLogId)
-    }
-  }
+    }),
+  )
 
   // Stop LIFX effects
   const effectCommands = commands.filter(
     (cmd): cmd is LifxEffectCommand => cmd.type === 'lifx_effect',
   )
-  for (const cmd of effectCommands) {
-    try {
-      await lifxClient.effectsOff(cmd.selector)
-      log(`Stopped effects on: ${cmd.selector}`, undefined, undefined, undefined, parentLogId)
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      log(`Error stopping effects: ${msg}`, undefined, undefined, undefined, parentLogId)
-    }
-  }
+  await Promise.allSettled(
+    effectCommands.map(async cmd => {
+      try {
+        await lifxClient.effectsOff(cmd.selector)
+        log(`Stopped effects on: ${cmd.selector}`, undefined, undefined, undefined, parentLogId)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        log(`Error stopping effects: ${msg}`, undefined, undefined, undefined, parentLogId)
+      }
+    }),
+  )
 
   // Also turn off lights assigned to rooms in this scene (batched)
   const roomLightStates: BatchState[] = []
