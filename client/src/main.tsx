@@ -11,7 +11,17 @@ import '@/lib/chartSetup'
 import './index.css'
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+      // Live state arrives via Socket.io invalidations; refetching every
+      // mounted query on every tab refocus stalls the UI mid-animation and
+      // hammers the Pi. Routes that genuinely need on-focus refresh opt back
+      // in per-query.
+      refetchOnWindowFocus: false,
+    },
+  },
 })
 
 // If an in-flight service-worker update takes over this tab, the running

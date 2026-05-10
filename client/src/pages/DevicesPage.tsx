@@ -243,7 +243,28 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
   const setLevelMutation = useMutation({
     mutationFn: (lvl: number) =>
       api.hubitat.sendCommand(device.hubDevice!.id.toString(), 'setLevel', lvl),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['hubitat'] }),
+    // Optimistic level — keep the cached attribute in sync with the slider
+    // commit so the displayed brightness doesn't snap back to the stale
+    // value between commit and refetch.
+    onMutate: async (lvl: number) => {
+      await queryClient.cancelQueries({ queryKey: ['hubitat', 'devices'] })
+      const previous = queryClient.getQueryData<HubDevice[]>(['hubitat', 'devices'])
+      queryClient.setQueryData<HubDevice[]>(['hubitat', 'devices'], old => {
+        if (!old) return old
+        return old.map(d =>
+          d.id === device.hubDevice!.id
+            ? { ...d, attributes: { ...(d.attributes as Record<string, unknown>), level: lvl } }
+            : d
+        )
+      })
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['hubitat', 'devices'], context.previous)
+      }
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['hubitat'] }),
   })
 
   const isKeepOn = !!device.deviceRoom?.config?.exclude_from_all_off
