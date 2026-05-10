@@ -18,7 +18,7 @@ import {
   Music2,
   Volume2,
 } from 'lucide-react'
-import { getSocket } from '@/hooks/useSocket'
+import { getSocketAsync } from '@/hooks/useSocket'
 import { api } from '@/lib/api'
 import type { Light, Room, DeviceRoomAssignment, HubDevice, KasaDevice, SonosSpeakerMapping, SonosZone } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
@@ -825,14 +825,25 @@ export default function DevicesPage() {
     enabled: filter === 'sonos' || filter === 'all',
   })
 
-  // Invalidate zones cache on real-time Sonos updates
+  // Invalidate zones cache on real-time Sonos updates. Socket transport
+  // loads in its own chunk (~43 KB) only after first paint; the async
+  // import() resolves in milliseconds so listener attach is essentially
+  // immediate from the user's POV.
   useEffect(() => {
     if (filter !== 'sonos' && filter !== 'all') return
-    const s = getSocket()
+    let cancelled = false
+    let cleanup: (() => void) | undefined
     const handler = () => queryClient.invalidateQueries({ queryKey: ['sonos', 'zones'] })
-    s.on('sonos:zones-update', handler)
+
+    getSocketAsync().then(socket => {
+      if (cancelled) return
+      socket.on('sonos:zones-update', handler)
+      cleanup = () => socket.off('sonos:zones-update', handler)
+    })
+
     return () => {
-      s.off('sonos:zones-update', handler)
+      cancelled = true
+      cleanup?.()
     }
   }, [queryClient, filter])
 

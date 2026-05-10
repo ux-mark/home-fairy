@@ -2,7 +2,7 @@ import { createContext, createElement, useEffect, useState, useMemo, useCallback
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import type { SonosNowPlayingEntry, SonosPlaybackState } from '@/lib/api'
-import { getSocket } from '@/hooks/useSocket'
+import { getSocketAsync } from '@/hooks/useSocket'
 import { normalizeUri } from '@/lib/normalizeUri'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -75,8 +75,14 @@ export function PlaybackStateProvider({ children }: { children: ReactNode }) {
   }, [])
 
   // ── Socket invalidation ───────────────────────────────────────────────────
+  // The socket transport loads in its own chunk (~43 KB) only after first
+  // paint; getSocketAsync resolves once it's ready. We track a `cancelled`
+  // flag and a `cleanup` ref so unmounting before the import resolves still
+  // detaches correctly.
   useEffect(() => {
-    const socket = getSocket()
+    let cancelled = false
+    let cleanup: (() => void) | undefined
+
     function handlePlaybackUpdate() {
       queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
     }
@@ -87,11 +93,20 @@ export function PlaybackStateProvider({ children }: { children: ReactNode }) {
         queryClient.invalidateQueries({ queryKey: ['sonos', 'queue'] })
       }
     }
-    socket.on('sonos:playback-update', handlePlaybackUpdate)
-    socket.on('sonos:queue-update', handleQueueUpdate)
+
+    getSocketAsync().then(socket => {
+      if (cancelled) return
+      socket.on('sonos:playback-update', handlePlaybackUpdate)
+      socket.on('sonos:queue-update', handleQueueUpdate)
+      cleanup = () => {
+        socket.off('sonos:playback-update', handlePlaybackUpdate)
+        socket.off('sonos:queue-update', handleQueueUpdate)
+      }
+    })
+
     return () => {
-      socket.off('sonos:playback-update', handlePlaybackUpdate)
-      socket.off('sonos:queue-update', handleQueueUpdate)
+      cancelled = true
+      cleanup?.()
     }
   }, [queryClient])
 
