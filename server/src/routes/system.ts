@@ -348,10 +348,15 @@ router.get('/activity', (req: Request, res: Response) => {
   }
 })
 
-// GET /weather — current weather from OpenWeather
+// GET /weather — current weather from OpenWeather. When the user opens the
+// home page they need a current reading, so we ask for weather no older than
+// 5 minutes here regardless of the user's background "Check every" setting.
+// (Background timers — indicator, history collector — leave the argument
+// unset and inherit the user's dial.)
+const WEATHER_UI_MAX_AGE_MS = 5 * 60 * 1000
 router.get('/weather', async (_req: Request, res: Response) => {
   try {
-    const weather = await getCurrentWeather()
+    const weather = await getCurrentWeather(WEATHER_UI_MAX_AGE_MS)
     res.json(weather)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
