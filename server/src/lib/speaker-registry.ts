@@ -387,19 +387,47 @@ class SpeakerRegistry {
 
     // 2. Topology cross-check — ask node-sonos-http-api what UUIDs *should*
     //    exist on the network and verify SSDP found them all. If any are
-    //    missing (UDP packet loss is common), do a subnet scan to fill the
-    //    gaps. This is the cheapest way to detect SSDP under-reporting.
+    //    missing (UDP packet loss is common), first try the previously
+    //    known IPs for those UUIDs; only fall back to a full 254-IP subnet
+    //    scan when even the cached IPs don't answer.
+    //
+    //    The same UUIDs miss SSDP cycle after cycle in environments with
+    //    flaky multicast, so caching last-known IPs avoids burning seconds
+    //    of axios work probing every IP on the subnet every 5 minutes.
     try {
       const expected = await this.expectedUuidsFromTopology()
       const found = new Set(speakers.map(s => s.uuid))
       const missing = [...expected].filter(u => !found.has(u))
       if (missing.length > 0) {
-        console.log(`[SpeakerRegistry] SSDP missed ${missing.length} speaker(s): ${missing.join(', ')} — supplementing with subnet scan`)
-        const supplemental = await subnetScan()
-        for (const s of supplemental) {
-          if (!found.has(s.uuid)) {
-            speakers.push(s)
-            found.add(s.uuid)
+        // First pass: probe known-good IPs from the previous snapshot.
+        const cachedIps = missing
+          .map(uuid => this.byUuid.get(uuid)?.ip)
+          .filter((ip): ip is string => typeof ip === 'string')
+        let recoveredFromCache = 0
+        if (cachedIps.length > 0) {
+          const probed = (await Promise.all(cachedIps.map(fetchSpeakerInfo)))
+            .filter((s): s is SpeakerInfo => s !== null)
+          for (const s of probed) {
+            if (!found.has(s.uuid)) {
+              speakers.push(s)
+              found.add(s.uuid)
+              recoveredFromCache++
+            }
+          }
+        }
+        const stillMissing = missing.filter(u => !found.has(u))
+        if (stillMissing.length === 0) {
+          if (recoveredFromCache > 0) {
+            console.log(`[SpeakerRegistry] SSDP missed ${missing.length} speaker(s); recovered all ${recoveredFromCache} from cached IPs`)
+          }
+        } else {
+          console.log(`[SpeakerRegistry] SSDP missed ${stillMissing.length} speaker(s) and cache could not recover them: ${stillMissing.join(', ')} — supplementing with subnet scan`)
+          const supplemental = await subnetScan()
+          for (const s of supplemental) {
+            if (!found.has(s.uuid)) {
+              speakers.push(s)
+              found.add(s.uuid)
+            }
           }
         }
       }
