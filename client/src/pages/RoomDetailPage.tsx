@@ -469,12 +469,6 @@ export default function RoomDetailPage() {
     enabled: !!name,
   })
 
-  const { data: sonosFavourites } = useQuery({
-    queryKey: ['sonos', 'favourites'],
-    queryFn: api.sonos.getFavourites,
-    enabled: !!name,
-  })
-
   const { data: sonosFollowMeStatus } = useQuery({
     queryKey: ['sonos', 'follow-me-status'],
     queryFn: api.sonos.getFollowMeStatus,
@@ -1655,7 +1649,7 @@ export default function RoomDetailPage() {
 
                               <div>
                                 <label htmlFor="room-edit-rule-favourite" className="sr-only">What to play</label>
-                                <FavouriteSelector favourites={sonosFavourites ?? []} value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-edit-rule-favourite" nasUri={nasUri} onNasUriChange={setNasUri} spotifyUri={spotifyUri} onSpotifyUriChange={setSpotifyUri} />
+                                <FavouriteSelector value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-edit-rule-favourite" nasUri={nasUri} onNasUriChange={setNasUri} spotifyUri={spotifyUri} onSpotifyUriChange={setSpotifyUri} />
                                 {podcastResolving && (
                                   <p className="text-caption text-xs mt-1">Detecting podcast...</p>
                                 )}
@@ -1852,7 +1846,7 @@ export default function RoomDetailPage() {
 
                       <div>
                         <label htmlFor="room-detail-rule-favourite" className="sr-only">What to play</label>
-                        <FavouriteSelector favourites={sonosFavourites ?? []} value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-detail-rule-favourite" nasUri={nasUri} onNasUriChange={setNasUri} spotifyUri={spotifyUri} onSpotifyUriChange={setSpotifyUri} />
+                        <FavouriteSelector value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-detail-rule-favourite" nasUri={nasUri} onNasUriChange={setNasUri} spotifyUri={spotifyUri} onSpotifyUriChange={setSpotifyUri} />
                         {podcastResolving && (
                           <p className="text-caption text-xs mt-1">Detecting podcast...</p>
                         )}

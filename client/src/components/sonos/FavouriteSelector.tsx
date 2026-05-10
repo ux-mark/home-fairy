@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, HardDrive, Music, Music2, Radio as RadioIcon
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
-import type { SonosFavourite, SonosGenreAlbum, SonosLibraryTrack, SonosRadioStation } from '@/lib/api'
+import type { SonosGenreAlbum, SonosLibraryTrack, SonosRadioStation } from '@/lib/api'
 import { NasBrowseView } from './NasBrowseView'
 import { SpotifyBrowseView } from './SpotifyBrowseView'
 import { RadioBrowseView } from './RadioBrowseView'
@@ -11,7 +11,6 @@ import { RadioBrowseView } from './RadioBrowseView'
 type Source = 'all' | 'nas' | 'spotify' | 'radio'
 
 interface FavouriteSelectorProps {
-  favourites: SonosFavourite[]
   value: string
   onChange: (value: string) => void
   id: string
@@ -23,7 +22,6 @@ interface FavouriteSelectorProps {
 }
 
 export function FavouriteSelector({
-  favourites,
   value,
   onChange,
   id,
