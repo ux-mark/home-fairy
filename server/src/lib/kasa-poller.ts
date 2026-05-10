@@ -31,23 +31,74 @@ const upsert = db.prepare(`
     updated_at = datetime('now')
 `)
 
-function flattenDevices(devices: KasaSidecarDevice[]): KasaSidecarDevice[] {
-  const flat: KasaSidecarDevice[] = []
+// Devices missing an `id` are unwriteable (`kasa_devices.id` is the primary
+// key) and would also trip every NOT NULL constraint downstream. We skip them
+// and report once per poll — see pollKasaDevices.
+function isUsableDevice(device: unknown): device is KasaSidecarDevice {
+  return (
+    typeof device === 'object' &&
+    device !== null &&
+    typeof (device as { id?: unknown }).id === 'string' &&
+    (device as { id: string }).id.length > 0
+  )
+}
+
+function flattenDevices(devices: unknown): {
+  usable: KasaSidecarDevice[]
+  skippedCount: number
+} {
+  // Defend against the sidecar being unreachable and a different service
+  // answering on its port. Past incident: a stray dev server returned an HTML
+  // string; axios accepted it, the poller iterated the string as characters,
+  // and every character became a "device with id undefined" — 7 000+ errors
+  // per minute, gigabytes of log spam.
+  if (!Array.isArray(devices)) {
+    throw new Error(
+      `sidecar returned ${typeof devices}, expected array — port 3002 may be hosting the wrong service`,
+    )
+  }
+  const usable: KasaSidecarDevice[] = []
+  let skippedCount = 0
   for (const device of devices) {
-    flat.push(device)
-    if (device.children) {
+    if (isUsableDevice(device)) {
+      usable.push(device)
+    } else {
+      skippedCount++
+      continue
+    }
+    if (Array.isArray(device.children)) {
       for (const child of device.children) {
-        flat.push(child)
+        if (isUsableDevice(child)) {
+          usable.push(child)
+        } else {
+          skippedCount++
+        }
       }
     }
   }
-  return flat
+  return { usable, skippedCount }
 }
+
+// Track the most recent skip-count so we only log when it changes — repeated
+// identical skip counts are background noise, but a sudden jump (or the first
+// occurrence after a quiet period) is worth knowing about.
+let lastReportedSkipCount = 0
 
 async function pollKasaDevices(): Promise<void> {
   try {
     const devices = await kasaClient.listDevices()
-    const allDevices = flattenDevices(devices)
+    const { usable: allDevices, skippedCount } = flattenDevices(devices)
+
+    if (skippedCount !== lastReportedSkipCount) {
+      if (skippedCount > 0) {
+        console.warn(
+          `[kasa-poller] skipped ${skippedCount} malformed device record(s) from sidecar this poll`,
+        )
+      } else {
+        console.log('[kasa-poller] sidecar payload clean — no malformed records')
+      }
+      lastReportedSkipCount = skippedCount
+    }
 
     // Track which devices were offline before this poll so we can call
     // recordSuccess for devices that have reappeared.
@@ -66,17 +117,10 @@ async function pollKasaDevices(): Promise<void> {
           runtime_month: device.runtime_month,
         })
 
-        // Coalesce required-NOT-NULL fields. The sidecar should always supply
-        // a label and device_type, but a transient empty-label response during
-        // its own startup once toppled the entire poll's transaction (every
-        // device's state was lost, not just the bad one).
+        // Coalesce label/device_type. id is guaranteed non-empty by
+        // isUsableDevice, so `device.id` is a safe fallback for label.
         const labelToWrite = device.label || device.id
         const deviceTypeToWrite = device.device_type || 'unknown'
-        if (!device.label) {
-          console.warn(
-            `[kasa-poller] device ${device.id} has no label from sidecar; storing id as label`,
-          )
-        }
 
         try {
           upsert.run(
@@ -175,7 +219,19 @@ async function pollKasaDevices(): Promise<void> {
 async function probeForSidecar(): Promise<void> {
   probeTimeout = null
   try {
-    await kasaClient.health()
+    const health = await kasaClient.health()
+    // A successful health response must look like the sidecar's actual
+    // contract. If a different service is squatting on the port and answers
+    // 200 with HTML, axios returns a string here; treat that as "not the
+    // sidecar" and keep probing.
+    if (
+      typeof health !== 'object' ||
+      health === null ||
+      typeof (health as { status?: unknown }).status !== 'string'
+    ) {
+      probeTimeout = setTimeout(probeForSidecar, PROBE_INTERVAL_MS)
+      return
+    }
   } catch {
     // Sidecar not yet reachable — quiet retry. On a cold Pi boot the Python
     // venv + Discover.discover(timeout=10) take longer than the old fixed
