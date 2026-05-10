@@ -1,24 +1,33 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Zap, Moon, AlertTriangle, ChevronRight, Settings2, Pencil } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { useState, useMemo, useCallback, Fragment } from 'react'
+import { useState, useMemo, useCallback, Suspense, lazy, Fragment } from 'react'
 import { api } from '@/lib/api'
 import { DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import type { Room } from '@/lib/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton, SkeletonGrid } from '@/components/ui/Skeleton'
-import RoomReorderOverlay from '@/components/RoomReorderOverlay'
-import HomeSectionEditor from '@/components/HomeSectionEditor'
 import { DEFAULT_SECTION_ORDER, type SectionOrderItem } from '@/lib/homepage-sections'
 import { ModeSelector } from '@/components/home/ModeSelector'
 import { RoomCard } from '@/components/home/RoomCard'
 import { WeatherCard } from '@/components/home/WeatherCard'
 import { QuickActions } from '@/components/home/QuickActions'
 import { MtaCard } from '@/components/home/MtaCard'
-import { MusicQuickAction } from '@/components/home/MusicQuickAction'
 import { HushingQuickAction } from '@/components/home/HushingQuickAction'
 import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
+
+// Lazy-loaded so cold-loading the homepage doesn't pull these into the
+// entry chunk:
+//   - RoomReorderOverlay/HomeSectionEditor each pull all of @dnd-kit/* (~45 KB)
+//     and only render when the user opens the relevant editor.
+//   - MusicQuickAction's popover tree drags the Sonos queue/menu UI
+//     (~80 KB) into cold load even though it's a small homepage tile.
+const RoomReorderOverlay = lazy(() => import('@/components/RoomReorderOverlay'))
+const HomeSectionEditor = lazy(() => import('@/components/HomeSectionEditor'))
+const MusicQuickAction = lazy(() =>
+  import('@/components/home/MusicQuickAction').then(m => ({ default: m.MusicQuickAction })),
+)
 
 // ── Home page ────────────────────────────────────────────────────────────────
 
@@ -217,7 +226,16 @@ export default function HomePage() {
       case 'quick-actions':
         return <QuickActions key="quick-actions" />
       case 'music':
-        return <MusicQuickAction key="music" />
+        // Suspense fallback matches the tile's resting height so the layout
+        // doesn't reflow when the chunk arrives.
+        return (
+          <Suspense
+            key="music"
+            fallback={<Skeleton className="h-20 w-full rounded-xl" aria-label="Loading music tile" />}
+          >
+            <MusicQuickAction />
+          </Suspense>
+        )
       case 'hushing-home':
         return <HushingQuickAction key="hushing-home" />
       case 'weather':
@@ -381,16 +399,27 @@ export default function HomePage() {
         </button>
       </div>
 
-      <RoomReorderOverlay
-        rooms={rooms ?? []}
-        open={reorderOpen}
-        onClose={() => setReorderOpen(false)}
-      />
+      {/* Overlays mount only when actually opened, so cold load does not pay
+       * for @dnd-kit. Suspense fallback is null because the user's tap on
+       * "Edit" is the explicit "I'm waiting" signal. */}
+      {reorderOpen && (
+        <Suspense fallback={null}>
+          <RoomReorderOverlay
+            rooms={rooms ?? []}
+            open={reorderOpen}
+            onClose={() => setReorderOpen(false)}
+          />
+        </Suspense>
+      )}
 
-      <HomeSectionEditor
-        open={sectionEditorOpen}
-        onClose={() => setSectionEditorOpen(false)}
-      />
+      {sectionEditorOpen && (
+        <Suspense fallback={null}>
+          <HomeSectionEditor
+            open={sectionEditorOpen}
+            onClose={() => setSectionEditorOpen(false)}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }
