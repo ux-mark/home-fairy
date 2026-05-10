@@ -1,7 +1,12 @@
 import axios, { type AxiosInstance } from 'axios'
+import http from 'node:http'
 
 const SIDECAR_URL = process.env.KASA_SIDECAR_URL || 'http://127.0.0.1:3002'
-const TIMEOUT = 5000
+// Sidecar is loopback-local. 2.5 s is generous; the previous 5 s let one
+// stuck call park the motion handler for half a felt second on every device.
+const TIMEOUT = 2500
+// keepAlive reuses the loopback connection across requests.
+const httpAgent = new http.Agent({ keepAlive: true })
 
 export interface KasaEmeterData {
   power: number
@@ -49,6 +54,7 @@ class KasaClient {
     this.api = axios.create({
       baseURL: SIDECAR_URL,
       timeout: TIMEOUT,
+      httpAgent,
     })
   }
 
