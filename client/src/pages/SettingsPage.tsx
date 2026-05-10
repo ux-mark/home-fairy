@@ -282,10 +282,14 @@ function TimersSection() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
+  // Initial fetch happens immediately; the 1 s tick only runs once we know
+  // there is at least one active timer to count down. Without this gate,
+  // every Settings page visit fired a query every second forever, even when
+  // there were no timers.
   const { data: timers } = useQuery({
     queryKey: ['system', 'timers'],
     queryFn: api.system.getTimers,
-    refetchInterval: 1000,
+    refetchInterval: q => ((q.state.data?.length ?? 0) > 0 ? 1000 : false),
   })
 
   const cancelMutation = useMutation({

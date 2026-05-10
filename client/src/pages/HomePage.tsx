@@ -129,8 +129,10 @@ export default function HomePage() {
       return { previous }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rooms'] })
-      queryClient.invalidateQueries({ queryKey: ['scenes'] })
+      // The server emits `scene:change` after the scene runs, which the
+      // socket handler turns into the same ['rooms'] + ['scenes'] invalidation.
+      // Doing it here too triggers up to three back-to-back refetches of the
+      // rooms list. Trust the socket.
       toast({ message: 'Scene activated' })
     },
     onError: (_err, _name, context) => {
@@ -156,8 +158,8 @@ export default function HomePage() {
       return { previous }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rooms'] })
-      queryClient.invalidateQueries({ queryKey: ['scenes'] })
+      // Socket-driven invalidation handles ['rooms'] / ['scenes'] — see comment
+      // on activateSceneMutation.onSuccess above.
       toast({ message: 'Scene deactivated' })
     },
     onError: (_err, _name, context) => {

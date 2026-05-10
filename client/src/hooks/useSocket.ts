@@ -72,10 +72,12 @@ export function useDashboardSocket(): void {
       queryClient.invalidateQueries({ queryKey: ['system', 'current'] })
     }
 
-    // Kasa state changes (from 10s poller)
+    // Kasa state changes (from 10s poller). Don't invalidate ['hubitat'] —
+    // a Kasa switch flipping has no bearing on Hubitat state, and the
+    // server-side poller fires this event every 10 s, so the spurious
+    // invalidation was a quiet refetch storm.
     function handleKasaState() {
       queryClient.invalidateQueries({ queryKey: ['kasa'] })
-      queryClient.invalidateQueries({ queryKey: ['hubitat'] })
     }
 
     // Kasa power readings update

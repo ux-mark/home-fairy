@@ -42,11 +42,15 @@ export function PlaybackStateProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
 
   // ── Polling query ─────────────────────────────────────────────────────────
+  // Live updates arrive via the `sonos:playback-update` socket event below;
+  // a 30 s background refetch is enough of a safety net for the rare case
+  // the socket misses an event. The previous 5 s tick fired on every
+  // authenticated page (login screen included) for every user, forever.
   const { data: allNowPlaying = [], isLoading } = useQuery({
     queryKey: ['sonos', 'now-playing'],
     queryFn: api.sonos.getNowPlaying,
-    refetchInterval: 5_000,
-    staleTime: 4_000,
+    refetchInterval: 30_000,
+    staleTime: 25_000,
   })
 
   // ── Stored speaker preference (user's explicit choice) ───────────────────
@@ -129,18 +133,35 @@ export function PlaybackStateProvider({ children }: { children: ReactNode }) {
     [selectedPlayback],
   )
 
-  const value: PlaybackStateContextValue = {
-    allNowPlaying,
-    selectedSpeaker,
-    setSelectedSpeaker,
-    selectedPlayback,
-    isSelectedPlaying,
-    isTrackPlaying,
-    isTrackActive,
-    isAlbumPlaying,
-    isPlaylistPlaying,
-    isLoading,
-  }
+  // Memoise so consumers don't re-render every time the provider renders
+  // and only the selectedPlayback or speaker actually changes. Helper
+  // identities (isTrackPlaying etc.) are already stable via useCallback.
+  const value = useMemo<PlaybackStateContextValue>(
+    () => ({
+      allNowPlaying,
+      selectedSpeaker,
+      setSelectedSpeaker,
+      selectedPlayback,
+      isSelectedPlaying,
+      isTrackPlaying,
+      isTrackActive,
+      isAlbumPlaying,
+      isPlaylistPlaying,
+      isLoading,
+    }),
+    [
+      allNowPlaying,
+      selectedSpeaker,
+      setSelectedSpeaker,
+      selectedPlayback,
+      isSelectedPlaying,
+      isTrackPlaying,
+      isTrackActive,
+      isAlbumPlaying,
+      isPlaylistPlaying,
+      isLoading,
+    ],
+  )
 
   return createElement(PlaybackStateContext.Provider, { value }, children)
 }
