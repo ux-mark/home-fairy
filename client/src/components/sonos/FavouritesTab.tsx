@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   DndContext,
@@ -133,35 +133,40 @@ export function FavouritesTab({ onNavigateToBrowse, targetSpeaker }: FavouritesT
     )
   }
 
-  function handlePlay(item: UserFavourite) {
+  // Stable callbacks so React.memo on FavouriteItem skips re-renders when
+  // unrelated state ticks (queue update, playback poll) fire on this tab.
+  const handlePlay = useCallback((item: UserFavourite) => {
     if (!effectiveSpeaker) {
       toast({ message: 'No speaker available', type: 'error' })
       return
     }
     playMutation.mutate({ speaker: effectiveSpeaker, title: item.title })
-  }
+  }, [effectiveSpeaker, playMutation, toast])
 
-  function handleRemove(id: number) {
+  const handleRemove = useCallback((id: number) => {
     if (!favourites) return
     queryClient.setQueryData<UserFavourite[]>(favsKey, favourites.filter(f => f.id !== id))
     removeMutation.mutate(id)
-  }
+  // favsKey is a fresh array every render but only its contents matter; we
+  // intentionally exclude it from deps to keep the callback identity stable.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [favourites, queryClient, removeMutation])
 
-  function handlePlayNext(item: UserFavourite) {
+  const handlePlayNext = useCallback((item: UserFavourite) => {
     if (!effectiveSpeaker) {
       toast({ message: 'No speaker available', type: 'error' })
       return
     }
     playNextMutation.mutate({ speaker: effectiveSpeaker, uri: item.source_uri })
-  }
+  }, [effectiveSpeaker, playNextMutation, toast])
 
-  function handleAddToQueue(item: UserFavourite) {
+  const handleAddToQueue = useCallback((item: UserFavourite) => {
     if (!effectiveSpeaker) {
       toast({ message: 'No speaker available', type: 'error' })
       return
     }
     addToQueueMutation.mutate({ speaker: effectiveSpeaker, uri: item.source_uri })
-  }
+  }, [effectiveSpeaker, addToQueueMutation, toast])
 
   // ── Fairylist detail view ─────────────────────────────────────────────────
   if (fairylistDetailId !== null) {

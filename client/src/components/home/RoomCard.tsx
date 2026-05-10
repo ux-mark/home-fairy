@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Thermometer, Lock, Activity, Footprints } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { cn, formatTimeAgo } from '@/lib/utils'
@@ -6,7 +7,24 @@ import { getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 import { LucideIcon } from '@/components/ui/LucideIcon'
 import { getLuxIcon, getTempColor, getActivityColor } from './helpers'
 
-export function RoomCard({
+interface RoomCardProps {
+  room: Room
+  allRooms: Room[]
+  scenes: Scene[]
+  currentMode: string
+  defaultScenes: Record<string, Record<string, string>> | undefined
+  /** Toggles a scene on/off for this room. Must be a stable reference. */
+  onToggleScene: (name: string, isActive: boolean) => void
+  /** Flips the room's `auto` flag. Receives the room's current values so the
+   * callback identity stays stable across renders (don't close over `room`
+   * inline). */
+  onToggleAuto: (roomName: string, currentAuto: boolean) => void
+  isLocked?: boolean
+  expandedChildren: Set<string>
+  onToggleChild: (childName: string) => void
+}
+
+function RoomCardImpl({
   room,
   allRooms,
   scenes,
@@ -17,18 +35,7 @@ export function RoomCard({
   isLocked,
   expandedChildren,
   onToggleChild,
-}: {
-  room: Room
-  allRooms: Room[]
-  scenes: Scene[]
-  currentMode: string
-  defaultScenes: Record<string, Record<string, string>> | undefined
-  onToggleScene: (name: string, isActive: boolean) => void
-  onToggleAuto: () => void
-  isLocked?: boolean
-  expandedChildren: Set<string>
-  onToggleChild: (childName: string) => void
-}) {
+}: RoomCardProps) {
   const childRooms = allRooms
     .filter(r => r.parent_room === room.name && !r.promoted)
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -82,7 +89,7 @@ export function RoomCard({
             <Lock className="h-3.5 w-3.5 text-indigo-400" aria-label="Room locked" />
           )}
           <button
-            onClick={(e) => { e.stopPropagation(); onToggleAuto() }}
+            onClick={(e) => { e.stopPropagation(); onToggleAuto(room.name, room.auto) }}
             aria-label={`Switch to ${room.auto ? 'manual' : 'auto'} mode`}
             className={cn(
               'rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors cursor-pointer',
@@ -265,3 +272,9 @@ export function RoomCard({
     </div>
   )
 }
+
+// memo skips re-render when nothing this card depends on has changed.
+// HomePage now passes stable callback refs and reuses query data identity,
+// so unrelated ticks (sonos poll, foreign socket events) no longer thrash
+// every card.
+export const RoomCard = memo(RoomCardImpl)

@@ -42,18 +42,22 @@ if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
 // clear the guard so future failures can reload again if needed.
 clearChunkReloadFlag()
 
+// StrictMode double-invokes effects in development to surface bugs but adds
+// real cost on a phone CPU during cold-mount. Keep it for dev only.
+const tree = (
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <ThemeProvider>
+          <ToastProvider>
+            <App />
+          </ToastProvider>
+        </ThemeProvider>
+      </BrowserRouter>
+    </QueryClientProvider>
+  </ErrorBoundary>
+)
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
-          <ThemeProvider>
-            <ToastProvider>
-              <App />
-            </ToastProvider>
-          </ThemeProvider>
-        </BrowserRouter>
-      </QueryClientProvider>
-    </ErrorBoundary>
-  </React.StrictMode>,
+  import.meta.env.DEV ? <React.StrictMode>{tree}</React.StrictMode> : tree,
 )

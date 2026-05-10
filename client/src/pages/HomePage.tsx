@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Zap, Moon, AlertTriangle, ChevronRight, Settings2, Pencil } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useCallback, Fragment } from 'react'
 import { api } from '@/lib/api'
 import { DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
@@ -29,14 +29,14 @@ export default function HomePage() {
   const [sectionEditorOpen, setSectionEditorOpen] = useState(false)
   const [expandedChildren, setExpandedChildren] = useState<Set<string>>(new Set())
 
-  function toggleChild(name: string) {
+  const toggleChild = useCallback((name: string) => {
     setExpandedChildren(prev => {
       const next = new Set(prev)
       if (next.has(name)) next.delete(name)
       else next.add(name)
       return next
     })
-  }
+  }, [])
 
   const { data: rooms, isLoading: roomsLoading, isError: roomsError, refetch: refetchRooms } = useQuery({
     queryKey: ['rooms'],
@@ -193,6 +193,22 @@ export default function HomePage() {
   const allModes = system?.all_modes ?? [...DEFAULT_MODES]
   const modeIcons = system?.mode_icons ?? {}
 
+  // Stable callbacks so React.memo on RoomCard can actually skip re-renders
+  // when only unrelated state (sonos poll, foreign socket events) changes.
+  const handleToggleScene = useCallback(
+    (name: string, isActive: boolean) => {
+      if (isActive) deactivateSceneMutation.mutate(name)
+      else activateSceneMutation.mutate(name)
+    },
+    [activateSceneMutation, deactivateSceneMutation],
+  )
+  const handleToggleAuto = useCallback(
+    (roomName: string, currentAuto: boolean) => {
+      toggleAutoMutation.mutate({ name: roomName, auto: !currentAuto })
+    },
+    [toggleAutoMutation],
+  )
+
   // Render a single section by ID
   function renderSection(id: string): React.ReactNode {
     switch (id) {
@@ -273,14 +289,8 @@ export default function HomePage() {
                       scenes={scenes ?? []}
                       currentMode={currentMode}
                       defaultScenes={defaultScenes}
-                      onToggleScene={(name, isActive) =>
-                        isActive
-                          ? deactivateSceneMutation.mutate(name)
-                          : activateSceneMutation.mutate(name)
-                      }
-                      onToggleAuto={() =>
-                        toggleAutoMutation.mutate({ name: room.name, auto: !room.auto })
-                      }
+                      onToggleScene={handleToggleScene}
+                      onToggleAuto={handleToggleAuto}
                       isLocked={nightStatus?.lockedRooms.includes(room.name)}
                       expandedChildren={expandedChildren}
                       onToggleChild={toggleChild}
