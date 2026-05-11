@@ -104,7 +104,7 @@ View all scenes assigned to the room, filter by mode, activate/deactivate scenes
 ### Sonos Auto-Play Rules
 **Status**: available
 
-Add auto-play rules that trigger Sonos playback on mode changes. Choose a favourite, podcast feed, or "continue what's playing." Configure trigger conditions and play limits.
+Add auto-play rules that trigger Sonos playback on mode changes. Choose a favourite, podcast feed, or "continue what's playing." Configure trigger conditions and play limits. Each rule can be restricted to specific days of the week and to a time-of-day window (start and end), so a rule only fires when the mode change lands inside the allowed schedule. Schedule evaluation uses your configured timezone from Settings.
 
 ### Sensor List
 **Status**: available
@@ -299,7 +299,7 @@ View playback state (Playing/Paused/Stopped). Play, pause, skip, adjust volume w
 ### Auto-Play Rules
 **Status**: available
 
-Create rules for what plays when the system mode changes. Supports Sonos favourites, podcast feeds, and "continue what's playing." Configure conditions and max-plays limits.
+Create rules for what plays when the system mode changes. Supports Sonos favourites, podcast feeds, and "continue what's playing." Configure conditions and max-plays limits. Restrict rules to specific days of the week and to a time-of-day window (start and end) so playback only triggers inside the schedule you set. Schedule evaluation uses your configured timezone from Settings.
 
 ---
 
@@ -417,6 +417,31 @@ Any logged-in user (Manager or Resident) can change their own password from thei
 - Theme: Light, Dark, or System
 - Temperature unit: Celsius or Fahrenheit
 - Energy rate and currency symbol for cost estimates
+
+### Location and Locale Settings
+**Status**: available
+
+Set latitude, longitude, timezone and locale from the UI. Drives auto-play schedule gating, sun-tracking, and weather queries. Migrated from `.env`.
+
+### Hubitat Settings
+**Status**: available
+
+Configure Hubitat base URL, API token, and webhook secret from the UI. Test connection in-place. Migrated from `.env`.
+
+### LIFX Settings
+**Status**: available
+
+Configure the LIFX API token from the UI. Test connection in-place. Migrated from `.env`.
+
+### OpenWeather Settings
+**Status**: available
+
+Configure the OpenWeather API key from the UI. Test connection uses your saved location. Migrated from `.env`. Note: distinct from the Weather Indicator display section.
+
+### Spotify Settings
+**Status**: available
+
+Configure Spotify Client ID, Client Secret and Redirect URI from the UI. Test connection runs a client-credentials grant. Migrated from `.env`. Reminder: Redirect URI must also be registered in the Spotify developer console.
 
 ### Music (Sonos)
 **Status**: available
