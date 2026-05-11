@@ -28,7 +28,7 @@ function handleError(res: Response, err: unknown): void {
 // GET /spotify/auth — initiate OAuth flow (no auth required, this starts the login)
 router.get('/auth', (_req: Request, res: Response) => {
   if (!spotifyClient.isConfigured()) {
-    res.status(400).json({ error: 'Spotify is not configured. Add SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET to .env' })
+    res.status(503).json({ error: 'Spotify is not configured — set Client ID and Client Secret in Settings' })
     return
   }
   try {
