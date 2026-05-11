@@ -9,7 +9,7 @@ set -e
 #   Up to 5 timestamped backups are kept automatically.
 
 PI_HOST="queen@192.168.10.201"
-PI_DIR="/home/queen/thefairies-app"
+PI_DIR="/home/queen/home-fairy"
 LOCAL_DB="server/data/thefairies.sqlite"
 INCLUDE_DB=false
 
@@ -45,7 +45,7 @@ echo ""
 echo "Step 2: Installing, building, and starting on Pi..."
 ssh -t "$PI_HOST" bash -s << 'REMOTE'
 set -e
-cd ~/thefairies-app
+cd ~/home-fairy
 
 echo "Installing Node dependencies..."
 npm run install:all
@@ -59,7 +59,7 @@ if [ ! -d "venv" ]; then
 fi
 venv/bin/pip install -q -r requirements.txt
 echo "   Python dependencies installed"
-cd ~/thefairies-app
+cd ~/home-fairy
 
 echo ""
 echo "Setting up Sonos HTTP API..."
@@ -67,10 +67,10 @@ SONOS_DIR="$HOME/node-sonos-http-api"
 if [ ! -d "$SONOS_DIR" ]; then
   echo "   Cloning node-sonos-http-api..."
   git clone https://github.com/jishi/node-sonos-http-api.git "$SONOS_DIR"
-  cd "$SONOS_DIR" && npm install && cd ~/thefairies-app
+  cd "$SONOS_DIR" && npm install && cd ~/home-fairy
 else
   echo "   Updating node-sonos-http-api..."
-  cd "$SONOS_DIR" && git pull && npm install && cd ~/thefairies-app
+  cd "$SONOS_DIR" && git pull && npm install && cd ~/home-fairy
 fi
 mkdir -p "$SONOS_DIR/logs"
 # Configure Sonos API to use port 3003 (consistent with 3001/3002)

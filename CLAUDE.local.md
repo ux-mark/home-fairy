@@ -1,5 +1,5 @@
 <!--
-  CLAUDE.local.md — repo-specific overrides and notes for thefairies-app.
+  CLAUDE.local.md — repo-specific overrides and notes for home-fairy.
   Claude Code reads this alongside the canonical CLAUDE.md.
 
   Use this file ONLY for things that are genuinely unique to this codebase and
@@ -13,7 +13,7 @@
   managed repo, raise it — it belongs in canonical, not local.
 -->
 
-# thefairies-app — local overrides
+# home-fairy — local overrides
 
 ## User Environment
 
