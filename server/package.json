@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "create-admin": "tsx src/scripts/create-admin.ts",
     "test": "node --import tsx --test 'src/__tests__/**/*.test.ts'",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit -p tsconfig.test.json"
   },
   "dependencies": {
     "axios": "^1.9.0",
