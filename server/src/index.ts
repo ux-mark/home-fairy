@@ -145,14 +145,19 @@ app.use('/api/settings', requireAuth, settingsRoutes)
 
 // Hubitat webhook handler
 app.post('/hubitat', async (req, res) => {
-  // Validate webhook secret
-  const HUBITAT_WEBHOOK_SECRET = process.env.HUBITAT_WEBHOOK_SECRET
-  if (HUBITAT_WEBHOOK_SECRET) {
-    const token = (req.headers['x-hubitat-token'] as string) || (req.query.token as string)
-    if (token !== HUBITAT_WEBHOOK_SECRET) {
-      res.status(401).json({ error: 'Invalid webhook token' })
-      return
-    }
+  // Validate webhook secret. We never accept unsigned webhooks: if no secret
+  // is configured, reject with 503 so callers see "not configured" rather
+  // than silently trusting unauthenticated POSTs.
+  const { webhookSecret } = settingsStore.getHubitat()
+  if (!webhookSecret) {
+    console.warn('[hubitat] webhook rejected: HUBITAT webhook secret not configured in Settings')
+    res.status(503).json({ error: 'Hubitat webhook secret not configured — set it in Settings' })
+    return
+  }
+  const token = (req.headers['x-hubitat-token'] as string) || (req.query.token as string)
+  if (token !== webhookSecret) {
+    res.status(401).json({ error: 'Invalid webhook token' })
+    return
   }
 
   const clientIp = req.ip || 'unknown'
