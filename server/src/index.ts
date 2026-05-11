@@ -24,6 +24,8 @@ import deviceLinksRoutes from './routes/device-links.js'
 import accessLinksRoutes from './routes/access-links.js'
 import accessLinksPublicRoutes from './routes/access-links-public.js'
 import userActionsRouter from './routes/user-actions.js'
+import settingsRoutes from './routes/settings.js'
+import * as settingsStore from './lib/settings-store.js'
 import { motionHandler } from './lib/motion-handler.js'
 import { sunModeScheduler } from './lib/sun-mode-scheduler.js'
 import { timeTriggerScheduler } from './lib/time-trigger-scheduler.js'
@@ -75,8 +77,12 @@ setInterval(() => {
   }
 }, 5 * 60_000).unref()
 
-// Validate required environment variables
-const REQUIRED_ENV = ['LIFX_TOKEN', 'HUBITAT_TOKEN', 'HUB_BASE_URL', 'LATITUDE', 'LONGITUDE', 'OPENWEATHER_API'] as const
+// Validate required environment variables.
+// Note: LIFX_TOKEN, HUBITAT_TOKEN, HUB_BASE_URL, LATITUDE, LONGITUDE, and
+// OPENWEATHER_API have moved into app_settings (see settings-store.ts) and
+// are seeded from env on first boot. They're no longer required to boot —
+// integrations that need missing values will fail gracefully when called.
+const REQUIRED_ENV: readonly string[] = []
 const missing = REQUIRED_ENV.filter(key => !process.env[key])
 if (missing.length > 0) {
   console.error(`[startup] Missing required environment variables: ${missing.join(', ')}`)
@@ -86,6 +92,11 @@ if (missing.length > 0) {
 
 // Initialize database
 initDb()
+
+// Hydrate settings cache + seed from env on first boot.
+// Order matters: migrations → hydrate → seed → HTTP listen.
+settingsStore.hydrate()
+settingsStore.seedFromEnvIfMissing()
 
 const app = express()
 
@@ -130,6 +141,7 @@ app.use('/api/fairylists', requireAuth, fairylistsRoutes)
 app.use('/api/device-links', requireAuth, deviceLinksRoutes)
 app.use('/api/access-links', requireAuth, accessLinksRoutes)
 app.use('/api/user-actions', requireAuth, userActionsRouter)
+app.use('/api/settings', requireAuth, settingsRoutes)
 
 // Hubitat webhook handler
 app.post('/hubitat', async (req, res) => {
