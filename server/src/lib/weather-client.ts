@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { getOne } from '../db/index.js'
+import { getLocation, getWeather } from './settings-store.js'
 
 interface WeatherData {
   temp: number
@@ -61,12 +62,17 @@ export async function getCurrentWeather(maxAgeMs?: number): Promise<WeatherData>
     return cache.data
   }
 
-  const apiKey = process.env.OPENWEATHER_API
-  const lat = process.env.LATITUDE
-  const lon = process.env.LONGITUDE
+  const { apiKey } = getWeather()
+  const { latitude, longitude } = getLocation()
 
-  if (!apiKey || !lat || !lon) {
-    throw new Error('Missing OPENWEATHER_API, LATITUDE, or LONGITUDE env vars')
+  if (!apiKey) {
+    throw new Error('OpenWeather API key not configured — set it in Settings')
+  }
+  if (
+    typeof latitude !== 'number' || !Number.isFinite(latitude) ||
+    typeof longitude !== 'number' || !Number.isFinite(longitude)
+  ) {
+    throw new Error('Location not configured — set Latitude and Longitude in Settings')
   }
 
   try {
@@ -74,8 +80,8 @@ export async function getCurrentWeather(maxAgeMs?: number): Promise<WeatherData>
       'https://api.openweathermap.org/data/3.0/onecall',
       {
         params: {
-          lat,
-          lon,
+          lat: latitude,
+          lon: longitude,
           appid: apiKey,
           units: 'metric',
         },
