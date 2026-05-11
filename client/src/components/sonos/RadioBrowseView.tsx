@@ -1,4 +1,6 @@
+import { useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useWindowVirtualizer } from '@tanstack/react-virtual'
 import {
   AlertTriangle,
   Play,
@@ -124,33 +126,34 @@ function StationRow({
     onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
   })
 
+  // Returns the row body without an outer wrapper element so the caller can
+  // pick (`<li>`, `<div role="listitem">`, an absolutely-positioned virtual
+  // row) without nesting elements.
   if (onPick) {
     const isSelected = selectedTitle === station.title
     return (
-      <li>
-        <button
-          type="button"
-          onClick={() => onPick(station)}
-          aria-label={`Select ${station.title}`}
-          aria-pressed={isSelected}
-          className={cn(
-            'flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors',
-            'min-h-[44px] hover:bg-[var(--bg-tertiary)]',
-            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-            isSelected ? 'border-l-2 border-fairy-500 bg-fairy-500/10 pl-[14px]' : 'border-l-2 border-transparent',
-          )}
-        >
-          <ArtworkImage src={station.albumArtUri} size={40} fallback="disc" />
-          <span className={cn('truncate text-sm font-medium', isSelected ? 'text-fairy-400' : 'text-heading')}>
-            {station.title}
-          </span>
-        </button>
-      </li>
+      <button
+        type="button"
+        onClick={() => onPick(station)}
+        aria-label={`Select ${station.title}`}
+        aria-pressed={isSelected}
+        className={cn(
+          'flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors',
+          'min-h-[44px] hover:bg-[var(--bg-tertiary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          isSelected ? 'border-l-2 border-fairy-500 bg-fairy-500/10 pl-[14px]' : 'border-l-2 border-transparent',
+        )}
+      >
+        <ArtworkImage src={station.albumArtUri} size={40} fallback="disc" />
+        <span className={cn('truncate text-sm font-medium', isSelected ? 'text-fairy-400' : 'text-heading')}>
+          {station.title}
+        </span>
+      </button>
     )
   }
 
   return (
-    <li className={cn('flex items-center gap-3 px-4 py-2.5', isActive && 'bg-fairy-500/5')}>
+    <div className={cn('flex items-center gap-3 px-4 py-2.5', isActive && 'bg-fairy-500/5')}>
       <div className="relative shrink-0">
         <ArtworkImage src={station.albumArtUri} size={40} fallback="disc" />
         {isActive && (
@@ -196,7 +199,7 @@ function StationRow({
           }}
         />
       </div>
-    </li>
+    </div>
   )
 }
 
@@ -213,6 +216,7 @@ export function RadioBrowseView({ searchQuery, targetSpeaker, onPick, selectedTi
   const { selectedSpeaker, isTrackActive, isSelectedPlaying } = usePlaybackState()
   const speaker = targetSpeaker ?? selectedSpeaker
   const debouncedQuery = useDebounce(searchQuery.trim(), 300)
+  const parentRef = useRef<HTMLDivElement>(null)
 
   const { data: stations, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['sonos-radio-stations'],
@@ -262,21 +266,88 @@ export function RadioBrowseView({ searchQuery, targetSpeaker, onPick, selectedTi
   }
 
   return (
-    <ul className="-mx-4">
-      {filtered.map((station, i) => {
+    <VirtualisedStationList
+      filtered={filtered}
+      speaker={speaker}
+      isTrackActive={isTrackActive}
+      isSelectedPlaying={isSelectedPlaying}
+      onPick={onPick}
+      selectedTitle={selectedTitle}
+      parentRef={parentRef}
+    />
+  )
+}
+
+// ── Virtualised list ──────────────────────────────────────────────────────────
+// Long lists of radio stations on iOS Safari blow the DOM out and slow scroll.
+// useWindowVirtualizer renders only the rows currently in (or near) the
+// viewport against the document scroll, with a tall sized container so the
+// scrollbar reflects total list height.
+
+interface VirtualisedStationListProps {
+  filtered: SonosRadioStation[]
+  speaker: string | null
+  isTrackActive: (uri: string | undefined, title: string) => boolean
+  isSelectedPlaying: boolean
+  onPick?: (station: SonosRadioStation) => void
+  selectedTitle?: string
+  parentRef: React.RefObject<HTMLDivElement | null>
+}
+
+function VirtualisedStationList({
+  filtered,
+  speaker,
+  isTrackActive,
+  isSelectedPlaying,
+  onPick,
+  selectedTitle,
+  parentRef,
+}: VirtualisedStationListProps) {
+  const virtualizer = useWindowVirtualizer({
+    count: filtered.length,
+    estimateSize: () => 60,
+    overscan: 6,
+    // scrollMargin ensures absolute positions are relative to the parent's
+    // top in the document, not to the window itself.
+    scrollMargin: parentRef.current?.offsetTop ?? 0,
+    getItemKey: i => filtered[i].uri + ':' + i,
+  })
+
+  return (
+    <div
+      ref={parentRef}
+      role="list"
+      className="-mx-4"
+      style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
+    >
+      {virtualizer.getVirtualItems().map(item => {
+        const station = filtered[item.index]
         const isActive = isTrackActive(station.uri, station.title)
         return (
-          <StationRow
-            key={station.uri + ':' + i}
-            station={station}
-            speaker={speaker}
-            isActive={isActive}
-            isPlaying={isActive && isSelectedPlaying}
-            onPick={onPick}
-            selectedTitle={selectedTitle}
-          />
+          <div
+            key={item.key}
+            role="listitem"
+            data-index={item.index}
+            ref={virtualizer.measureElement}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)`,
+            }}
+          >
+            <StationRow
+              station={station}
+              speaker={speaker}
+              isActive={isActive}
+              isPlaying={isActive && isSelectedPlaying}
+              onPick={onPick}
+              selectedTitle={selectedTitle}
+            />
+          </div>
         )
       })}
-    </ul>
+    </div>
   )
 }

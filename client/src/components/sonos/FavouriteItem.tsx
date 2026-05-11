@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, memo } from 'react'
 import { createPortal } from 'react-dom'
 import { CSS } from '@dnd-kit/utilities'
 import { useSortable } from '@dnd-kit/sortable'
@@ -167,7 +167,7 @@ function FavouriteBottomSheet({
 
 // ── FavouriteItem ─────────────────────────────────────────────────────────────
 
-export function FavouriteItem({
+function FavouriteItemImpl({
   item,
   onPlay,
   onRemove,
@@ -444,3 +444,9 @@ export function FavouriteItem({
     </>
   )
 }
+
+// memo — FavouritesTab re-renders on socket ticks for unrelated reasons
+// (queue updates, playback state). With stable handlers from the parent,
+// memo lets each row skip re-render unless its `item`, `swipedItemId`,
+// or a handler identity actually changes.
+export const FavouriteItem = memo(FavouriteItemImpl)

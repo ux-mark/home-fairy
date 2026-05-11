@@ -1,123 +1,68 @@
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { io, Socket } from 'socket.io-client'
 
-let socket: Socket | null = null
+// This module deliberately does NOT statically import socket.io-client. The
+// transport is ~43 KB minified and used to land in the entry chunk because
+// AppLayout calls useDashboardSocket synchronously. Now everything reaches
+// `@/lib/socket-impl` via dynamic import(), so the socket bundle loads in
+// its own chunk only after the first paint of the layout.
+//
+// Public API is unchanged for callers: `useDashboardSocket()` still attaches
+// the React-Query invalidation listeners; `getSocketAsync()` returns a
+// promise that resolves to the connected socket for one-off subscribers.
 
-export function getSocket(): Socket {
-  if (!socket) {
-    const url = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin
-    socket = io(url, {
-      transports: ['websocket', 'polling'],
-      withCredentials: true,
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 30000,
-    })
+let implPromise: Promise<typeof import('@/lib/socket-impl')> | null = null
+function loadImpl() {
+  // Cache the promise so concurrent callers wait on the same fetch.
+  if (!implPromise) {
+    implPromise = import('@/lib/socket-impl')
   }
-  return socket
-}
-
-if (import.meta.hot) {
-  import.meta.hot.dispose(() => {
-    if (socket) {
-      socket.disconnect()
-      socket = null
-    }
-  })
+  return implPromise
 }
 
 /**
  * Subscribe to Hubitat and system events and invalidate relevant
- * TanStack Query caches for real-time dashboard updates.
+ * TanStack Query caches for real-time dashboard updates. Idempotent;
+ * mount in the layout component once.
  */
 export function useDashboardSocket(): void {
   const queryClient = useQueryClient()
-  const connectedRef = useRef(false)
 
   useEffect(() => {
-    const s = getSocket()
+    let cancelled = false
+    let cleanup: (() => void) | undefined
 
-    if (!connectedRef.current) {
-      connectedRef.current = true
-    }
-
-    function handleHubitatEvent(event: { name?: string }) {
-      const eventName = event.name ?? ''
-
-      // Invalidate dashboard summary on sensor/power/battery changes
-      if (['power', 'energy', 'battery', 'temperature', 'illuminance', 'lux'].includes(eventName)) {
-        queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] })
-      }
-
-      // Invalidate device queries on any hubitat event
-      if (['switch', 'power', 'energy', 'battery'].includes(eventName)) {
-        queryClient.invalidateQueries({ queryKey: ['hubitat'] })
-      }
-    }
-
-    function handleModeChange() {
-      queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] })
-      queryClient.invalidateQueries({ queryKey: ['system', 'current'] })
-      queryClient.invalidateQueries({ queryKey: ['system', 'night-status'] })
-      queryClient.invalidateQueries({ queryKey: ['rooms'] })
-      queryClient.invalidateQueries({ queryKey: ['scenes'] })
-    }
-
-    function handleSceneChange() {
-      queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] })
-      queryClient.invalidateQueries({ queryKey: ['rooms'] })
-      queryClient.invalidateQueries({ queryKey: ['scenes'] })
-      queryClient.invalidateQueries({ queryKey: ['system', 'current'] })
-    }
-
-    // Kasa state changes (from 10s poller)
-    function handleKasaState() {
-      queryClient.invalidateQueries({ queryKey: ['kasa'] })
-      queryClient.invalidateQueries({ queryKey: ['hubitat'] })
-    }
-
-    // Kasa power readings update
-    function handleKasaPower() {
-      queryClient.invalidateQueries({ queryKey: ['kasa'] })
-      queryClient.invalidateQueries({ queryKey: ['dashboard', 'summary'] })
-    }
-
-    // Device commands from another tab or automation
-    function handleDeviceCommand() {
-      queryClient.invalidateQueries({ queryKey: ['hubitat'] })
-      queryClient.invalidateQueries({ queryKey: ['kasa'] })
-    }
-
-    function handleNotificationNew() {
-      queryClient.invalidateQueries({ queryKey: ['notifications'] })
-    }
-
-    function handleNotificationUpdate() {
-      queryClient.invalidateQueries({ queryKey: ['notifications'] })
-    }
-
-    s.on('hubitat:event', handleHubitatEvent)
-    s.on('mode:change', handleModeChange)
-    s.on('mode_changed', handleModeChange)  // emitted by sun-mode-scheduler
-    s.on('scene:change', handleSceneChange)
-    s.on('kasa:state', handleKasaState)
-    s.on('kasa:power', handleKasaPower)
-    s.on('device:command', handleDeviceCommand)
-    s.on('notification:new', handleNotificationNew)
-    s.on('notification:update', handleNotificationUpdate)
+    loadImpl().then(({ attachDashboardListeners }) => {
+      if (cancelled) return
+      cleanup = attachDashboardListeners(queryClient)
+    })
 
     return () => {
-      s.off('hubitat:event', handleHubitatEvent)
-      s.off('mode:change', handleModeChange)
-      s.off('mode_changed', handleModeChange)
-      s.off('scene:change', handleSceneChange)
-      s.off('kasa:state', handleKasaState)
-      s.off('kasa:power', handleKasaPower)
-      s.off('device:command', handleDeviceCommand)
-      s.off('notification:new', handleNotificationNew)
-      s.off('notification:update', handleNotificationUpdate)
+      cancelled = true
+      cleanup?.()
     }
   }, [queryClient])
+}
+
+/**
+ * Resolve to the live Socket.io connection, lazily loading the transport
+ * if needed. Use for one-off subscriptions (e.g. PlaybackStateContext);
+ * remember to detach in the cleanup of whatever effect you mount it in.
+ */
+export async function getSocketAsync() {
+  const impl = await loadImpl()
+  return impl.getSocket()
+}
+
+/**
+ * Attach a one-off listener to the global socket. Returns a Promise that
+ * resolves to a cleanup function. Convenient when you want both the
+ * deferred-load behaviour and the listener boilerplate handled.
+ */
+export async function attachSocketListener<T = unknown>(
+  event: string,
+  handler: (data: T) => void,
+): Promise<() => void> {
+  const impl = await loadImpl()
+  return impl.attachListener(event, handler)
 }

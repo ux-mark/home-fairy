@@ -18,7 +18,7 @@ import {
   Music2,
   Volume2,
 } from 'lucide-react'
-import { getSocket } from '@/hooks/useSocket'
+import { getSocketAsync } from '@/hooks/useSocket'
 import { api } from '@/lib/api'
 import type { Light, Room, DeviceRoomAssignment, HubDevice, KasaDevice, SonosSpeakerMapping, SonosZone } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
@@ -136,8 +136,30 @@ function LightCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[] })
 
   const toggleMutation = useMutation({
     mutationFn: () => api.lifx.toggle(`id:${light.id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }),
-    onError: () => toast({ message: 'Failed to toggle light', type: 'error' }),
+    // Optimistic toggle — same pattern as LightsPage. We deliberately don't
+    // invalidate on settle: the LIFX cloud GET /lights/all lags ~1–2 s behind
+    // a successful toggle ack, so an immediate refetch returns the pre-toggle
+    // state and stomps the optimistic value. The cache reconciles via the
+    // 30 s staleTime / next navigation.
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['lifx', 'lights'] })
+      const previous = queryClient.getQueryData<Light[]>(['lifx', 'lights'])
+      queryClient.setQueryData<Light[]>(['lifx', 'lights'], old => {
+        if (!old) return old
+        return old.map(l =>
+          l.id === light.id
+            ? { ...l, power: l.power === 'on' ? 'off' : 'on' }
+            : l,
+        )
+      })
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['lifx', 'lights'], context.previous)
+      }
+      toast({ message: 'Failed to toggle light', type: 'error' })
+    },
   })
 
   return (
@@ -209,25 +231,28 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
   const [level, setLevel] = useState(() => (device.hubDevice?.attributes as Record<string, unknown> | undefined)?.level as number ?? 50)
 
   const isDeactivated = device.isDeactivated
-  const hubNewState = device.isOn ? 'off' : 'on'
 
+  // Pass desired state as the mutation variable so it stays consistent
+  // through onMutate/onSuccess/onError after the optimistic update flips
+  // device.isOn — see the matching pattern in KasaDeviceCard below.
   const toggleMutation = useMutation({
-    mutationFn: () => api.hubitat.sendCommand(device.hubDevice!.id.toString(), hubNewState),
-    onMutate: async () => {
+    mutationFn: (state: 'on' | 'off') =>
+      api.hubitat.sendCommand(device.hubDevice!.id.toString(), state),
+    onMutate: async (state: 'on' | 'off') => {
       await queryClient.cancelQueries({ queryKey: ['hubitat', 'devices'] })
       const previous = queryClient.getQueryData<HubDevice[]>(['hubitat', 'devices'])
       queryClient.setQueryData<HubDevice[]>(['hubitat', 'devices'], old => {
         if (!old) return old
         return old.map(d =>
           d.id === device.hubDevice!.id
-            ? { ...d, attributes: { ...(d.attributes as Record<string, unknown>), switch: hubNewState } }
+            ? { ...d, attributes: { ...(d.attributes as Record<string, unknown>), switch: state } }
             : d
         )
       })
       return { previous }
     },
-    onSuccess: () => {
-      toast({ message: `${device.label} turned ${hubNewState}` })
+    onSuccess: (_data, state) => {
+      toast({ message: `${device.label} turned ${state}` })
     },
     onError: (_err, _vars, context) => {
       if (context?.previous) {
@@ -235,15 +260,39 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
       }
       toast({ message: `Failed to control ${device.label}`, type: 'error' })
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['hubitat'] })
-    },
+    // No onSettled invalidate. The mutation ack is "command queued at the
+    // hub", not "device confirmed state". The hubitat:event webhook will
+    // arrive with eventName='switch' a moment later and the socket handler
+    // does the invalidate then — at which point the server DB has the new
+    // state. Invalidating immediately just stomps the optimistic value with
+    // the pre-toggle row.
   })
 
   const setLevelMutation = useMutation({
     mutationFn: (lvl: number) =>
       api.hubitat.sendCommand(device.hubDevice!.id.toString(), 'setLevel', lvl),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['hubitat'] }),
+    // Optimistic level — keep the cached attribute in sync with the slider
+    // commit so the displayed brightness doesn't snap back to the stale
+    // value between commit and refetch.
+    onMutate: async (lvl: number) => {
+      await queryClient.cancelQueries({ queryKey: ['hubitat', 'devices'] })
+      const previous = queryClient.getQueryData<HubDevice[]>(['hubitat', 'devices'])
+      queryClient.setQueryData<HubDevice[]>(['hubitat', 'devices'], old => {
+        if (!old) return old
+        return old.map(d =>
+          d.id === device.hubDevice!.id
+            ? { ...d, attributes: { ...(d.attributes as Record<string, unknown>), level: lvl } }
+            : d
+        )
+      })
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['hubitat', 'devices'], context.previous)
+      }
+    },
+    // No onSettled invalidate — see comment on toggleMutation above.
   })
 
   const isKeepOn = !!device.deviceRoom?.config?.exclude_from_all_off
@@ -317,7 +366,7 @@ function HubDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room[
         </button>
 
         <button
-          onClick={() => toggleMutation.mutate()}
+          onClick={() => toggleMutation.mutate(device.isOn ? 'off' : 'on')}
           disabled={toggleMutation.isPending || isDeactivated}
           className={cn(
             'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
@@ -375,25 +424,28 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
   const kasa = device.kasaDevice!
 
   const isDeactivated = device.isDeactivated
-  const newState = device.isOn ? 'off' : 'on'
 
+  // The optimistic update flips device.isOn before onSuccess runs, so any
+  // value computed from device.isOn at render time is stale by the time the
+  // toast fires. Pass the desired state as the mutation variable so it
+  // travels with the request through onMutate, onSuccess, and onError.
   const toggleMutation = useMutation({
-    mutationFn: () => api.kasa.sendCommand(kasa.id, newState),
-    onMutate: async () => {
+    mutationFn: (state: 'on' | 'off') => api.kasa.sendCommand(kasa.id, state),
+    onMutate: async (state: 'on' | 'off') => {
       await queryClient.cancelQueries({ queryKey: ['kasa', 'devices'] })
       const previous = queryClient.getQueryData<KasaDevice[]>(['kasa', 'devices'])
       queryClient.setQueryData<KasaDevice[]>(['kasa', 'devices'], old => {
         if (!old) return old
         return old.map(d =>
           d.id === kasa.id
-            ? { ...d, attributes: { ...d.attributes, switch: newState } }
+            ? { ...d, attributes: { ...d.attributes, switch: state } }
             : d
         )
       })
       return { previous }
     },
-    onSuccess: () => {
-      toast({ message: `${device.label} turned ${newState}` })
+    onSuccess: (_data, state) => {
+      toast({ message: `${device.label} turned ${state}` })
     },
     onError: (_err, _vars, context) => {
       if (context?.previous) {
@@ -401,9 +453,11 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
       }
       toast({ message: `Failed to control ${device.label}`, type: 'error' })
     },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['kasa'] })
-    },
+    // No onSettled invalidate. The mutation ack is "command sent to sidecar";
+    // the sidecar's reported state lags up to one poll interval (10 s) before
+    // the server DB sees the new value. The kasa:state socket event fires when
+    // the poller actually reads the new state — that's when the cache should
+    // refetch, not on the mutation ack.
   })
 
   const isKeepOn = !!device.deviceRoom?.config?.exclude_from_all_off
@@ -457,7 +511,7 @@ function KasaDeviceCard({ device, rooms }: { device: UnifiedDevice; rooms?: Room
             {device.label}
           </Link>
           <button
-            onClick={() => toggleMutation.mutate()}
+            onClick={() => toggleMutation.mutate(device.isOn ? 'off' : 'on')}
             disabled={toggleMutation.isPending || !kasa.is_online || isDeactivated}
             className={cn(
               'flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lg transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
@@ -804,14 +858,25 @@ export default function DevicesPage() {
     enabled: filter === 'sonos' || filter === 'all',
   })
 
-  // Invalidate zones cache on real-time Sonos updates
+  // Invalidate zones cache on real-time Sonos updates. Socket transport
+  // loads in its own chunk (~43 KB) only after first paint; the async
+  // import() resolves in milliseconds so listener attach is essentially
+  // immediate from the user's POV.
   useEffect(() => {
     if (filter !== 'sonos' && filter !== 'all') return
-    const s = getSocket()
+    let cancelled = false
+    let cleanup: (() => void) | undefined
     const handler = () => queryClient.invalidateQueries({ queryKey: ['sonos', 'zones'] })
-    s.on('sonos:zones-update', handler)
+
+    getSocketAsync().then(socket => {
+      if (cancelled) return
+      socket.on('sonos:zones-update', handler)
+      cleanup = () => socket.off('sonos:zones-update', handler)
+    })
+
     return () => {
-      s.off('sonos:zones-update', handler)
+      cancelled = true
+      cleanup?.()
     }
   }, [queryClient, filter])
 

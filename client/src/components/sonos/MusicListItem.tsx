@@ -42,6 +42,13 @@ export interface MusicListItemProps {
   badge?: ReactNode
   /** Optional duration string shown before controls */
   duration?: string
+  /**
+   * Outer wrapper element. Default `'li'` for use inside a `<ul>`. Pass
+   * `'div'` (with role="listitem") when this row is being rendered inside a
+   * virtualised container that wraps each row in an absolutely-positioned
+   * `<div role="listitem">` and uses `<div role="list">` for the container.
+   */
+  as?: 'li' | 'div'
 }
 
 // ── Shared styles ────────────────────────────────────────────────────────────
@@ -73,17 +80,22 @@ export function MusicListItem({
   duration,
   pickMode = false,
   onDrillDown,
+  as = 'li',
 }: MusicListItemProps) {
   const showPause = isCurrentTrack && isPlaying && !!onPause
 
   const isPickSelected = pickMode && isCurrentTrack
+  const Wrapper = as
+  const wrapperRole = as === 'div' ? ('listitem' as const) : undefined
 
   return (
-    <li className={cn(
-      'flex items-center gap-3 px-4 py-2.5 min-h-[44px]',
-      isPickSelected ? 'border-l-2 border-fairy-500 bg-fairy-500/10 pl-[14px]' :
-      isCurrentTrack ? 'bg-fairy-500/5' : '',
-    )}>
+    <Wrapper
+      role={wrapperRole}
+      className={cn(
+        'flex items-center gap-3 px-4 py-2.5 min-h-[44px]',
+        isPickSelected ? 'border-l-2 border-fairy-500 bg-fairy-500/10 pl-[14px]' :
+        isCurrentTrack ? 'bg-fairy-500/5' : '',
+      )}>
       {/* Tappable content area */}
       <button
         type="button"
@@ -170,6 +182,6 @@ export function MusicListItem({
           {menuProps && <MusicItemMenu {...menuProps} disabled={disabled} />}
         </div>
       )}
-    </li>
+    </Wrapper>
   )
 }

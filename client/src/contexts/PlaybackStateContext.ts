@@ -2,7 +2,7 @@ import { createContext, createElement, useEffect, useState, useMemo, useCallback
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import type { SonosNowPlayingEntry, SonosPlaybackState } from '@/lib/api'
-import { getSocket } from '@/hooks/useSocket'
+import { getSocketAsync } from '@/hooks/useSocket'
 import { normalizeUri } from '@/lib/normalizeUri'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -42,11 +42,15 @@ export function PlaybackStateProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
 
   // ── Polling query ─────────────────────────────────────────────────────────
+  // Live updates arrive via the `sonos:playback-update` socket event below;
+  // a 30 s background refetch is enough of a safety net for the rare case
+  // the socket misses an event. The previous 5 s tick fired on every
+  // authenticated page (login screen included) for every user, forever.
   const { data: allNowPlaying = [], isLoading } = useQuery({
     queryKey: ['sonos', 'now-playing'],
     queryFn: api.sonos.getNowPlaying,
-    refetchInterval: 5_000,
-    staleTime: 4_000,
+    refetchInterval: 30_000,
+    staleTime: 25_000,
   })
 
   // ── Stored speaker preference (user's explicit choice) ───────────────────
@@ -71,8 +75,14 @@ export function PlaybackStateProvider({ children }: { children: ReactNode }) {
   }, [])
 
   // ── Socket invalidation ───────────────────────────────────────────────────
+  // The socket transport loads in its own chunk (~43 KB) only after first
+  // paint; getSocketAsync resolves once it's ready. We track a `cancelled`
+  // flag and a `cleanup` ref so unmounting before the import resolves still
+  // detaches correctly.
   useEffect(() => {
-    const socket = getSocket()
+    let cancelled = false
+    let cleanup: (() => void) | undefined
+
     function handlePlaybackUpdate() {
       queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
     }
@@ -83,11 +93,20 @@ export function PlaybackStateProvider({ children }: { children: ReactNode }) {
         queryClient.invalidateQueries({ queryKey: ['sonos', 'queue'] })
       }
     }
-    socket.on('sonos:playback-update', handlePlaybackUpdate)
-    socket.on('sonos:queue-update', handleQueueUpdate)
+
+    getSocketAsync().then(socket => {
+      if (cancelled) return
+      socket.on('sonos:playback-update', handlePlaybackUpdate)
+      socket.on('sonos:queue-update', handleQueueUpdate)
+      cleanup = () => {
+        socket.off('sonos:playback-update', handlePlaybackUpdate)
+        socket.off('sonos:queue-update', handleQueueUpdate)
+      }
+    })
+
     return () => {
-      socket.off('sonos:playback-update', handlePlaybackUpdate)
-      socket.off('sonos:queue-update', handleQueueUpdate)
+      cancelled = true
+      cleanup?.()
     }
   }, [queryClient])
 
@@ -129,18 +148,35 @@ export function PlaybackStateProvider({ children }: { children: ReactNode }) {
     [selectedPlayback],
   )
 
-  const value: PlaybackStateContextValue = {
-    allNowPlaying,
-    selectedSpeaker,
-    setSelectedSpeaker,
-    selectedPlayback,
-    isSelectedPlaying,
-    isTrackPlaying,
-    isTrackActive,
-    isAlbumPlaying,
-    isPlaylistPlaying,
-    isLoading,
-  }
+  // Memoise so consumers don't re-render every time the provider renders
+  // and only the selectedPlayback or speaker actually changes. Helper
+  // identities (isTrackPlaying etc.) are already stable via useCallback.
+  const value = useMemo<PlaybackStateContextValue>(
+    () => ({
+      allNowPlaying,
+      selectedSpeaker,
+      setSelectedSpeaker,
+      selectedPlayback,
+      isSelectedPlaying,
+      isTrackPlaying,
+      isTrackActive,
+      isAlbumPlaying,
+      isPlaylistPlaying,
+      isLoading,
+    }),
+    [
+      allNowPlaying,
+      selectedSpeaker,
+      setSelectedSpeaker,
+      selectedPlayback,
+      isSelectedPlaying,
+      isTrackPlaying,
+      isTrackActive,
+      isAlbumPlaying,
+      isPlaylistPlaying,
+      isLoading,
+    ],
+  )
 
   return createElement(PlaybackStateContext.Provider, { value }, children)
 }

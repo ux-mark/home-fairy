@@ -59,6 +59,7 @@ class SonosManager {
   private currentMode: string | null = null
   private podcastArtCache: Map<string, string> = new Map()
   private lastPlaybackFingerprint: string = ''
+  private lastZonesFingerprint: string = ''
 
   init(): void {
     this.loadRoomSpeakerMap()
@@ -91,11 +92,38 @@ class SonosManager {
     }).join('|')
   }
 
+  /** Structural fingerprint covering everything our `sonos:zones-update`
+   *  consumers actually care about (playback state, current track, group
+   *  composition, volume, mute). Cheaper than two full JSON.stringify() of
+   *  the entire zones tree on every poll tick. */
+  private getZonesFingerprint(zones: SonosZone[]): string {
+    return zones
+      .map(z => {
+        const s = z.coordinator.state
+        const members = z.members
+          .map(m => `${m.roomName}=${m.uuid}`)
+          .join(',')
+        return [
+          z.coordinator.roomName,
+          z.coordinator.uuid,
+          s.playbackState,
+          s.currentTrack?.uri ?? '',
+          s.currentTrack?.title ?? '',
+          s.volume,
+          s.mute ? '1' : '0',
+          members,
+        ].join('|')
+      })
+      .join('||')
+  }
+
   private startZonePolling(): void {
     const poll = async () => {
       try {
         const newZones = await sonosClient.getZones()
-        const changed = JSON.stringify(newZones) !== JSON.stringify(this.zones)
+        const newFingerprint = this.getZonesFingerprint(newZones)
+        const changed = newFingerprint !== this.lastZonesFingerprint
+        this.lastZonesFingerprint = newFingerprint
         this.zones = newZones
         this.consecutiveFailures = 0
         if (changed) {
@@ -103,9 +131,9 @@ class SonosManager {
         }
         // Check for playback changes on every poll — a track advance or external
         // play/pause changes the fingerprint without necessarily changing zone membership.
-        const newFingerprint = this.getPlaybackFingerprint(newZones)
-        if (newFingerprint !== this.lastPlaybackFingerprint) {
-          this.lastPlaybackFingerprint = newFingerprint
+        const playbackFingerprint = this.getPlaybackFingerprint(newZones)
+        if (playbackFingerprint !== this.lastPlaybackFingerprint) {
+          this.lastPlaybackFingerprint = playbackFingerprint
           // Include the currently-playing speaker and track info so clients can
           // update their queue highlight without waiting for a full now-playing fetch.
           const playingZone = newZones.find(z => z.coordinator.state.playbackState === 'PLAYING')

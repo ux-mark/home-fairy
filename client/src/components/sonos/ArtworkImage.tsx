@@ -81,6 +81,12 @@ export function ArtworkImage({
           src={url}
           alt=""
           loading="lazy"
+          // Async decoding lets long lists of artwork rows scroll smoothly on
+          // iOS Safari instead of blocking the main thread when many <img>
+          // elements come into view at once.
+          decoding="async"
+          width={size}
+          height={size}
           className="h-full w-full object-cover"
           onError={() => setFailed(true)}
         />

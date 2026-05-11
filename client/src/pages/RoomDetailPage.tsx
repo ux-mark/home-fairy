@@ -25,7 +25,7 @@ import {
 } from 'lucide-react'
 import * as Switch from '@radix-ui/react-switch'
 import * as Tabs from '@radix-ui/react-tabs'
-import { getSocket } from '@/hooks/useSocket'
+import { getSocketAsync } from '@/hooks/useSocket'
 import { api } from '@/lib/api'
 import type { Light, LightAssignment, Sensor, HubDevice, DeviceRoomAssignment, DeactivatedDevice, SonosZone, AutoPlayRule } from '@/lib/api'
 import { cn, getLightColorHex } from '@/lib/utils'
@@ -499,7 +499,8 @@ export default function RoomDetailPage() {
 
   useEffect(() => {
     if (!roomSpeaker) return
-    const s = getSocket()
+    let cancelled = false
+    let cleanup: (() => void) | undefined
 
     function handleZonesUpdate(zones: SonosZone[]) {
       setLiveZones(zones)
@@ -508,14 +509,21 @@ export default function RoomDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['sonos', 'follow-me-status'] })
     }
 
-    s.on('sonos:zones-update', handleZonesUpdate)
-    s.on('sonos:playback-update', handleZonesUpdate)
-    s.on('sonos:follow-me-update', handleFollowMeUpdate)
+    getSocketAsync().then(socket => {
+      if (cancelled) return
+      socket.on('sonos:zones-update', handleZonesUpdate)
+      socket.on('sonos:playback-update', handleZonesUpdate)
+      socket.on('sonos:follow-me-update', handleFollowMeUpdate)
+      cleanup = () => {
+        socket.off('sonos:zones-update', handleZonesUpdate)
+        socket.off('sonos:playback-update', handleZonesUpdate)
+        socket.off('sonos:follow-me-update', handleFollowMeUpdate)
+      }
+    })
 
     return () => {
-      s.off('sonos:zones-update', handleZonesUpdate)
-      s.off('sonos:playback-update', handleZonesUpdate)
-      s.off('sonos:follow-me-update', handleFollowMeUpdate)
+      cancelled = true
+      cleanup?.()
     }
   }, [roomSpeaker, queryClient])
 

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import type { SonosQueueItem } from '@/lib/api'
-import { getSocket } from '@/hooks/useSocket'
+import { getSocketAsync } from '@/hooks/useSocket'
 
 // ── useQueueSync ──────────────────────────────────────────────────────────────
 // Syncs the Sonos queue for a given speaker via TanStack Query + WebSocket.
@@ -36,16 +36,23 @@ export function useQueueSync({ speaker, enabled }: UseQueueSyncOptions): UseQueu
 
   useEffect(() => {
     if (!enabled || !speaker) return
-    const s = getSocket()
+    let cancelled = false
+    let cleanup: (() => void) | undefined
 
     function handleQueueUpdate(event: { speaker: string; action: string; queue: SonosQueueItem[] }) {
       if (event.speaker !== speaker) return
       queryClient.setQueryData<SonosQueueItem[]>(queueKey, event.queue)
     }
 
-    s.on('sonos:queue-update', handleQueueUpdate)
+    getSocketAsync().then(socket => {
+      if (cancelled) return
+      socket.on('sonos:queue-update', handleQueueUpdate)
+      cleanup = () => socket.off('sonos:queue-update', handleQueueUpdate)
+    })
+
     return () => {
-      s.off('sonos:queue-update', handleQueueUpdate)
+      cancelled = true
+      cleanup?.()
     }
   }, [enabled, speaker, queryClient]) // eslint-disable-line react-hooks/exhaustive-deps
 

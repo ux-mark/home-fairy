@@ -1,24 +1,33 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Zap, Moon, AlertTriangle, ChevronRight, Settings2, Pencil } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useCallback, Suspense, lazy, Fragment } from 'react'
 import { api } from '@/lib/api'
 import { DEFAULT_MODES } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import type { Room } from '@/lib/api'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton, SkeletonGrid } from '@/components/ui/Skeleton'
-import RoomReorderOverlay from '@/components/RoomReorderOverlay'
-import HomeSectionEditor from '@/components/HomeSectionEditor'
 import { DEFAULT_SECTION_ORDER, type SectionOrderItem } from '@/lib/homepage-sections'
 import { ModeSelector } from '@/components/home/ModeSelector'
 import { RoomCard } from '@/components/home/RoomCard'
 import { WeatherCard } from '@/components/home/WeatherCard'
 import { QuickActions } from '@/components/home/QuickActions'
 import { MtaCard } from '@/components/home/MtaCard'
-import { MusicQuickAction } from '@/components/home/MusicQuickAction'
 import { HushingQuickAction } from '@/components/home/HushingQuickAction'
 import DeviceOnboarding from '@/components/ui/DeviceOnboarding'
+
+// Lazy-loaded so cold-loading the homepage doesn't pull these into the
+// entry chunk:
+//   - RoomReorderOverlay/HomeSectionEditor each pull all of @dnd-kit/* (~45 KB)
+//     and only render when the user opens the relevant editor.
+//   - MusicQuickAction's popover tree drags the Sonos queue/menu UI
+//     (~80 KB) into cold load even though it's a small homepage tile.
+const RoomReorderOverlay = lazy(() => import('@/components/RoomReorderOverlay'))
+const HomeSectionEditor = lazy(() => import('@/components/HomeSectionEditor'))
+const MusicQuickAction = lazy(() =>
+  import('@/components/home/MusicQuickAction').then(m => ({ default: m.MusicQuickAction })),
+)
 
 // ── Home page ────────────────────────────────────────────────────────────────
 
@@ -29,14 +38,14 @@ export default function HomePage() {
   const [sectionEditorOpen, setSectionEditorOpen] = useState(false)
   const [expandedChildren, setExpandedChildren] = useState<Set<string>>(new Set())
 
-  function toggleChild(name: string) {
+  const toggleChild = useCallback((name: string) => {
     setExpandedChildren(prev => {
       const next = new Set(prev)
       if (next.has(name)) next.delete(name)
       else next.add(name)
       return next
     })
-  }
+  }, [])
 
   const { data: rooms, isLoading: roomsLoading, isError: roomsError, refetch: refetchRooms } = useQuery({
     queryKey: ['rooms'],
@@ -129,8 +138,10 @@ export default function HomePage() {
       return { previous }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rooms'] })
-      queryClient.invalidateQueries({ queryKey: ['scenes'] })
+      // The server emits `scene:change` after the scene runs, which the
+      // socket handler turns into the same ['rooms'] + ['scenes'] invalidation.
+      // Doing it here too triggers up to three back-to-back refetches of the
+      // rooms list. Trust the socket.
       toast({ message: 'Scene activated' })
     },
     onError: (_err, _name, context) => {
@@ -156,8 +167,8 @@ export default function HomePage() {
       return { previous }
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rooms'] })
-      queryClient.invalidateQueries({ queryKey: ['scenes'] })
+      // Socket-driven invalidation handles ['rooms'] / ['scenes'] — see comment
+      // on activateSceneMutation.onSuccess above.
       toast({ message: 'Scene deactivated' })
     },
     onError: (_err, _name, context) => {
@@ -191,6 +202,22 @@ export default function HomePage() {
   const allModes = system?.all_modes ?? [...DEFAULT_MODES]
   const modeIcons = system?.mode_icons ?? {}
 
+  // Stable callbacks so React.memo on RoomCard can actually skip re-renders
+  // when only unrelated state (sonos poll, foreign socket events) changes.
+  const handleToggleScene = useCallback(
+    (name: string, isActive: boolean) => {
+      if (isActive) deactivateSceneMutation.mutate(name)
+      else activateSceneMutation.mutate(name)
+    },
+    [activateSceneMutation, deactivateSceneMutation],
+  )
+  const handleToggleAuto = useCallback(
+    (roomName: string, currentAuto: boolean) => {
+      toggleAutoMutation.mutate({ name: roomName, auto: !currentAuto })
+    },
+    [toggleAutoMutation],
+  )
+
   // Render a single section by ID
   function renderSection(id: string): React.ReactNode {
     switch (id) {
@@ -199,7 +226,16 @@ export default function HomePage() {
       case 'quick-actions':
         return <QuickActions key="quick-actions" />
       case 'music':
-        return <MusicQuickAction key="music" />
+        // Suspense fallback matches the tile's resting height so the layout
+        // doesn't reflow when the chunk arrives.
+        return (
+          <Suspense
+            key="music"
+            fallback={<Skeleton className="h-20 w-full rounded-xl" aria-label="Loading music tile" />}
+          >
+            <MusicQuickAction />
+          </Suspense>
+        )
       case 'hushing-home':
         return <HushingQuickAction key="hushing-home" />
       case 'weather':
@@ -271,14 +307,8 @@ export default function HomePage() {
                       scenes={scenes ?? []}
                       currentMode={currentMode}
                       defaultScenes={defaultScenes}
-                      onToggleScene={(name, isActive) =>
-                        isActive
-                          ? deactivateSceneMutation.mutate(name)
-                          : activateSceneMutation.mutate(name)
-                      }
-                      onToggleAuto={() =>
-                        toggleAutoMutation.mutate({ name: room.name, auto: !room.auto })
-                      }
+                      onToggleScene={handleToggleScene}
+                      onToggleAuto={handleToggleAuto}
                       isLocked={nightStatus?.lockedRooms.includes(room.name)}
                       expandedChildren={expandedChildren}
                       onToggleChild={toggleChild}
@@ -369,16 +399,27 @@ export default function HomePage() {
         </button>
       </div>
 
-      <RoomReorderOverlay
-        rooms={rooms ?? []}
-        open={reorderOpen}
-        onClose={() => setReorderOpen(false)}
-      />
+      {/* Overlays mount only when actually opened, so cold load does not pay
+       * for @dnd-kit. Suspense fallback is null because the user's tap on
+       * "Edit" is the explicit "I'm waiting" signal. */}
+      {reorderOpen && (
+        <Suspense fallback={null}>
+          <RoomReorderOverlay
+            rooms={rooms ?? []}
+            open={reorderOpen}
+            onClose={() => setReorderOpen(false)}
+          />
+        </Suspense>
+      )}
 
-      <HomeSectionEditor
-        open={sectionEditorOpen}
-        onClose={() => setSectionEditorOpen(false)}
-      />
+      {sectionEditorOpen && (
+        <Suspense fallback={null}>
+          <HomeSectionEditor
+            open={sectionEditorOpen}
+            onClose={() => setSectionEditorOpen(false)}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }
