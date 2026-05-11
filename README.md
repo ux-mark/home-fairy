@@ -77,6 +77,10 @@ API_TIMEOUT=10000
 
 All integrations are optional. Leave a token blank to skip that integration.
 
+### Configuration: `.env` vs Settings UI
+
+On first boot, integration credentials (Hubitat, LIFX, OpenWeather, Spotify) and your location (latitude, longitude, timezone, locale) are seeded from `server/.env` into the SQLite `app_settings` table. After that, edit them at **`/settings`** in the running app — `.env` is no longer the source of truth for these values. The remaining env vars (`PORT`, `FAIRY_DB_PATH`, auth secrets, etc.) are infrastructure and stay in `.env`.
+
 ### 4. Build and start
 
 ```bash
