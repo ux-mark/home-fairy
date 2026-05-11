@@ -389,6 +389,12 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_fairylist_items_list
       ON fairylist_items (fairylist_id, sort_order);
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL,           -- JSON-encoded scalar/object
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS spotify_pinned_playlists (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id TEXT NOT NULL,
