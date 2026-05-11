@@ -1952,6 +1952,9 @@ export default function RoomDetailPage() {
                               podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
                               nas_uri: nasUri,
                               spotify_uri: spotifyUri,
+                              days_of_week: null,
+                              time_start: null,
+                              time_end: null,
                             })
                           }}
                           disabled={!newRuleFavourite || !newRuleMode || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || createAutoPlayRuleMutation.isPending}
