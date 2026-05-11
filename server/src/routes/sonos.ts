@@ -473,13 +473,57 @@ router.delete('/speakers/:room', (req: Request, res: Response) => {
   res.json({ deleted: result.changes > 0 })
 })
 
+// Raw DB row shape for sonos_auto_play (days_of_week stored as JSON string).
+interface AutoPlayDbRow {
+  id: number
+  room_name: string | null
+  mode_name: string
+  favourite_name: string
+  trigger_type: 'mode_change' | 'if_not_playing' | 'if_source_not'
+  trigger_value: string | null
+  enabled: number
+  max_plays: number | null
+  podcast_feed_url: string | null
+  nas_uri: string | null
+  spotify_uri: string | null
+  days_of_week: string | null
+  time_start: string | null
+  time_end: string | null
+  [k: string]: unknown
+}
+
+// Parse the schedule columns into client-friendly shapes before responding.
+function parseAutoPlayRow(row: AutoPlayDbRow | undefined): unknown {
+  if (!row) return row
+  let days: number[] | null = null
+  if (row.days_of_week) {
+    try {
+      const parsed = JSON.parse(row.days_of_week)
+      if (Array.isArray(parsed)) days = parsed as number[]
+    } catch {
+      days = null
+    }
+  }
+  return { ...row, days_of_week: days }
+}
+
 // GET /auto-play — list auto-play rules
 router.get('/auto-play', (_req: Request, res: Response) => {
-  const rules = getAll(
+  const rules = getAll<AutoPlayDbRow>(
     'SELECT * FROM sonos_auto_play ORDER BY mode_name, room_name',
   )
-  res.json(rules)
+  res.json(rules.map(parseAutoPlayRow))
 })
+
+// ── Schedule field schemas (Phase 4) ─────────────────────────────────────────
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/
+
+const daysOfWeekSchema = z
+  .array(z.number().int().min(1).max(7))
+  .min(1, 'Pick at least one day, or clear your selection to mean every day.')
+  .refine(arr => new Set(arr).size === arr.length, { message: 'days_of_week contains duplicates' })
+
+const hhmmSchema = z.string().regex(HHMM_RE, 'Time must be HH:MM (24h)')
 
 // POST /auto-play — create a rule
 const autoPlaySchema = z.object({
@@ -493,14 +537,20 @@ const autoPlaySchema = z.object({
   podcast_feed_url: z.string().url().nullable().optional(),
   nas_uri: z.string().nullable().optional(),
   spotify_uri: z.string().nullable().optional(),
-})
+  days_of_week: daysOfWeekSchema.nullable().optional(),
+  time_start: hhmmSchema.nullable().optional(),
+  time_end: hhmmSchema.nullable().optional(),
+}).refine(
+  d => (d.time_start == null) === (d.time_end == null),
+  { message: 'Set both start and end times, or leave both blank.', path: ['time_end'] },
+)
 
 router.post('/auto-play', (req: Request, res: Response) => {
   try {
     const data = autoPlaySchema.parse(req.body)
     const result = run(
-      `INSERT INTO sonos_auto_play (room_name, mode_name, favourite_name, trigger_type, trigger_value, enabled, max_plays, podcast_feed_url, nas_uri, spotify_uri)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO sonos_auto_play (room_name, mode_name, favourite_name, trigger_type, trigger_value, enabled, max_plays, podcast_feed_url, nas_uri, spotify_uri, days_of_week, time_start, time_end)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.room_name ?? null,
         data.mode_name,
@@ -512,10 +562,13 @@ router.post('/auto-play', (req: Request, res: Response) => {
         data.podcast_feed_url ?? null,
         data.nas_uri ?? null,
         data.spotify_uri ?? null,
+        data.days_of_week ? JSON.stringify(data.days_of_week) : null,
+        data.time_start ?? null,
+        data.time_end ?? null,
       ],
     )
-    const created = getOne('SELECT * FROM sonos_auto_play WHERE id = ?', [result.lastInsertRowid])
-    res.status(201).json(created)
+    const created = getOne<AutoPlayDbRow>('SELECT * FROM sonos_auto_play WHERE id = ?', [result.lastInsertRowid])
+    res.status(201).json(parseAutoPlayRow(created))
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: err.errors })
@@ -538,7 +591,19 @@ const autoPlayUpdateSchema = z.object({
   podcast_feed_url: z.string().url().nullable().optional(),
   nas_uri: z.string().nullable().optional(),
   spotify_uri: z.string().nullable().optional(),
-})
+  days_of_week: daysOfWeekSchema.nullable().optional(),
+  time_start: hhmmSchema.nullable().optional(),
+  time_end: hhmmSchema.nullable().optional(),
+}).refine(
+  d => {
+    // Only validate the pair when at least one half is being updated.
+    if (d.time_start === undefined && d.time_end === undefined) return true
+    const start = d.time_start ?? null
+    const end = d.time_end ?? null
+    return (start == null) === (end == null)
+  },
+  { message: 'Set both start and end times, or leave both blank.', path: ['time_end'] },
+)
 
 router.put('/auto-play/:id', (req: Request, res: Response) => {
   try {
@@ -563,6 +628,12 @@ router.put('/auto-play/:id', (req: Request, res: Response) => {
     if (data.podcast_feed_url !== undefined) { updates.push('podcast_feed_url = ?'); params.push(data.podcast_feed_url) }
     if (data.nas_uri !== undefined) { updates.push('nas_uri = ?'); params.push(data.nas_uri) }
     if (data.spotify_uri !== undefined) { updates.push('spotify_uri = ?'); params.push(data.spotify_uri) }
+    if (data.days_of_week !== undefined) {
+      updates.push('days_of_week = ?')
+      params.push(data.days_of_week ? JSON.stringify(data.days_of_week) : null)
+    }
+    if (data.time_start !== undefined) { updates.push('time_start = ?'); params.push(data.time_start) }
+    if (data.time_end !== undefined) { updates.push('time_end = ?'); params.push(data.time_end) }
 
     if (updates.length > 0) {
       updates.push("updated_at = datetime('now')")
@@ -570,8 +641,8 @@ router.put('/auto-play/:id', (req: Request, res: Response) => {
       run(`UPDATE sonos_auto_play SET ${updates.join(', ')} WHERE id = ?`, params)
     }
 
-    const updated = getOne('SELECT * FROM sonos_auto_play WHERE id = ?', [id])
-    res.json(updated)
+    const updated = getOne<AutoPlayDbRow>('SELECT * FROM sonos_auto_play WHERE id = ?', [id])
+    res.json(parseAutoPlayRow(updated))
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ error: err.errors })

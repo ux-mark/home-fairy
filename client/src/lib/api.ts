@@ -902,6 +902,12 @@ export interface AutoPlayRule {
   podcast_feed_url: string | null
   nas_uri: string | null
   spotify_uri: string | null
+  /** ISO day numbers Mon=1..Sun=7. `null` means "every day". */
+  days_of_week: number[] | null
+  /** Local HH:MM (24h). `null` means no lower bound. */
+  time_start: string | null
+  /** Local HH:MM (24h). `null` means no upper bound. */
+  time_end: string | null
 }
 
 export interface FollowMeStatus {

@@ -443,6 +443,16 @@ export function initDb(): void {
   if (!autoPlayCols.some(c => c.name === 'spotify_uri')) {
     db.exec('ALTER TABLE sonos_auto_play ADD COLUMN spotify_uri TEXT DEFAULT NULL')
   }
+  // Phase 4: schedule gating (days of week + time window)
+  if (!autoPlayColNames.includes('days_of_week')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN days_of_week TEXT DEFAULT NULL')
+  }
+  if (!autoPlayColNames.includes('time_start')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN time_start TEXT DEFAULT NULL')
+  }
+  if (!autoPlayColNames.includes('time_end')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN time_end TEXT DEFAULT NULL')
+  }
 
   // Migration: add user tracking columns to rooms
   const roomTrackCols = db.prepare("PRAGMA table_info('rooms')").all() as { name: string }[]
