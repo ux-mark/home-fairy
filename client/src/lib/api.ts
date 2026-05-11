@@ -1,5 +1,54 @@
 // ── Types ────────────────────────────────────────────────────────────────────
 
+export type SettingsGroup = 'location' | 'hubitat' | 'lifx' | 'weather' | 'spotify'
+
+/** Server returns the literal string '<set>' for a secret that is set, or null. */
+export type SecretValue = '<set>' | null
+
+export interface LocationSettingsDto {
+  latitude: number | null
+  longitude: number | null
+  timezone: string
+  locale: string
+}
+
+export interface HubitatSettingsDto {
+  baseUrl: string | null
+  token: SecretValue
+  webhookSecret: SecretValue
+}
+
+export interface LifxSettingsDto {
+  token: SecretValue
+}
+
+export interface WeatherSettingsDto {
+  apiKey: SecretValue
+}
+
+export interface SpotifySettingsDto {
+  clientId: string | null
+  clientSecret: SecretValue
+  redirectUri: string | null
+}
+
+export interface SettingsTestResult {
+  ok: boolean
+  // Location:
+  sunrise?: string
+  sunset?: string
+  now?: string
+  timezone?: string
+  // Hubitat:
+  devicesCount?: number
+  // Lifx:
+  lightsCount?: number
+  // Weather:
+  sample?: string
+  // Error:
+  error?: string
+}
+
 export interface Light {
   id: string
   uuid: string
@@ -2079,6 +2128,15 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(body ?? {}),
       }),
+  },
+
+  settings: {
+    getGroup: <T = unknown>(group: SettingsGroup) =>
+      fetchApi<T>(`/settings/${group}`),
+    putGroup: <T = unknown>(group: SettingsGroup, body: unknown) =>
+      fetchApi<T>(`/settings/${group}`, { method: 'PUT', body: JSON.stringify(body) }),
+    test: <T = unknown>(group: SettingsGroup, body: unknown) =>
+      fetchApi<T>(`/settings/${group}/test`, { method: 'POST', body: JSON.stringify(body) }),
   },
 
 }
