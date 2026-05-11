@@ -1,6 +1,6 @@
 ## Task: Rework Hushing Home to match original spec — single scene + room locking
 
-You are working in the thefairies-app repo at /home/queen/thefairies-app.
+You are working in the home-fairy repo at /home/queen/home-fairy.
 
 Read CLAUDE.md, .specs/PROJECT_SPEC.md, and .specs/features.md before starting. Follow all Coding Fairy conventions (branch from dev, feature branch, PR into dev, update memory files).
 

@@ -92,8 +92,8 @@ npm run build            # Builds both client and server
 
 # Production (Pi)
 pm2 start ecosystem.config.cjs
-pm2 restart thefairies
-pm2 logs thefairies
+pm2 restart home-fairy
+pm2 logs home-fairy
 
 # Tests
 npx playwright test --config .testing/playwright.config.ts --reporter=list
@@ -201,9 +201,9 @@ Every device type has a dedicated detail route. Links to devices must use the co
 **Affected API types**: `PowerDevice`, `BatteryDevice`, `RoomIntelligenceData.devices`, `RoomIntelligenceData.batteryDevices`, `DeviceInsightsData.roomDevices`, `EnergyInsights.deviceCostRanking`.
 
 ## Pi Deployment
-- Repo location: ~/thefairies-app
+- Repo location: ~/home-fairy
 - Process manager: PM2 (ecosystem.config.cjs)
-- Database: ~/thefairies-app/server/data/thefairies.sqlite
+- Database: ~/home-fairy/server/data/thefairies.sqlite
 - External access: Cloudflare tunnel → home.thefairies.ie
 - Hubitat webhook: http://192.168.10.201:3001/hubitat
 

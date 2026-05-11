@@ -1,6 +1,6 @@
 # Audit Fix Orchestration Prompt
 
-Paste this into a fresh Claude Code session in the `/home/queen/thefairies-app` directory.
+Paste this into a fresh Claude Code session in the `/home/queen/home-fairy` directory.
 
 ---
 
