@@ -28,6 +28,7 @@ import {
   getSpotify, setSpotify,
   type SettingsGroup,
 } from '../lib/settings-store.js'
+import SunCalc from 'suncalc'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
@@ -224,6 +225,234 @@ router.put('/:group', (req: Request, res: Response) => {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// ---------- Test endpoints ----------
+//
+// Each POST /api/settings/:group/test accepts the same body shape as the PUT
+// for that group, runs a small upstream probe against the *form values*
+// (resolving '<set>' for secrets to the persisted value first), and returns
+// { ok: boolean, ...details } — never echoing the real secret.
+//
+// All upstream calls are capped at TEST_TIMEOUT_MS via AbortController; a
+// timeout returns { ok: false, error: 'Timed out' }.
+
+const TEST_TIMEOUT_MS = 5000
+
+const SET_PLACEHOLDER = '<set>'
+
+/**
+ * Resolve a secret field for a test call:
+ *   - undefined or '<set>' → use the value already in the store
+ *   - any other string (including '') → use the value from the form
+ *   - null → treated as unset (will fail the test if required)
+ */
+function resolveSecret(submitted: string | null | undefined, stored: string | null): string | null {
+  if (submitted === undefined || submitted === SET_PLACEHOLDER) return stored
+  return submitted
+}
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<globalThis.Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+function describeError(err: unknown): string {
+  if (err instanceof Error) {
+    if (err.name === 'AbortError') return 'Timed out'
+    return err.message
+  }
+  return String(err)
+}
+
+// Validate the *test-call* body: latitude/longitude must be real numbers,
+// because the upstream probes (SunCalc, OpenWeather) need them.
+const locationTestSchema = z.object({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  timezone: timezoneSchema,
+  locale: localeSchema,
+})
+
+router.post('/location/test', (req: Request, res: Response) => {
+  const parsed = locationTestSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid location', details: parsed.error.issues })
+    return
+  }
+  const { latitude, longitude, timezone } = parsed.data
+
+  try {
+    const now = new Date()
+    const sun = SunCalc.getTimes(now, latitude, longitude)
+    const fmt = new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: timezone,
+    })
+    res.json({
+      ok: true,
+      sunrise: fmt.format(sun.sunrise),
+      sunset: fmt.format(sun.sunset),
+      now: fmt.format(now),
+      timezone,
+    })
+  } catch (err) {
+    res.json({ ok: false, error: describeError(err) })
+  }
+})
+
+router.post('/hubitat/test', async (req: Request, res: Response) => {
+  const parsed = hubitatPutSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid hubitat', details: parsed.error.issues })
+    return
+  }
+  const stored = getHubitat()
+  const baseUrl = parsed.data.baseUrl === undefined || parsed.data.baseUrl === SET_PLACEHOLDER
+    ? stored.baseUrl
+    : parsed.data.baseUrl
+  const token = resolveSecret(parsed.data.token ?? undefined, stored.token)
+
+  if (!baseUrl) { res.json({ ok: false, error: 'Set Base URL first' }); return }
+  if (!token) { res.json({ ok: false, error: 'Set API token first' }); return }
+
+  // The Hubitat Maker API list-devices endpoint is just GET on the configured
+  // base URL with access_token. Same path that hubitat-client.listDevices uses.
+  const url = new URL(baseUrl)
+  url.searchParams.set('access_token', token)
+  try {
+    const resp = await fetchWithTimeout(url.toString(), { method: 'GET' }, TEST_TIMEOUT_MS)
+    if (!resp.ok) {
+      res.json({ ok: false, error: `Hub returned ${resp.status}` })
+      return
+    }
+    const body = await resp.json().catch(() => null)
+    const devicesCount = Array.isArray(body) ? body.length : 0
+    res.json({ ok: true, devicesCount })
+  } catch (err) {
+    res.json({ ok: false, error: describeError(err) })
+  }
+})
+
+router.post('/lifx/test', async (req: Request, res: Response) => {
+  const parsed = lifxPutSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid lifx', details: parsed.error.issues })
+    return
+  }
+  const stored = getLifx()
+  const token = resolveSecret(parsed.data.token ?? undefined, stored.token)
+  if (!token) { res.json({ ok: false, error: 'Set LIFX token first' }); return }
+
+  try {
+    const resp = await fetchWithTimeout(
+      'https://api.lifx.com/v1/lights/all',
+      { method: 'GET', headers: { Authorization: `Bearer ${token}` } },
+      TEST_TIMEOUT_MS,
+    )
+    if (!resp.ok) {
+      res.json({ ok: false, error: `LIFX returned ${resp.status}` })
+      return
+    }
+    const body = await resp.json().catch(() => null)
+    const lightsCount = Array.isArray(body) ? body.length : 0
+    res.json({ ok: true, lightsCount })
+  } catch (err) {
+    res.json({ ok: false, error: describeError(err) })
+  }
+})
+
+router.post('/weather/test', async (req: Request, res: Response) => {
+  const parsed = weatherPutSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid weather', details: parsed.error.issues })
+    return
+  }
+  const stored = getWeather()
+  const apiKey = resolveSecret(parsed.data.apiKey ?? undefined, stored.apiKey)
+  if (!apiKey) { res.json({ ok: false, error: 'Set API key first' }); return }
+
+  const { latitude, longitude } = getLocation()
+  if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+    res.json({ ok: false, error: 'Set Location first' })
+    return
+  }
+
+  try {
+    const url = new URL('https://api.openweathermap.org/data/2.5/weather')
+    url.searchParams.set('lat', String(latitude))
+    url.searchParams.set('lon', String(longitude))
+    url.searchParams.set('appid', apiKey)
+    url.searchParams.set('units', 'metric')
+    const resp = await fetchWithTimeout(url.toString(), { method: 'GET' }, TEST_TIMEOUT_MS)
+    if (!resp.ok) {
+      res.json({ ok: false, error: `OpenWeather returned ${resp.status}` })
+      return
+    }
+    const body = await resp.json().catch(() => null) as
+      | { weather?: Array<{ main?: string }>; main?: { temp?: number } }
+      | null
+    const condition = body?.weather?.[0]?.main ?? 'Unknown'
+    const temp = body?.main?.temp
+    const sample = typeof temp === 'number'
+      ? `${condition}, ${Math.round(temp)}°C`
+      : condition
+    res.json({ ok: true, sample })
+  } catch (err) {
+    res.json({ ok: false, error: describeError(err) })
+  }
+})
+
+router.post('/spotify/test', async (req: Request, res: Response) => {
+  const parsed = spotifyPutSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: 'Invalid spotify', details: parsed.error.issues })
+    return
+  }
+  const stored = getSpotify()
+  const clientId = parsed.data.clientId === undefined || parsed.data.clientId === SET_PLACEHOLDER
+    ? stored.clientId
+    : parsed.data.clientId
+  const clientSecret = resolveSecret(parsed.data.clientSecret ?? undefined, stored.clientSecret)
+
+  if (!clientId) { res.json({ ok: false, error: 'Set Client ID first' }); return }
+  if (!clientSecret) { res.json({ ok: false, error: 'Set Client secret first' }); return }
+
+  const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+  try {
+    const resp = await fetchWithTimeout(
+      'https://accounts.spotify.com/api/token',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${credentials}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({ grant_type: 'client_credentials' }).toString(),
+      },
+      TEST_TIMEOUT_MS,
+    )
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => null) as { error_description?: string } | null
+      res.json({ ok: false, error: body?.error_description ?? `Spotify returned ${resp.status}` })
+      return
+    }
+    // Success — explicitly do not return the access_token in the response.
+    res.json({ ok: true })
+  } catch (err) {
+    res.json({ ok: false, error: describeError(err) })
   }
 })
 
