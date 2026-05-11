@@ -1,4 +1,5 @@
 import SunCalc from 'suncalc'
+import { getLocation } from './settings-store.js'
 
 export interface SunTimes {
   sunrise: string
@@ -15,12 +16,14 @@ export interface SunTimes {
 }
 
 function getCoords(): { lat: number; lon: number } {
-  const lat = Number(process.env.LATITUDE)
-  const lon = Number(process.env.LONGITUDE)
-  if (isNaN(lat) || isNaN(lon)) {
-    throw new Error('Missing or invalid LATITUDE/LONGITUDE env vars')
+  const { latitude, longitude } = getLocation()
+  if (
+    typeof latitude !== 'number' || !Number.isFinite(latitude) ||
+    typeof longitude !== 'number' || !Number.isFinite(longitude)
+  ) {
+    throw new Error('Location not configured — set Latitude and Longitude in Settings')
   }
-  return { lat, lon }
+  return { lat: latitude, lon: longitude }
 }
 
 export function getSunTimes(date?: Date): SunTimes {
