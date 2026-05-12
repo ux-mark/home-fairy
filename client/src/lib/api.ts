@@ -29,7 +29,21 @@ export interface WeatherSettingsDto {
 export interface SpotifySettingsDto {
   clientId: string | null
   clientSecret: SecretValue
+  /**
+   * Phase 7 (WI #4): the legacy redirect URI field. Still present in
+   * responses (derived from `publicBaseUrl` when set, else echoed from the
+   * stored legacy value) but no longer user-editable from the Settings UI.
+   */
   redirectUri: string | null
+  /** Public-facing base URL the user has configured, or null. */
+  publicBaseUrl: string | null
+}
+
+export interface SpotifyRedirectUriDto {
+  /** Full redirect URI to paste into the Spotify Developer Console, or null
+   *  when the user has not yet supplied a public base URL. */
+  redirectUri: string | null
+  publicBaseUrl: string | null
 }
 
 export interface HubitatWebhookUrlDto {
@@ -2156,6 +2170,13 @@ export const api = {
       fetchApi<HubitatWebhookUrlDto>('/settings/hubitat/webhook-url'),
     regenerateHubitatSecret: () =>
       fetchApi<HubitatWebhookUrlDto>('/settings/hubitat/regenerate-secret', { method: 'POST' }),
+    spotifyRedirectUri: () =>
+      fetchApi<SpotifyRedirectUriDto>('/settings/spotify/redirect-uri'),
+    setSpotifyPublicBaseUrl: (publicBaseUrl: string | null) =>
+      fetchApi<SpotifyRedirectUriDto>('/settings/spotify/public-base-url', {
+        method: 'PUT',
+        body: JSON.stringify({ publicBaseUrl }),
+      }),
   },
 
 }
