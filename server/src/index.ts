@@ -97,6 +97,11 @@ initDb()
 // Order matters: migrations → hydrate → seed → HTTP listen.
 settingsStore.hydrate()
 settingsStore.seedFromEnvIfMissing()
+// After env-seed, guarantee the Hubitat webhook secret exists. The UI no
+// longer asks the user to type it (Phase 6, WI #4) — we auto-generate one
+// on first boot so the assembled webhook URL the user copies into Hubitat
+// is always complete.
+settingsStore.ensureHubitatWebhookSecret()
 
 const app = express()
 

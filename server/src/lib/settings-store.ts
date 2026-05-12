@@ -13,6 +13,7 @@
  *   - Writes update the DB then the cache slot in the same call.
  */
 
+import { randomUUID } from 'node:crypto'
 import { db, run, getAll } from '../db/index.js'
 
 // ---------- Group shapes ----------
@@ -200,6 +201,46 @@ export function setHubitat(v: HubitatSettings): void {
   setSetting('hubitat.baseUrl', v.baseUrl)
   setSetting('hubitat.token', v.token)
   setSetting('hubitat.webhookSecret', v.webhookSecret)
+}
+
+/**
+ * Ensure the Hubitat webhook secret is set. If it's already populated
+ * (e.g. seeded from HUBITAT_WEBHOOK_SECRET in .env, or generated on a
+ * previous boot), leave it untouched. Otherwise generate a cryptographically
+ * random UUID, persist it, and log the action so operators see why it
+ * appeared.
+ *
+ * Phase 6 (WI #4): replaces the user-typed "Webhook Secret" field — the
+ * secret is now an internal value embedded in the auto-generated webhook
+ * URL the user copies into Hubitat.
+ *
+ * Returns the secret (existing or newly minted) so callers don't have to
+ * re-fetch.
+ */
+export function ensureHubitatWebhookSecret(): string {
+  assertHydrated()
+  const existing = cache.get('hubitat.webhookSecret') as string | null | undefined
+  if (existing !== null && existing !== undefined && existing !== '') {
+    return existing
+  }
+  const fresh = randomUUID()
+  setSetting('hubitat.webhookSecret', fresh)
+  console.log('[settings-store] generated initial Hubitat webhook secret')
+  return fresh
+}
+
+/**
+ * Generate a new Hubitat webhook secret regardless of whether one already
+ * exists, persist it, and return the new value. Used by the
+ * `POST /api/settings/hubitat/regenerate-secret` endpoint when the user
+ * clicks "Regenerate" — the old URL must stop working.
+ */
+export function regenerateHubitatWebhookSecret(): string {
+  assertHydrated()
+  const fresh = randomUUID()
+  setSetting('hubitat.webhookSecret', fresh)
+  console.log('[settings-store] regenerated Hubitat webhook secret')
+  return fresh
 }
 
 export function getLifx(): LifxSettings {

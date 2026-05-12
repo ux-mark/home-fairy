@@ -182,3 +182,51 @@ describe('settings-store: group accessors', () => {
     assert.throws(() => store.getLocation(), /not hydrated/)
   })
 })
+
+describe('settings-store: ensureHubitatWebhookSecret', () => {
+  test('generates + persists a UUID when secret is null', () => {
+    store.hydrate()
+    store.seedFromEnvIfMissing()
+    assert.equal(store.getHubitat().webhookSecret, null)
+
+    const secret = store.ensureHubitatWebhookSecret()
+    assert.equal(typeof secret, 'string')
+    // RFC-4122 v4 UUID shape: 8-4-4-4-12 hex
+    assert.match(secret, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    assert.equal(store.getHubitat().webhookSecret, secret)
+
+    // Persistence: a fresh hydrate must surface the same value.
+    store._resetForTests()
+    store.hydrate()
+    assert.equal(store.getHubitat().webhookSecret, secret)
+  })
+
+  test('leaves an existing secret untouched', () => {
+    setEnv({ HUBITAT_WEBHOOK_SECRET: 'pre-existing-secret' })
+    store.hydrate()
+    store.seedFromEnvIfMissing()
+    assert.equal(store.getHubitat().webhookSecret, 'pre-existing-secret')
+
+    const returned = store.ensureHubitatWebhookSecret()
+    assert.equal(returned, 'pre-existing-secret')
+    assert.equal(store.getHubitat().webhookSecret, 'pre-existing-secret')
+  })
+
+  test('treats empty string as missing and generates a fresh UUID', () => {
+    store.hydrate()
+    store.setSetting('hubitat.webhookSecret', '')
+    const secret = store.ensureHubitatWebhookSecret()
+    assert.ok(secret.length > 0)
+    assert.notEqual(secret, '')
+  })
+
+  test('regenerate produces a new UUID and replaces the existing one', () => {
+    store.hydrate()
+    store.seedFromEnvIfMissing()
+    const first = store.ensureHubitatWebhookSecret()
+    const second = store.regenerateHubitatWebhookSecret()
+    assert.notEqual(first, second)
+    assert.match(second, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
+    assert.equal(store.getHubitat().webhookSecret, second)
+  })
+})
