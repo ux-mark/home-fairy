@@ -32,6 +32,15 @@ export interface SpotifySettingsDto {
   redirectUri: string | null
 }
 
+export interface HubitatWebhookUrlDto {
+  /** Full webhook URL the user pastes into Hubitat, or null if the server
+   *  couldn't auto-detect a LAN base URL (user must set FAIRY_PUBLIC_HOST). */
+  url: string | null
+  baseUrl: string | null
+  port: number
+  secretConfigured: boolean
+}
+
 export interface SettingsTestResult {
   ok: boolean
   // Location:
@@ -2143,6 +2152,10 @@ export const api = {
       fetchApi<T>(`/settings/${group}`, { method: 'PUT', body: JSON.stringify(body) }),
     test: <T = unknown>(group: SettingsGroup, body: unknown) =>
       fetchApi<T>(`/settings/${group}/test`, { method: 'POST', body: JSON.stringify(body) }),
+    hubitatWebhookUrl: () =>
+      fetchApi<HubitatWebhookUrlDto>('/settings/hubitat/webhook-url'),
+    regenerateHubitatSecret: () =>
+      fetchApi<HubitatWebhookUrlDto>('/settings/hubitat/regenerate-secret', { method: 'POST' }),
   },
 
 }
