@@ -441,7 +441,7 @@ Configure the OpenWeather API key from the UI. Test connection uses your saved l
 ### Spotify Settings
 **Status**: available
 
-Configure Spotify Client ID, Client Secret and Redirect URI from the UI. Test connection runs a client-credentials grant. Migrated from `.env`. Reminder: Redirect URI must also be registered in the Spotify developer console.
+Configure Spotify Client ID and Client Secret from the UI. The Redirect URI is derived from your public base URL (also set here) and shown read-only with a Copy button — paste it into the Spotify developer console under "Redirect URIs". Test connection runs a client-credentials grant. Migrated from `.env`.
 
 ### Music (Sonos)
 **Status**: available
