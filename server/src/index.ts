@@ -26,6 +26,7 @@ import accessLinksPublicRoutes from './routes/access-links-public.js'
 import userActionsRouter from './routes/user-actions.js'
 import settingsRoutes from './routes/settings.js'
 import settingsHubitatRoutes from './routes/settings-hubitat.js'
+import settingsSpotifyRoutes from './routes/settings-spotify.js'
 import * as settingsStore from './lib/settings-store.js'
 import { motionHandler } from './lib/motion-handler.js'
 import { sunModeScheduler } from './lib/sun-mode-scheduler.js'
@@ -156,6 +157,10 @@ app.use('/api/user-actions', requireAuth, userActionsRouter)
 // `/hubitat/regenerate-secret` paths don't get swallowed by the
 // `/:group` matcher.
 app.use('/api/settings/hubitat', requireAuth, settingsHubitatRoutes)
+// Spotify-specific settings sub-routes (derived redirect URI + public-base-url
+// PUT). Same ordering rationale as Hubitat — must be mounted before the
+// generic `/:group` matcher swallows `/spotify/redirect-uri` etc.
+app.use('/api/settings/spotify', requireAuth, settingsSpotifyRoutes)
 app.use('/api/settings', requireAuth, settingsRoutes)
 
 // Hubitat webhook handler
