@@ -13,6 +13,7 @@ import { Accordion } from '@/components/ui/Accordion'
 import { PillSelect } from '@/components/ui/PillSelect'
 import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
 import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
+import { ScheduleFields, type ScheduleValue } from '@/components/sonos/ScheduleFields'
 import { useToast } from '@/hooks/useToast'
 
 // Use the deferred shared socket from `@/hooks/useSocket` rather than a
@@ -137,6 +138,8 @@ export default function SonosDetailPage() {
   const [manualFeedUrl, setManualFeedUrl] = useState('')
   const [nasUri, setNasUri] = useState<string | null>(null)
   const [spotifyUri, setSpotifyUri] = useState<string | null>(null)
+  const [schedule, setSchedule] = useState<ScheduleValue>({ daysOfWeek: null, timeStart: null, timeEnd: null })
+  const [scheduleValid, setScheduleValid] = useState(true)
 
   // Auto-detect podcast when favourite changes
   useEffect(() => {
@@ -335,6 +338,8 @@ export default function SonosDetailPage() {
     setManualFeedUrl('')
     setNasUri(null)
     setSpotifyUri(null)
+    setSchedule({ daysOfWeek: null, timeStart: null, timeEnd: null })
+    setScheduleValid(true)
   }
 
   function openEditRule(rule: AutoPlayRule) {
@@ -350,6 +355,12 @@ export default function SonosDetailPage() {
     setManualFeedUrl('')
     setNasUri(rule.nas_uri ?? null)
     setSpotifyUri(rule.spotify_uri ?? null)
+    setSchedule({
+      daysOfWeek: rule.days_of_week,
+      timeStart: rule.time_start,
+      timeEnd: rule.time_end,
+    })
+    setScheduleValid(true)
   }
 
   // ── Live volume + mute mutations ────────────────────────────────────────────
@@ -799,11 +810,19 @@ export default function SonosDetailPage() {
                           />
                         </div>
 
+                        {/* Schedule (optional) */}
+                        <ScheduleFields
+                          idPrefix={`detail-edit-rule-${rule.id}`}
+                          value={schedule}
+                          onChange={setSchedule}
+                          onValidityChange={setScheduleValid}
+                        />
+
                         {/* Save / Cancel */}
                         <div className="flex items-center gap-2 pt-1">
                           <button
                             onClick={() => {
-                              if (!newRuleFavourite || !newRuleMode) return
+                              if (!newRuleFavourite || !newRuleMode || !scheduleValid) return
                               const effectiveTrigger = newRuleFavourite === '__continue__' ? 'mode_change' : newRuleTriggerType
                               editRuleMutation.mutate({
                                 id: rule.id,
@@ -816,10 +835,13 @@ export default function SonosDetailPage() {
                                   podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
                                   nas_uri: nasUri,
                                   spotify_uri: spotifyUri,
+                                  days_of_week: schedule.daysOfWeek,
+                                  time_start: schedule.timeStart,
+                                  time_end: schedule.timeEnd,
                                 },
                               })
                             }}
-                            disabled={!newRuleFavourite || !newRuleMode || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || editRuleMutation.isPending}
+                            disabled={!newRuleFavourite || !newRuleMode || !scheduleValid || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || editRuleMutation.isPending}
                             className="rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                           >
                             {editRuleMutation.isPending ? 'Saving...' : 'Save changes'}
@@ -1015,11 +1037,19 @@ export default function SonosDetailPage() {
                   />
                 </div>
 
+                {/* Schedule (optional) */}
+                <ScheduleFields
+                  idPrefix="detail-add-rule"
+                  value={schedule}
+                  onChange={setSchedule}
+                  onValidityChange={setScheduleValid}
+                />
+
                 {/* Actions */}
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     onClick={() => {
-                      if (!newRuleFavourite || !newRuleMode) return
+                      if (!newRuleFavourite || !newRuleMode || !scheduleValid) return
                       const effectiveTrigger = newRuleFavourite === '__continue__' ? 'mode_change' : newRuleTriggerType
                       createRuleMutation.mutate({
                         room_name: assignedRoom.name,
@@ -1032,9 +1062,12 @@ export default function SonosDetailPage() {
                         podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
                         nas_uri: nasUri,
                         spotify_uri: spotifyUri,
+                        days_of_week: schedule.daysOfWeek,
+                        time_start: schedule.timeStart,
+                        time_end: schedule.timeEnd,
                       })
                     }}
-                    disabled={!newRuleFavourite || !newRuleMode || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || createRuleMutation.isPending}
+                    disabled={!newRuleFavourite || !newRuleMode || !scheduleValid || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || createRuleMutation.isPending}
                     className="rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                   >
                     {createRuleMutation.isPending ? 'Saving...' : 'Save rule'}

@@ -1,5 +1,77 @@
 // ── Types ────────────────────────────────────────────────────────────────────
 
+export type SettingsGroup = 'location' | 'hubitat' | 'lifx' | 'weather' | 'spotify'
+
+/** Server returns the literal string '<set>' for a secret that is set, or null. */
+export type SecretValue = '<set>' | null
+
+export interface LocationSettingsDto {
+  latitude: number | null
+  longitude: number | null
+  timezone: string
+  locale: string
+}
+
+export interface HubitatSettingsDto {
+  baseUrl: string | null
+  token: SecretValue
+  webhookSecret: SecretValue
+}
+
+export interface LifxSettingsDto {
+  token: SecretValue
+}
+
+export interface WeatherSettingsDto {
+  apiKey: SecretValue
+}
+
+export interface SpotifySettingsDto {
+  clientId: string | null
+  clientSecret: SecretValue
+  /**
+   * Phase 7 (WI #4): the legacy redirect URI field. Still present in
+   * responses (derived from `publicBaseUrl` when set, else echoed from the
+   * stored legacy value) but no longer user-editable from the Settings UI.
+   */
+  redirectUri: string | null
+  /** Public-facing base URL the user has configured, or null. */
+  publicBaseUrl: string | null
+}
+
+export interface SpotifyRedirectUriDto {
+  /** Full redirect URI to paste into the Spotify Developer Console, or null
+   *  when the user has not yet supplied a public base URL. */
+  redirectUri: string | null
+  publicBaseUrl: string | null
+}
+
+export interface HubitatWebhookUrlDto {
+  /** Full webhook URL the user pastes into Hubitat, or null if the server
+   *  couldn't auto-detect a LAN base URL (user must set FAIRY_PUBLIC_HOST). */
+  url: string | null
+  baseUrl: string | null
+  port: number
+  secretConfigured: boolean
+}
+
+export interface SettingsTestResult {
+  ok: boolean
+  // Location:
+  sunrise?: string
+  sunset?: string
+  now?: string
+  timezone?: string
+  // Hubitat:
+  devicesCount?: number
+  // Lifx:
+  lightsCount?: number
+  // Weather:
+  sample?: string
+  // Error:
+  error?: string
+}
+
 export interface Light {
   id: string
   uuid: string
@@ -853,6 +925,12 @@ export interface AutoPlayRule {
   podcast_feed_url: string | null
   nas_uri: string | null
   spotify_uri: string | null
+  /** ISO day numbers Mon=1..Sun=7. `null` means "every day". */
+  days_of_week: number[] | null
+  /** Local HH:MM (24h). `null` means no lower bound. */
+  time_start: string | null
+  /** Local HH:MM (24h). `null` means no upper bound. */
+  time_end: string | null
 }
 
 export interface FollowMeStatus {
@@ -2078,6 +2156,26 @@ export const api = {
       fetchApi<AccessLinkRedeemResult>(`/invite/${token}/redeem`, {
         method: 'POST',
         body: JSON.stringify(body ?? {}),
+      }),
+  },
+
+  settings: {
+    getGroup: <T = unknown>(group: SettingsGroup) =>
+      fetchApi<T>(`/settings/${group}`),
+    putGroup: <T = unknown>(group: SettingsGroup, body: unknown) =>
+      fetchApi<T>(`/settings/${group}`, { method: 'PUT', body: JSON.stringify(body) }),
+    test: <T = unknown>(group: SettingsGroup, body: unknown) =>
+      fetchApi<T>(`/settings/${group}/test`, { method: 'POST', body: JSON.stringify(body) }),
+    hubitatWebhookUrl: () =>
+      fetchApi<HubitatWebhookUrlDto>('/settings/hubitat/webhook-url'),
+    regenerateHubitatSecret: () =>
+      fetchApi<HubitatWebhookUrlDto>('/settings/hubitat/regenerate-secret', { method: 'POST' }),
+    spotifyRedirectUri: () =>
+      fetchApi<SpotifyRedirectUriDto>('/settings/spotify/redirect-uri'),
+    setSpotifyPublicBaseUrl: (publicBaseUrl: string | null) =>
+      fetchApi<SpotifyRedirectUriDto>('/settings/spotify/public-base-url', {
+        method: 'PUT',
+        body: JSON.stringify({ publicBaseUrl }),
       }),
   },
 

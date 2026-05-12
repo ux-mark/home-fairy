@@ -1,10 +1,45 @@
 import axios, { type AxiosInstance, AxiosError } from 'axios'
 import { db } from '../db/index.js'
+import { getSpotify } from './settings-store.js'
 
-const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID ?? ''
-const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET ?? ''
-const SPOTIFY_REDIRECT_URI = process.env.SPOTIFY_REDIRECT_URI ?? 'http://localhost:3001/api/spotify/callback'
 const TIMEOUT = 10000
+const DEFAULT_REDIRECT_URI = 'http://localhost:3001/api/spotify/callback'
+const REDIRECT_PATH = '/api/spotify/callback'
+
+interface SpotifyCreds {
+  clientId: string
+  clientSecret: string
+  redirectUri: string
+}
+
+/**
+ * The Spotify OAuth `redirect_uri` we hand to Spotify on every authorize +
+ * token-exchange call. Resolution order (Phase 7, WI #4):
+ *   1. `publicBaseUrl` is set → derive `${publicBaseUrl}/api/spotify/callback`.
+ *   2. Legacy `redirectUri` is set (older installs) → use it verbatim.
+ *   3. Neither → DEFAULT_REDIRECT_URI as a final fallback so dev environments
+ *      without configuration still produce a complete OAuth URL.
+ *
+ * Exported because the `settings-spotify` route needs the same value when
+ * answering `GET /api/settings/spotify/redirect-uri`.
+ */
+export function getDerivedRedirectUri(): string {
+  const s = getSpotify()
+  if (s.publicBaseUrl && s.publicBaseUrl !== '') {
+    return `${s.publicBaseUrl}${REDIRECT_PATH}`
+  }
+  if (s.redirectUri && s.redirectUri !== '') return s.redirectUri
+  return DEFAULT_REDIRECT_URI
+}
+
+function readCreds(): SpotifyCreds {
+  const s = getSpotify()
+  return {
+    clientId: s.clientId ?? '',
+    clientSecret: s.clientSecret ?? '',
+    redirectUri: getDerivedRedirectUri(),
+  }
+}
 
 const SPOTIFY_SCOPES = [
   'user-read-private',
@@ -180,17 +215,25 @@ class SpotifyClient {
   }
 
   getAuthUrl(): string {
+    const { clientId, redirectUri } = readCreds()
+    if (!clientId) {
+      throw new SpotifyApiError('Spotify client ID not configured — set it in Settings', 503)
+    }
     const params = new URLSearchParams({
-      client_id: SPOTIFY_CLIENT_ID,
+      client_id: clientId,
       response_type: 'code',
-      redirect_uri: SPOTIFY_REDIRECT_URI,
+      redirect_uri: redirectUri,
       scope: SPOTIFY_SCOPES,
     })
     return `https://accounts.spotify.com/authorize?${params.toString()}`
   }
 
   async handleCallback(code: string): Promise<void> {
-    const credentials = Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64')
+    const { clientId, clientSecret, redirectUri } = readCreds()
+    if (!clientId || !clientSecret) {
+      throw new SpotifyApiError('Spotify credentials not configured — set them in Settings', 503)
+    }
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
     let data: {
       access_token: string
       refresh_token: string
@@ -203,7 +246,7 @@ class SpotifyClient {
         new URLSearchParams({
           grant_type: 'authorization_code',
           code,
-          redirect_uri: SPOTIFY_REDIRECT_URI,
+          redirect_uri: redirectUri,
         }),
         {
           headers: {
@@ -243,7 +286,11 @@ class SpotifyClient {
     }
 
     // Access token is expired or about to expire — refresh it
-    const credentials = Buffer.from(`${SPOTIFY_CLIENT_ID}:${SPOTIFY_CLIENT_SECRET}`).toString('base64')
+    const { clientId, clientSecret } = readCreds()
+    if (!clientId || !clientSecret) {
+      throw new SpotifyApiError('Spotify credentials not configured — set them in Settings', 503)
+    }
+    const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
     let refreshed: { access_token: string; expires_in: number; scope?: string }
     try {
       const response = await axios.post<typeof refreshed>(
@@ -584,7 +631,8 @@ class SpotifyClient {
   }
 
   isConfigured(): boolean {
-    return !!(SPOTIFY_CLIENT_ID && SPOTIFY_CLIENT_SECRET)
+    const { clientId, clientSecret } = readCreds()
+    return !!(clientId && clientSecret)
   }
 
   isConnected(): boolean {

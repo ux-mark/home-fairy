@@ -8,6 +8,7 @@ import type { AutoPlayRule, ModeWithTriggers } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useToast } from '@/hooks/useToast'
 import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
+import { ScheduleFields, type ScheduleValue } from '@/components/sonos/ScheduleFields'
 import { PillSelect } from '@/components/ui/PillSelect'
 import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
 import { Section } from './Section'
@@ -149,6 +150,8 @@ function AddRuleForm({
   const [podcastResolving, setPodcastResolving] = useState(false)
   const [podcastFailed, setPodcastFailed] = useState(false)
   const [manualFeedUrl, setManualFeedUrl] = useState('')
+  const [schedule, setSchedule] = useState<ScheduleValue>({ daysOfWeek: null, timeStart: null, timeEnd: null })
+  const [scheduleValid, setScheduleValid] = useState(true)
 
   // Auto-detect podcast when favourite changes
   useEffect(() => {
@@ -183,7 +186,7 @@ function AddRuleForm({
   const effectiveTrigger = favourite === '__continue__' ? 'mode_change' : triggerType
   const resolvedFeedUrl = podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null)
   const isValid = favourite && mode && !(triggerType === 'if_source_not' && favourite !== '__continue__' && !sourceValue)
-    && (!podcastFailed || manualFeedUrl)
+    && (!podcastFailed || manualFeedUrl) && scheduleValid
 
   const handleSave = () => {
     if (!isValid) return
@@ -198,6 +201,9 @@ function AddRuleForm({
       podcast_feed_url: resolvedFeedUrl,
       nas_uri: nasUri,
       spotify_uri: spotifyUri,
+      days_of_week: schedule.daysOfWeek,
+      time_start: schedule.timeStart,
+      time_end: schedule.timeEnd,
     })
     setNasUri(null)
     setSpotifyUri(null)
@@ -205,6 +211,8 @@ function AddRuleForm({
     setPodcastFeedUrl(null)
     setPodcastFailed(false)
     setManualFeedUrl('')
+    setSchedule({ daysOfWeek: null, timeStart: null, timeEnd: null })
+    setScheduleValid(true)
   }
 
 
@@ -323,6 +331,14 @@ function AddRuleForm({
           onChange={setMaxPlays}
         />
       </div>
+
+      {/* Schedule (optional) */}
+      <ScheduleFields
+        idPrefix="settings-add-rule"
+        value={schedule}
+        onChange={setSchedule}
+        onValidityChange={setScheduleValid}
+      />
 
       {/* Actions */}
       <div className="flex items-center gap-2 pt-1">
@@ -452,6 +468,8 @@ export function MusicSection() {
   const [editPodcastResolving, setEditPodcastResolving] = useState(false)
   const [editPodcastFailed, setEditPodcastFailed] = useState(false)
   const [editManualFeedUrl, setEditManualFeedUrl] = useState('')
+  const [editSchedule, setEditSchedule] = useState<ScheduleValue>({ daysOfWeek: null, timeStart: null, timeEnd: null })
+  const [editScheduleValid, setEditScheduleValid] = useState(true)
 
   // Auto-detect podcast when edit favourite changes
   useEffect(() => {
@@ -568,6 +586,8 @@ export function MusicSection() {
     setEditPodcastFeedUrl(null)
     setEditPodcastFailed(false)
     setEditManualFeedUrl('')
+    setEditSchedule({ daysOfWeek: null, timeStart: null, timeEnd: null })
+    setEditScheduleValid(true)
   }
 
   function openEditRule(rule: AutoPlayRule) {
@@ -584,6 +604,12 @@ export function MusicSection() {
     setEditPodcastFeedUrl(rule.podcast_feed_url ?? null)
     setEditPodcastFailed(false)
     setEditManualFeedUrl('')
+    setEditSchedule({
+      daysOfWeek: rule.days_of_week,
+      timeStart: rule.time_start,
+      timeEnd: rule.time_end,
+    })
+    setEditScheduleValid(true)
   }
 
   const { data: availableSources } = useQuery({
@@ -759,10 +785,18 @@ export function MusicSection() {
                       />
                     </div>
 
+                    {/* Schedule (optional) */}
+                    <ScheduleFields
+                      idPrefix={`settings-edit-rule-${rule.id}`}
+                      value={editSchedule}
+                      onChange={setEditSchedule}
+                      onValidityChange={setEditScheduleValid}
+                    />
+
                     <div className="flex items-center gap-2 pt-1">
                       <button
                         onClick={() => {
-                          if (!isValid) return
+                          if (!isValid || !editScheduleValid) return
                           editRuleMutation.mutate({
                             id: rule.id,
                             data: {
@@ -775,10 +809,13 @@ export function MusicSection() {
                               podcast_feed_url: editPodcastFeedUrl ?? (editPodcastFailed && editManualFeedUrl ? editManualFeedUrl : null),
                               nas_uri: editNasUri,
                               spotify_uri: editSpotifyUri,
+                              days_of_week: editSchedule.daysOfWeek,
+                              time_start: editSchedule.timeStart,
+                              time_end: editSchedule.timeEnd,
                             },
                           })
                         }}
-                        disabled={!isValid || editRuleMutation.isPending}
+                        disabled={!isValid || !editScheduleValid || editRuleMutation.isPending}
                         className="rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                       >
                         {editRuleMutation.isPending ? 'Saving...' : 'Save changes'}

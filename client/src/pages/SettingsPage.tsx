@@ -43,6 +43,11 @@ import { IndicatorSection } from '@/components/settings/IndicatorSection'
 import { WeatherIndicatorSection } from '@/components/settings/WeatherIndicatorSection'
 import { DataManagementSection } from '@/components/settings/DataManagementSection'
 import { MusicSection } from '@/components/settings/MusicSection'
+import { LocationLocaleSection } from '@/components/settings/LocationLocaleSection'
+import { HubitatSection } from '@/components/settings/HubitatSection'
+import { LifxSection } from '@/components/settings/LifxSection'
+import { WeatherSection } from '@/components/settings/WeatherSection'
+import { SpotifySection } from '@/components/settings/SpotifySection'
 import { authClient } from '@/lib/auth-client'
 import { AccessLinksSection } from '@/components/settings/AccessLinksSection'
 
@@ -919,6 +924,7 @@ export default function SettingsPage() {
           isOpen={openCategory === 'preferences'}
           onToggle={() => handleToggle('preferences')}
         >
+          <LocationLocaleSection />
           <ThemeSection />
           <GeneralSection />
         </CategoryAccordion>
@@ -930,6 +936,7 @@ export default function SettingsPage() {
           isOpen={openCategory === 'music'}
           onToggle={() => handleToggle('music')}
         >
+          <SpotifySection />
           <MusicSection />
         </CategoryAccordion>
 
@@ -965,6 +972,7 @@ export default function SettingsPage() {
           isOpen={openCategory === 'weather'}
           onToggle={() => handleToggle('weather')}
         >
+          <WeatherSection />
           <WeatherIndicatorSection />
         </CategoryAccordion>
 
@@ -975,6 +983,8 @@ export default function SettingsPage() {
           isOpen={openCategory === 'system'}
           onToggle={() => handleToggle('system')}
         >
+          <HubitatSection />
+          <LifxSection />
           <DevicesSection />
           <TimersSection />
           <DataManagementSection />

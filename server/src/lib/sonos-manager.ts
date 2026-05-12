@@ -4,6 +4,8 @@ import { emit } from './socket.js'
 import { getLatestEpisodeUrl } from './podcast-resolver.js'
 import { log as logToDb } from './logger.js'
 import { withSpeakerByRoom } from './speaker-registry.js'
+import { getLocation } from './settings-store.js'
+import { nowIn, withinWindow } from './schedule-window.js'
 
 function log(msg: string): void {
   logToDb(msg, 'sonos')
@@ -36,6 +38,9 @@ interface AutoPlayRow {
   podcast_feed_url: string | null
   nas_uri: string | null
   spotify_uri: string | null
+  days_of_week: string | null
+  time_start: string | null
+  time_end: string | null
 }
 
 interface SpeakerTimer {
@@ -43,6 +48,45 @@ interface SpeakerTimer {
   roomName: string
   startedAt: number
   durationMs: number
+}
+
+/**
+ * Schedule gate for an auto-play rule. Returns true when the rule's day-of-week
+ * and time-window filters allow it to fire right now. NULL columns mean "no
+ * filter on this dimension", so a rule with all schedule columns NULL always
+ * passes (regression behaviour for existing rules).
+ *
+ * Exported so the route layer and unit tests can exercise it without the
+ * SonosManager class.
+ */
+export function passesSchedule(rule: {
+  days_of_week: string | null
+  time_start: string | null
+  time_end: string | null
+}, now: Date = new Date()): boolean {
+  const tz = getLocation().timezone || 'Europe/Dublin'
+  const { isoDay, hhmm } = nowIn(tz, now)
+
+  if (rule.days_of_week) {
+    let allowed: number[]
+    try {
+      allowed = JSON.parse(rule.days_of_week) as number[]
+    } catch {
+      // Malformed JSON — be conservative and skip the rule rather than firing.
+      return false
+    }
+    if (!Array.isArray(allowed) || !allowed.includes(isoDay)) {
+      return false
+    }
+  }
+
+  if (rule.time_start && rule.time_end) {
+    if (!withinWindow(hhmm, rule.time_start, rule.time_end)) {
+      return false
+    }
+  }
+
+  return true
 }
 
 class SonosManager {
@@ -348,6 +392,13 @@ class SonosManager {
   }
 
   private async evaluateAutoPlayRule(rule: AutoPlayRow): Promise<void> {
+    // Schedule gates run first: a rule outside its day/window is silently skipped
+    // and its play count is untouched. Trigger conditions and max_plays apply only
+    // when the schedule allows.
+    if (!passesSchedule(rule)) {
+      return
+    }
+
     // Check repeat limit before any other logic
     if (rule.max_plays !== null) {
       const count = this.rulePlayCounts.get(rule.id) ?? 0

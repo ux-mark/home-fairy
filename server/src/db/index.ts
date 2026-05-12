@@ -389,6 +389,12 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_fairylist_items_list
       ON fairylist_items (fairylist_id, sort_order);
 
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL,           -- JSON-encoded scalar/object
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS spotify_pinned_playlists (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id TEXT NOT NULL,
@@ -436,6 +442,16 @@ export function initDb(): void {
   }
   if (!autoPlayCols.some(c => c.name === 'spotify_uri')) {
     db.exec('ALTER TABLE sonos_auto_play ADD COLUMN spotify_uri TEXT DEFAULT NULL')
+  }
+  // Phase 4: schedule gating (days of week + time window)
+  if (!autoPlayColNames.includes('days_of_week')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN days_of_week TEXT DEFAULT NULL')
+  }
+  if (!autoPlayColNames.includes('time_start')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN time_start TEXT DEFAULT NULL')
+  }
+  if (!autoPlayColNames.includes('time_end')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN time_end TEXT DEFAULT NULL')
   }
 
   // Migration: add user tracking columns to rooms
