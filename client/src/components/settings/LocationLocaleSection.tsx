@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { CheckCircle, Loader2, Wand2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { LocationSettingsDto, SettingsTestResult } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
+import { autoDetectLocation, type AutoDetectResult } from '@/lib/auto-detect-location'
 import { Section } from './Section'
 import { TestResultBadge } from './TestResultBadge'
 
@@ -45,6 +47,8 @@ export function LocationLocaleSection() {
   const [tz, setTz] = useState('')
   const [locale, setLocale] = useState('')
   const [testResult, setTestResult] = useState<SettingsTestResult | null>(null)
+  const [detecting, setDetecting] = useState(false)
+  const [detectResult, setDetectResult] = useState<AutoDetectResult | null>(null)
 
   useEffect(() => {
     if (!data) return
@@ -118,6 +122,24 @@ export function LocationLocaleSection() {
   const resetTestOnChange = (setter: (v: string) => void) => (v: string) => {
     setter(v)
     setTestResult(null)
+    // The user editing any field acknowledges the previous detect outcome.
+    setDetectResult(null)
+  }
+
+  const handleDetect = async () => {
+    setDetecting(true)
+    setTestResult(null)
+    try {
+      const result = await autoDetectLocation()
+      // Always overwrite — the user explicitly clicked Detect.
+      if (result.timezone) setTz(result.timezone)
+      if (result.locale) setLocale(result.locale)
+      if (result.latitude !== null) setLat(String(result.latitude))
+      if (result.longitude !== null) setLon(String(result.longitude))
+      setDetectResult(result)
+    } finally {
+      setDetecting(false)
+    }
   }
 
   return (
@@ -125,6 +147,39 @@ export function LocationLocaleSection() {
       <p className="text-caption text-xs mb-4">
         Sets sunrise/sunset, weather, and date/time formatting throughout the app.
       </p>
+
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={handleDetect}
+          disabled={detecting || isLoading}
+          aria-label="Detect location, timezone, and language from this browser"
+          className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 min-h-[44px] surface border border-[var(--border-secondary)] text-heading text-sm hover:brightness-95 dark:hover:brightness-110 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        >
+          {detecting
+            ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            : <Wand2 className="h-4 w-4" aria-hidden="true" />}
+          {detecting ? 'Detecting…' : 'Detect from this browser'}
+        </button>
+
+        <div role="status" aria-live="polite" className="mt-2 min-h-[1.25rem]">
+          {detecting ? (
+            <span className="flex items-center gap-1.5 text-sm text-caption">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Detecting…
+            </span>
+          ) : detectResult ? (
+            detectResult.status === 'ok' ? (
+              <span className="flex items-center gap-1.5 text-sm text-green-400">
+                <CheckCircle className="h-4 w-4" aria-hidden="true" />
+                {detectResult.message}
+              </span>
+            ) : (
+              <span className="text-sm text-caption">{detectResult.message}</span>
+            )
+          ) : null}
+        </div>
+      </div>
 
       <form
         onSubmit={(e) => { e.preventDefault(); if (canSubmit && !saveMutation.isPending) saveMutation.mutate() }}
