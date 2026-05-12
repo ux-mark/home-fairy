@@ -25,6 +25,7 @@ import accessLinksRoutes from './routes/access-links.js'
 import accessLinksPublicRoutes from './routes/access-links-public.js'
 import userActionsRouter from './routes/user-actions.js'
 import settingsRoutes from './routes/settings.js'
+import settingsHubitatRoutes from './routes/settings-hubitat.js'
 import * as settingsStore from './lib/settings-store.js'
 import { motionHandler } from './lib/motion-handler.js'
 import { sunModeScheduler } from './lib/sun-mode-scheduler.js'
@@ -146,6 +147,11 @@ app.use('/api/fairylists', requireAuth, fairylistsRoutes)
 app.use('/api/device-links', requireAuth, deviceLinksRoutes)
 app.use('/api/access-links', requireAuth, accessLinksRoutes)
 app.use('/api/user-actions', requireAuth, userActionsRouter)
+// Hubitat-specific settings sub-routes (webhook URL + regenerate). Mounted
+// before the generic settings router so the `/hubitat/webhook-url` and
+// `/hubitat/regenerate-secret` paths don't get swallowed by the
+// `/:group` matcher.
+app.use('/api/settings/hubitat', requireAuth, settingsHubitatRoutes)
 app.use('/api/settings', requireAuth, settingsRoutes)
 
 // Hubitat webhook handler
