@@ -1,19 +1,23 @@
 import { betterAuth } from 'better-auth'
 import { admin } from 'better-auth/plugins/admin'
 import Database from 'better-sqlite3'
+import { getServerLanBaseUrl } from './server-url.js'
 
 const dbPath = process.env.FAIRY_DB_PATH || './data/thefairies.sqlite'
+
+const port = Number(process.env.PORT) || 3001
+const lanBaseUrl = getServerLanBaseUrl()
 
 export const auth = betterAuth({
   database: new Database(dbPath),
   basePath: '/api/auth',
   baseURL: process.env.BETTER_AUTH_URL,
   trustedOrigins: [
-    'http://192.168.10.201:3001',
+    ...(lanBaseUrl ? [lanBaseUrl] : []),
     'http://home.thefairies.ie',
     'https://home.thefairies.ie',
-    `http://127.0.0.1:${Number(process.env.PORT) || 3001}`,
-    `http://localhost:${Number(process.env.PORT) || 3001}`,
+    `http://127.0.0.1:${port}`,
+    `http://localhost:${port}`,
   ],
   emailAndPassword: {
     enabled: true,
