@@ -79,10 +79,25 @@ const weatherPutSchema = z.object({
   apiKey: z.string().nullable().optional(),
 })
 
+// Public base URL — same shape the dedicated `settings-spotify` router
+// enforces. Must be `https?://<host>[:port]` with no trailing slash and no
+// path. We re-validate it here too so the generic group PUT remains a safe
+// path for callers that send `publicBaseUrl` alongside other Spotify fields.
+const publicBaseUrlSchema = z
+  .string()
+  .regex(/^https?:\/\/[^/]+$/u, {
+    message: 'Public base URL must be scheme + host (https://host), no trailing slash, no path',
+  })
+
 const spotifyPutSchema = z.object({
   clientId: z.string().nullable().optional(),
   clientSecret: z.string().nullable().optional(),
+  // `redirectUri` remains accepted for backward compatibility with older
+  // callers, but starting in Phase 7 the source of truth is `publicBaseUrl`.
+  // We do NOT add `.url()` here because the legacy field was historically
+  // permissive; the new `publicBaseUrl` field carries the strict validation.
   redirectUri: z.string().url().nullable().optional(),
+  publicBaseUrl: publicBaseUrlSchema.nullable().optional(),
 })
 
 // ---------- Secret redaction helper ----------
@@ -116,10 +131,18 @@ function serialiseGroup(group: SettingsGroup): unknown {
     }
     case 'spotify': {
       const v = getSpotify()
+      // When `publicBaseUrl` is set it is the source of truth — derive the
+      // redirect URI so the response reflects what Spotify's OAuth call will
+      // actually use. Falls back to the stored legacy `redirectUri` for
+      // installations that haven't migrated yet.
+      const derivedRedirect = v.publicBaseUrl
+        ? `${v.publicBaseUrl}/api/spotify/callback`
+        : v.redirectUri
       return {
         clientId: v.clientId,
         clientSecret: redact(v.clientSecret),
-        redirectUri: v.redirectUri,
+        redirectUri: derivedRedirect,
+        publicBaseUrl: v.publicBaseUrl,
       }
     }
   }
@@ -216,6 +239,7 @@ router.put('/:group', (req: Request, res: Response) => {
           clientId: parsed.data.clientId === undefined ? current.clientId : parsed.data.clientId,
           clientSecret: parsed.data.clientSecret === undefined ? current.clientSecret : parsed.data.clientSecret,
           redirectUri: parsed.data.redirectUri === undefined ? current.redirectUri : parsed.data.redirectUri,
+          publicBaseUrl: parsed.data.publicBaseUrl === undefined ? current.publicBaseUrl : parsed.data.publicBaseUrl,
         })
         break
       }

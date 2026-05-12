@@ -83,6 +83,7 @@ describe('settings-store: seed-from-env', () => {
       clientId: 'sp-id',
       clientSecret: 'sp-sec',
       redirectUri: 'https://example/cb',
+      publicBaseUrl: null,
     })
   })
 
@@ -228,5 +229,146 @@ describe('settings-store: ensureHubitatWebhookSecret', () => {
     assert.notEqual(first, second)
     assert.match(second, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)
     assert.equal(store.getHubitat().webhookSecret, second)
+  })
+})
+
+describe('settings-store: Spotify publicBaseUrl', () => {
+  test('getSpotify() includes publicBaseUrl (null by default)', () => {
+    store.hydrate()
+    store.seedFromEnvIfMissing()
+    assert.deepEqual(store.getSpotify(), {
+      clientId: null,
+      clientSecret: null,
+      redirectUri: null,
+      publicBaseUrl: null,
+    })
+  })
+
+  test('setSpotify({...publicBaseUrl}) round-trips through hydrate', () => {
+    store.hydrate()
+    store.setSpotify({
+      clientId: 'cid',
+      clientSecret: 'sec',
+      redirectUri: null,
+      publicBaseUrl: 'https://home.example.com',
+    })
+
+    assert.deepEqual(store.getSpotify(), {
+      clientId: 'cid',
+      clientSecret: 'sec',
+      redirectUri: null,
+      publicBaseUrl: 'https://home.example.com',
+    })
+
+    store._resetForTests()
+    store.hydrate()
+    assert.equal(store.getSpotify().publicBaseUrl, 'https://home.example.com')
+  })
+})
+
+describe('settings-store: migrateSpotifyPublicBaseUrl', () => {
+  test('extracts host from a well-formed legacy redirectUri', () => {
+    // Mirrors the existing-user case: SPOTIFY_REDIRECT_URI=https://home.thefairies.ie/api/spotify/callback
+    setEnv({ SPOTIFY_REDIRECT_URI: 'https://home.thefairies.ie/api/spotify/callback' })
+    store.hydrate()
+    store.seedFromEnvIfMissing()
+    assert.equal(store.getSpotify().publicBaseUrl, null)
+
+    store.migrateSpotifyPublicBaseUrl()
+    assert.equal(store.getSpotify().publicBaseUrl, 'https://home.thefairies.ie')
+    // The legacy redirectUri stays put — it remains accepted for back-compat.
+    assert.equal(store.getSpotify().redirectUri, 'https://home.thefairies.ie/api/spotify/callback')
+  })
+
+  test('http + port redirect URI extracts the full prefix', () => {
+    store.hydrate()
+    store.setSpotify({
+      clientId: null,
+      clientSecret: null,
+      redirectUri: 'http://localhost:3001/api/spotify/callback',
+      publicBaseUrl: null,
+    })
+    store.migrateSpotifyPublicBaseUrl()
+    assert.equal(store.getSpotify().publicBaseUrl, 'http://localhost:3001')
+  })
+
+  test('idempotent — second run is a no-op', () => {
+    store.hydrate()
+    store.setSpotify({
+      clientId: null,
+      clientSecret: null,
+      redirectUri: 'https://example.com/api/spotify/callback',
+      publicBaseUrl: null,
+    })
+    store.migrateSpotifyPublicBaseUrl()
+    assert.equal(store.getSpotify().publicBaseUrl, 'https://example.com')
+
+    // Second run must not overwrite a deliberately changed value.
+    store.setSpotify({
+      clientId: null,
+      clientSecret: null,
+      redirectUri: 'https://example.com/api/spotify/callback',
+      publicBaseUrl: 'https://something-else.example.org',
+    })
+    store.migrateSpotifyPublicBaseUrl()
+    assert.equal(store.getSpotify().publicBaseUrl, 'https://something-else.example.org')
+  })
+
+  test('does not touch an already-set publicBaseUrl', () => {
+    store.hydrate()
+    store.setSpotify({
+      clientId: null,
+      clientSecret: null,
+      redirectUri: 'https://example.com/api/spotify/callback',
+      publicBaseUrl: 'https://manually-set.example.org',
+    })
+    store.migrateSpotifyPublicBaseUrl()
+    assert.equal(store.getSpotify().publicBaseUrl, 'https://manually-set.example.org')
+  })
+
+  test('ignores malformed redirectUri (no scheme, wrong path, trailing slash)', () => {
+    store.hydrate()
+
+    // No scheme
+    store.setSpotify({
+      clientId: null,
+      clientSecret: null,
+      redirectUri: 'example.com/api/spotify/callback',
+      publicBaseUrl: null,
+    })
+    store.migrateSpotifyPublicBaseUrl()
+    assert.equal(store.getSpotify().publicBaseUrl, null)
+
+    // Wrong path
+    store.setSpotify({
+      clientId: null,
+      clientSecret: null,
+      redirectUri: 'https://example.com/some/other/path',
+      publicBaseUrl: null,
+    })
+    store.migrateSpotifyPublicBaseUrl()
+    assert.equal(store.getSpotify().publicBaseUrl, null)
+
+    // Trailing slash
+    store.setSpotify({
+      clientId: null,
+      clientSecret: null,
+      redirectUri: 'https://example.com/api/spotify/callback/',
+      publicBaseUrl: null,
+    })
+    store.migrateSpotifyPublicBaseUrl()
+    assert.equal(store.getSpotify().publicBaseUrl, null)
+  })
+
+  test('no-op when redirectUri is null', () => {
+    store.hydrate()
+    store.setSpotify({
+      clientId: null,
+      clientSecret: null,
+      redirectUri: null,
+      publicBaseUrl: null,
+    })
+    store.migrateSpotifyPublicBaseUrl()
+    assert.equal(store.getSpotify().publicBaseUrl, null)
   })
 })

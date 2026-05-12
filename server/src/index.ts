@@ -103,6 +103,10 @@ settingsStore.seedFromEnvIfMissing()
 // on first boot so the assembled webhook URL the user copies into Hubitat
 // is always complete.
 settingsStore.ensureHubitatWebhookSecret()
+// Phase 7 (WI #4): if an existing user has `SPOTIFY_REDIRECT_URI=https://host/api/spotify/callback`
+// in their .env, lift the host part into `spotify.publicBaseUrl` so the new UI
+// works without them re-typing the address. Idempotent.
+settingsStore.migrateSpotifyPublicBaseUrl()
 
 const app = express()
 

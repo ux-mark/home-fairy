@@ -144,14 +144,14 @@ describe('lifx-client reads getLifx() at call time', () => {
 
 describe('spotify-client reads getSpotify() at call time', () => {
   test('isConfigured() reflects current store state', () => {
-    store.setSpotify({ clientId: null, clientSecret: null, redirectUri: null })
+    store.setSpotify({ clientId: null, clientSecret: null, redirectUri: null, publicBaseUrl: null })
     assert.equal(spotifyClient.isConfigured(), false)
-    store.setSpotify({ clientId: 'a', clientSecret: 'b', redirectUri: 'https://e/cb' })
+    store.setSpotify({ clientId: 'a', clientSecret: 'b', redirectUri: 'https://e/cb', publicBaseUrl: null })
     assert.equal(spotifyClient.isConfigured(), true)
   })
 
   test('getAuthUrl() throws SpotifyApiError 503 when clientId unset', () => {
-    store.setSpotify({ clientId: null, clientSecret: 'b', redirectUri: 'https://e/cb' })
+    store.setSpotify({ clientId: null, clientSecret: 'b', redirectUri: 'https://e/cb', publicBaseUrl: null })
     try {
       spotifyClient.getAuthUrl()
       assert.fail('expected throw')
@@ -162,15 +162,15 @@ describe('spotify-client reads getSpotify() at call time', () => {
     }
   })
 
-  test('getAuthUrl() uses the stored clientId + redirectUri', () => {
-    store.setSpotify({ clientId: 'my-id', clientSecret: 'sec', redirectUri: 'https://example/cb' })
+  test('getAuthUrl() uses the stored clientId + redirectUri (back-compat)', () => {
+    store.setSpotify({ clientId: 'my-id', clientSecret: 'sec', redirectUri: 'https://example/cb', publicBaseUrl: null })
     const url = spotifyClient.getAuthUrl()
     assert.match(url, /client_id=my-id/)
     assert.match(url, /redirect_uri=https%3A%2F%2Fexample%2Fcb/)
   })
 
   test('handleCallback() rejects with 503 when secrets unset', async () => {
-    store.setSpotify({ clientId: null, clientSecret: null, redirectUri: null })
+    store.setSpotify({ clientId: null, clientSecret: null, redirectUri: null, publicBaseUrl: null })
     try {
       await spotifyClient.handleCallback('any-code')
       assert.fail('expected throw')

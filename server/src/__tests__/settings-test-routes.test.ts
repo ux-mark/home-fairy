@@ -321,6 +321,7 @@ describe('POST /api/settings/spotify/test', () => {
       clientId: 'cid-store',
       clientSecret: 'sec-store',
       redirectUri: 'https://app/cb',
+      publicBaseUrl: null,
     })
     let authHeader = ''
     stubFetch(async (_url, init) => {

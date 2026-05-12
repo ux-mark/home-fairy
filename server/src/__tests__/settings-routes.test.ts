@@ -118,20 +118,41 @@ describe('settings routes: GET secrets are redacted', () => {
     assert.deepEqual(res.body, { apiKey: '<set>' })
   })
 
-  test('spotify GET redacts clientSecret only (clientId + redirectUri visible)', async () => {
+  test('spotify GET redacts clientSecret only (clientId + redirectUri + publicBaseUrl visible)', async () => {
     store.setSpotify({
       clientId: 'sp-id',
       clientSecret: 'sp-real-secret',
       redirectUri: 'https://example/cb',
+      publicBaseUrl: null,
+    })
+    const res = await fetchJson('GET', '/api/settings/spotify')
+    assert.equal(res.status, 200)
+    // Phase 7: when publicBaseUrl is null, the legacy `redirectUri` field
+    // surfaces through unchanged so older installations keep working.
+    assert.deepEqual(res.body, {
+      clientId: 'sp-id',
+      clientSecret: '<set>',
+      redirectUri: 'https://example/cb',
+      publicBaseUrl: null,
+    })
+    assert.ok(!JSON.stringify(res.body).includes('sp-real-secret'))
+  })
+
+  test('spotify GET derives redirectUri from publicBaseUrl when set', async () => {
+    store.setSpotify({
+      clientId: 'sp-id',
+      clientSecret: null,
+      redirectUri: null,
+      publicBaseUrl: 'https://home.example.com',
     })
     const res = await fetchJson('GET', '/api/settings/spotify')
     assert.equal(res.status, 200)
     assert.deepEqual(res.body, {
       clientId: 'sp-id',
-      clientSecret: '<set>',
-      redirectUri: 'https://example/cb',
+      clientSecret: null,
+      redirectUri: 'https://home.example.com/api/spotify/callback',
+      publicBaseUrl: 'https://home.example.com',
     })
-    assert.ok(!JSON.stringify(res.body).includes('sp-real-secret'))
   })
 
   test('location GET has no redaction (no secrets in group)', async () => {

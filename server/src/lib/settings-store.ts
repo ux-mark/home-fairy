@@ -42,7 +42,22 @@ export interface WeatherSettings {
 export interface SpotifySettings {
   clientId: string | null
   clientSecret: string | null
+  /**
+   * Legacy field — kept for backwards compatibility with existing rows and
+   * the generic PUT endpoint. Starting in Phase 7 (WI #4) the source of
+   * truth for the Spotify OAuth redirect URI is `publicBaseUrl`; the
+   * redirect URI is derived as `${publicBaseUrl}/api/spotify/callback`.
+   * This field is no longer surfaced in the Settings UI.
+   */
   redirectUri: string | null
+  /**
+   * The public-facing base URL for this server, e.g. `https://home.thefairies.ie`.
+   * Spotify's OAuth callback hits this address from the internet, so we can't
+   * auto-detect it the way Hubitat's LAN webhook URL is detected. The user
+   * supplies the hostname; we append `/api/spotify/callback` to get the
+   * redirect URI Spotify expects in its dev console.
+   */
+  publicBaseUrl: string | null
 }
 
 export type SettingsGroup =
@@ -81,6 +96,7 @@ const ENV_SEED_MAP: ReadonlyArray<{
   { key: 'spotify.clientId', envVar: 'SPOTIFY_CLIENT_ID', defaultValue: null },
   { key: 'spotify.clientSecret', envVar: 'SPOTIFY_CLIENT_SECRET', defaultValue: null },
   { key: 'spotify.redirectUri', envVar: 'SPOTIFY_REDIRECT_URI', defaultValue: null },
+  { key: 'spotify.publicBaseUrl', envVar: null, defaultValue: null },
 ]
 
 // ---------- In-process cache ----------
@@ -271,6 +287,7 @@ export function getSpotify(): SpotifySettings {
     clientId: (cache.get('spotify.clientId') as string | null) ?? null,
     clientSecret: (cache.get('spotify.clientSecret') as string | null) ?? null,
     redirectUri: (cache.get('spotify.redirectUri') as string | null) ?? null,
+    publicBaseUrl: (cache.get('spotify.publicBaseUrl') as string | null) ?? null,
   }
 }
 
@@ -278,6 +295,40 @@ export function setSpotify(v: SpotifySettings): void {
   setSetting('spotify.clientId', v.clientId)
   setSetting('spotify.clientSecret', v.clientSecret)
   setSetting('spotify.redirectUri', v.redirectUri)
+  setSetting('spotify.publicBaseUrl', v.publicBaseUrl)
+}
+
+/**
+ * One-time migration: if `spotify.publicBaseUrl` is unset but the legacy
+ * `spotify.redirectUri` is set to something that looks like
+ * `<scheme>://<host>[:port]/api/spotify/callback`, extract the prefix into
+ * `publicBaseUrl` and persist it. The user's existing Spotify dev-console
+ * registration keeps working (the derived URI matches the old one) and the
+ * new UI has the value it needs without the user re-entering anything.
+ *
+ * Idempotent: subsequent runs are no-ops once `publicBaseUrl` is populated.
+ * Tolerates a missing or malformed `redirectUri` — never throws, never
+ * touches existing `publicBaseUrl`.
+ *
+ * Phase 7 (WI #4) — called from the boot sequence right after
+ * `ensureHubitatWebhookSecret()`.
+ */
+export function migrateSpotifyPublicBaseUrl(): void {
+  assertHydrated()
+  const existing = cache.get('spotify.publicBaseUrl') as string | null | undefined
+  if (existing !== null && existing !== undefined && existing !== '') return
+
+  const redirectUri = cache.get('spotify.redirectUri') as string | null | undefined
+  if (!redirectUri || typeof redirectUri !== 'string') return
+
+  // Expect exactly `<scheme>://<host>[:port]/api/spotify/callback` with no
+  // trailing slash and no extra path. If anything else, leave it alone.
+  const match = redirectUri.match(/^(https?:\/\/[^/]+)\/api\/spotify\/callback$/)
+  if (!match) return
+
+  const baseUrl = match[1]
+  setSetting('spotify.publicBaseUrl', baseUrl)
+  console.log('[settings-store] migrated spotify.publicBaseUrl from existing redirectUri')
 }
 
 // ---------- Test-only helpers ----------
