@@ -27,7 +27,7 @@ process.env.FAIRY_DB_PATH = path.join(tmpDir, 'test.sqlite')
 const { initDb, db } = await import('../db/index.js')
 const store = await import('../lib/settings-store.js')
 const { getSunTimes, getCurrentSunPhase } = await import('../lib/sun-tracker.js')
-const { spotifyClient, SpotifyApiError } = await import('../lib/spotify-client.js')
+const { spotifyClient, SpotifyApiError, getDerivedRedirectUri } = await import('../lib/spotify-client.js')
 
 function resetCache(): void {
   db.prepare('DELETE FROM app_settings').run()
@@ -178,6 +178,47 @@ describe('spotify-client reads getSpotify() at call time', () => {
       assert.ok(err instanceof SpotifyApiError, 'expected SpotifyApiError')
       assert.equal(err.status, 503)
     }
+  })
+
+  test('getDerivedRedirectUri prefers publicBaseUrl when set', () => {
+    store.setSpotify({
+      clientId: null,
+      clientSecret: null,
+      redirectUri: 'https://legacy.example.com/api/spotify/callback',
+      publicBaseUrl: 'https://home.example.com',
+    })
+    assert.equal(getDerivedRedirectUri(), 'https://home.example.com/api/spotify/callback')
+  })
+
+  test('getDerivedRedirectUri falls back to legacy redirectUri when publicBaseUrl is null', () => {
+    store.setSpotify({
+      clientId: null,
+      clientSecret: null,
+      redirectUri: 'https://legacy.example.com/api/spotify/callback',
+      publicBaseUrl: null,
+    })
+    assert.equal(getDerivedRedirectUri(), 'https://legacy.example.com/api/spotify/callback')
+  })
+
+  test('getDerivedRedirectUri falls back to DEFAULT when both unset', () => {
+    store.setSpotify({
+      clientId: null,
+      clientSecret: null,
+      redirectUri: null,
+      publicBaseUrl: null,
+    })
+    assert.equal(getDerivedRedirectUri(), 'http://localhost:3001/api/spotify/callback')
+  })
+
+  test('getAuthUrl uses the derived URI from publicBaseUrl', () => {
+    store.setSpotify({
+      clientId: 'my-id',
+      clientSecret: 'sec',
+      redirectUri: null,
+      publicBaseUrl: 'https://home.example.com',
+    })
+    const url = spotifyClient.getAuthUrl()
+    assert.match(url, /redirect_uri=https%3A%2F%2Fhome\.example\.com%2Fapi%2Fspotify%2Fcallback/)
   })
 })
 

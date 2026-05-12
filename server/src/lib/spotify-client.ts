@@ -4,6 +4,7 @@ import { getSpotify } from './settings-store.js'
 
 const TIMEOUT = 10000
 const DEFAULT_REDIRECT_URI = 'http://localhost:3001/api/spotify/callback'
+const REDIRECT_PATH = '/api/spotify/callback'
 
 interface SpotifyCreds {
   clientId: string
@@ -11,12 +12,32 @@ interface SpotifyCreds {
   redirectUri: string
 }
 
+/**
+ * The Spotify OAuth `redirect_uri` we hand to Spotify on every authorize +
+ * token-exchange call. Resolution order (Phase 7, WI #4):
+ *   1. `publicBaseUrl` is set → derive `${publicBaseUrl}/api/spotify/callback`.
+ *   2. Legacy `redirectUri` is set (older installs) → use it verbatim.
+ *   3. Neither → DEFAULT_REDIRECT_URI as a final fallback so dev environments
+ *      without configuration still produce a complete OAuth URL.
+ *
+ * Exported because the `settings-spotify` route needs the same value when
+ * answering `GET /api/settings/spotify/redirect-uri`.
+ */
+export function getDerivedRedirectUri(): string {
+  const s = getSpotify()
+  if (s.publicBaseUrl && s.publicBaseUrl !== '') {
+    return `${s.publicBaseUrl}${REDIRECT_PATH}`
+  }
+  if (s.redirectUri && s.redirectUri !== '') return s.redirectUri
+  return DEFAULT_REDIRECT_URI
+}
+
 function readCreds(): SpotifyCreds {
   const s = getSpotify()
   return {
     clientId: s.clientId ?? '',
     clientSecret: s.clientSecret ?? '',
-    redirectUri: s.redirectUri ?? DEFAULT_REDIRECT_URI,
+    redirectUri: getDerivedRedirectUri(),
   }
 }
 
