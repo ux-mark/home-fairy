@@ -542,9 +542,11 @@ export default function RoomDetailPage() {
     return sonosFollowMeStatus.activeRooms.includes(roomSpeaker.room_name)
   }, [roomSpeaker, sonosFollowMeStatus])
 
-  // Auto-play rules for this room
+  // Auto-play rules for this room.
+  // RoomDetailPage only manages mode-bound rules; time-window rules live in
+  // Settings → Music and on the Sonos detail page where the full editor lives.
   const roomAutoPlayRules = useMemo(
-    () => autoPlayRules?.filter(r => r.room_name === name) ?? [],
+    () => autoPlayRules?.filter(r => r.room_name === name && r.mode_name !== null) ?? [],
     [autoPlayRules, name],
   )
 
@@ -897,7 +899,7 @@ export default function RoomDetailPage() {
     setShowAddRuleForm(false)
     setEditingRuleId(rule.id)
     setNewRuleFavourite(rule.favourite_name)
-    setNewRuleMode(rule.mode_name)
+    setNewRuleMode(rule.mode_name ?? '')
     setNewRuleTriggerType(rule.trigger_type)
     setNewRuleSourceValue(rule.trigger_value ?? '')
     setNewRuleMaxPlays(rule.max_plays !== null ? String(rule.max_plays) : '')
