@@ -92,6 +92,15 @@ function ToggleSwitch({
 
 // ── Auto-play rule display ───────────────────────────────────────────────────
 
+function describeDays(days: number[] | null): string {
+  if (days === null) return 'every day'
+  if (days.length === 7) return 'every day'
+  if (days.length === 5 && [1, 2, 3, 4, 5].every(d => days.includes(d))) return 'weekdays'
+  if (days.length === 2 && days.includes(6) && days.includes(7)) return 'weekends'
+  const shorts = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  return [...days].sort((a, b) => a - b).map(d => shorts[d - 1]).join(', ')
+}
+
 function ruleDescription(rule: AutoPlayRule): { main: string; condition?: string } {
   const room = rule.room_name ?? 'whole house'
   const isContinue = rule.favourite_name === '__continue__'
@@ -101,7 +110,18 @@ function ruleDescription(rule: AutoPlayRule): { main: string; condition?: string
     : isPodcast
       ? `Play latest "${rule.favourite_name}" episode in ${room}`
       : `Play "${rule.favourite_name}" in ${room}`
-  const main = `${action} when mode changes to "${rule.mode_name}".`
+
+  const days = describeDays(rule.days_of_week)
+  let main: string
+  if (rule.mode_name) {
+    // Mode-bound rule. Mention day filter only when it actually narrows.
+    const dayClause = days === 'every day' ? '' : ` on ${days}`
+    main = `${action} when "${rule.mode_name}" mode is active${dayClause}.`
+  } else if (rule.time_start && rule.time_end) {
+    main = `${action} ${days} between ${rule.time_start} and ${rule.time_end}.`
+  } else {
+    main = `${action} ${days}.`
+  }
 
   let condition: string | undefined
   if (rule.trigger_type === 'if_not_playing') {
@@ -112,7 +132,9 @@ function ruleDescription(rule: AutoPlayRule): { main: string; condition?: string
   }
 
   if (rule.max_plays !== null) {
-    const limitText = rule.max_plays === 1 ? 'Plays once per mode change.' : `Plays ${rule.max_plays} times per mode change.`
+    // Mode-bound rules count per mode session; time/day rules count per day.
+    const scope = rule.mode_name ? 'per mode change' : 'per day'
+    const limitText = rule.max_plays === 1 ? `Plays once ${scope}.` : `Plays ${rule.max_plays} times ${scope}.`
     condition = condition ? `${condition} ${limitText}` : limitText
   }
 
@@ -142,6 +164,7 @@ function AddRuleForm({
   const [favourite, setFavourite] = useState<string>('')
   const [nasUri, setNasUri] = useState<string | null>(null)
   const [spotifyUri, setSpotifyUri] = useState<string | null>(null)
+  const [triggerBasis, setTriggerBasis] = useState<'mode' | 'time'>('mode')
   const [mode, setMode] = useState<string>(modes[0]?.name ?? '')
   const [triggerType, setTriggerType] = useState<TriggerType>('if_not_playing')
   const [sourceValue, setSourceValue] = useState<string>('')
@@ -183,16 +206,27 @@ function AddRuleForm({
     return () => { cancelled = true }
   }, [favourite])
 
-  const effectiveTrigger = favourite === '__continue__' ? 'mode_change' : triggerType
+  // For time-window rules, mode_change is meaningless — fall back to if_not_playing.
+  const effectiveTrigger: TriggerType = favourite === '__continue__'
+    ? 'mode_change'
+    : triggerBasis === 'time' && triggerType === 'mode_change'
+      ? 'if_not_playing'
+      : triggerType
   const resolvedFeedUrl = podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null)
-  const isValid = favourite && mode && !(triggerType === 'if_source_not' && favourite !== '__continue__' && !sourceValue)
-    && (!podcastFailed || manualFeedUrl) && scheduleValid
+  const basisValid =
+    triggerBasis === 'mode'
+      ? !!mode
+      : !!schedule.timeStart && !!schedule.timeEnd
+  const isValid =
+    favourite && basisValid &&
+    !(triggerType === 'if_source_not' && favourite !== '__continue__' && !sourceValue) &&
+    (!podcastFailed || manualFeedUrl) && scheduleValid
 
   const handleSave = () => {
     if (!isValid) return
     onSave({
       room_name: targetRoom || null,
-      mode_name: mode,
+      mode_name: triggerBasis === 'mode' ? mode : null,
       favourite_name: favourite,
       trigger_type: effectiveTrigger,
       trigger_value: effectiveTrigger === 'if_source_not' ? sourceValue : null,
@@ -202,8 +236,8 @@ function AddRuleForm({
       nas_uri: nasUri,
       spotify_uri: spotifyUri,
       days_of_week: schedule.daysOfWeek,
-      time_start: schedule.timeStart,
-      time_end: schedule.timeEnd,
+      time_start: triggerBasis === 'time' ? schedule.timeStart : null,
+      time_end: triggerBasis === 'time' ? schedule.timeEnd : null,
     })
     setNasUri(null)
     setSpotifyUri(null)
@@ -267,20 +301,39 @@ function AddRuleForm({
         )}
       </div>
 
-      {/* Mode */}
+      {/* Trigger basis: Mode XOR Time-window */}
       <div>
-        <p className="text-heading text-sm mb-1.5">Mode</p>
+        <p className="text-heading text-sm mb-1.5">Trigger by</p>
+        <p className="text-caption text-xs mb-2">
+          Tie this rule to a mode, or to a time window. Days are an extra refinement on either.
+        </p>
         <PillSelect
-          id="rule-mode"
-          options={modes.map((m) => ({ value: m.name, label: m.name, icon: m.icon ?? undefined }))}
-          value={mode}
-          onChange={setMode}
-          placeholder="Select a mode"
-          aria-label="Select a mode"
+          id="rule-basis"
+          options={[
+            { value: 'mode', label: 'Mode' },
+            { value: 'time', label: 'Time window' },
+          ]}
+          value={triggerBasis}
+          onChange={(v) => setTriggerBasis(v as 'mode' | 'time')}
+          aria-label="Trigger basis"
         />
       </div>
 
-      {/* Condition — hidden when __continue__ (only mode_change makes sense) */}
+      {triggerBasis === 'mode' && (
+        <div>
+          <p className="text-heading text-sm mb-1.5">Mode</p>
+          <PillSelect
+            id="rule-mode"
+            options={modes.map((m) => ({ value: m.name, label: m.name, icon: m.icon ?? undefined }))}
+            value={mode}
+            onChange={setMode}
+            placeholder="Select a mode"
+            aria-label="Select a mode"
+          />
+        </div>
+      )}
+
+      {/* Condition — hidden when __continue__; mode_change hidden for time-window rules */}
       {favourite !== '__continue__' && (
         <div>
           <p className="text-heading text-sm mb-2">Condition</p>
@@ -288,10 +341,12 @@ function AddRuleForm({
             name="trigger-type"
             options={[
               { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
-              { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
+              ...(triggerBasis === 'mode'
+                ? [{ value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap }]
+                : []),
               { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
             ]}
-            value={triggerType}
+            value={triggerType === 'mode_change' && triggerBasis === 'time' ? 'if_not_playing' : triggerType}
             onChange={(v) => setTriggerType(v as TriggerType)}
             aria-label="Trigger condition"
           />
@@ -316,7 +371,9 @@ function AddRuleForm({
       <div>
         <p className="text-heading text-sm mb-1.5">Repeat limit</p>
         <p className="text-caption text-xs mb-2">
-          How many times this rule fires per mode change
+          {triggerBasis === 'mode'
+            ? 'How many times this rule fires per mode change.'
+            : 'How many times this rule fires per day.'}
         </p>
         <PillSelect
           id="add-rule-max-plays"
@@ -332,9 +389,10 @@ function AddRuleForm({
         />
       </div>
 
-      {/* Schedule (optional) */}
+      {/* Schedule — days for mode rules, days+time for time-window rules */}
       <ScheduleFields
         idPrefix="settings-add-rule"
+        variant={triggerBasis === 'mode' ? 'days-only' : 'days-and-time'}
         value={schedule}
         onChange={setSchedule}
         onValidityChange={setScheduleValid}
@@ -460,6 +518,7 @@ export function MusicSection() {
   const [editFavourite, setEditFavourite] = useState('')
   const [editNasUri, setEditNasUri] = useState<string | null>(null)
   const [editSpotifyUri, setEditSpotifyUri] = useState<string | null>(null)
+  const [editTriggerBasis, setEditTriggerBasis] = useState<'mode' | 'time'>('mode')
   const [editMode, setEditMode] = useState('')
   const [editTriggerType, setEditTriggerType] = useState<AutoPlayRule['trigger_type']>('if_not_playing')
   const [editSourceValue, setEditSourceValue] = useState('')
@@ -579,6 +638,7 @@ export function MusicSection() {
     setEditFavourite('')
     setEditNasUri(null)
     setEditSpotifyUri(null)
+    setEditTriggerBasis('mode')
     setEditMode('')
     setEditTriggerType('if_not_playing')
     setEditSourceValue('')
@@ -597,7 +657,8 @@ export function MusicSection() {
     setEditFavourite(rule.favourite_name)
     setEditNasUri(rule.nas_uri ?? null)
     setEditSpotifyUri(rule.spotify_uri ?? null)
-    setEditMode(rule.mode_name)
+    setEditTriggerBasis(rule.mode_name ? 'mode' : 'time')
+    setEditMode(rule.mode_name ?? '')
     setEditTriggerType(rule.trigger_type)
     setEditSourceValue(rule.trigger_value ?? '')
     setEditMaxPlays(rule.max_plays !== null ? String(rule.max_plays) : '')
@@ -680,8 +741,17 @@ export function MusicSection() {
 
               if (isEditing) {
 
-                const effectiveTrigger = editFavourite === '__continue__' ? 'mode_change' : editTriggerType
-                const isValid = editFavourite && editMode && !(editTriggerType === 'if_source_not' && editFavourite !== '__continue__' && !editSourceValue)
+                const effectiveTrigger: AutoPlayRule['trigger_type'] = editFavourite === '__continue__'
+                  ? 'mode_change'
+                  : editTriggerBasis === 'time' && editTriggerType === 'mode_change'
+                    ? 'if_not_playing'
+                    : editTriggerType
+                const editBasisValid =
+                  editTriggerBasis === 'mode'
+                    ? !!editMode
+                    : !!editSchedule.timeStart && !!editSchedule.timeEnd
+                const isValid = editFavourite && editBasisValid &&
+                  !(editTriggerType === 'if_source_not' && editFavourite !== '__continue__' && !editSourceValue)
 
                 return (
                   <div key={rule.id} className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] p-4 space-y-4">
@@ -725,16 +795,32 @@ export function MusicSection() {
                     </div>
 
                     <div>
-                      <p className="text-heading text-sm mb-1.5">Mode</p>
+                      <p className="text-heading text-sm mb-1.5">Trigger by</p>
                       <PillSelect
-                        id="settings-edit-mode"
-                        options={(modes ?? []).map(m => ({ value: m.name, label: m.name, icon: m.icon ?? undefined }))}
-                        value={editMode}
-                        onChange={setEditMode}
-                        placeholder="Select a mode"
-                        aria-label="Select a mode"
+                        id="settings-edit-basis"
+                        options={[
+                          { value: 'mode', label: 'Mode' },
+                          { value: 'time', label: 'Time window' },
+                        ]}
+                        value={editTriggerBasis}
+                        onChange={(v) => setEditTriggerBasis(v as 'mode' | 'time')}
+                        aria-label="Trigger basis"
                       />
                     </div>
+
+                    {editTriggerBasis === 'mode' && (
+                      <div>
+                        <p className="text-heading text-sm mb-1.5">Mode</p>
+                        <PillSelect
+                          id="settings-edit-mode"
+                          options={(modes ?? []).map(m => ({ value: m.name, label: m.name, icon: m.icon ?? undefined }))}
+                          value={editMode}
+                          onChange={setEditMode}
+                          placeholder="Select a mode"
+                          aria-label="Select a mode"
+                        />
+                      </div>
+                    )}
 
                     {editFavourite !== '__continue__' && (
                       <div>
@@ -743,10 +829,12 @@ export function MusicSection() {
                           name="settings-edit-trigger-type"
                           options={[
                             { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
-                            { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
+                            ...(editTriggerBasis === 'mode'
+                              ? [{ value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap }]
+                              : []),
                             { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
                           ]}
-                          value={editTriggerType}
+                          value={editTriggerType === 'mode_change' && editTriggerBasis === 'time' ? 'if_not_playing' : editTriggerType}
                           onChange={(v) => setEditTriggerType(v as AutoPlayRule['trigger_type'])}
                           aria-label="Trigger condition"
                         />
@@ -769,7 +857,9 @@ export function MusicSection() {
                     <div>
                       <p className="text-heading text-sm mb-1.5">Repeat limit</p>
                       <p className="text-caption text-xs mb-2">
-                        How many times this rule fires per mode change
+                        {editTriggerBasis === 'mode'
+                          ? 'How many times this rule fires per mode change.'
+                          : 'How many times this rule fires per day.'}
                       </p>
                       <PillSelect
                         id="settings-edit-max-plays"
@@ -785,9 +875,10 @@ export function MusicSection() {
                       />
                     </div>
 
-                    {/* Schedule (optional) */}
+                    {/* Schedule — days for mode rules, days+time for time-window rules */}
                     <ScheduleFields
                       idPrefix={`settings-edit-rule-${rule.id}`}
+                      variant={editTriggerBasis === 'mode' ? 'days-only' : 'days-and-time'}
                       value={editSchedule}
                       onChange={setEditSchedule}
                       onValidityChange={setEditScheduleValid}
@@ -801,7 +892,7 @@ export function MusicSection() {
                             id: rule.id,
                             data: {
                               room_name: editRoom || null,
-                              mode_name: editMode,
+                              mode_name: editTriggerBasis === 'mode' ? editMode : null,
                               favourite_name: editFavourite,
                               trigger_type: effectiveTrigger,
                               trigger_value: effectiveTrigger === 'if_source_not' ? editSourceValue : null,
@@ -810,8 +901,8 @@ export function MusicSection() {
                               nas_uri: editNasUri,
                               spotify_uri: editSpotifyUri,
                               days_of_week: editSchedule.daysOfWeek,
-                              time_start: editSchedule.timeStart,
-                              time_end: editSchedule.timeEnd,
+                              time_start: editTriggerBasis === 'time' ? editSchedule.timeStart : null,
+                              time_end: editTriggerBasis === 'time' ? editSchedule.timeEnd : null,
                             },
                           })
                         }}

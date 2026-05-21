@@ -145,30 +145,30 @@ describe('passesSchedule', () => {
   test('rule with all schedule columns NULL passes always (regression)', () => {
     const rule = { days_of_week: null, time_start: null, time_end: null }
     // Pick any date — should still pass.
-    assert.equal(passesSchedule(rule, new Date('2024-01-08T12:00:00Z')), true)
-    assert.equal(passesSchedule(rule, new Date('2024-06-01T03:00:00Z')), true)
+    assert.equal(passesSchedule(rule, null, new Date('2024-01-08T12:00:00Z')), true)
+    assert.equal(passesSchedule(rule, null, new Date('2024-06-01T03:00:00Z')), true)
   })
 
   test('weekdays only: Monday → fire, Saturday → skip', () => {
     const rule = { days_of_week: JSON.stringify([1, 2, 3, 4, 5]), time_start: null, time_end: null }
     // 2024-01-08 is Monday, 2024-01-13 is Saturday.
-    assert.equal(passesSchedule(rule, new Date('2024-01-08T12:00:00Z')), true)
-    assert.equal(passesSchedule(rule, new Date('2024-01-13T12:00:00Z')), false)
+    assert.equal(passesSchedule(rule, null, new Date('2024-01-08T12:00:00Z')), true)
+    assert.equal(passesSchedule(rule, null, new Date('2024-01-13T12:00:00Z')), false)
   })
 
   test('07:00–22:00 window: noon fires, 06:59 skips, 22:00 skips (exclusive)', () => {
     const rule = { days_of_week: null, time_start: '07:00', time_end: '22:00' }
     // We're in Europe/Dublin. In January Dublin is UTC+0, so UTC = local time.
-    assert.equal(passesSchedule(rule, new Date('2024-01-08T12:00:00Z')), true)
-    assert.equal(passesSchedule(rule, new Date('2024-01-08T06:59:00Z')), false)
-    assert.equal(passesSchedule(rule, new Date('2024-01-08T22:00:00Z')), false)
+    assert.equal(passesSchedule(rule, null, new Date('2024-01-08T12:00:00Z')), true)
+    assert.equal(passesSchedule(rule, null, new Date('2024-01-08T06:59:00Z')), false)
+    assert.equal(passesSchedule(rule, null, new Date('2024-01-08T22:00:00Z')), false)
   })
 
   test('wrap-around 22:00–06:00: 23:00 fires, 02:00 fires, 12:00 skips', () => {
     const rule = { days_of_week: null, time_start: '22:00', time_end: '06:00' }
-    assert.equal(passesSchedule(rule, new Date('2024-01-08T23:00:00Z')), true)
-    assert.equal(passesSchedule(rule, new Date('2024-01-09T02:00:00Z')), true)
-    assert.equal(passesSchedule(rule, new Date('2024-01-08T12:00:00Z')), false)
+    assert.equal(passesSchedule(rule, null, new Date('2024-01-08T23:00:00Z')), true)
+    assert.equal(passesSchedule(rule, null, new Date('2024-01-09T02:00:00Z')), true)
+    assert.equal(passesSchedule(rule, null, new Date('2024-01-08T12:00:00Z')), false)
   })
 
   test('settings-store TZ flips the answer for the same UTC instant', () => {
@@ -191,15 +191,15 @@ describe('passesSchedule', () => {
     const moment = new Date('2024-06-14T22:30:00Z')
 
     store.setLocation({ latitude: 53.34, longitude: -6.27, timezone: 'Europe/Dublin', locale: 'en-IE' })
-    assert.equal(passesSchedule(rule, moment), false, 'Dublin: out of time window')
+    assert.equal(passesSchedule(rule, null, moment), false, 'Dublin: out of time window')
 
     store.setLocation({ latitude: 40.71, longitude: -74.0, timezone: 'America/New_York', locale: 'en-US' })
-    assert.equal(passesSchedule(rule, moment), true, 'NY: in time window')
+    assert.equal(passesSchedule(rule, null, moment), true, 'NY: in time window')
   })
 
   test('malformed days_of_week JSON skips rather than throws', () => {
     const rule = { days_of_week: 'not-json', time_start: null, time_end: null }
-    assert.equal(passesSchedule(rule, new Date('2024-01-08T12:00:00Z')), false)
+    assert.equal(passesSchedule(rule, null, new Date('2024-01-08T12:00:00Z')), false)
   })
 })
 
@@ -222,7 +222,7 @@ interface RawErrorIssue { message: string; path?: (string | number)[] }
 interface ErrorBody { error?: RawErrorIssue[] | string }
 
 describe('POST /api/sonos/auto-play validation', () => {
-  test('valid create round-trips with parsed days_of_week + HH:MM strings', async () => {
+  test('time-window rule (no mode) round-trips with parsed days + HH:MM', async () => {
     const { url, close } = await startTestServer()
     try {
       const res = await fetch(`${url}/api/sonos/auto-play`, {
@@ -230,7 +230,7 @@ describe('POST /api/sonos/auto-play validation', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           room_name: null,
-          mode_name: 'Morning',
+          // No mode_name → time-window basis.
           favourite_name: 'Wake-up Radio',
           trigger_type: 'if_not_playing',
           days_of_week: [1, 2, 3, 4, 5],
@@ -241,10 +241,12 @@ describe('POST /api/sonos/auto-play validation', () => {
       assert.equal(res.status, 201)
       const body = await res.json() as {
         id: number
+        mode_name: string | null
         days_of_week: number[] | null
         time_start: string | null
         time_end: string | null
       }
+      assert.equal(body.mode_name, null)
       assert.deepEqual(body.days_of_week, [1, 2, 3, 4, 5])
       assert.equal(body.time_start, '07:00')
       assert.equal(body.time_end, '09:30')
@@ -255,6 +257,65 @@ describe('POST /api/sonos/auto-play validation', () => {
       const created = rules.find(r => r.id === body.id)
       assert.ok(created)
       assert.deepEqual(created!.days_of_week, [1, 2, 3, 4, 5])
+    } finally {
+      await close()
+    }
+  })
+
+  test('mode rule (no times) round-trips', async () => {
+    const { url, close } = await startTestServer()
+    try {
+      const res = await fetch(`${url}/api/sonos/auto-play`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode_name: 'Morning',
+          favourite_name: 'X',
+          trigger_type: 'mode_change',
+        }),
+      })
+      assert.equal(res.status, 201)
+      const body = await res.json() as { mode_name: string | null; time_start: string | null }
+      assert.equal(body.mode_name, 'Morning')
+      assert.equal(body.time_start, null)
+    } finally {
+      await close()
+    }
+  })
+
+  test('mode AND time-window together → 400 (XOR)', async () => {
+    const { url, close } = await startTestServer()
+    try {
+      const res = await fetch(`${url}/api/sonos/auto-play`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode_name: 'Morning',
+          favourite_name: 'X',
+          trigger_type: 'if_not_playing',
+          time_start: '07:00',
+          time_end: '09:00',
+        }),
+      })
+      assert.equal(res.status, 400)
+    } finally {
+      await close()
+    }
+  })
+
+  test('neither mode nor time-window → 400', async () => {
+    const { url, close } = await startTestServer()
+    try {
+      const res = await fetch(`${url}/api/sonos/auto-play`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          favourite_name: 'X',
+          trigger_type: 'if_not_playing',
+          days_of_week: [1, 2, 3],
+        }),
+      })
+      assert.equal(res.status, 400)
     } finally {
       await close()
     }
@@ -363,10 +424,10 @@ describe('POST /api/sonos/auto-play validation', () => {
 })
 
 describe('PUT /api/sonos/auto-play/:id validation', () => {
-  test('partial update clears schedule with explicit nulls', async () => {
+  test('partial update clears day filter with explicit null on a mode rule', async () => {
     const { url, close } = await startTestServer()
     try {
-      // Create with schedule
+      // Create a mode rule with a day filter.
       const createRes = await fetch(`${url}/api/sonos/auto-play`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -375,27 +436,20 @@ describe('PUT /api/sonos/auto-play/:id validation', () => {
           favourite_name: 'X',
           trigger_type: 'mode_change',
           days_of_week: [1, 2],
-          time_start: '07:00',
-          time_end: '08:00',
         }),
       })
       const created = await createRes.json() as { id: number }
 
-      // Clear everything
+      // Clear the day filter.
       const putRes = await fetch(`${url}/api/sonos/auto-play/${created.id}`, {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          days_of_week: null,
-          time_start: null,
-          time_end: null,
-        }),
+        body: JSON.stringify({ days_of_week: null }),
       })
       assert.equal(putRes.status, 200)
-      const body = await putRes.json() as { days_of_week: number[] | null; time_start: string | null; time_end: string | null }
+      const body = await putRes.json() as { days_of_week: number[] | null; mode_name: string | null }
       assert.equal(body.days_of_week, null)
-      assert.equal(body.time_start, null)
-      assert.equal(body.time_end, null)
+      assert.equal(body.mode_name, 'Morning')
     } finally {
       await close()
     }
@@ -423,5 +477,91 @@ describe('PUT /api/sonos/auto-play/:id validation', () => {
     } finally {
       await close()
     }
+  })
+
+  test('PUT that would leave the rule with mode AND time set → 400 (XOR enforced on merged shape)', async () => {
+    const { url, close } = await startTestServer()
+    try {
+      // Existing mode rule.
+      const createRes = await fetch(`${url}/api/sonos/auto-play`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode_name: 'Morning',
+          favourite_name: 'X',
+          trigger_type: 'mode_change',
+        }),
+      })
+      const created = await createRes.json() as { id: number }
+      // Try to add a time window without clearing the mode → should be rejected.
+      const putRes = await fetch(`${url}/api/sonos/auto-play/${created.id}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ time_start: '07:00', time_end: '09:00' }),
+      })
+      assert.equal(putRes.status, 400)
+    } finally {
+      await close()
+    }
+  })
+
+  test('switch a rule from mode to time-window in one PUT (atomic XOR flip)', async () => {
+    const { url, close } = await startTestServer()
+    try {
+      const createRes = await fetch(`${url}/api/sonos/auto-play`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode_name: 'Morning',
+          favourite_name: 'X',
+          trigger_type: 'mode_change',
+        }),
+      })
+      const created = await createRes.json() as { id: number }
+      const putRes = await fetch(`${url}/api/sonos/auto-play/${created.id}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode_name: null,
+          time_start: '07:00',
+          time_end: '09:00',
+        }),
+      })
+      assert.equal(putRes.status, 200)
+      const body = await putRes.json() as { mode_name: string | null; time_start: string | null }
+      assert.equal(body.mode_name, null)
+      assert.equal(body.time_start, '07:00')
+    } finally {
+      await close()
+    }
+  })
+})
+
+// ───────────────────────── Mode-match gating ─────────────────────────
+
+describe('passesSchedule mode gating', () => {
+  test('mode-bound rule fires only when current mode matches', () => {
+    const rule = {
+      mode_name: 'Morning',
+      days_of_week: null,
+      time_start: null,
+      time_end: null,
+    }
+    assert.equal(passesSchedule(rule, 'Morning', new Date('2024-01-08T12:00:00Z')), true)
+    assert.equal(passesSchedule(rule, 'Evening', new Date('2024-01-08T12:00:00Z')), false)
+    assert.equal(passesSchedule(rule, null, new Date('2024-01-08T12:00:00Z')), false)
+  })
+
+  test('time-window rule ignores current mode', () => {
+    const rule = {
+      mode_name: null,
+      days_of_week: null,
+      time_start: '07:00',
+      time_end: '22:00',
+    }
+    // Same UTC instant, any mode — only the window matters.
+    assert.equal(passesSchedule(rule, 'Morning', new Date('2024-01-08T12:00:00Z')), true)
+    assert.equal(passesSchedule(rule, 'Sleep Time', new Date('2024-01-08T12:00:00Z')), true)
+    assert.equal(passesSchedule(rule, null, new Date('2024-01-08T23:30:00Z')), false)
   })
 })

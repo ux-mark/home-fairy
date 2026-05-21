@@ -104,7 +104,7 @@ View all scenes assigned to the room, filter by mode, activate/deactivate scenes
 ### Sonos Auto-Play Rules
 **Status**: available
 
-Add auto-play rules that trigger Sonos playback on mode changes. Choose a favourite, podcast feed, or "continue what's playing." Configure trigger conditions and play limits. Each rule can be restricted to specific days of the week and to a time-of-day window (start and end), so a rule only fires when the mode change lands inside the allowed schedule. Schedule evaluation uses your configured timezone from Settings.
+Add auto-play rules that trigger Sonos playback on motion. Choose a favourite, podcast feed, or "continue what's playing." Each rule is triggered by **either** a mode (fires while that mode is active) **or** a local time-of-day window (fires whenever motion lands inside it) — never both. Days of the week are an optional refinement on either basis. Configure trigger conditions and a `max_plays` limit; mode rules reset their counter on each mode change, time/day rules reset at local midnight. Schedule evaluation uses your configured timezone from Settings.
 
 ### Sensor List
 **Status**: available
@@ -299,7 +299,7 @@ View playback state (Playing/Paused/Stopped). Play, pause, skip, adjust volume w
 ### Auto-Play Rules
 **Status**: available
 
-Create rules for what plays when the system mode changes. Supports Sonos favourites, podcast feeds, and "continue what's playing." Configure conditions and max-plays limits. Restrict rules to specific days of the week and to a time-of-day window (start and end) so playback only triggers inside the schedule you set. Schedule evaluation uses your configured timezone from Settings.
+Create rules that play music on motion. Supports Sonos favourites, podcast feeds, and "continue what's playing." Each rule's trigger basis is **Mode XOR Time window** — either a mode the rule fires while in, or a local time-of-day window the rule fires within, but never both. Days of the week are an optional refinement on top. Configure trigger conditions and a `max_plays` limit; mode rules reset their counter on each mode change, time/day rules reset at local midnight. Schedule evaluation uses your configured timezone from Settings.
 
 ---
 

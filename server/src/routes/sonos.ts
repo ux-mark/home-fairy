@@ -477,7 +477,7 @@ router.delete('/speakers/:room', (req: Request, res: Response) => {
 interface AutoPlayDbRow {
   id: number
   room_name: string | null
-  mode_name: string
+  mode_name: string | null
   favourite_name: string
   trigger_type: 'mode_change' | 'if_not_playing' | 'if_source_not'
   trigger_value: string | null
@@ -510,7 +510,8 @@ function parseAutoPlayRow(row: AutoPlayDbRow | undefined): unknown {
 // GET /auto-play — list auto-play rules
 router.get('/auto-play', (_req: Request, res: Response) => {
   const rules = getAll<AutoPlayDbRow>(
-    'SELECT * FROM sonos_auto_play ORDER BY mode_name, room_name',
+    // Mode-bound rules first, then time-window rules; tie-break by room.
+    "SELECT * FROM sonos_auto_play ORDER BY mode_name IS NULL, mode_name, room_name",
   )
   res.json(rules.map(parseAutoPlayRow))
 })
@@ -525,10 +526,22 @@ const daysOfWeekSchema = z
 
 const hhmmSchema = z.string().regex(HHMM_RE, 'Time must be HH:MM (24h)')
 
+// Mode XOR Time-window: exactly one of {mode_name, time-window} must be set.
+// `days_of_week` is an optional refinement on either basis. Used on create.
+const modeOrTimeRefinement = (
+  d: { mode_name?: string | null; time_start?: string | null; time_end?: string | null },
+): boolean => {
+  const hasMode = !!d.mode_name
+  const hasTime = !!d.time_start && !!d.time_end
+  return hasMode !== hasTime  // XOR
+}
+const MODE_OR_TIME_MSG =
+  'Pick a mode or a time window — not both, and not neither.'
+
 // POST /auto-play — create a rule
 const autoPlaySchema = z.object({
   room_name: z.string().nullable().optional(),
-  mode_name: z.string().min(1),
+  mode_name: z.string().min(1).nullable().optional(),
   favourite_name: z.string().min(1),
   trigger_type: z.enum(['mode_change', 'if_not_playing', 'if_source_not']),
   trigger_value: z.string().nullable().optional(),
@@ -543,19 +556,24 @@ const autoPlaySchema = z.object({
 }).refine(
   d => (d.time_start == null) === (d.time_end == null),
   { message: 'Set both start and end times, or leave both blank.', path: ['time_end'] },
-)
+).refine(modeOrTimeRefinement, { message: MODE_OR_TIME_MSG, path: ['mode_name'] })
 
 router.post('/auto-play', (req: Request, res: Response) => {
   try {
     const data = autoPlaySchema.parse(req.body)
+    // For time-window rules, mode_change is meaningless — coerce to if_not_playing
+    // so the trigger semantics stay coherent without a mode session to anchor it.
+    const triggerType = data.mode_name == null && data.trigger_type === 'mode_change'
+      ? 'if_not_playing'
+      : data.trigger_type
     const result = run(
       `INSERT INTO sonos_auto_play (room_name, mode_name, favourite_name, trigger_type, trigger_value, enabled, max_plays, podcast_feed_url, nas_uri, spotify_uri, days_of_week, time_start, time_end)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.room_name ?? null,
-        data.mode_name,
+        data.mode_name ?? null,
         data.favourite_name,
-        data.trigger_type,
+        triggerType,
         data.trigger_value ?? null,
         data.enabled ? 1 : 0,
         data.max_plays ?? null,
@@ -582,7 +600,7 @@ router.post('/auto-play', (req: Request, res: Response) => {
 // PUT /auto-play/:id — update a rule
 const autoPlayUpdateSchema = z.object({
   room_name: z.string().nullable().optional(),
-  mode_name: z.string().min(1).optional(),
+  mode_name: z.string().min(1).nullable().optional(),
   favourite_name: z.string().min(1).optional(),
   trigger_type: z.enum(['mode_change', 'if_not_playing', 'if_source_not']).optional(),
   trigger_value: z.string().nullable().optional(),
@@ -608,20 +626,35 @@ const autoPlayUpdateSchema = z.object({
 router.put('/auto-play/:id', (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id)
-    const existing = getOne<{ id: number }>('SELECT id FROM sonos_auto_play WHERE id = ?', [id])
+    const existing = getOne<AutoPlayDbRow>('SELECT * FROM sonos_auto_play WHERE id = ?', [id])
     if (!existing) {
       res.status(404).json({ error: 'Auto-play rule not found' })
       return
     }
 
     const data = autoPlayUpdateSchema.parse(req.body)
+
+    // Enforce mode-XOR-time on the merged shape so partial updates can't sneak
+    // a rule into a contradictory state (mode AND time, or neither).
+    const mergedMode = data.mode_name !== undefined ? data.mode_name : existing.mode_name
+    const mergedStart = data.time_start !== undefined ? data.time_start : existing.time_start
+    const mergedEnd = data.time_end !== undefined ? data.time_end : existing.time_end
+    if (!modeOrTimeRefinement({ mode_name: mergedMode, time_start: mergedStart, time_end: mergedEnd })) {
+      res.status(400).json({ error: [{ message: MODE_OR_TIME_MSG, path: ['mode_name'] }] })
+      return
+    }
+
     const updates: string[] = []
     const params: unknown[] = []
 
     if (data.room_name !== undefined) { updates.push('room_name = ?'); params.push(data.room_name) }
     if (data.mode_name !== undefined) { updates.push('mode_name = ?'); params.push(data.mode_name) }
     if (data.favourite_name !== undefined) { updates.push('favourite_name = ?'); params.push(data.favourite_name) }
-    if (data.trigger_type !== undefined) { updates.push('trigger_type = ?'); params.push(data.trigger_type) }
+    if (data.trigger_type !== undefined) {
+      // mode_change only makes sense for mode-bound rules; coerce away when time-window.
+      const tt = mergedMode == null && data.trigger_type === 'mode_change' ? 'if_not_playing' : data.trigger_type
+      updates.push('trigger_type = ?'); params.push(tt)
+    }
     if (data.trigger_value !== undefined) { updates.push('trigger_value = ?'); params.push(data.trigger_value) }
     if (data.enabled !== undefined) { updates.push('enabled = ?'); params.push(data.enabled ? 1 : 0) }
     if (data.max_plays !== undefined) { updates.push('max_plays = ?'); params.push(data.max_plays) }

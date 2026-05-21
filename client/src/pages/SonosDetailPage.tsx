@@ -32,6 +32,15 @@ function formatPlaybackState(state: string): string {
   }
 }
 
+function describeDays(days: number[] | null): string {
+  if (days === null) return 'every day'
+  if (days.length === 7) return 'every day'
+  if (days.length === 5 && [1, 2, 3, 4, 5].every(d => days.includes(d))) return 'weekdays'
+  if (days.length === 2 && days.includes(6) && days.includes(7)) return 'weekends'
+  const shorts = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  return [...days].sort((a, b) => a - b).map(d => shorts[d - 1]).join(', ')
+}
+
 function formatRuleSentence(rule: AutoPlayRule): { main: string; condition?: string } {
   const isPodcast = !!rule.podcast_feed_url
   const isNas = !!rule.nas_uri
@@ -42,7 +51,18 @@ function formatRuleSentence(rule: AutoPlayRule): { main: string; condition?: str
       : isNas
         ? `Play "${rule.favourite_name}" from library`
         : `Play "${rule.favourite_name}"`
-  const main = `${action} when mode changes to "${rule.mode_name}".`
+
+  const days = describeDays(rule.days_of_week)
+  let main: string
+  if (rule.mode_name) {
+    const dayClause = days === 'every day' ? '' : ` on ${days}`
+    main = `${action} when "${rule.mode_name}" mode is active${dayClause}.`
+  } else if (rule.time_start && rule.time_end) {
+    main = `${action} ${days} between ${rule.time_start} and ${rule.time_end}.`
+  } else {
+    main = `${action} ${days}.`
+  }
+
   let condition: string | undefined
   if (rule.trigger_type === 'if_not_playing') {
     condition = 'Only if nothing is playing.'
@@ -50,7 +70,8 @@ function formatRuleSentence(rule: AutoPlayRule): { main: string; condition?: str
     condition = `Only if "${rule.trigger_value}" is not active.`
   }
   if (rule.max_plays !== null) {
-    const limitText = rule.max_plays === 1 ? 'Plays once per mode change.' : `Plays ${rule.max_plays} times per mode change.`
+    const scope = rule.mode_name ? 'per mode change' : 'per day'
+    const limitText = rule.max_plays === 1 ? `Plays once ${scope}.` : `Plays ${rule.max_plays} times ${scope}.`
     condition = condition ? `${condition} ${limitText}` : limitText
   }
   return { main, condition }
@@ -128,6 +149,7 @@ export default function SonosDetailPage() {
   const [showAddRuleForm, setShowAddRuleForm] = useState(false)
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
   const [newRuleFavourite, setNewRuleFavourite] = useState('')
+  const [newRuleBasis, setNewRuleBasis] = useState<'mode' | 'time'>('mode')
   const [newRuleMode, setNewRuleMode] = useState('')
   const [newRuleTriggerType, setNewRuleTriggerType] = useState<AutoPlayRule['trigger_type']>('if_not_playing')
   const [newRuleSourceValue, setNewRuleSourceValue] = useState('')
@@ -329,6 +351,7 @@ export default function SonosDetailPage() {
     setShowAddRuleForm(false)
     setEditingRuleId(null)
     setNewRuleFavourite('')
+    setNewRuleBasis('mode')
     setNewRuleMode('')
     setNewRuleTriggerType('if_not_playing')
     setNewRuleSourceValue('')
@@ -346,7 +369,8 @@ export default function SonosDetailPage() {
     setShowAddRuleForm(false)
     setEditingRuleId(rule.id)
     setNewRuleFavourite(rule.favourite_name)
-    setNewRuleMode(rule.mode_name)
+    setNewRuleBasis(rule.mode_name ? 'mode' : 'time')
+    setNewRuleMode(rule.mode_name ?? '')
     setNewRuleTriggerType(rule.trigger_type)
     setNewRuleSourceValue(rule.trigger_value ?? '')
     setNewRuleMaxPlays(rule.max_plays !== null ? String(rule.max_plays) : '')
@@ -747,18 +771,34 @@ export default function SonosDetailPage() {
                           )}
                         </div>
 
-                        {/* Mode */}
+                        {/* Trigger basis */}
                         <div>
-                          <p className="text-heading text-sm mb-1.5">Mode</p>
+                          <p className="text-heading text-sm mb-1.5">Trigger by</p>
                           <PillSelect
-                            id="edit-rule-mode"
-                            options={modes?.map(m => ({ value: m.name, label: m.name })) ?? []}
-                            value={newRuleMode}
-                            onChange={setNewRuleMode}
-                            placeholder="Select a mode"
-                            aria-label="Select a mode"
+                            id={`edit-rule-basis-${rule.id}`}
+                            options={[
+                              { value: 'mode', label: 'Mode' },
+                              { value: 'time', label: 'Time window' },
+                            ]}
+                            value={newRuleBasis}
+                            onChange={(v) => setNewRuleBasis(v as 'mode' | 'time')}
+                            aria-label="Trigger basis"
                           />
                         </div>
+
+                        {newRuleBasis === 'mode' && (
+                          <div>
+                            <p className="text-heading text-sm mb-1.5">Mode</p>
+                            <PillSelect
+                              id="edit-rule-mode"
+                              options={modes?.map(m => ({ value: m.name, label: m.name })) ?? []}
+                              value={newRuleMode}
+                              onChange={setNewRuleMode}
+                              placeholder="Select a mode"
+                              aria-label="Select a mode"
+                            />
+                          </div>
+                        )}
 
                         {/* Condition */}
                         {newRuleFavourite !== '__continue__' && (
@@ -768,10 +808,12 @@ export default function SonosDetailPage() {
                               name="edit-trigger-type"
                               options={[
                                 { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
-                                { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
+                                ...(newRuleBasis === 'mode'
+                                  ? [{ value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap }]
+                                  : []),
                                 { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
                               ]}
-                              value={newRuleTriggerType}
+                              value={newRuleTriggerType === 'mode_change' && newRuleBasis === 'time' ? 'if_not_playing' : newRuleTriggerType}
                               onChange={(v) => setNewRuleTriggerType(v as AutoPlayRule['trigger_type'])}
                               aria-label="Trigger condition"
                             />
@@ -794,7 +836,9 @@ export default function SonosDetailPage() {
                         <div>
                           <p className="text-heading text-sm mb-1.5">Repeat limit</p>
                           <p className="text-caption text-xs mb-2">
-                            How many times this rule fires per mode change
+                            {newRuleBasis === 'mode'
+                              ? 'How many times this rule fires per mode change.'
+                              : 'How many times this rule fires per day.'}
                           </p>
                           <PillSelect
                             id="detail-edit-rule-max-plays"
@@ -810,9 +854,10 @@ export default function SonosDetailPage() {
                           />
                         </div>
 
-                        {/* Schedule (optional) */}
+                        {/* Schedule — days for mode rules, days+time for time-window rules */}
                         <ScheduleFields
                           idPrefix={`detail-edit-rule-${rule.id}`}
+                          variant={newRuleBasis === 'mode' ? 'days-only' : 'days-and-time'}
                           value={schedule}
                           onChange={setSchedule}
                           onValidityChange={setScheduleValid}
@@ -822,12 +867,17 @@ export default function SonosDetailPage() {
                         <div className="flex items-center gap-2 pt-1">
                           <button
                             onClick={() => {
-                              if (!newRuleFavourite || !newRuleMode || !scheduleValid) return
-                              const effectiveTrigger = newRuleFavourite === '__continue__' ? 'mode_change' : newRuleTriggerType
+                              const basisOk = newRuleBasis === 'mode' ? !!newRuleMode : !!schedule.timeStart && !!schedule.timeEnd
+                              if (!newRuleFavourite || !basisOk || !scheduleValid) return
+                              const effectiveTrigger: AutoPlayRule['trigger_type'] = newRuleFavourite === '__continue__'
+                                ? 'mode_change'
+                                : newRuleBasis === 'time' && newRuleTriggerType === 'mode_change'
+                                  ? 'if_not_playing'
+                                  : newRuleTriggerType
                               editRuleMutation.mutate({
                                 id: rule.id,
                                 data: {
-                                  mode_name: newRuleMode,
+                                  mode_name: newRuleBasis === 'mode' ? newRuleMode : null,
                                   favourite_name: newRuleFavourite,
                                   trigger_type: effectiveTrigger,
                                   trigger_value: effectiveTrigger === 'if_source_not' ? newRuleSourceValue : null,
@@ -836,12 +886,12 @@ export default function SonosDetailPage() {
                                   nas_uri: nasUri,
                                   spotify_uri: spotifyUri,
                                   days_of_week: schedule.daysOfWeek,
-                                  time_start: schedule.timeStart,
-                                  time_end: schedule.timeEnd,
+                                  time_start: newRuleBasis === 'time' ? schedule.timeStart : null,
+                                  time_end: newRuleBasis === 'time' ? schedule.timeEnd : null,
                                 },
                               })
                             }}
-                            disabled={!newRuleFavourite || !newRuleMode || !scheduleValid || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || editRuleMutation.isPending}
+                            disabled={!newRuleFavourite || (newRuleBasis === 'mode' ? !newRuleMode : !(schedule.timeStart && schedule.timeEnd)) || !scheduleValid || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || editRuleMutation.isPending}
                             className="rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                           >
                             {editRuleMutation.isPending ? 'Saving...' : 'Save changes'}
@@ -972,20 +1022,39 @@ export default function SonosDetailPage() {
                   )}
                 </div>
 
-                {/* Mode */}
+                {/* Trigger basis */}
                 <div>
-                  <p className="text-heading text-sm mb-1.5">Mode</p>
+                  <p className="text-heading text-sm mb-1.5">Trigger by</p>
+                  <p className="text-caption text-xs mb-2">
+                    Tie this rule to a mode, or to a time window. Days are an extra refinement on either.
+                  </p>
                   <PillSelect
-                    id="detail-rule-mode"
-                    options={modes?.map(m => ({ value: m.name, label: m.name })) ?? []}
-                    value={newRuleMode}
-                    onChange={setNewRuleMode}
-                    placeholder="Select a mode"
-                    aria-label="Select a mode"
+                    id="detail-rule-basis"
+                    options={[
+                      { value: 'mode', label: 'Mode' },
+                      { value: 'time', label: 'Time window' },
+                    ]}
+                    value={newRuleBasis}
+                    onChange={(v) => setNewRuleBasis(v as 'mode' | 'time')}
+                    aria-label="Trigger basis"
                   />
                 </div>
 
-                {/* Condition — hidden when __continue__ (only mode_change makes sense) */}
+                {newRuleBasis === 'mode' && (
+                  <div>
+                    <p className="text-heading text-sm mb-1.5">Mode</p>
+                    <PillSelect
+                      id="detail-rule-mode"
+                      options={modes?.map(m => ({ value: m.name, label: m.name })) ?? []}
+                      value={newRuleMode}
+                      onChange={setNewRuleMode}
+                      placeholder="Select a mode"
+                      aria-label="Select a mode"
+                    />
+                  </div>
+                )}
+
+                {/* Condition — hidden when __continue__; mode_change only for mode rules */}
                 {newRuleFavourite !== '__continue__' && (
                   <div>
                     <p className="text-heading text-sm mb-2">Condition</p>
@@ -993,10 +1062,12 @@ export default function SonosDetailPage() {
                       name="detail-trigger-type"
                       options={[
                         { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
-                        { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
+                        ...(newRuleBasis === 'mode'
+                          ? [{ value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap }]
+                          : []),
                         { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
                       ]}
-                      value={newRuleTriggerType}
+                      value={newRuleTriggerType === 'mode_change' && newRuleBasis === 'time' ? 'if_not_playing' : newRuleTriggerType}
                       onChange={(v) => setNewRuleTriggerType(v as AutoPlayRule['trigger_type'])}
                       aria-label="Trigger condition"
                     />
@@ -1021,7 +1092,9 @@ export default function SonosDetailPage() {
                 <div>
                   <p className="text-heading text-sm mb-1.5">Repeat limit</p>
                   <p className="text-caption text-xs mb-2">
-                    How many times this rule fires per mode change
+                    {newRuleBasis === 'mode'
+                      ? 'How many times this rule fires per mode change.'
+                      : 'How many times this rule fires per day.'}
                   </p>
                   <PillSelect
                     id="detail-add-rule-max-plays"
@@ -1037,9 +1110,10 @@ export default function SonosDetailPage() {
                   />
                 </div>
 
-                {/* Schedule (optional) */}
+                {/* Schedule — days for mode rules, days+time for time-window rules */}
                 <ScheduleFields
                   idPrefix="detail-add-rule"
+                  variant={newRuleBasis === 'mode' ? 'days-only' : 'days-and-time'}
                   value={schedule}
                   onChange={setSchedule}
                   onValidityChange={setScheduleValid}
@@ -1049,11 +1123,16 @@ export default function SonosDetailPage() {
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     onClick={() => {
-                      if (!newRuleFavourite || !newRuleMode || !scheduleValid) return
-                      const effectiveTrigger = newRuleFavourite === '__continue__' ? 'mode_change' : newRuleTriggerType
+                      const basisOk = newRuleBasis === 'mode' ? !!newRuleMode : !!schedule.timeStart && !!schedule.timeEnd
+                      if (!newRuleFavourite || !basisOk || !scheduleValid) return
+                      const effectiveTrigger: AutoPlayRule['trigger_type'] = newRuleFavourite === '__continue__'
+                        ? 'mode_change'
+                        : newRuleBasis === 'time' && newRuleTriggerType === 'mode_change'
+                          ? 'if_not_playing'
+                          : newRuleTriggerType
                       createRuleMutation.mutate({
                         room_name: assignedRoom.name,
-                        mode_name: newRuleMode,
+                        mode_name: newRuleBasis === 'mode' ? newRuleMode : null,
                         favourite_name: newRuleFavourite,
                         trigger_type: effectiveTrigger,
                         trigger_value: effectiveTrigger === 'if_source_not' ? newRuleSourceValue : null,
@@ -1063,11 +1142,11 @@ export default function SonosDetailPage() {
                         nas_uri: nasUri,
                         spotify_uri: spotifyUri,
                         days_of_week: schedule.daysOfWeek,
-                        time_start: schedule.timeStart,
-                        time_end: schedule.timeEnd,
+                        time_start: newRuleBasis === 'time' ? schedule.timeStart : null,
+                        time_end: newRuleBasis === 'time' ? schedule.timeEnd : null,
                       })
                     }}
-                    disabled={!newRuleFavourite || !newRuleMode || !scheduleValid || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || createRuleMutation.isPending}
+                    disabled={!newRuleFavourite || (newRuleBasis === 'mode' ? !newRuleMode : !(schedule.timeStart && schedule.timeEnd)) || !scheduleValid || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || createRuleMutation.isPending}
                     className="rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                   >
                     {createRuleMutation.isPending ? 'Saving...' : 'Save rule'}

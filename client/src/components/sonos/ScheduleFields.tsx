@@ -29,6 +29,12 @@ interface Props {
   onValidityChange?: (valid: boolean) => void
   /** Stable id prefix for inputs/labels (multiple instances on one page). */
   idPrefix: string
+  /**
+   * 'days-only': mode-bound rules — time inputs hidden, days only.
+   * 'days-and-time': time-window rules — days plus a required time pair.
+   * Defaults to 'days-and-time' so existing call sites are unaffected.
+   */
+  variant?: 'days-only' | 'days-and-time'
 }
 
 const DAYS: { iso: number; short: string; long: string }[] = [
@@ -67,22 +73,31 @@ export function summariseSchedule(value: ScheduleValue): string {
 }
 
 export function ScheduleFields(props: Props) {
-  const { value, onChange, onValidityChange, idPrefix } = props
+  const { value, onChange, onValidityChange, idPrefix, variant = 'days-and-time' } = props
+  const showTime = variant === 'days-and-time'
   const [open, setOpen] = useState<boolean>(() => {
     return value.daysOfWeek !== null || !!value.timeStart || !!value.timeEnd
   })
 
   const daysIsEmptyArray = Array.isArray(value.daysOfWeek) && value.daysOfWeek.length === 0
-  const timePairHalfSet = (!!value.timeStart) !== (!!value.timeEnd)
-  const timeStartBad = !!value.timeStart && !HHMM_RE.test(value.timeStart)
-  const timeEndBad = !!value.timeEnd && !HHMM_RE.test(value.timeEnd)
+  const timePairHalfSet = showTime && (!!value.timeStart) !== (!!value.timeEnd)
+  const timeStartBad = showTime && !!value.timeStart && !HHMM_RE.test(value.timeStart)
+  const timeEndBad = showTime && !!value.timeEnd && !HHMM_RE.test(value.timeEnd)
   const isValid = !daysIsEmptyArray && !timePairHalfSet && !timeStartBad && !timeEndBad
 
   useEffect(() => {
     onValidityChange?.(isValid)
   }, [isValid, onValidityChange])
 
-  const summary = useMemo(() => summariseSchedule(value), [value])
+  const summary = useMemo(() => {
+    if (!showTime) {
+      // Days-only variant: skip the "· all hours" tail, just describe days.
+      if (value.daysOfWeek === null) return 'Every day'
+      if (value.daysOfWeek.length === 0) return 'No days'
+      return daysSummary(value.daysOfWeek)
+    }
+    return summariseSchedule(value)
+  }, [value, showTime])
 
   const toggleDay = (iso: number) => {
     const current = value.daysOfWeek ?? [...Array(7)].map((_, i) => i + 1)
@@ -184,6 +199,7 @@ export function ScheduleFields(props: Props) {
           </div>
 
           {/* Time window */}
+          {showTime && (
           <div>
             <p className="text-heading text-sm mb-2">Time window</p>
             <div className="flex flex-wrap items-center gap-2">
@@ -226,6 +242,7 @@ export function ScheduleFields(props: Props) {
               <p className="text-xs text-fairy-400 mt-1">Wraps past midnight</p>
             )}
           </div>
+          )}
         </div>
       )}
     </div>

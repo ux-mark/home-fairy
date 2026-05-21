@@ -916,7 +916,8 @@ export interface SonosSpeakerWithRoom extends SonosSpeakerMapping {
 export interface AutoPlayRule {
   id: number
   room_name: string | null
-  mode_name: string
+  /** Mode-bound rules set this; time-window rules leave it null. */
+  mode_name: string | null
   favourite_name: string
   trigger_type: 'mode_change' | 'if_not_playing' | 'if_source_not'
   trigger_value: string | null
