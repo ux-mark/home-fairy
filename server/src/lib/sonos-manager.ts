@@ -29,7 +29,7 @@ interface RoomRow {
 interface AutoPlayRow {
   id: number
   room_name: string | null
-  mode_name: string
+  mode_name: string | null
   favourite_name: string
   trigger_type: 'mode_change' | 'if_not_playing' | 'if_source_not'
   trigger_value: string | null
@@ -51,21 +51,31 @@ interface SpeakerTimer {
 }
 
 /**
- * Schedule gate for an auto-play rule. Returns true when the rule's day-of-week
- * and time-window filters allow it to fire right now. NULL columns mean "no
- * filter on this dimension", so a rule with all schedule columns NULL always
- * passes (regression behaviour for existing rules).
+ * Schedule gate for an auto-play rule. Returns true when the rule's mode,
+ * day-of-week and time-window filters all allow it to fire right now.
+ *
+ * Rule shape is Mode XOR Time-window (enforced by the route layer): a rule has
+ * either `mode_name` set (fires only when that mode is the active mode) or a
+ * `time_start`+`time_end` window (fires whenever local time is inside it),
+ * never both. `days_of_week` is an independent refinement on either basis;
+ * NULL means every day.
  *
  * Exported so the route layer and unit tests can exercise it without the
  * SonosManager class.
  */
 export function passesSchedule(rule: {
+  mode_name?: string | null
   days_of_week: string | null
   time_start: string | null
   time_end: string | null
-}, now: Date = new Date()): boolean {
+}, currentMode: string | null = null, now: Date = new Date()): boolean {
   const tz = getLocation().timezone || 'Europe/Dublin'
   const { isoDay, hhmm } = nowIn(tz, now)
+
+  // Mode-bound rule: current mode must match exactly.
+  if (rule.mode_name) {
+    if (currentMode !== rule.mode_name) return false
+  }
 
   if (rule.days_of_week) {
     let allowed: number[]
@@ -89,6 +99,22 @@ export function passesSchedule(rule: {
   return true
 }
 
+/**
+ * The "scope" a rule's max_plays counter is tied to. Mode rules reset when
+ * the mode session flips; time/day-only rules reset at local midnight in the
+ * configured timezone. Returned as a deterministic string so callers can
+ * detect transitions by string equality.
+ */
+function ruleScopeKey(rule: AutoPlayRow, currentMode: string | null, now: Date = new Date()): string {
+  if (rule.mode_name) return `mode:${currentMode ?? ''}`
+  const tz = getLocation().timezone || 'Europe/Dublin'
+  // YYYY-MM-DD in the configured TZ — flips at local midnight.
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  })
+  return `day:${fmt.format(now)}`
+}
+
 class SonosManager {
   private zones: SonosZone[] = []
   private roomSpeakerMap: Map<string, string> = new Map()
@@ -100,6 +126,9 @@ class SonosManager {
   private shuttingDown = false
   private isRoomLockedFn: ((roomName: string) => boolean) | null = null
   private rulePlayCounts: Map<number, number> = new Map()
+  /** Last scope key seen per rule. Differing key on the next evaluation
+   *  means the rule's natural session (mode or day) has rolled — reset. */
+  private ruleLastScopeKey: Map<number, string> = new Map()
   private currentMode: string | null = null
   private podcastArtCache: Map<string, string> = new Map()
   private lastPlaybackFingerprint: string = ''
@@ -351,26 +380,32 @@ class SonosManager {
   }
 
   async onModeChange(newMode: string): Promise<void> {
-    // Mode change only resets play counts — auto-play rules are triggered by motion
+    // Track the current mode so passesSchedule + ruleScopeKey can see it. The
+    // per-rule scope-key check in evaluateAutoPlayRule handles count resets
+    // lazily, so we no longer need to clear rulePlayCounts en masse here.
     if (newMode !== this.currentMode) {
-      this.rulePlayCounts.clear()
       this.currentMode = newMode
-      log(`Mode changed to "${newMode}", auto-play repeat counts reset`)
+      log(`Mode changed to "${newMode}"`)
     }
   }
 
   /**
-   * Called when motion is detected in a room. Evaluates auto-play rules for the
-   * current mode. Not gated by lux, auto-enable, or night lockout — like follow-me.
+   * Called when motion is detected in a room. Evaluates every enabled auto-play
+   * rule for this room (or whole-house) — schedule gating happens per rule, so
+   * the SQL no longer filters by current mode. Not gated by lux, auto-enable
+   * or night lockout — like follow-me.
    * - Room-specific rules: fire only when that room activates
    * - Whole-house rules (room_name = null): fire on first motion in any room
    */
   async onRoomActive(roomName: string): Promise<void> {
-    const mode = this.currentMode ?? this.getCurrentModeFromDb()
+    // Cache the mode lookup in case it hasn't been set yet (e.g. fresh boot
+    // before the first mode-change event). passesSchedule + ruleScopeKey both
+    // read from this.currentMode after this line.
+    if (this.currentMode == null) this.currentMode = this.getCurrentModeFromDb()
 
     const rules = getAll<AutoPlayRow>(
-      'SELECT * FROM sonos_auto_play WHERE mode_name = ? AND enabled = 1 AND (room_name = ? OR room_name IS NULL)',
-      [mode, roomName],
+      'SELECT * FROM sonos_auto_play WHERE enabled = 1 AND (room_name = ? OR room_name IS NULL)',
+      [roomName],
     )
 
     if (rules.length === 0) return
@@ -392,11 +427,19 @@ class SonosManager {
   }
 
   private async evaluateAutoPlayRule(rule: AutoPlayRow): Promise<void> {
-    // Schedule gates run first: a rule outside its day/window is silently skipped
-    // and its play count is untouched. Trigger conditions and max_plays apply only
-    // when the schedule allows.
-    if (!passesSchedule(rule)) {
+    // Schedule gates run first: a rule outside its mode/day/window is silently
+    // skipped and its play count is untouched. Trigger conditions and max_plays
+    // apply only when the schedule allows.
+    if (!passesSchedule(rule, this.currentMode)) {
       return
+    }
+
+    // Reset the per-rule count when its natural scope rolls: mode session for
+    // mode rules, calendar day (in configured TZ) for time/day-only rules.
+    const scopeKey = ruleScopeKey(rule, this.currentMode)
+    if (this.ruleLastScopeKey.get(rule.id) !== scopeKey) {
+      this.rulePlayCounts.delete(rule.id)
+      this.ruleLastScopeKey.set(rule.id, scopeKey)
     }
 
     // Check repeat limit before any other logic

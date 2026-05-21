@@ -264,7 +264,7 @@ export function initDb(): void {
     CREATE TABLE IF NOT EXISTS sonos_auto_play (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       room_name TEXT,
-      mode_name TEXT NOT NULL REFERENCES modes(name) ON UPDATE CASCADE ON DELETE CASCADE,
+      mode_name TEXT REFERENCES modes(name) ON UPDATE CASCADE ON DELETE CASCADE,
       favourite_name TEXT NOT NULL,
       trigger_type TEXT NOT NULL CHECK(trigger_type IN ('mode_change', 'if_not_playing', 'if_source_not')),
       trigger_value TEXT,
@@ -452,6 +452,48 @@ export function initDb(): void {
   }
   if (!autoPlayColNames.includes('time_end')) {
     db.exec('ALTER TABLE sonos_auto_play ADD COLUMN time_end TEXT DEFAULT NULL')
+  }
+
+  // Drop the NOT NULL constraint from sonos_auto_play.mode_name so a rule can
+  // be scheduled by time window alone (Mode XOR Time-window). SQLite has no
+  // ALTER TABLE … DROP NOT NULL — rebuild the table preserving data.
+  const modeNameCol = autoPlayCols.find(c => c.name === 'mode_name') as
+    | { name: string; notnull: number }
+    | undefined
+  if (modeNameCol && modeNameCol.notnull === 1) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE sonos_auto_play__new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_name TEXT,
+        mode_name TEXT REFERENCES modes(name) ON UPDATE CASCADE ON DELETE CASCADE,
+        favourite_name TEXT NOT NULL,
+        trigger_type TEXT NOT NULL CHECK(trigger_type IN ('mode_change', 'if_not_playing', 'if_source_not')),
+        trigger_value TEXT,
+        enabled INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now')),
+        max_plays INTEGER DEFAULT NULL,
+        podcast_feed_url TEXT DEFAULT NULL,
+        nas_uri TEXT DEFAULT NULL,
+        spotify_uri TEXT DEFAULT NULL,
+        days_of_week TEXT DEFAULT NULL,
+        time_start TEXT DEFAULT NULL,
+        time_end TEXT DEFAULT NULL
+      );
+      INSERT INTO sonos_auto_play__new
+        (id, room_name, mode_name, favourite_name, trigger_type, trigger_value,
+         enabled, created_at, updated_at, max_plays, podcast_feed_url, nas_uri,
+         spotify_uri, days_of_week, time_start, time_end)
+      SELECT id, room_name, mode_name, favourite_name, trigger_type, trigger_value,
+             enabled, created_at, updated_at, max_plays, podcast_feed_url, nas_uri,
+             spotify_uri, days_of_week, time_start, time_end
+      FROM sonos_auto_play;
+      DROP TABLE sonos_auto_play;
+      ALTER TABLE sonos_auto_play__new RENAME TO sonos_auto_play;
+      COMMIT;
+    `)
+    console.log('[db] Rebuilt sonos_auto_play with nullable mode_name')
   }
 
   // Migration: add user tracking columns to rooms
