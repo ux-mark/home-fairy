@@ -20,8 +20,6 @@ import {
   Sparkles,
   Check,
   ExternalLink,
-  CirclePause,
-  CircleSlash,
 } from 'lucide-react'
 import * as Switch from '@radix-ui/react-switch'
 import * as Tabs from '@radix-ui/react-tabs'
@@ -36,9 +34,8 @@ import { DetailPageSkeleton } from '@/components/ui/Skeleton'
 import { TypeBadge, StatusBadge } from '@/components/ui/Badge'
 import { SearchInput } from '@/components/ui/SearchInput'
 import RoomIntelligence from '@/components/room/RoomIntelligence'
-import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
-import { PillSelect } from '@/components/ui/PillSelect'
-import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
+import { AutoPlayRuleEditor, type AutoPlayRulePayload } from '@/components/sonos/AutoPlayRuleEditor'
+import { describeRule, describeRuleAccessible } from '@/lib/auto-play-description'
 import { getScenesForRoom, getModesForRoom, getDefaultScene, isSceneInSeason } from '@/lib/scene-utils'
 import { LucideIcon } from '@/components/ui/LucideIcon'
 import { IconPicker } from '@/components/ui/IconPicker'
@@ -336,49 +333,10 @@ export default function RoomDetailPage() {
   const [scenesOpen, setScenesOpen] = useState(false)
   const [devicesOpen, setDevicesOpen] = useState(false)
 
-  // Inline add/edit auto-play rule form state
+  // Inline add/edit auto-play rule form state — actual form data lives
+  // inside AutoPlayRuleEditor; the page just tracks which rule is open.
   const [showAddRuleForm, setShowAddRuleForm] = useState(false)
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
-  const [newRuleFavourite, setNewRuleFavourite] = useState('')
-  const [newRuleMode, setNewRuleMode] = useState('')
-  const [newRuleTriggerType, setNewRuleTriggerType] = useState<'mode_change' | 'if_not_playing' | 'if_source_not'>('if_not_playing')
-  const [newRuleSourceValue, setNewRuleSourceValue] = useState('')
-  const [newRuleMaxPlays, setNewRuleMaxPlays] = useState<string>('')
-  const [podcastFeedUrl, setPodcastFeedUrl] = useState<string | null>(null)
-  const [podcastResolving, setPodcastResolving] = useState(false)
-  const [podcastFailed, setPodcastFailed] = useState(false)
-  const [manualFeedUrl, setManualFeedUrl] = useState('')
-  const [nasUri, setNasUri] = useState<string | null>(null)
-  const [spotifyUri, setSpotifyUri] = useState<string | null>(null)
-
-  // Auto-detect podcast when favourite changes
-  useEffect(() => {
-    const fav = newRuleFavourite
-    if (!fav || fav === '__continue__') {
-      setPodcastFeedUrl(null)
-      setPodcastFailed(false)
-      setManualFeedUrl('')
-      return
-    }
-    let cancelled = false
-    setPodcastResolving(true)
-    setPodcastFailed(false)
-    api.sonos.resolvePodcast(fav).then(result => {
-      if (cancelled) return
-      setPodcastResolving(false)
-      if (result.isPodcast) {
-        if (result.feedUrl) {
-          setPodcastFeedUrl(result.feedUrl)
-        } else {
-          setPodcastFailed(true)
-          setPodcastFeedUrl(null)
-        }
-      } else {
-        setPodcastFeedUrl(null)
-      }
-    }).catch(() => { if (!cancelled) setPodcastResolving(false) })
-    return () => { cancelled = true }
-  }, [newRuleFavourite])
 
   // Open groups state for available lights and devices
   const [openLightGroups, setOpenLightGroups] = useState<Set<string>>(new Set())
@@ -542,11 +500,9 @@ export default function RoomDetailPage() {
     return sonosFollowMeStatus.activeRooms.includes(roomSpeaker.room_name)
   }, [roomSpeaker, sonosFollowMeStatus])
 
-  // Auto-play rules for this room.
-  // RoomDetailPage only manages mode-bound rules; time-window rules live in
-  // Settings → Music and on the Sonos detail page where the full editor lives.
+  // Auto-play rules for this room — both mode-bound and time-window.
   const roomAutoPlayRules = useMemo(
-    () => autoPlayRules?.filter(r => r.room_name === name && r.mode_name !== null) ?? [],
+    () => autoPlayRules?.filter(r => r.room_name === name) ?? [],
     [autoPlayRules, name],
   )
 
@@ -880,34 +836,9 @@ export default function RoomDetailPage() {
     onError: () => toast({ message: 'Failed to save follow-me setting', type: 'error' }),
   })
 
-  function resetRuleForm() {
-    setShowAddRuleForm(false)
-    setEditingRuleId(null)
-    setNewRuleFavourite('')
-    setNewRuleMode('')
-    setNewRuleTriggerType('if_not_playing')
-    setNewRuleSourceValue('')
-    setNewRuleMaxPlays('')
-    setPodcastFeedUrl(null)
-    setPodcastFailed(false)
-    setManualFeedUrl('')
-    setNasUri(null)
-    setSpotifyUri(null)
-  }
-
   function openEditRule(rule: AutoPlayRule) {
     setShowAddRuleForm(false)
     setEditingRuleId(rule.id)
-    setNewRuleFavourite(rule.favourite_name)
-    setNewRuleMode(rule.mode_name ?? '')
-    setNewRuleTriggerType(rule.trigger_type)
-    setNewRuleSourceValue(rule.trigger_value ?? '')
-    setNewRuleMaxPlays(rule.max_plays !== null ? String(rule.max_plays) : '')
-    setPodcastFeedUrl(rule.podcast_feed_url ?? null)
-    setPodcastFailed(false)
-    setManualFeedUrl('')
-    setNasUri(rule.nas_uri ?? null)
-    setSpotifyUri(rule.spotify_uri ?? null)
   }
 
   const createAutoPlayRuleMutation = useMutation({
@@ -915,7 +846,7 @@ export default function RoomDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sonos', 'auto-play'] })
       toast({ message: 'Auto-play rule added' })
-      resetRuleForm()
+      setShowAddRuleForm(false)
     },
     onError: () => toast({ message: 'Failed to add rule', type: 'error' }),
   })
@@ -945,7 +876,7 @@ export default function RoomDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sonos', 'auto-play'] })
       toast({ message: 'Auto-play rule updated' })
-      resetRuleForm()
+      setEditingRuleId(null)
     },
     onError: () => toast({ message: 'Failed to update rule', type: 'error' }),
   })
@@ -1630,161 +1561,28 @@ export default function RoomDetailPage() {
                     <ul className="space-y-2" role="list">
                       {roomAutoPlayRules.map(rule => {
                         const isEditing = editingRuleId === rule.id
-                        const isPodcast = !!rule.podcast_feed_url
-                        const isNas = !!rule.nas_uri
-                        const mainText = rule.favourite_name === '__continue__'
-                          ? `Continue what's already playing when mode changes to "${rule.mode_name}".`
-                          : isPodcast
-                            ? `Play latest "${rule.favourite_name}" episode when mode changes to "${rule.mode_name}".`
-                            : isNas
-                              ? `Play "${rule.favourite_name}" from library when mode changes to "${rule.mode_name}".`
-                              : `Play "${rule.favourite_name}" when mode changes to "${rule.mode_name}".`
-                        let conditionText: string | undefined
-                        if (rule.trigger_type === 'if_not_playing') conditionText = 'Only if nothing is playing.'
-                        else if (rule.trigger_type === 'if_source_not' && rule.trigger_value) conditionText = `Only if "${rule.trigger_value}" is not active.`
-                        if (rule.max_plays !== null) {
-                          const limitText = rule.max_plays === 1 ? 'Plays once per mode change.' : `Plays ${rule.max_plays} times per mode change.`
-                          conditionText = conditionText ? `${conditionText} ${limitText}` : limitText
-                        }
+                        const { main, condition } = describeRule(rule, { labelNasFromLibrary: true })
 
                         if (isEditing) {
                           return (
-                            <li key={rule.id} className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-tertiary)] p-4 space-y-4">
-                              <p className="text-heading text-sm font-medium">Edit auto-play rule</p>
-
-                              <div>
-                                <p className="text-heading text-sm mb-1.5">Room</p>
-                                <span className="inline-flex items-center rounded-full bg-fairy-500/10 px-3 py-1.5 text-sm font-medium text-fairy-400">{name}</span>
-                              </div>
-
-                              <div>
-                                <label htmlFor="room-edit-rule-favourite" className="sr-only">What to play</label>
-                                <FavouriteSelector value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-edit-rule-favourite" nasUri={nasUri} onNasUriChange={setNasUri} spotifyUri={spotifyUri} onSpotifyUriChange={setSpotifyUri} />
-                                {podcastResolving && (
-                                  <p className="text-caption text-xs mt-1">Detecting podcast...</p>
-                                )}
-                                {podcastFeedUrl && !podcastResolving && (
-                                  <p className="text-xs mt-1 text-fairy-400">Podcast detected. The latest episode will play automatically.</p>
-                                )}
-                                {podcastFailed && !podcastResolving && (
-                                  <div className="mt-2">
-                                    <p className="text-xs text-amber-400 mb-1">Podcast detected, but we could not find its feed automatically.</p>
-                                    <input
-                                      type="url"
-                                      value={manualFeedUrl}
-                                      onChange={e => setManualFeedUrl(e.target.value)}
-                                      placeholder="Paste the podcast RSS feed URL"
-                                      className="w-full h-11 rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                                    />
-                                  </div>
-                                )}
-                              </div>
-
-                              <div>
-                                <p className="text-heading text-sm mb-1.5">Mode</p>
-                                <PillSelect
-                                  id="room-edit-rule-mode"
-                                  options={sonosModes?.map(m => ({ value: m.name, label: m.name })) ?? []}
-                                  value={newRuleMode}
-                                  onChange={setNewRuleMode}
-                                  placeholder="Select a mode"
-                                  aria-label="Select a mode"
-                                />
-                              </div>
-
-                              {newRuleFavourite !== '__continue__' && (
-                                <div>
-                                  <p className="text-heading text-sm mb-2">Condition</p>
-                                  <CardRadioGroup
-                                    name="room-edit-trigger-type"
-                                    options={[
-                                      { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
-                                      { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
-                                      { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
-                                    ]}
-                                    value={newRuleTriggerType}
-                                    onChange={(v) => setNewRuleTriggerType(v as AutoPlayRule['trigger_type'])}
-                                    aria-label="Trigger condition"
-                                  />
-                                  {newRuleTriggerType === 'if_source_not' && (
-                                    <div className="mt-3">
-                                      <label htmlFor="room-edit-rule-source" className="text-caption text-xs mb-1.5 block">Source</label>
-                                      <PillSelect
-                                        id="room-edit-rule-source"
-                                        options={(availableSources ?? []).map(s => ({ value: s, label: s }))}
-                                        value={newRuleSourceValue}
-                                        onChange={setNewRuleSourceValue}
-                                        aria-label="Select a source"
-                                      />
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Repeat limit */}
-                              <div>
-                                <p className="text-heading text-sm mb-1.5">Repeat limit</p>
-                                <p className="text-caption text-xs mb-2">
-                                  How many times this rule fires per mode change
-                                </p>
-                                <PillSelect
-                                  id="room-edit-rule-max-plays"
-                                  options={[
-                                    { value: '', label: 'Unlimited' },
-                                    { value: '1', label: 'Once' },
-                                    { value: '2', label: '2 times' },
-                                    { value: '3', label: '3 times' },
-                                    { value: '5', label: '5 times' },
-                                  ]}
-                                  value={newRuleMaxPlays}
-                                  onChange={setNewRuleMaxPlays}
-                                />
-                              </div>
-
-                              <div className="flex items-center gap-2 pt-1">
-                                <button
-                                  onClick={() => {
-                                    if (!newRuleFavourite || !newRuleMode) return
-                                    const effectiveTrigger = newRuleFavourite === '__continue__' ? 'mode_change' : newRuleTriggerType
-                                    editAutoPlayRuleMutation.mutate({
-                                      id: rule.id,
-                                      data: {
-                                        mode_name: newRuleMode,
-                                        favourite_name: newRuleFavourite,
-                                        trigger_type: effectiveTrigger,
-                                        trigger_value: effectiveTrigger === 'if_source_not' ? newRuleSourceValue : null,
-                                        max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
-                                        podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
-                                        nas_uri: nasUri,
-                                        spotify_uri: spotifyUri,
-                                      },
-                                    })
-                                  }}
-                                  disabled={!newRuleFavourite || !newRuleMode || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || editAutoPlayRuleMutation.isPending}
-                                  className="rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                                >
-                                  {editAutoPlayRuleMutation.isPending ? 'Saving...' : 'Save changes'}
-                                </button>
-                                <button onClick={resetRuleForm} className="rounded-lg px-4 py-2 min-h-[44px] border border-[var(--border-secondary)] bg-[var(--bg-secondary)] text-heading text-sm hover:bg-[var(--bg-tertiary)] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
-                                  Cancel
-                                </button>
-                              </div>
-
-                              <div className="border-t border-red-500/20 pt-4 mt-4">
-                                <p className="text-sm font-medium text-red-400 mb-2">Danger zone</p>
-                                <button
-                                  onClick={() => deleteAutoPlayRuleMutation.mutate(rule.id)}
-                                  disabled={deleteAutoPlayRuleMutation.isPending}
-                                  className={cn(
-                                    'rounded-lg px-4 py-2 min-h-[44px] text-sm font-medium transition-colors',
-                                    'border border-red-500/30 text-red-400 hover:bg-red-500/10',
-                                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500',
-                                    'disabled:cursor-not-allowed disabled:opacity-40',
-                                  )}
-                                >
-                                  {deleteAutoPlayRuleMutation.isPending ? 'Deleting...' : 'Delete this rule'}
-                                </button>
-                              </div>
+                            <li key={rule.id}>
+                              <AutoPlayRuleEditor
+                                mode="edit"
+                                rule={rule}
+                                fixedRoom={name ?? null}
+                                availableModes={sonosModes ?? []}
+                                availableSources={availableSources ?? []}
+                                idPrefix={`room-edit-rule-${rule.id}`}
+                                className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-tertiary)] p-4"
+                                onSave={(data: AutoPlayRulePayload) => editAutoPlayRuleMutation.mutate({
+                                  id: rule.id,
+                                  data: { ...data },
+                                })}
+                                onCancel={() => setEditingRuleId(null)}
+                                onDelete={() => deleteAutoPlayRuleMutation.mutate(rule.id)}
+                                isSaving={editAutoPlayRuleMutation.isPending}
+                                isDeleting={deleteAutoPlayRuleMutation.isPending}
+                              />
                             </li>
                           )
                         }
@@ -1796,11 +1594,11 @@ export default function RoomDetailPage() {
                           >
                             <div className="min-w-0 flex-1">
                               <p className={cn('text-xs', rule.enabled ? 'text-body' : 'text-caption line-through')}>
-                                {mainText}
+                                {main}
                               </p>
-                              {conditionText && (
+                              {condition && (
                                 <p className={cn('text-xs mt-0.5', rule.enabled ? 'text-caption' : 'text-caption line-through')}>
-                                  {conditionText}
+                                  {condition}
                                 </p>
                               )}
                             </div>
@@ -1811,7 +1609,7 @@ export default function RoomDetailPage() {
                                   toggleAutoPlayRuleMutation.mutate({ id: rule.id, enabled: checked })
                                 }
                                 disabled={toggleAutoPlayRuleMutation.isPending}
-                                aria-label={`${rule.enabled ? 'Disable' : 'Enable'} rule for ${rule.mode_name}`}
+                                aria-label={`${rule.enabled ? 'Disable' : 'Enable'} rule: ${describeRuleAccessible(rule, { labelNasFromLibrary: true })}`}
                                 className={cn(
                                   'relative h-6 w-10 shrink-0 cursor-pointer rounded-full transition-colors',
                                   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
@@ -1828,7 +1626,7 @@ export default function RoomDetailPage() {
                               </Switch.Root>
                               <button
                                 onClick={() => openEditRule(rule)}
-                                aria-label={`Edit rule for ${rule.mode_name}`}
+                                aria-label={`Edit rule: ${describeRuleAccessible(rule, { labelNasFromLibrary: true })}`}
                                 className={cn(
                                   'flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg',
                                   'text-caption transition-colors hover:bg-fairy-500/10 hover:text-fairy-400',
@@ -1846,132 +1644,20 @@ export default function RoomDetailPage() {
                   )}
 
                   {showAddRuleForm ? (
-                    <div className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-tertiary)] p-4 space-y-4">
-                      <p className="text-heading text-sm font-medium">New auto-play rule</p>
-
-                      <div>
-                        <p className="text-heading text-sm mb-1.5">Room</p>
-                        <span className="inline-flex items-center rounded-full bg-fairy-500/10 px-3 py-1.5 text-sm font-medium text-fairy-400">{name}</span>
-                      </div>
-
-                      <div>
-                        <label htmlFor="room-detail-rule-favourite" className="sr-only">What to play</label>
-                        <FavouriteSelector value={newRuleFavourite} onChange={setNewRuleFavourite} id="room-detail-rule-favourite" nasUri={nasUri} onNasUriChange={setNasUri} spotifyUri={spotifyUri} onSpotifyUriChange={setSpotifyUri} />
-                        {podcastResolving && (
-                          <p className="text-caption text-xs mt-1">Detecting podcast...</p>
-                        )}
-                        {podcastFeedUrl && !podcastResolving && (
-                          <p className="text-xs mt-1 text-fairy-400">Podcast detected. The latest episode will play automatically.</p>
-                        )}
-                        {podcastFailed && !podcastResolving && (
-                          <div className="mt-2">
-                            <p className="text-xs text-amber-400 mb-1">Podcast detected, but we could not find its feed automatically.</p>
-                            <input
-                              type="url"
-                              value={manualFeedUrl}
-                              onChange={e => setManualFeedUrl(e.target.value)}
-                              placeholder="Paste the podcast RSS feed URL"
-                              className="w-full h-11 rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                            />
-                          </div>
-                        )}
-                      </div>
-
-                      <div>
-                        <p className="text-heading text-sm mb-1.5">Mode</p>
-                        <PillSelect
-                          id="room-detail-rule-mode"
-                          options={sonosModes?.map(m => ({ value: m.name, label: m.name })) ?? []}
-                          value={newRuleMode}
-                          onChange={setNewRuleMode}
-                          placeholder="Select a mode"
-                          aria-label="Select a mode"
-                        />
-                      </div>
-
-                      {newRuleFavourite !== '__continue__' && (
-                        <div>
-                          <p className="text-heading text-sm mb-2">Condition</p>
-                          <CardRadioGroup
-                            name="room-detail-trigger-type"
-                            options={[
-                              { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
-                              { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
-                              { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
-                            ]}
-                            value={newRuleTriggerType}
-                            onChange={(v) => setNewRuleTriggerType(v as AutoPlayRule['trigger_type'])}
-                            aria-label="Trigger condition"
-                          />
-                          {newRuleTriggerType === 'if_source_not' && (
-                            <div className="mt-3">
-                              <label htmlFor="room-detail-rule-source" className="text-caption text-xs mb-1.5 block">Source</label>
-                              <PillSelect
-                                id="room-detail-rule-source"
-                                options={(availableSources ?? []).map(s => ({ value: s, label: s }))}
-                                value={newRuleSourceValue}
-                                onChange={setNewRuleSourceValue}
-                                aria-label="Select a source"
-                              />
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Repeat limit */}
-                      <div>
-                        <p className="text-heading text-sm mb-1.5">Repeat limit</p>
-                        <p className="text-caption text-xs mb-2">
-                          How many times this rule fires per mode change
-                        </p>
-                        <PillSelect
-                          id="room-add-rule-max-plays"
-                          options={[
-                            { value: '', label: 'Unlimited' },
-                            { value: '1', label: 'Once' },
-                            { value: '2', label: '2 times' },
-                            { value: '3', label: '3 times' },
-                            { value: '5', label: '5 times' },
-                          ]}
-                          value={newRuleMaxPlays}
-                          onChange={setNewRuleMaxPlays}
-                        />
-                      </div>
-
-                      <div className="flex items-center gap-2 pt-1">
-                        <button
-                          onClick={() => {
-                            if (!newRuleFavourite || !newRuleMode) return
-                            const effectiveTrigger = newRuleFavourite === '__continue__' ? 'mode_change' : newRuleTriggerType
-                            createAutoPlayRuleMutation.mutate({
-                              room_name: name ?? null,
-                              mode_name: newRuleMode,
-                              favourite_name: newRuleFavourite,
-                              trigger_type: effectiveTrigger,
-                              trigger_value: effectiveTrigger === 'if_source_not' ? newRuleSourceValue : null,
-                              enabled: 1,
-                              max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
-                              podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
-                              nas_uri: nasUri,
-                              spotify_uri: spotifyUri,
-                              days_of_week: null,
-                              time_start: null,
-                              time_end: null,
-                            })
-                          }}
-                          disabled={!newRuleFavourite || !newRuleMode || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || createAutoPlayRuleMutation.isPending}
-                          className="rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                        >
-                          {createAutoPlayRuleMutation.isPending ? 'Saving...' : 'Save rule'}
-                        </button>
-                        <button onClick={resetRuleForm} className="rounded-lg px-4 py-2 min-h-[44px] border border-[var(--border-secondary)] bg-[var(--bg-secondary)] text-heading text-sm hover:bg-[var(--bg-tertiary)] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500">
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
+                    <AutoPlayRuleEditor
+                      mode="add"
+                      fixedRoom={name ?? null}
+                      availableModes={sonosModes ?? []}
+                      availableSources={availableSources ?? []}
+                      idPrefix="room-add-rule"
+                      className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-tertiary)] p-4"
+                      onSave={(data: AutoPlayRulePayload) => createAutoPlayRuleMutation.mutate({ ...data, enabled: 1 })}
+                      onCancel={() => setShowAddRuleForm(false)}
+                      isSaving={createAutoPlayRuleMutation.isPending}
+                    />
                   ) : !editingRuleId && (
                     <button
-                      onClick={() => { resetRuleForm(); setShowAddRuleForm(true) }}
+                      onClick={() => { setEditingRuleId(null); setShowAddRuleForm(true) }}
                       className="rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
                     >
                       Add auto-play rule
