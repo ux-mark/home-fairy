@@ -14,6 +14,7 @@ import { PillSelect } from '@/components/ui/PillSelect'
 import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
 import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
 import { ScheduleFields, type ScheduleValue } from '@/components/sonos/ScheduleFields'
+import { describeRule, describeRuleAccessible } from '@/lib/auto-play-description'
 import { useToast } from '@/hooks/useToast'
 
 // Use the deferred shared socket from `@/hooks/useSocket` rather than a
@@ -32,54 +33,14 @@ function formatPlaybackState(state: string): string {
   }
 }
 
-function describeDays(days: number[] | null): string {
-  if (days === null) return 'every day'
-  if (days.length === 7) return 'every day'
-  if (days.length === 5 && [1, 2, 3, 4, 5].every(d => days.includes(d))) return 'weekdays'
-  if (days.length === 2 && days.includes(6) && days.includes(7)) return 'weekends'
-  const shorts = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-  return [...days].sort((a, b) => a - b).map(d => shorts[d - 1]).join(', ')
-}
+const RULE_DESCRIBE_OPTS = { labelNasFromLibrary: true } as const
 
 function formatRuleSentence(rule: AutoPlayRule): { main: string; condition?: string } {
-  const isPodcast = !!rule.podcast_feed_url
-  const isNas = !!rule.nas_uri
-  const action = rule.favourite_name === '__continue__'
-    ? "Continue what's already playing"
-    : isPodcast
-      ? `Play latest "${rule.favourite_name}" episode`
-      : isNas
-        ? `Play "${rule.favourite_name}" from library`
-        : `Play "${rule.favourite_name}"`
-
-  const days = describeDays(rule.days_of_week)
-  let main: string
-  if (rule.mode_name) {
-    const dayClause = days === 'every day' ? '' : ` on ${days}`
-    main = `${action} when "${rule.mode_name}" mode is active${dayClause}.`
-  } else if (rule.time_start && rule.time_end) {
-    main = `${action} ${days} between ${rule.time_start} and ${rule.time_end}.`
-  } else {
-    main = `${action} ${days}.`
-  }
-
-  let condition: string | undefined
-  if (rule.trigger_type === 'if_not_playing') {
-    condition = 'Only if nothing is playing.'
-  } else if (rule.trigger_type === 'if_source_not' && rule.trigger_value) {
-    condition = `Only if "${rule.trigger_value}" is not active.`
-  }
-  if (rule.max_plays !== null) {
-    const scope = rule.mode_name ? 'per mode change' : 'per day'
-    const limitText = rule.max_plays === 1 ? `Plays once ${scope}.` : `Plays ${rule.max_plays} times ${scope}.`
-    condition = condition ? `${condition} ${limitText}` : limitText
-  }
-  return { main, condition }
+  return describeRule(rule, RULE_DESCRIBE_OPTS)
 }
 
 function formatRuleAccessible(rule: AutoPlayRule): string {
-  const { main, condition } = formatRuleSentence(rule)
-  return condition ? `${main} ${condition}` : main
+  return describeRuleAccessible(rule, RULE_DESCRIBE_OPTS)
 }
 
 // ── SwitchRow subcomponent ────────────────────────────────────────────────────

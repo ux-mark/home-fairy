@@ -11,6 +11,7 @@ import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
 import { ScheduleFields, type ScheduleValue } from '@/components/sonos/ScheduleFields'
 import { PillSelect } from '@/components/ui/PillSelect'
 import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
+import { describeRule } from '@/lib/auto-play-description'
 import { Section } from './Section'
 
 // ── Connection status ────────────────────────────────────────────────────────
@@ -88,57 +89,6 @@ function ToggleSwitch({
       />
     </button>
   )
-}
-
-// ── Auto-play rule display ───────────────────────────────────────────────────
-
-function describeDays(days: number[] | null): string {
-  if (days === null) return 'every day'
-  if (days.length === 7) return 'every day'
-  if (days.length === 5 && [1, 2, 3, 4, 5].every(d => days.includes(d))) return 'weekdays'
-  if (days.length === 2 && days.includes(6) && days.includes(7)) return 'weekends'
-  const shorts = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-  return [...days].sort((a, b) => a - b).map(d => shorts[d - 1]).join(', ')
-}
-
-function ruleDescription(rule: AutoPlayRule): { main: string; condition?: string } {
-  const room = rule.room_name ?? 'whole house'
-  const isContinue = rule.favourite_name === '__continue__'
-  const isPodcast = !!rule.podcast_feed_url
-  const action = isContinue
-    ? `Continue what's already playing in ${room}`
-    : isPodcast
-      ? `Play latest "${rule.favourite_name}" episode in ${room}`
-      : `Play "${rule.favourite_name}" in ${room}`
-
-  const days = describeDays(rule.days_of_week)
-  let main: string
-  if (rule.mode_name) {
-    // Mode-bound rule. Mention day filter only when it actually narrows.
-    const dayClause = days === 'every day' ? '' : ` on ${days}`
-    main = `${action} when "${rule.mode_name}" mode is active${dayClause}.`
-  } else if (rule.time_start && rule.time_end) {
-    main = `${action} ${days} between ${rule.time_start} and ${rule.time_end}.`
-  } else {
-    main = `${action} ${days}.`
-  }
-
-  let condition: string | undefined
-  if (rule.trigger_type === 'if_not_playing') {
-    condition = 'Only if nothing is playing.'
-  } else if (rule.trigger_type === 'if_source_not') {
-    const source = rule.trigger_value ? ` "${rule.trigger_value}"` : ''
-    condition = `Only if source${source} is not active.`
-  }
-
-  if (rule.max_plays !== null) {
-    // Mode-bound rules count per mode session; time/day rules count per day.
-    const scope = rule.mode_name ? 'per mode change' : 'per day'
-    const limitText = rule.max_plays === 1 ? `Plays once ${scope}.` : `Plays ${rule.max_plays} times ${scope}.`
-    condition = condition ? `${condition} ${limitText}` : limitText
-  }
-
-  return { main, condition }
 }
 
 // ── Add rule form ────────────────────────────────────────────────────────────
@@ -736,7 +686,7 @@ export function MusicSection() {
         <div className="space-y-3">
           {rules && rules.length > 0 ? (
             rules.map((rule) => {
-              const { main, condition } = ruleDescription(rule)
+              const { main, condition } = describeRule(rule, { includeRoom: true })
               const isEditing = editingRuleId === rule.id
 
               if (isEditing) {
