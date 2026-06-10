@@ -344,26 +344,43 @@ class DeviceManager:
     # ------------------------------------------------------------------
 
     async def _poll_loop(self):
-        """Refresh all root devices every 10 seconds."""
+        """Refresh all root devices every 10 seconds.
+
+        Updates run concurrently with a per-device timeout. The old serial
+        loop meant one slow or unreachable device (python-kasa retries can
+        block for many seconds) stalled every other device's refresh — the
+        cycle was the *sum* of device latencies instead of the max.
+        """
         while True:
             try:
                 await asyncio.sleep(10)
-                for mac, device in list(self.devices.items()):
-                    if "_" in mac:
-                        # Child devices are refreshed as part of the parent update
-                        continue
-                    try:
-                        async with self._get_lock(mac):
-                            await device.update()
-                    except Exception as exc:
-                        logger.warning(
-                            f"Poll failed for {getattr(device, 'alias', mac)!r} ({mac}): {exc}"
-                        )
+                tasks = [
+                    self._update_device_safe(mac, device)
+                    for mac, device in list(self.devices.items())
+                    # Child devices are refreshed as part of the parent update
+                    if "_" not in mac
+                ]
+                if tasks:
+                    await asyncio.gather(*tasks)
             except asyncio.CancelledError:
                 break
             except Exception as exc:
                 logger.error(f"Poll loop error: {exc}")
                 await asyncio.sleep(10)
+
+    async def _update_device_safe(self, mac: str, device) -> None:
+        """Refresh one device; never raises (the poll loop must outlive failures)."""
+        try:
+            async with self._get_lock(mac):
+                await asyncio.wait_for(device.update(), timeout=5.0)
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"Poll timed out for {getattr(device, 'alias', mac)!r} ({mac})"
+            )
+        except Exception as exc:
+            logger.warning(
+                f"Poll failed for {getattr(device, 'alias', mac)!r} ({mac}): {exc}"
+            )
 
     async def _rediscover_loop(self):
         """Re-run discovery every 5 minutes to handle DHCP address changes."""
