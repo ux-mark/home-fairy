@@ -111,16 +111,45 @@ async function collectSnapshot(): Promise<void> {
   }
 }
 
-function pruneOldLogs(): void {
-  try {
+const PRUNE_BATCH_SIZE = 5_000
+const PRUNE_MAX_ROWS_PER_TICK = 50_000
+
+// Delete in id-batches so a backlogged table (first run after deploy, or a
+// long outage) never holds the write lock for one giant DELETE. Bounded per
+// tick; the hourly cadence absorbs any remainder.
+function pruneBatched(table: string, timeColumn: string, retention: string): number {
+  let total = 0
+  while (total < PRUNE_MAX_ROWS_PER_TICK) {
     const result = run(
-      "DELETE FROM logs WHERE created_at < datetime('now', '-30 days')"
+      `DELETE FROM ${table} WHERE id IN (
+         SELECT id FROM ${table} WHERE ${timeColumn} < datetime('now', ?) LIMIT ?
+       )`,
+      [retention, PRUNE_BATCH_SIZE],
     )
-    if (result.changes > 0) {
-      console.log(`[history] Pruned ${result.changes} log entries older than 30 days`)
+    total += result.changes
+    if (result.changes < PRUNE_BATCH_SIZE) break
+  }
+  return total
+}
+
+function pruneOldData(): void {
+  // Retention: logs 30 days; device_history and room_activity 60 days.
+  // Nothing reads beyond these windows — insights use at most 30 days of
+  // device_history and 7 days of room_activity.
+  const targets: Array<{ table: string; timeColumn: string; retention: string }> = [
+    { table: 'logs', timeColumn: 'created_at', retention: '-30 days' },
+    { table: 'device_history', timeColumn: 'recorded_at', retention: '-60 days' },
+    { table: 'room_activity', timeColumn: 'recorded_at', retention: '-60 days' },
+  ]
+  for (const { table, timeColumn, retention } of targets) {
+    try {
+      const pruned = pruneBatched(table, timeColumn, retention)
+      if (pruned > 0) {
+        console.log(`[history] Pruned ${pruned} ${table} rows older than ${retention.replace('-', '')}`)
+      }
+    } catch (err) {
+      console.error(`[history] Pruning ${table} failed:`, err instanceof Error ? err.message : err)
     }
-  } catch (err) {
-    console.error('[history] Log pruning failed:', err instanceof Error ? err.message : err)
   }
 }
 
@@ -134,10 +163,10 @@ export function startHistoryCollector(): void {
     intervalId = setInterval(collectSnapshot, SNAPSHOT_INTERVAL_MS)
   }, 30_000)
 
-  // Run log pruning once daily (check every hour, prune if needed)
-  pruneIntervalId = setInterval(pruneOldLogs, 60 * 60 * 1000) // hourly check
-  // Defer initial prune to avoid blocking event loop on startup with large log tables
-  setTimeout(pruneOldLogs, 60_000)
+  // Retention pruning, hourly. Batched internally so it never blocks long.
+  pruneIntervalId = setInterval(pruneOldData, 60 * 60 * 1000)
+  // Defer initial prune to avoid blocking event loop on startup with large tables
+  setTimeout(pruneOldData, 60_000)
 }
 
 export function stopHistoryCollector(): void {
