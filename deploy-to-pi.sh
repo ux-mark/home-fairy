@@ -64,14 +64,38 @@ cd ~/home-fairy
 echo ""
 echo "Setting up Sonos HTTP API..."
 SONOS_DIR="$HOME/node-sonos-http-api"
+PATCH_SRC="$HOME/home-fairy/sonos-patches"
+
 if [ ! -d "$SONOS_DIR" ]; then
-  echo "   Cloning node-sonos-http-api..."
+  echo "   Cloning node-sonos-http-api (jishi upstream)..."
   git clone https://github.com/jishi/node-sonos-http-api.git "$SONOS_DIR"
-  cd "$SONOS_DIR" && npm install && cd ~/home-fairy
 else
   echo "   Updating node-sonos-http-api..."
-  cd "$SONOS_DIR" && git pull && npm install && cd ~/home-fairy
+  cd "$SONOS_DIR" && git pull && cd ~/home-fairy
 fi
+
+# Copy home-fairy's vendored patches into the install and wire patch-package
+# so they re-apply on every `npm install`. See sonos-patches/README.md.
+echo "   Applying home-fairy patches to node-sonos-http-api..."
+mkdir -p "$SONOS_DIR/patches"
+cp "$PATCH_SRC"/*.patch "$SONOS_DIR/patches/"
+cd "$SONOS_DIR"
+if ! grep -q '"patch-package"' package.json; then
+  npm install --save-dev patch-package
+  node -e '
+    const fs = require("fs");
+    const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
+    p.scripts = p.scripts || {};
+    if (p.scripts.postinstall && p.scripts.postinstall !== "patch-package") {
+      p.scripts.postinstall = p.scripts.postinstall + " && patch-package";
+    } else {
+      p.scripts.postinstall = "patch-package";
+    }
+    fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
+  '
+fi
+npm install
+cd ~/home-fairy
 mkdir -p "$SONOS_DIR/logs"
 # Configure Sonos API to use port 3003 (consistent with 3001/3002)
 echo '{"port": 3003}' > "$SONOS_DIR/settings.json"

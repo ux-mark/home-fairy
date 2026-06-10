@@ -1,0 +1,83 @@
+diff --git a/node_modules/sonos-discovery/lib/SonosSystem.js b/node_modules/sonos-discovery/lib/SonosSystem.js
+index 2a5f90b..46cf0bb 100644
+--- a/node_modules/sonos-discovery/lib/SonosSystem.js
++++ b/node_modules/sonos-discovery/lib/SonosSystem.js
+@@ -85,10 +85,14 @@ function SonosSystem(settings) {
+         let members = getPlayers(zone.zonegroupmember);
+         Array.prototype.push.apply(players, members);
+ 
+-        // fix coordinator for members
++        // fix coordinator for members. A topology event can name a coordinator
++        // UUID that hasn't been added to playerCache yet (race during the same
++        // notification batch). Don't overwrite a valid coordinator with
++        // undefined — fall back to the prior reference, or to the member
++        // itself, which matches the constructor default at Player ctor.
+         let coordinator = playerCache[zone.$attrs.coordinator];
+         members.forEach((member) => {
+-          member.coordinator = coordinator;
++          member.coordinator = coordinator || member.coordinator || member;
+         });
+ 
+         return {
+diff --git a/node_modules/sonos-discovery/lib/models/Player.js b/node_modules/sonos-discovery/lib/models/Player.js
+index e001f44..27d0ac7 100644
+--- a/node_modules/sonos-discovery/lib/models/Player.js
++++ b/node_modules/sonos-discovery/lib/models/Player.js
+@@ -185,7 +185,10 @@ function Player(data, listener, system) {
+   };
+   let state = clone(EMPTY_STATE);
+   Object.defineProperty(_this, 'state', {
+-    get: () => getState(state, _this.coordinator._state, _this.hasSub ? _this.sub : null)
++    // Fall back to self when coordinator is unset (matches the ctor default
++    // `_this.coordinator = _this`). Without this, getter access during a
++    // topology change crashes with `undefined._state`.
++    get: () => getState(state, (_this.coordinator || _this)._state, _this.hasSub ? _this.sub : null)
+   });
+ 
+   // This is used internally only
+@@ -367,7 +370,9 @@ function Player(data, listener, system) {
+         roomName: _this.roomName
+       });
+ 
+-      _this.coordinator.recalculateGroupVolume();
++      // Coordinator may be undefined briefly during a topology change; skip
++      // the recalc rather than crash — the next refresh re-triggers it.
++      if (_this.coordinator) _this.coordinator.recalculateGroupVolume();
+     }
+ 
+     if (data.outputfixed) {
+@@ -847,12 +852,16 @@ Player.prototype.getQueue = function getQueue(limit, offset) {
+ };
+ 
+ Player.prototype.toJSON = function toJSON() {
++  // Fall back to self when coordinator is unset (matches the ctor default).
++  // Without this, webhook serialisation during a topology change crashes
++  // with `undefined.uuid` / `undefined.groupState`.
++  const coord = this.coordinator || this;
+   return {
+     uuid: this.uuid,
+-    coordinator: this.coordinator.uuid,
++    coordinator: coord.uuid,
+     roomName: this.roomName,
+     state: this.state,
+-    groupState: this.coordinator.groupState,
++    groupState: coord.groupState,
+     avTransportUri: this.avTransportUri,
+     avTransportUriMetadata: this.avTransportUriMetadata
+   };
+diff --git a/node_modules/sonos-discovery/lib/prototypes/Player/recalculateGroupVolume.js b/node_modules/sonos-discovery/lib/prototypes/Player/recalculateGroupVolume.js
+index 77420cb..acfaf63 100644
+--- a/node_modules/sonos-discovery/lib/prototypes/Player/recalculateGroupVolume.js
++++ b/node_modules/sonos-discovery/lib/prototypes/Player/recalculateGroupVolume.js
+@@ -1,6 +1,11 @@
+ 'use strict';
+ function recalculateGroupVolume() {
+   const zone = this.system.zones.find(zone => zone.uuid === this.uuid);
++  // A volume-change notification can arrive after a topology change has
++  // promoted another speaker to coordinator — at which point this.uuid no
++  // longer matches any zone.uuid and `zone` is undefined. Bail; the next
++  // topology refresh will route the recalc to the new coordinator.
++  if (!zone) return;
+   const relevantMembers = zone.members
+     .filter(player => !player.outputFixed)
+     .map(player => player.state.volume);
