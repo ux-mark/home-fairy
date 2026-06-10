@@ -35,8 +35,9 @@ export function NowPlayingTab({ focusSpeaker }: { focusSpeaker?: string }) {
   } = useQuery({
     queryKey: ['sonos', 'now-playing'],
     queryFn: api.sonos.getNowPlaying,
-    refetchInterval: 5_000,
-    staleTime: 4_000,
+    // Shares PlaybackStateProvider's cache entry — socket invalidation plus
+    // its 30 s safety-net poll keep it fresh; no extra interval here.
+    staleTime: 25_000,
     retry: 1,
   })
 

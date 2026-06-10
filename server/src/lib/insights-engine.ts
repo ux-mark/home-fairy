@@ -312,10 +312,18 @@ async function computeEnergyInsights(power: PowerDevice[], energyRate: number): 
   const roomCostRanking: EnergyInsights['roomCostRanking'] = []
 
   if (emeterDevices.length > 0 && energyRate > 0) {
-    // Fetch daily stats (today) in parallel — for actualDailyCost and dailyOverUnderPercent
-    const dailyResults = await Promise.allSettled(
+    // Start daily and monthly fetches together — they're independent, and
+    // awaiting the daily wave before launching the monthly one was paying
+    // two full sidecar round-trips back to back.
+    const dailyPromise = Promise.allSettled(
       emeterDevices.map((d) => fetchDailyStats(d, currentYear, currentMonth)),
     )
+    const monthlyPromise = Promise.allSettled(
+      emeterDevices.map((d) => fetchMonthlyStats(d, currentYear)),
+    )
+
+    // Daily stats (today) — for actualDailyCost and dailyOverUnderPercent
+    const dailyResults = await dailyPromise
 
     // Determine the day-of-month for "same day last week" (may cross into prior month)
     const lastWeekDate = new Date(now)
@@ -372,10 +380,8 @@ async function computeEnergyInsights(power: PowerDevice[], energyRate: number): 
       )
     }
 
-    // Fetch monthly stats in parallel — for monthToDateCost, lastMonthCost, device ranking
-    const monthlyResults = await Promise.allSettled(
-      emeterDevices.map((d) => fetchMonthlyStats(d, currentYear)),
-    )
+    // Monthly stats — for monthToDateCost, lastMonthCost, device ranking
+    const monthlyResults = await monthlyPromise
 
     // Determine previous month
     const prevMonth = currentMonth === 1 ? 12 : currentMonth - 1
@@ -1160,12 +1166,33 @@ export function getCachedInsights(): InsightsData | null {
   return cachedInsights
 }
 
+let refreshInFlight: Promise<InsightsData> | null = null
+
 export async function computeInsights(state: CurrentState): Promise<InsightsData> {
   const now = Date.now()
   if (cachedInsights && now - cacheTimestamp < CACHE_TTL_MS) {
     return cachedInsights
   }
 
+  // Stale-while-revalidate: once warm, /summary never blocks on the Kasa
+  // sidecar — an expired cache is served as-is while a single background
+  // recompute refreshes it. Only a cold start computes inline.
+  if (!refreshInFlight) {
+    refreshInFlight = recomputeInsights(state).finally(() => {
+      refreshInFlight = null
+    })
+    // Swallow background-path rejections; callers awaiting inline still
+    // see the error through the returned promise.
+    refreshInFlight.catch(() => {})
+  }
+
+  if (cachedInsights) {
+    return cachedInsights
+  }
+  return refreshInFlight
+}
+
+async function recomputeInsights(state: CurrentState): Promise<InsightsData> {
   const energy = await computeEnergyInsights(state.power, state.energyRate)
   const temperature = computeTemperatureInsights(state.rooms, state.weather)
   const lux = computeLuxInsights(state.rooms)
@@ -1180,7 +1207,7 @@ export async function computeInsights(state: CurrentState): Promise<InsightsData
 
   const insights: InsightsData = { energy, temperature, lux, battery, activity, attention }
   cachedInsights = insights
-  cacheTimestamp = now
+  cacheTimestamp = Date.now()
 
   return insights
 }

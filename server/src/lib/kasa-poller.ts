@@ -15,6 +15,37 @@ let probeTimeout: ReturnType<typeof setTimeout> | null = null
 let io: SocketServer | null = null
 let previousStates: Record<string, { switch_state: string; power: number }> = {}
 
+// Skip the DB upsert when a device's state hasn't changed since the last
+// write — most devices are in steady state, so unconditional writes every
+// 10 s poll were ~250K needless row writes/day straight to the SD card.
+// A 5-minute heartbeat still refreshes last_seen/rssi, and entries are
+// dropped when a device goes offline so its reappearance always writes
+// (is_online must flip back to 1).
+const UNCHANGED_WRITE_REFRESH_MS = 5 * 60 * 1000
+let lastWrites: Record<string, { stateKey: string; writtenAt: number }> = {}
+
+// What counts as "changed" for the write-skip. Raw emeter readings jitter at
+// noise level on every poll (an OFF outlet reads 0 W one poll and 0.067 W the
+// next), so exact equality never matches. Power is bucketed at 0.5 W — the
+// same threshold the kasa:power socket emit uses — and voltage/current are
+// excluded outright; their stored values refresh on the heartbeat write.
+function deltaKey(device: KasaSidecarDevice): string {
+  const power = device.emeter?.power
+  return JSON.stringify({
+    switch: device.switch_state,
+    brightness: device.brightness,
+    power: power == null ? null : Math.round(power * 2) / 2,
+    energy: device.emeter?.total ?? null,
+    runtime_today: device.runtime_today,
+    runtime_month: device.runtime_month,
+    ip: device.ip_address ?? null,
+  })
+}
+
+// Backoff for poll-failure logging — see the catch block in pollKasaDevices.
+const FAILURE_LOG_INTERVAL_MS = 15 * 60 * 1000
+let lastFailureLogAt = 0
+
 // Upsert SQL — kept as a string constant and prepared on demand via the
 // shared statement cache. Doing the prepare lazily avoids a boot-order
 // race: ESM imports execute before index.ts can call initDb(), so a
@@ -95,6 +126,12 @@ async function pollKasaDevices(): Promise<void> {
     const devices = await kasaClient.listDevices()
     const { usable: allDevices, skippedCount } = flattenDevices(devices)
 
+    if (lastFailureLogAt > 0) {
+      lastFailureLogAt = 0
+      console.log('[kasa-poller] Poll recovered')
+      try { log('Kasa poll recovered', 'kasa') } catch { /* ignore */ }
+    }
+
     if (skippedCount !== lastReportedSkipCount) {
       if (skippedCount > 0) {
         console.warn(
@@ -128,6 +165,16 @@ async function pollKasaDevices(): Promise<void> {
         const labelToWrite = device.label || device.id
         const deviceTypeToWrite = device.device_type || 'unknown'
 
+        const stateKey = deltaKey(device)
+        const lastWrite = lastWrites[device.id]
+        if (
+          lastWrite &&
+          lastWrite.stateKey === stateKey &&
+          Date.now() - lastWrite.writtenAt < UNCHANGED_WRITE_REFRESH_MS
+        ) {
+          continue
+        }
+
         try {
           prepareCached(UPSERT_SQL).run(
             device.id,
@@ -149,6 +196,8 @@ async function pollKasaDevices(): Promise<void> {
           // don't have authoritative state to broadcast.
           continue
         }
+
+        lastWrites[device.id] = { stateKey, writtenAt: Date.now() }
 
         // Emit Socket.io events for state changes
         if (io) {
@@ -190,6 +239,8 @@ async function pollKasaDevices(): Promise<void> {
           db.prepare(
             "UPDATE kasa_devices SET is_online = 0, updated_at = datetime('now') WHERE id = ?",
           ).run(row.id)
+          // Force a full upsert when it reappears, even if state is unchanged
+          delete lastWrites[row.id]
         }
       }
     })
@@ -213,8 +264,15 @@ async function pollKasaDevices(): Promise<void> {
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    console.error('[kasa-poller] Poll failed:', msg)
-    try { log(`Kasa poll failed: ${msg}`, 'kasa') } catch { /* ignore */ }
+    // A down sidecar fails every 10 s poll — that's 8 640 identical log rows
+    // a day. Log the first failure, then at most once per 15 minutes while
+    // the outage lasts; recovery is logged by the next successful poll.
+    const now = Date.now()
+    if (now - lastFailureLogAt > FAILURE_LOG_INTERVAL_MS) {
+      lastFailureLogAt = now
+      console.error('[kasa-poller] Poll failed:', msg)
+      try { log(`Kasa poll failed: ${msg}`, 'kasa') } catch { /* ignore */ }
+    }
     // Online/offline state is authoritative from the sidecar — devices that
     // drop off the network will stop appearing in the sidecar response.
     // The upsert only touches devices present in the response, so stale

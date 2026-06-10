@@ -65,7 +65,9 @@ export default function HomePage() {
   const { data: nightStatus } = useQuery({
     queryKey: ['system', 'night-status'],
     queryFn: api.system.getNightStatus,
-    refetchInterval: 10_000,
+    // Socket events invalidate this key on actual changes (socket-impl.ts);
+    // the interval is only a safety net.
+    refetchInterval: 30_000,
   })
 
   const { data: defaultScenes } = useQuery({
