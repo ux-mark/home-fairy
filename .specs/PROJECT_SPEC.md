@@ -77,7 +77,7 @@ home-fairy/
 - Visual regression baselines: `.testing/baselines/`
 - Command: `npx playwright test --config .testing/playwright.config.ts`
 - Smoke command: `npx playwright test --config .testing/playwright.config.ts --grep @smoke`
-- Base URL: `http://localhost:8000`
+- Base URL: `http://localhost:8100` (isolated from production; unmocked API calls go to a dead-port proxy via `VITE_API_PROXY`)
 - Browsers: chromium (Mobile 375x812, Desktop 1280x720)
 
 ## Commands
