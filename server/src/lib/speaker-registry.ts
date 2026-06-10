@@ -30,6 +30,7 @@
 import dgram from 'dgram'
 import { networkInterfaces } from 'os'
 import axios from 'axios'
+import { requestSonosHttpApiRestart } from './sonos-http-api-restarter.js'
 
 const SONOS_HTTP_API_URL = process.env.SONOS_API_URL || 'http://localhost:3003'
 
@@ -349,11 +350,14 @@ class SpeakerRegistry {
       nextByRoom.set(normalizeRoomName(info.room), info.uuid)
     }
 
-    // Detect IP changes for diagnostics
+    // Detect IP changes. node-sonos-http-api caches each player's baseUrl at
+    // construction and never refreshes it, so an IP change leaves it pinned
+    // to a dead address until the process restarts — kick it.
     for (const [uuid, next] of nextByUuid) {
       const prev = this.byUuid.get(uuid)
       if (prev && prev.ip !== next.ip) {
         console.log(`[SpeakerRegistry] ${next.room} IP changed: ${prev.ip} → ${next.ip}`)
+        requestSonosHttpApiRestart(`${next.room} IP ${prev.ip} → ${next.ip}`)
       }
     }
 
