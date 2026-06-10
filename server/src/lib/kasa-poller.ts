@@ -24,6 +24,24 @@ let previousStates: Record<string, { switch_state: string; power: number }> = {}
 const UNCHANGED_WRITE_REFRESH_MS = 5 * 60 * 1000
 let lastWrites: Record<string, { stateKey: string; writtenAt: number }> = {}
 
+// What counts as "changed" for the write-skip. Raw emeter readings jitter at
+// noise level on every poll (an OFF outlet reads 0 W one poll and 0.067 W the
+// next), so exact equality never matches. Power is bucketed at 0.5 W — the
+// same threshold the kasa:power socket emit uses — and voltage/current are
+// excluded outright; their stored values refresh on the heartbeat write.
+function deltaKey(device: KasaSidecarDevice): string {
+  const power = device.emeter?.power
+  return JSON.stringify({
+    switch: device.switch_state,
+    brightness: device.brightness,
+    power: power == null ? null : Math.round(power * 2) / 2,
+    energy: device.emeter?.total ?? null,
+    runtime_today: device.runtime_today,
+    runtime_month: device.runtime_month,
+    ip: device.ip_address ?? null,
+  })
+}
+
 // Backoff for poll-failure logging — see the catch block in pollKasaDevices.
 const FAILURE_LOG_INTERVAL_MS = 15 * 60 * 1000
 let lastFailureLogAt = 0
@@ -147,9 +165,7 @@ async function pollKasaDevices(): Promise<void> {
         const labelToWrite = device.label || device.id
         const deviceTypeToWrite = device.device_type || 'unknown'
 
-        // rssi jitters every poll, so it's deliberately not part of the
-        // delta key — it refreshes on the heartbeat write instead.
-        const stateKey = `${attributes}|${device.ip_address ?? ''}`
+        const stateKey = deltaKey(device)
         const lastWrite = lastWrites[device.id]
         if (
           lastWrite &&
