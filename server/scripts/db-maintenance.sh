@@ -16,6 +16,9 @@ BACKUP="${DB}.backup-${STAMP}"
 
 echo "Stopping home-fairy..."
 pm2 stop home-fairy
+# set -e + EXIT trap: whatever happens below (backup or VACUUM failure,
+# Ctrl-C), home-fairy comes back up.
+trap 'pm2 start home-fairy' EXIT
 
 echo "Backing up to ${BACKUP}..."
 sqlite3 "$DB" ".backup '${BACKUP}'"
@@ -30,7 +33,5 @@ SQL
 echo "VACUUM + ANALYZE (can take a minute on a large file)..."
 sqlite3 "$DB" "VACUUM; ANALYZE;"
 
-echo "Restarting home-fairy..."
-pm2 start home-fairy
-
 echo "Done. New size: $(du -h "$DB" | cut -f1). Backup kept at ${BACKUP} — delete it once happy."
+echo "Restarting home-fairy (EXIT trap)..."

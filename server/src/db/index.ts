@@ -153,6 +153,12 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_device_history_window
       ON device_history (source, recorded_at);
 
+    -- Bare recorded_at indexes serve the hourly retention prune's
+    -- "recorded_at < cutoff" delete; the composite indexes above lead with
+    -- source/event_type and can't, leaving the prune a full scan.
+    CREATE INDEX IF NOT EXISTS idx_device_history_recorded
+      ON device_history (recorded_at);
+
     -- hub_devices.label is used as a JOIN key by motion-handler's lux query
     -- (device_rooms.device_label = h.label) and by several scene-executor
     -- lookups for Twinkly / Fairy devices. Without this index those JOINs
@@ -176,6 +182,9 @@ export function initDb(): void {
     -- can't serve that, so those six queries were full-scanning the table.
     CREATE INDEX IF NOT EXISTS idx_room_activity_event_window
       ON room_activity (event_type, recorded_at);
+
+    CREATE INDEX IF NOT EXISTS idx_room_activity_recorded
+      ON room_activity (recorded_at);
 
     CREATE INDEX IF NOT EXISTS idx_logs_category
       ON logs (category, created_at DESC);
