@@ -9,6 +9,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { api } from '@/lib/api'
+import { invalidateQueue } from '@/lib/queueCache'
 import type {
   SonosLibraryTrack,
   SonosSearchArtist,
@@ -99,7 +100,7 @@ function NasTrackRow({
     mutationFn: () => api.sonos.addToQueue(speaker!, track.uri),
     onSuccess: () => {
       toast({ message: `Added "${track.title}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
@@ -108,7 +109,7 @@ function NasTrackRow({
     mutationFn: () => api.sonos.playNext(speaker!, track.uri),
     onSuccess: () => {
       toast({ message: `"${track.title}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -179,7 +180,7 @@ function SpotifyTrackRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'queue'),
     onSuccess: () => {
       toast({ message: `Added "${track.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
@@ -188,7 +189,7 @@ function SpotifyTrackRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'next'),
     onSuccess: () => {
       toast({ message: `"${track.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -261,12 +262,31 @@ function SpotifyAlbumRow({
   speaker: string | null
   onSelect: (album: SpotifyAlbum) => void
 }) {
+  const queryClient = useQueryClient()
   const { toast } = useToast()
 
   const playNow = useMutation({
     mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'now'),
     onSuccess: () => toast({ message: `Playing "${album.name}"` }),
     onError: () => toast({ message: 'Failed to play album', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playAlbumNext(speaker!, album.uri, 'spotify'),
+    onSuccess: () => {
+      toast({ message: `"${album.name}" will play next` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.addAlbumToQueue(speaker!, album.uri, 'spotify'),
+    onSuccess: () => {
+      toast({ message: `Added "${album.name}" to queue` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
 
   return (
@@ -286,8 +306,8 @@ function SpotifyAlbumRow({
       disabled={!speaker}
       menuProps={{
         label: album.name,
-        onPlayNext: () => {},
-        onAddToQueue: () => {},
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
         fairylistTrack: {
           source: 'spotify',
           source_uri: album.uri,
@@ -345,12 +365,31 @@ function SpotifyPlaylistRow({
   speaker: string | null
   onSelect: (playlist: SpotifyPlaylist) => void
 }) {
+  const queryClient = useQueryClient()
   const { toast } = useToast()
 
   const playNow = useMutation({
     mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'now'),
     onSuccess: () => toast({ message: `Playing "${playlist.name}"` }),
     onError: () => toast({ message: 'Failed to play playlist', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playAlbumNext(speaker!, playlist.uri, 'spotify'),
+    onSuccess: () => {
+      toast({ message: `"${playlist.name}" will play next` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.addAlbumToQueue(speaker!, playlist.uri, 'spotify'),
+    onSuccess: () => {
+      toast({ message: `Added "${playlist.name}" to queue` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
 
   return (
@@ -365,8 +404,8 @@ function SpotifyPlaylistRow({
       disabled={!speaker}
       menuProps={{
         label: playlist.name,
-        onPlayNext: () => {},
-        onAddToQueue: () => {},
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
         fairylistTrack: {
           source: 'spotify',
           source_uri: playlist.uri,
@@ -400,7 +439,7 @@ function RadioStationRow({
     mutationFn: () => api.sonos.playNext(speaker!, station.uri),
     onSuccess: () => {
       toast({ message: `${station.title} will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: `Failed to queue ${station.title}`, type: 'error' }),
   })
@@ -409,7 +448,7 @@ function RadioStationRow({
     mutationFn: () => api.sonos.addToQueue(speaker!, station.uri),
     onSuccess: () => {
       toast({ message: `Added "${station.title}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
@@ -512,7 +551,7 @@ function NasSearchAlbumRow({
     mutationFn: () => api.sonos.playAlbumNext(speaker!, objectId, 'nas'),
     onSuccess: () => {
       toast({ message: `"${album.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -521,7 +560,7 @@ function NasSearchAlbumRow({
     mutationFn: () => api.sonos.addAlbumToQueue(speaker!, objectId, 'nas'),
     onSuccess: () => {
       toast({ message: `Added "${album.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })

@@ -25,6 +25,7 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { api } from '@/lib/api'
+import { invalidateQueue } from '@/lib/queueCache'
 import type {
   SpotifyPlaylist,
   SpotifyPinnedPlaylist,
@@ -240,7 +241,7 @@ function SpotifyTrackRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'queue'),
     onSuccess: () => {
       toast({ message: `Added "${track.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
@@ -249,7 +250,7 @@ function SpotifyTrackRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'next'),
     onSuccess: () => {
       toast({ message: `"${track.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -478,7 +479,7 @@ function PlaylistRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'next'),
     onSuccess: () => {
       toast({ message: `"${playlist.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -487,7 +488,7 @@ function PlaylistRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'queue'),
     onSuccess: () => {
       toast({ message: `Added "${playlist.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
@@ -568,7 +569,7 @@ function PinnedPlaylistRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, pinned.uri, 'next'),
     onSuccess: () => {
       toast({ message: `"${pinned.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -577,7 +578,7 @@ function PinnedPlaylistRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, pinned.uri, 'queue'),
     onSuccess: () => {
       toast({ message: `Added "${pinned.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
@@ -1265,7 +1266,7 @@ function AlbumRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, item.album.uri, 'next'),
     onSuccess: () => {
       toast({ message: `"${item.album.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -1274,7 +1275,7 @@ function AlbumRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, item.album.uri, 'queue'),
     onSuccess: () => {
       toast({ message: `Added "${item.album.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
@@ -1337,7 +1338,7 @@ function ShowRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, show.uri, 'next'),
     onSuccess: () => {
       toast({ message: `"${show.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -1346,7 +1347,7 @@ function ShowRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, show.uri, 'queue'),
     onSuccess: () => {
       toast({ message: `Added "${show.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
@@ -1603,7 +1604,7 @@ function SearchPlaylistRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'next'),
     onSuccess: () => {
       toast({ message: `"${playlist.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -1612,7 +1613,7 @@ function SearchPlaylistRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'queue'),
     onSuccess: () => {
       toast({ message: `Added "${playlist.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
@@ -1677,7 +1678,7 @@ function SearchAlbumRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'next'),
     onSuccess: () => {
       toast({ message: `"${album.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -1686,7 +1687,7 @@ function SearchAlbumRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'queue'),
     onSuccess: () => {
       toast({ message: `Added "${album.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })

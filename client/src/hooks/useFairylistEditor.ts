@@ -11,6 +11,7 @@ import {
 import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { api } from '@/lib/api'
 import type { FairylistItem } from '@/lib/api'
+import { invalidateQueue } from '@/lib/queueCache'
 import { useToast } from '@/hooks/useToast'
 
 // ── useFairylistEditor ────────────────────────────────────────────────────────
@@ -117,8 +118,22 @@ export function useFairylistEditor({
 
   const playMutation = useMutation({
     mutationFn: () => api.fairylists.play(fairylistId, effectiveSpeaker!),
-    onSuccess: () => toast({ message: 'Playing Fairylist' }),
+    onSuccess: () => {
+      const name = data?.fairylist.name
+      toast({ message: name ? `Playing "${name}" — replaced queue` : 'Playing Fairylist — replaced queue' })
+      invalidateQueue(queryClient, effectiveSpeaker)
+    },
     onError: () => toast({ message: 'Could not play Fairylist', type: 'error' }),
+  })
+
+  const queueMutation = useMutation({
+    mutationFn: (mode: 'append' | 'next') => api.fairylists.queue(fairylistId, effectiveSpeaker!, mode),
+    onSuccess: (_data, mode) => {
+      const name = data?.fairylist.name ?? 'Fairylist'
+      toast({ message: mode === 'next' ? `"${name}" will play next` : `Added "${name}" to queue` })
+      invalidateQueue(queryClient, effectiveSpeaker)
+    },
+    onError: () => toast({ message: 'Could not queue Fairylist', type: 'error' }),
   })
 
   function handleDragEnd(event: DragEndEvent) {
@@ -177,6 +192,7 @@ export function useFairylistEditor({
     removeMutation,
     reorderMutation,
     playMutation,
+    queueMutation,
     // Handlers
     handleSaveName,
     startEditing,

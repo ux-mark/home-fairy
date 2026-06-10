@@ -14,7 +14,7 @@ interface PendingAction {
   onUndo: () => void
 }
 
-interface UseUndoableQueueActionResult {
+export interface UseUndoableQueueActionResult {
   pendingAction: PendingAction | null
   scheduleAction: (label: string, onCommit: () => void, onUndo: () => void) => void
   triggerUndo: () => void

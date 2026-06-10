@@ -2,6 +2,7 @@ import { useParams, useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Disc3, Play } from 'lucide-react'
 import { api } from '@/lib/api'
+import { invalidateQueue } from '@/lib/queueCache'
 import type { SpotifyAlbum } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { useFirstSpeaker } from '@/hooks/useBrowseShared'
@@ -35,7 +36,7 @@ function ArtistAlbumRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'next'),
     onSuccess: () => {
       toast({ message: `"${album.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -44,7 +45,7 @@ function ArtistAlbumRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'queue'),
     onSuccess: () => {
       toast({ message: `Added "${album.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })

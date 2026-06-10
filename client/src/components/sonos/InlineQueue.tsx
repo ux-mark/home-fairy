@@ -1,13 +1,16 @@
 import { useMemo } from 'react'
 import { useMutation } from '@tanstack/react-query'
-import { AlertTriangle, ChevronRight, ListMusic, Music2 } from 'lucide-react'
+import { AlertTriangle, ChevronRight, ListMusic, Music2, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
 import { useQueueSync } from '@/hooks/useQueueSync'
+import { useUndoableQueueAction } from '@/hooks/useUndoableQueueAction'
+import { useQueueClear } from '@/hooks/useQueueClear'
 import { useToast } from '@/hooks/useToast'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { ArtworkImage } from './ArtworkImage'
+import { UndoSnackbar } from './UndoSnackbar'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -51,6 +54,9 @@ export function InlineQueue({
     speaker,
     enabled: !!speaker,
   })
+
+  const undo = useUndoableQueueAction()
+  const clearQueue = useQueueClear(speaker, undo)
 
   // ── Resolve the current track index with the same fallback logic as QueueView ──
   const currentIndex = useMemo(() => {
@@ -141,8 +147,23 @@ export function InlineQueue({
           <ListMusic className="h-3 w-3" aria-hidden="true" />
           Up next
         </span>
-        <span className="text-[11px] tabular-nums text-caption">
-          {totalCount} {totalCount === 1 ? 'track' : 'tracks'}
+        <span className="flex items-center gap-1">
+          <span className="text-[11px] tabular-nums text-caption">
+            {totalCount} {totalCount === 1 ? 'track' : 'tracks'}
+          </span>
+          {/* Clear queue — immediate, with undo snackbar */}
+          <button
+            onClick={clearQueue}
+            aria-label="Clear queue"
+            className={cn(
+              'flex min-h-[44px] items-center gap-1 rounded-lg px-2 text-[11px] font-semibold transition-colors',
+              'text-red-400 hover:bg-red-500/10',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            )}
+          >
+            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
+            Clear
+          </button>
         </span>
       </div>
 
@@ -209,6 +230,15 @@ export function InlineQueue({
           </span>
           <ChevronRight className="h-4 w-4 text-caption" aria-hidden="true" />
         </button>
+      )}
+
+      {/* Undo snackbar — fixed above the bottom nav */}
+      {undo.pendingAction && (
+        <UndoSnackbar
+          label={undo.pendingAction.label}
+          onUndo={undo.triggerUndo}
+          className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2"
+        />
       )}
     </div>
   )

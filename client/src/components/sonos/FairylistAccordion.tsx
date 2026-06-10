@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Loader2, Play, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, Loader2, Play, Plus } from 'lucide-react'
 import { api } from '@/lib/api'
+import { invalidateQueue } from '@/lib/queueCache'
 import { useToast } from '@/hooks/useToast'
+import { FairylistActionsMenu } from './FairylistActionsMenu'
 import { Accordion } from '@/components/ui/Accordion'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
@@ -75,8 +77,21 @@ export function FairylistAccordion({ onSelectFairylist, effectiveSpeaker }: Fair
   const playMutation = useMutation({
     mutationFn: ({ id, name }: { id: number; name: string }) =>
       api.fairylists.play(id, effectiveSpeaker!).then(() => name),
-    onSuccess: (name) => toast({ message: `Playing "${name}"` }),
+    onSuccess: (name) => {
+      toast({ message: `Playing "${name}" — replaced queue` })
+      invalidateQueue(queryClient, effectiveSpeaker)
+    },
     onError: () => toast({ message: 'Could not play Fairylist', type: 'error' }),
+  })
+
+  const queueMutation = useMutation({
+    mutationFn: ({ id, mode }: { id: number; name: string; mode: 'append' | 'next' }) =>
+      api.fairylists.queue(id, effectiveSpeaker!, mode),
+    onSuccess: (_data, { name, mode }) => {
+      toast({ message: mode === 'next' ? `"${name}" will play next` : `Added "${name}" to queue` })
+      invalidateQueue(queryClient, effectiveSpeaker)
+    },
+    onError: () => toast({ message: 'Could not queue Fairylist', type: 'error' }),
   })
 
   function handleCreate() {
@@ -141,6 +156,7 @@ export function FairylistAccordion({ onSelectFairylist, effectiveSpeaker }: Fair
                 <button
                   type="button"
                   onClick={() => onSelectFairylist(fl.id)}
+                  aria-label={`Open ${fl.name}`}
                   className={cn(
                     'min-w-0 flex-1 rounded-lg px-1 py-1 text-left transition-colors',
                     'hover:bg-[var(--bg-tertiary)]',
@@ -165,14 +181,13 @@ export function FairylistAccordion({ onSelectFairylist, effectiveSpeaker }: Fair
                     <Play className="h-4 w-4" aria-hidden="true" />
                   )}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setPendingDeleteId(fl.id)}
-                  aria-label={`Delete ${fl.name}`}
-                  className={cn(actionBtn, 'hover:bg-red-500/10 hover:text-red-400')}
-                >
-                  <Trash2 className="h-4 w-4" aria-hidden="true" />
-                </button>
+                <FairylistActionsMenu
+                  name={fl.name}
+                  queueDisabled={!effectiveSpeaker || queueMutation.isPending}
+                  onAddToQueue={() => queueMutation.mutate({ id: fl.id, name: fl.name, mode: 'append' })}
+                  onPlayNext={() => queueMutation.mutate({ id: fl.id, name: fl.name, mode: 'next' })}
+                  onDelete={() => setPendingDeleteId(fl.id)}
+                />
               </li>
             ))}
           </ul>

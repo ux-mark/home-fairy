@@ -2124,6 +2124,11 @@ export const api = {
     removeItem: (fairylistId: number, itemId: number) => fetchApi<unknown>('/fairylists/' + fairylistId + '/items/' + itemId, { method: 'DELETE' }),
     reorder: (id: number, ids: number[]) => fetchApi<unknown>('/fairylists/' + id + '/items/reorder', { method: 'PUT', body: JSON.stringify({ ids }) }),
     play: (id: number, speaker: string) => fetchApi<unknown>('/fairylists/' + id + '/play/' + encodeURIComponent(speaker), { method: 'POST' }),
+    queue: (id: number, speaker: string, mode: 'append' | 'next') =>
+      fetchApi<{ success: boolean; queued: number; skipped: { title: string; reason: string }[] }>(
+        '/fairylists/' + id + '/queue/' + encodeURIComponent(speaker),
+        { method: 'POST', body: JSON.stringify({ mode }) },
+      ),
   },
 
   favourites: {

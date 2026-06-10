@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { invalidateQueue } from '@/lib/queueCache'
 import type { SpotifyTrack, SpotifyAlbumTrack } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { MusicListItem } from '../MusicListItem'
@@ -39,7 +40,7 @@ export function SpotifyTrackRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'queue'),
     onSuccess: () => {
       toast({ message: `Added "${track.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
@@ -48,7 +49,7 @@ export function SpotifyTrackRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'next'),
     onSuccess: () => {
       toast({ message: `"${track.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -123,7 +124,7 @@ export function SpotifyAlbumTrackRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'queue'),
     onSuccess: () => {
       toast({ message: `Added "${track.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
@@ -132,7 +133,7 @@ export function SpotifyAlbumTrackRow({
     mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'next'),
     onSuccess: () => {
       toast({ message: `"${track.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })

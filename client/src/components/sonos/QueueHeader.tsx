@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ListPlus, Loader2, Repeat, Shuffle, Trash2, CheckSquare } from 'lucide-react'
-import * as AlertDialog from '@radix-ui/react-alert-dialog'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
 import type { SonosQueueItem } from '@/lib/api'
@@ -20,11 +19,9 @@ interface QueueHeaderProps {
   isSelecting?: boolean
   /** Toggle multi-select mode */
   onToggleSelect?: () => void
-  /** Called when user confirms clear queue (so parent can apply undo) */
-  onClearQueue?: () => void
   /**
-   * If provided, fully delegates clear handling to the parent. The built-in clearMutation
-   * is not run — the parent is responsible for optimistic update, server call, and undo.
+   * Clear handler — clears immediately (no confirm); the parent owns the
+   * optimistic update, server call, and undo snackbar.
    */
   onClearRequest?: () => void
 }
@@ -80,12 +77,10 @@ export function QueueHeader({
   queue,
   isSelecting,
   onToggleSelect,
-  onClearQueue,
   onClearRequest,
 }: QueueHeaderProps) {
   const queryClient = useQueryClient()
   const { toast } = useToast()
-  const [confirmOpen, setConfirmOpen] = useState(false)
   const [saveOpen, setSaveOpen] = useState(false)
 
   const parsed = parsePlayMode(currentPlayMode)
@@ -121,20 +116,6 @@ export function QueueHeader({
     onError: () => {
       setRepeatAllActive(parsed.repeatAll)
       toast({ message: 'Could not toggle repeat', type: 'error' })
-    },
-  })
-
-  const clearMutation = useMutation({
-    mutationFn: () => api.sonos.clearQueue(speaker),
-    onSuccess: () => {
-      queryClient.setQueryData(['sonos', 'queue', speaker], [])
-      setConfirmOpen(false)
-      onClearQueue?.()
-      toast({ message: 'Queue cleared' })
-    },
-    onError: () => {
-      setConfirmOpen(false)
-      toast({ message: 'Could not clear queue', type: 'error' })
     },
   })
 
@@ -230,64 +211,19 @@ export function QueueHeader({
             </button>
           )}
 
-          {/* Clear queue */}
-          <AlertDialog.Root open={confirmOpen} onOpenChange={setConfirmOpen}>
-            <AlertDialog.Trigger asChild>
-              <button
-                className={cn(
-                  'flex min-h-[44px] items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-colors',
-                  'text-red-400 hover:bg-red-500/10',
-                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                )}
-                aria-label="Clear queue"
-              >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-                Clear
-              </button>
-            </AlertDialog.Trigger>
-
-            <AlertDialog.Portal>
-              <AlertDialog.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" />
-              <AlertDialog.Content
-                className={cn(
-                  'fixed left-1/2 top-1/2 z-50 w-[90vw] max-w-sm -translate-x-1/2 -translate-y-1/2',
-                  'rounded-2xl border border-[var(--border-primary)] bg-[var(--bg-primary)] p-6 shadow-xl',
-                  'focus:outline-none',
-                )}
-              >
-                <AlertDialog.Title className="text-base font-semibold text-heading">
-                  Clear the queue?
-                </AlertDialog.Title>
-                <AlertDialog.Description className="mt-2 text-sm text-caption">
-                  This will remove all {queue?.length ?? ''} tracks. You can undo this for 5 seconds.
-                </AlertDialog.Description>
-                <div className="mt-5 flex justify-end gap-3">
-                  <AlertDialog.Cancel asChild>
-                    <button className="rounded-lg border border-[var(--border-primary)] px-4 py-2 text-sm text-body hover:brightness-95 dark:hover:brightness-110 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 min-h-[44px]">
-                      Cancel
-                    </button>
-                  </AlertDialog.Cancel>
-                  <AlertDialog.Action asChild>
-                    <button
-                      onClick={() => {
-                        if (onClearRequest) {
-                          onClearRequest()
-                          setConfirmOpen(false)
-                        } else {
-                          clearMutation.mutate()
-                        }
-                      }}
-                      disabled={clearMutation.isPending}
-                      className="flex items-center gap-2 rounded-lg bg-red-500/15 px-4 py-2 text-sm font-medium text-red-400 hover:bg-red-500/25 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 min-h-[44px] disabled:opacity-50"
-                    >
-                      {clearMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                      Clear queue
-                    </button>
-                  </AlertDialog.Action>
-                </div>
-              </AlertDialog.Content>
-            </AlertDialog.Portal>
-          </AlertDialog.Root>
+          {/* Clear queue — immediate, undo via parent snackbar */}
+          <button
+            onClick={() => onClearRequest?.()}
+            className={cn(
+              'flex min-h-[44px] items-center gap-1.5 rounded-lg px-2 text-xs font-medium transition-colors',
+              'text-red-400 hover:bg-red-500/10',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            )}
+            aria-label="Clear queue"
+          >
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
+            Clear
+          </button>
         </div>
 
         {/* Queue summary line */}
