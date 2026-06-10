@@ -14,6 +14,15 @@ const db: DatabaseType = new Database(dbPath)
 db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = ON')
 
+// Pi/SD-card tuning. WAL makes synchronous=NORMAL safe (fsync at checkpoint,
+// not per-transaction) — the default FULL costs an SD-card fsync on every
+// insert, which the motion handler and pollers pay constantly.
+db.pragma('synchronous = NORMAL')
+db.pragma('busy_timeout = 5000')
+db.pragma('cache_size = -64000') // 64MB page cache
+db.pragma('temp_store = MEMORY') // GROUP BY/ORDER BY scratch in RAM, not SD
+db.pragma('mmap_size = 134217728') // 128MB mmap window for reads
+
 export function initDb(): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS rooms (
@@ -137,6 +146,13 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_device_history_lookup
       ON device_history (source, source_id, recorded_at);
 
+    -- Insights queries aggregate across all devices of a source within a
+    -- time window (WHERE source = ? AND recorded_at > ?). The lookup index
+    -- above can't serve that shape — source_id in the middle blocks the
+    -- range scan — so they were scanning every row of the source.
+    CREATE INDEX IF NOT EXISTS idx_device_history_window
+      ON device_history (source, recorded_at);
+
     -- hub_devices.label is used as a JOIN key by motion-handler's lux query
     -- (device_rooms.device_label = h.label) and by several scene-executor
     -- lookups for Twinkly / Fairy devices. Without this index those JOINs
@@ -155,8 +171,20 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_room_activity_lookup
       ON room_activity (room_name, recorded_at);
 
+    -- Activity insights are house-wide: WHERE event_type = 'motion_active'
+    -- AND recorded_at > <window>, no room filter. The per-room index above
+    -- can't serve that, so those six queries were full-scanning the table.
+    CREATE INDEX IF NOT EXISTS idx_room_activity_event_window
+      ON room_activity (event_type, recorded_at);
+
     CREATE INDEX IF NOT EXISTS idx_logs_category
       ON logs (category, created_at DESC);
+
+    -- Serves the unfiltered recent-logs listing (ORDER BY created_at DESC
+    -- LIMIT) and the retention prune's created_at range delete; neither can
+    -- use idx_logs_category because category leads it.
+    CREATE INDEX IF NOT EXISTS idx_logs_created_at
+      ON logs (created_at);
 
     CREATE INDEX IF NOT EXISTS idx_logs_parent_id
       ON logs (parent_id) WHERE parent_id IS NOT NULL;
