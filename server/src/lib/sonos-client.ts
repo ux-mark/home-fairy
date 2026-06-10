@@ -445,43 +445,15 @@ class SonosClient {
     }
   }
 
-  async addToQueue(speaker: string, uri: string): Promise<void> {
-    try {
-      await this.api.get(`/${encodeURIComponent(speaker)}/addtoqueue/${encodeURIComponent(uri)}`)
-    } catch (err) {
-      this.handleError(err, `addToQueue(${speaker})`)
-    }
-  }
-
-  async playNext(speaker: string, uri: string): Promise<void> {
-    try {
-      await this.api.get(`/${encodeURIComponent(speaker)}/playnext/${encodeURIComponent(uri)}`)
-    } catch (err) {
-      this.handleError(err, `playNext(${speaker})`)
-    }
-  }
+  // Note: addtoqueue/playnext/removetrack/reorder actions do NOT exist in
+  // upstream node-sonos-http-api — queue mutations go through the UPnP SOAP
+  // methods below (or the spotify action for music-service URIs).
 
   async clearQueue(speaker: string): Promise<void> {
     try {
       await this.api.get(`/${encodeURIComponent(speaker)}/clearqueue`)
     } catch (err) {
       this.handleError(err, `clearQueue(${speaker})`)
-    }
-  }
-
-  async removeFromQueue(speaker: string, index: number): Promise<void> {
-    try {
-      await this.api.get(`/${encodeURIComponent(speaker)}/removetrack/${index}`)
-    } catch (err) {
-      this.handleError(err, `removeFromQueue(${speaker}, ${index})`)
-    }
-  }
-
-  async reorderQueue(speaker: string, from: number, to: number): Promise<void> {
-    try {
-      await this.api.get(`/${encodeURIComponent(speaker)}/reorder/${from}/${to}`)
-    } catch (err) {
-      this.handleError(err, `reorderQueue(${speaker}, ${from}, ${to})`)
     }
   }
 
@@ -527,6 +499,12 @@ class SonosClient {
   /**
    * Insert a track as the next track using UPnP SOAP directly.
    * Bypasses node-sonos-http-api which mangles URIs containing special characters.
+   *
+   * DesiredFirstTrackNumberEnqueued=0 + EnqueueAsNext=1 tells the player to
+   * insert immediately after the current track — Sonos resolves the position
+   * itself, unlike jishi's spotify.js which passes an explicit trackNo+1 read
+   * from possibly-stale event state. Both land in the same place; 0 avoids
+   * the stale-trackNo race, so this stays as-is.
    */
   async playNextSOAP(speakerIp: string, uri: string): Promise<void> {
     // Escape XML special characters in the URI

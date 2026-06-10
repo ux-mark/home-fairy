@@ -13,6 +13,8 @@ import { spotifyClient } from '../lib/spotify-client.js'
 import { sonosManager } from '../lib/sonos-manager.js'
 import { emit } from '../lib/socket.js'
 import { findPodcastFeedUrl, getLatestEpisodeUrl } from '../lib/podcast-resolver.js'
+import { classifySourceUri } from '../lib/source-uri.js'
+import { queueItemOnSpeaker } from '../lib/sonos-queue.js'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 const SONOS_API_URL = process.env.SONOS_API_URL || 'http://localhost:3003'
@@ -142,9 +144,9 @@ setTimeout(() => {
     setTimeout(() => {
       sweepStaleArtCache()
       void evictArtCacheOverCap()
-    }, 30_000)
+    }, 30_000).unref()
   }
-}, 10_000)
+}, 10_000).unref()
 
 // ── Album art proxy helpers ───────────────────────────────────────────────────
 
@@ -167,6 +169,12 @@ function anySpeakerIp(): string | null {
  * on the network); everything else → 424 (Sonos API unavailable).
  */
 function sendSonosError(res: Response, err: unknown): void {
+  const req = res.req
+  const uri = (req?.body as { uri?: unknown } | undefined)?.uri
+  console.error(
+    `[sonos] ${req?.method ?? '?'} ${req?.originalUrl ?? '?'} failed${typeof uri === 'string' ? ` (uri=${uri})` : ''}:`,
+    err instanceof Error ? err.message : err,
+  )
   if (err instanceof SpeakerNotFoundError) {
     res.status(404).json({ error: err.message })
     return
@@ -224,7 +232,7 @@ function triggerNasAutoBackfill(): void {
  * this, socket-pushed updates clobber the query cache with raw /getaa paths
  * and all album art breaks after a mutation.
  */
-function rewriteQueueArt<T extends { albumArtUri?: string }>(items: T[]): T[] {
+export function rewriteQueueArt<T extends { albumArtUri?: string }>(items: T[]): T[] {
   return items.map(item => ({ ...item, albumArtUri: rewriteAlbumArtUri(item.albumArtUri) }))
 }
 
@@ -811,7 +819,7 @@ router.get('/queue/:speaker', async (req: Request, res: Response) => {
   }
 })
 
-// POST /queue/:speaker/add — add item to queue
+// POST /queue/:speaker/add — add item to queue (source-aware: spotify, NAS file/container)
 router.post('/queue/:speaker/add', async (req: Request, res: Response) => {
   try {
     const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
@@ -820,7 +828,11 @@ router.post('/queue/:speaker/add', async (req: Request, res: Response) => {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
       return
     }
-    await withSpeakerByRoom(speaker, ({ ip }) => sonosClient.addToQueueSOAP(ip, parsed.data.uri))
+    const outcome = await queueItemOnSpeaker(speaker, parsed.data.uri, 'append')
+    if (outcome.skippedReason) {
+      res.status(400).json({ error: outcome.skippedReason })
+      return
+    }
     emit('sonos:playback-update', { speaker })
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'add', queue: rewriteQueueArt(queue) })
@@ -830,7 +842,7 @@ router.post('/queue/:speaker/add', async (req: Request, res: Response) => {
   }
 })
 
-// POST /queue/:speaker/playnext — insert item as next track
+// POST /queue/:speaker/playnext — insert item as next track (source-aware)
 router.post('/queue/:speaker/playnext', async (req: Request, res: Response) => {
   try {
     const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
@@ -839,7 +851,11 @@ router.post('/queue/:speaker/playnext', async (req: Request, res: Response) => {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
       return
     }
-    await withSpeakerByRoom(speaker, ({ ip }) => sonosClient.playNextSOAP(ip, parsed.data.uri))
+    const outcome = await queueItemOnSpeaker(speaker, parsed.data.uri, 'next')
+    if (outcome.skippedReason) {
+      res.status(400).json({ error: outcome.skippedReason })
+      return
+    }
     emit('sonos:playback-update', { speaker })
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'playnext', queue: rewriteQueueArt(queue) })
@@ -868,6 +884,8 @@ router.post('/queue/:speaker/add-album', async (req: Request, res: Response) => 
     if (source === 'spotify') {
       await sonosClient.playSpotifyUri(speaker, uri, 'queue')
       emit('sonos:playback-update', { speaker })
+      const spotifyQueue = await sonosClient.getQueue(speaker)
+      emit('sonos:queue-update', { speaker, action: 'add', queue: rewriteQueueArt(spotifyQueue) })
       res.json({ speaker, action: 'add-album-to-queue' })
       return
     }
@@ -914,6 +932,8 @@ router.post('/queue/:speaker/playnext-album', async (req: Request, res: Response
     if (source === 'spotify') {
       await sonosClient.playSpotifyUri(speaker, uri, 'next')
       emit('sonos:playback-update', { speaker })
+      const spotifyQueue = await sonosClient.getQueue(speaker)
+      emit('sonos:queue-update', { speaker, action: 'playnext', queue: rewriteQueueArt(spotifyQueue) })
       res.json({ speaker, action: 'playnext-album' })
       return
     }
@@ -1032,20 +1052,21 @@ router.post('/queue/:speaker/restore', async (req: Request, res: Response) => {
       res.status(400).json({ error: parsed.error.issues[0]?.message ?? 'Invalid request body' })
       return
     }
-    // Re-add each URI in order. We swallow individual failures so a single bad URI
-    // (e.g. a stale Spotify track) doesn't abort the entire restore.
+    // Re-add each URI in order, source-aware so Spotify tracks survive the
+    // undo (their x-sonos-spotify: queue URIs need SA_RINCON metadata that
+    // only the spotify action provides). Individual failures are swallowed so
+    // a single bad URI doesn't abort the entire restore.
     let added = 0
     const failures: string[] = []
-    await withSpeakerByRoom(speaker, async ({ ip }) => {
-      for (const uri of parsed.data.uris) {
-        try {
-          await sonosClient.addToQueueSOAP(ip, uri)
-          added++
-        } catch {
-          failures.push(uri)
-        }
+    for (const uri of parsed.data.uris) {
+      try {
+        const outcome = await queueItemOnSpeaker(speaker, uri, 'append')
+        if (outcome.queued > 0) added += outcome.queued
+        else failures.push(uri)
+      } catch {
+        failures.push(uri)
       }
-    })
+    }
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: 'restore', queue: rewriteQueueArt(queue) })
     res.json({
@@ -1092,15 +1113,20 @@ router.post('/queue/:speaker/save-as-fairylist', async (req: Request, res: Respo
       .get(fairylistId) as { maxOrder: number | null }
     let sortOrder = (maxRow.maxOrder ?? -1) + 1
 
+    // added_by is NOT NULL — omitting it made INSERT OR IGNORE silently drop
+    // every row, so this endpoint used to save nothing.
+    const userId = (req as { user?: { id?: string } }).user?.id ?? 'fairy-queen'
     const insertItem = db.prepare(`
-      INSERT OR IGNORE INTO fairylist_items (fairylist_id, source, source_uri, title, artist, album_art_uri, sort_order)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT OR IGNORE INTO fairylist_items (fairylist_id, source, source_uri, title, artist, album_art_uri, sort_order, added_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     const insertMany = db.transaction((tracks: typeof queue) => {
       for (const track of tracks) {
-        const source = track.uri?.startsWith('spotify:') ? 'spotify' : 'nas'
-        insertItem.run(fairylistId, source, track.uri, track.title, track.artist ?? null, track.albumArtUri ?? null, sortOrder++)
+        // Queue URIs come back Sonos-encoded (x-sonos-spotify:…) — classify
+        // and store the canonical form so playback can dispatch on source.
+        const { source, normalizedUri } = classifySourceUri(track.uri ?? '')
+        insertItem.run(fairylistId, source, normalizedUri, track.title, track.artist ?? null, track.albumArtUri ?? null, sortOrder++, userId)
       }
     })
 
@@ -1745,6 +1771,8 @@ router.post('/play-spotify/:speaker', async (req: Request, res: Response) => {
     const safeAction = action === 'queue' || action === 'next' ? action : 'now'
     await sonosClient.playSpotifyUri(speaker, uri, safeAction)
     emit('sonos:playback-update', { speaker })
+    const queue = await sonosClient.getQueue(speaker)
+    emit('sonos:queue-update', { speaker, action: safeAction === 'queue' ? 'add' : 'playnext', queue: rewriteQueueArt(queue) })
     res.json({ speaker, uri, action: safeAction })
   } catch (err) {
     sendSonosError(res, err)
