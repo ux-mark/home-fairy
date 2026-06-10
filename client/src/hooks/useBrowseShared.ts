@@ -12,11 +12,13 @@ export function useFirstSpeaker(): string | null {
     staleTime: 30_000,
   })
 
+  // Shares the cache entry owned by PlaybackStateProvider — the socket's
+  // sonos:playback-update invalidation plus its 30 s safety-net poll keep it
+  // fresh. A second 5 s interval here just multiplied the polling rate.
   const { data: nowPlaying } = useQuery({
     queryKey: ['sonos', 'now-playing'],
     queryFn: api.sonos.getNowPlaying,
-    staleTime: 5_000,
-    refetchInterval: 5_000,
+    staleTime: 25_000,
   })
 
   if (!zones || zones.length === 0) return null
@@ -51,11 +53,11 @@ export function useDebounce<T>(value: T, delay: number): T {
 // ── useNowPlayingTrack ────────────────────────────────────────────────────────
 
 export function useNowPlayingTrack(speaker: string | null) {
+  // Same shared cache entry as PlaybackStateProvider; socket-invalidated.
   const { data: nowPlaying } = useQuery({
     queryKey: ['sonos', 'now-playing'],
     queryFn: api.sonos.getNowPlaying,
-    refetchInterval: 5_000,
-    staleTime: 4_000,
+    staleTime: 25_000,
     enabled: !!speaker,
   })
   if (!speaker || !nowPlaying) return null
