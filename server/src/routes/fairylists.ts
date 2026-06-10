@@ -1,10 +1,13 @@
 import { Router, type Request, type Response } from 'express'
 import { z } from 'zod'
 import { getAll, run, db } from '../db/index.js'
+import { sonosClient } from '../lib/sonos-client.js'
+import { withSpeakerByRoom, SpeakerNotFoundError } from '../lib/speaker-registry.js'
+import { queueItemOnSpeaker, type QueueMode } from '../lib/sonos-queue.js'
+import { emit } from '../lib/socket.js'
+import { rewriteQueueArt } from './sonos.js'
 
 const router = Router()
-
-const SONOS_BASE = process.env.SONOS_API_URL || 'http://localhost:5005'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
@@ -280,7 +283,81 @@ router.put('/:id/items/reorder', (req: Request, res: Response) => {
   }
 })
 
-// POST /:id/play/:speaker — play fairylist on a Sonos speaker
+// ── Fairylist playback ────────────────────────────────────────────────────────
+
+interface SkippedItem {
+  title: string
+  reason: string
+}
+
+function sendSpeakerError(res: Response, err: unknown): void {
+  if (err instanceof SpeakerNotFoundError) {
+    res.status(404).json({ error: err.message })
+    return
+  }
+  const msg = err instanceof Error ? err.message : String(err)
+  res.status(424).json({ error: IS_PRODUCTION ? 'Sonos API unavailable' : msg })
+}
+
+/**
+ * Queue every fairylist item on a speaker, source-aware. Radio items are
+ * skipped with a reason (streams can't live in the queue); per-item failures
+ * are skipped too rather than failing the whole request. With mode 'next' the
+ * items are inserted in reverse so they play in list order right after the
+ * current track.
+ */
+async function queueFairylistItems(
+  speaker: string,
+  items: FairylistItemRow[],
+  mode: QueueMode,
+): Promise<{ queued: number; skipped: SkippedItem[] }> {
+  const ordered = mode === 'next' ? [...items].reverse() : items
+  let queued = 0
+  const skipped: SkippedItem[] = []
+  for (const item of ordered) {
+    try {
+      const outcome = await queueItemOnSpeaker(speaker, item.source_uri, mode)
+      if (outcome.skippedReason) skipped.push({ title: item.title, reason: outcome.skippedReason })
+      else queued += outcome.queued
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[fairylists] failed to queue "${item.title}" on ${speaker}: ${msg}`)
+      skipped.push({ title: item.title, reason: IS_PRODUCTION ? 'Could not queue this item' : msg })
+    }
+  }
+  // Reverse insertion collects skips in reverse — restore list order for the response
+  if (mode === 'next') skipped.reverse()
+  return { queued, skipped }
+}
+
+function loadFairylistItems(res: Response, id: number): FairylistItemRow[] | null {
+  const fairylist = db.prepare('SELECT id FROM fairylists WHERE id = ?').get(id)
+  if (!fairylist) {
+    res.status(404).json({ error: 'Fairylist not found' })
+    return null
+  }
+  const items = getAll<FairylistItemRow>(
+    `SELECT * FROM fairylist_items WHERE fairylist_id = ? ORDER BY sort_order ASC`,
+    [id],
+  )
+  if (items.length === 0) {
+    res.status(400).json({ error: 'Fairylist is empty' })
+    return null
+  }
+  return items
+}
+
+async function emitQueueUpdate(speaker: string, action: string): Promise<void> {
+  try {
+    const queue = await sonosClient.getQueue(speaker)
+    emit('sonos:queue-update', { speaker, action, queue: rewriteQueueArt(queue) })
+  } catch (err) {
+    console.error(`[fairylists] queue refresh for ${speaker} failed: ${err instanceof Error ? err.message : err}`)
+  }
+  emit('sonos:playback-update', { speaker })
+}
+
+// POST /:id/play/:speaker — replace the speaker's queue with the fairylist and play
 router.post('/:id/play/:speaker', async (req: Request, res: Response) => {
   const id = Number(req.params.id)
   if (!Number.isInteger(id) || id <= 0) {
@@ -293,33 +370,62 @@ router.post('/:id/play/:speaker', async (req: Request, res: Response) => {
     return
   }
   try {
-    const items = getAll<FairylistItemRow>(
-      `SELECT * FROM fairylist_items WHERE fairylist_id = ? ORDER BY sort_order ASC`,
-      [id],
-    )
-    if (items.length === 0) {
-      res.status(400).json({ error: 'Fairylist is empty' })
+    const items = loadFairylistItems(res, id)
+    if (!items) return
+
+    await sonosClient.clearQueue(speaker)
+    const { queued, skipped } = await queueFairylistItems(speaker, items, 'append')
+
+    if (queued === 0) {
+      await emitQueueUpdate(speaker, 'replace')
+      res.status(424).json({ error: 'Could not queue any items from this fairylist', queued, skipped })
       return
     }
 
-    const encSpeaker = encodeURIComponent(speaker)
+    await withSpeakerByRoom(speaker, ({ ip, uuid }) => sonosClient.playQueueFromStart(ip, uuid))
+    await emitQueueUpdate(speaker, 'replace')
+    res.json({ success: true, queued, skipped })
+  } catch (err) {
+    sendSpeakerError(res, err)
+  }
+})
 
-    // Clear the queue first
-    await fetch(`${SONOS_BASE}/${encSpeaker}/clearqueue`)
+// POST /:id/queue/:speaker — add the fairylist to the queue without clearing it.
+// Body: { mode: 'append' | 'next' } — 'next' preserves list order right after
+// the current track.
+const queueModeSchema = z.object({ mode: z.enum(['append', 'next']) })
 
-    // Add all items to the queue
-    for (const item of items) {
-      await fetch(
-        `${SONOS_BASE}/${encSpeaker}/addtoqueue?uri=${encodeURIComponent(item.source_uri)}`,
-      )
+router.post('/:id/queue/:speaker', async (req: Request, res: Response) => {
+  const id = Number(req.params.id)
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Invalid id' })
+    return
+  }
+  const speaker = String(req.params.speaker)
+  if (!speaker) {
+    res.status(400).json({ error: 'Speaker name required' })
+    return
+  }
+  const parsed = queueModeSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ error: "mode must be 'append' or 'next'" })
+    return
+  }
+  try {
+    const items = loadFairylistItems(res, id)
+    if (!items) return
+
+    const { queued, skipped } = await queueFairylistItems(speaker, items, parsed.data.mode)
+
+    if (queued === 0) {
+      res.status(424).json({ error: 'Could not queue any items from this fairylist', queued, skipped })
+      return
     }
 
-    // Start playing
-    await fetch(`${SONOS_BASE}/${encSpeaker}/play`)
-
-    res.json({ success: true, itemCount: items.length })
+    await emitQueueUpdate(speaker, parsed.data.mode === 'next' ? 'playnext' : 'add')
+    res.json({ success: true, queued, skipped })
   } catch (err) {
-    handleError(res, err)
+    sendSpeakerError(res, err)
   }
 })
 
