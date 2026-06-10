@@ -78,8 +78,11 @@ export default defineConfig({
     port: 8000,
     allowedHosts: ['home.thefairies.ie'],
     proxy: {
-      '/api': { target: 'http://localhost:3001', changeOrigin: true },
-      '/socket.io': { target: 'http://localhost:3001', ws: true, changeOrigin: true },
+      // VITE_API_PROXY exists for the Playwright suite, which points it at a
+      // dead port so unmocked API calls fail fast instead of reaching the
+      // live production server. Dev keeps the :3001 default.
+      '/api': { target: process.env.VITE_API_PROXY ?? 'http://localhost:3001', changeOrigin: true },
+      '/socket.io': { target: process.env.VITE_API_PROXY ?? 'http://localhost:3001', ws: true, changeOrigin: true },
     },
   },
 })
