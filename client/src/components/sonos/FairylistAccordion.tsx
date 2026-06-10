@@ -1,9 +1,14 @@
 import { useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle, Loader2, Play, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, Loader2, Play, Plus } from 'lucide-react'
 import { api } from '@/lib/api'
+import { invalidateQueue } from '@/lib/queueCache'
 import { useToast } from '@/hooks/useToast'
+import { useUndoableQueueAction } from '@/hooks/useUndoableQueueAction'
+import { useFairylistPlay, skippedSuffix } from '@/hooks/useFairylistPlay'
+import { FairylistActionsMenu } from './FairylistActionsMenu'
+import { UndoSnackbar } from './UndoSnackbar'
 import { Accordion } from '@/components/ui/Accordion'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { cn } from '@/lib/utils'
@@ -18,7 +23,7 @@ interface FairylistAccordionProps {
 // ── Shared action button style ─────────────────────────────────────────────────
 
 const actionBtn = cn(
-  'flex h-10 w-10 items-center justify-center rounded-lg',
+  'flex h-11 w-11 items-center justify-center rounded-lg',
   'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
   'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
   'disabled:opacity-40',
@@ -72,11 +77,22 @@ export function FairylistAccordion({ onSelectFairylist, effectiveSpeaker }: Fair
     },
   })
 
-  const playMutation = useMutation({
-    mutationFn: ({ id, name }: { id: number; name: string }) =>
-      api.fairylists.play(id, effectiveSpeaker!).then(() => name),
-    onSuccess: (name) => toast({ message: `Playing "${name}"` }),
-    onError: () => toast({ message: 'Could not play Fairylist', type: 'error' }),
+  const undo = useUndoableQueueAction()
+  const playMutation = useFairylistPlay(effectiveSpeaker, undo)
+
+  const queueMutation = useMutation({
+    mutationFn: ({ id, mode }: { id: number; name: string; mode: 'append' | 'next' }) =>
+      api.fairylists.queue(id, effectiveSpeaker!, mode),
+    onSuccess: (data, { name, mode }) => {
+      const suffix = skippedSuffix(data?.skipped)
+      toast({
+        message: mode === 'next'
+          ? `"${name}" will play next${suffix}`
+          : `Added "${name}" to queue${suffix}`,
+      })
+      invalidateQueue(queryClient, effectiveSpeaker)
+    },
+    onError: () => toast({ message: 'Could not queue Fairylist', type: 'error' }),
   })
 
   function handleCreate() {
@@ -141,6 +157,7 @@ export function FairylistAccordion({ onSelectFairylist, effectiveSpeaker }: Fair
                 <button
                   type="button"
                   onClick={() => onSelectFairylist(fl.id)}
+                  aria-label={`Open ${fl.name}`}
                   className={cn(
                     'min-w-0 flex-1 rounded-lg px-1 py-1 text-left transition-colors',
                     'hover:bg-[var(--bg-tertiary)]',
@@ -165,14 +182,13 @@ export function FairylistAccordion({ onSelectFairylist, effectiveSpeaker }: Fair
                     <Play className="h-4 w-4" aria-hidden="true" />
                   )}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setPendingDeleteId(fl.id)}
-                  aria-label={`Delete ${fl.name}`}
-                  className={cn(actionBtn, 'hover:bg-red-500/10 hover:text-red-400')}
-                >
-                  <Trash2 className="h-4 w-4" aria-hidden="true" />
-                </button>
+                <FairylistActionsMenu
+                  name={fl.name}
+                  queueDisabled={!effectiveSpeaker || queueMutation.isPending}
+                  onAddToQueue={() => queueMutation.mutate({ id: fl.id, name: fl.name, mode: 'append' })}
+                  onPlayNext={() => queueMutation.mutate({ id: fl.id, name: fl.name, mode: 'next' })}
+                  onDelete={() => setPendingDeleteId(fl.id)}
+                />
               </li>
             ))}
           </ul>
@@ -250,6 +266,15 @@ export function FairylistAccordion({ onSelectFairylist, effectiveSpeaker }: Fair
           )
         )}
       </Accordion>
+
+      {/* Undo snackbar for the queue-replacing Play */}
+      {undo.pendingAction && (
+        <UndoSnackbar
+          label={undo.pendingAction.label}
+          onUndo={undo.triggerUndo}
+          className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2"
+        />
+      )}
 
       {/* Delete confirmation dialog */}
       <Dialog.Root open={pendingDeleteId !== null} onOpenChange={open => { if (!open) setPendingDeleteId(null) }}>

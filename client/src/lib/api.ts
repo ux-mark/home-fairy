@@ -1059,6 +1059,12 @@ export interface AddFairylistItemInput {
   album_art_uri?: string
 }
 
+export interface FairylistQueueResult {
+  success: boolean
+  queued: number
+  skipped: { title: string; reason: string }[]
+}
+
 export interface SpotifyPlaylistTrackItem {
   added_at: string
   track: SpotifyTrack | null
@@ -2123,7 +2129,13 @@ export const api = {
     addItem: (id: number, data: AddFairylistItemInput) => fetchApi<FairylistItem>('/fairylists/' + id + '/items', { method: 'POST', body: JSON.stringify(data) }),
     removeItem: (fairylistId: number, itemId: number) => fetchApi<unknown>('/fairylists/' + fairylistId + '/items/' + itemId, { method: 'DELETE' }),
     reorder: (id: number, ids: number[]) => fetchApi<unknown>('/fairylists/' + id + '/items/reorder', { method: 'PUT', body: JSON.stringify({ ids }) }),
-    play: (id: number, speaker: string) => fetchApi<unknown>('/fairylists/' + id + '/play/' + encodeURIComponent(speaker), { method: 'POST' }),
+    play: (id: number, speaker: string) =>
+      fetchApi<FairylistQueueResult>('/fairylists/' + id + '/play/' + encodeURIComponent(speaker), { method: 'POST' }),
+    queue: (id: number, speaker: string, mode: 'append' | 'next') =>
+      fetchApi<FairylistQueueResult>(
+        '/fairylists/' + id + '/queue/' + encodeURIComponent(speaker),
+        { method: 'POST', body: JSON.stringify({ mode }) },
+      ),
   },
 
   favourites: {

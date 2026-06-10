@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AlertTriangle, Radio, RefreshCw } from 'lucide-react'
 import { api } from '@/lib/api'
+import { invalidateQueue } from '@/lib/queueCache'
 import type { SonosRadioStation } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -74,7 +75,7 @@ function RadioStationRow({
     mutationFn: () => api.sonos.playNext(speaker!, station.uri),
     onSuccess: () => {
       toast({ message: `${station.title} will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: `Failed to queue ${station.title}`, type: 'error' }),
   })
@@ -83,7 +84,7 @@ function RadioStationRow({
     mutationFn: () => api.sonos.addToQueue(speaker!, station.uri),
     onSuccess: () => {
       toast({ message: `Added "${station.title}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })

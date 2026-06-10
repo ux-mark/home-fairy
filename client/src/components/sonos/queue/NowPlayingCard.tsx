@@ -4,6 +4,7 @@ import { useMutation } from '@tanstack/react-query'
 import { Music } from 'lucide-react'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
 import { api } from '@/lib/api'
+import { toSpotifyUri } from '@/lib/normalizeUri'
 import { useToast } from '@/hooks/useToast'
 import { cn } from '@/lib/utils'
 import { ArtworkImage } from '../ArtworkImage'
@@ -34,8 +35,7 @@ function formatSeconds(totalSeconds: number | undefined): string {
 }
 
 function sourceLabel(uri: string | undefined): string {
-  if (!uri) return 'Library'
-  return uri.startsWith('spotify:') ? 'Spotify' : 'Library'
+  return toSpotifyUri(uri) ? 'Spotify' : 'Library'
 }
 
 // ── NowPlayingCard ────────────────────────────────────────────────────────────
@@ -48,14 +48,16 @@ export const NowPlayingCard = forwardRef<HTMLDivElement, NowPlayingCardProps>(
     const navigate = useNavigate()
     const { toast } = useToast()
 
-    const source: 'spotify' | 'nas' = item?.uri?.startsWith('spotify:') ? 'spotify' : 'nas'
+    const spotifyUri = toSpotifyUri(item?.uri)
+    const source: 'spotify' | 'nas' = spotifyUri ? 'spotify' : 'nas'
+    const sourceUri = spotifyUri ?? item?.uri ?? ''
 
     const addToFavourites = useMutation({
       mutationFn: async () => {
         if (!item) return
         await api.favourites.add({
           source,
-          source_uri: item.uri,
+          source_uri: sourceUri,
           title: item.title,
           album_art_uri: item.albumArtUri ?? undefined,
         })
@@ -177,14 +179,14 @@ export const NowPlayingCard = forwardRef<HTMLDivElement, NowPlayingCardProps>(
               removeLabel="Remove from queue"
               fairylistTrack={{
                 source,
-                source_uri: item.uri,
+                source_uri: sourceUri,
                 title: item.title,
                 artist: item.artist,
                 album_art_uri: item.albumArtUri ?? undefined,
               }}
               spotifyTrack={
-                item.uri?.startsWith('spotify:')
-                  ? { trackUri: item.uri, trackName: item.title }
+                spotifyUri
+                  ? { trackUri: spotifyUri, trackName: item.title }
                   : undefined
               }
             />

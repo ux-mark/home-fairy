@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, Heart, ImageOff, ListEnd, ListStart, Loader2, Play, Pause } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { api } from '@/lib/api'
+import { invalidateQueue } from '@/lib/queueCache'
+import { toSpotifyUri } from '@/lib/normalizeUri'
 import type { SonosNowPlayingEntry } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 
@@ -56,7 +58,11 @@ export default function SonosTrackPage() {
     queryFn: api.favourites.list,
     staleTime: 60_000,
   })
-  const existingFavourite = favourites?.find(f => f.source_uri === uri)
+  // Queue URIs come wrapped (x-sonos-spotify:…) — store the bare spotify: form
+  // and match either form against existing favourites.
+  const spotifyUri = toSpotifyUri(uri)
+  const favouriteUri = spotifyUri ?? uri
+  const existingFavourite = favourites?.find(f => f.source_uri === favouriteUri || f.source_uri === uri)
   const isFavourited = addedToFavourites || !!existingFavourite
 
   // Mutations
@@ -75,8 +81,8 @@ export default function SonosTrackPage() {
   const favouriteMutation = useMutation({
     mutationFn: () =>
       api.favourites.add({
-        source: uri.startsWith('spotify:') ? 'spotify' : 'nas',
-        source_uri: uri,
+        source: spotifyUri ? 'spotify' : 'nas',
+        source_uri: favouriteUri,
         title: track?.title ?? 'Unknown track',
         album_art_uri: track?.albumArtUri || undefined,
       }),
@@ -101,7 +107,7 @@ export default function SonosTrackPage() {
   const playNextMutation = useMutation({
     mutationFn: () => api.sonos.playNext(speaker, uri),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sonos', 'queue', speaker] })
+      invalidateQueue(queryClient, speaker)
       toast({ message: 'Added to play next' })
     },
     onError: () => toast({ message: 'Could not add to queue', type: 'error' }),
@@ -110,7 +116,7 @@ export default function SonosTrackPage() {
   const addToQueueMutation = useMutation({
     mutationFn: () => api.sonos.addToQueue(speaker, uri),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sonos', 'queue', speaker] })
+      invalidateQueue(queryClient, speaker)
       toast({ message: 'Added to end of queue' })
     },
     onError: () => toast({ message: 'Could not add to queue', type: 'error' }),

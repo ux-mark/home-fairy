@@ -16,6 +16,7 @@ import {
   User,
 } from 'lucide-react'
 import { api } from '@/lib/api'
+import { invalidateQueue } from '@/lib/queueCache'
 import type {
   SonosLibraryTrack,
   SonosSearchArtist,
@@ -70,7 +71,7 @@ function TrackRow({
     mutationFn: () => api.sonos.addToQueue(speaker!, track.uri),
     onSuccess: () => {
       toast({ message: `Added "${track.title}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
@@ -79,7 +80,7 @@ function TrackRow({
     mutationFn: () => api.sonos.playNext(speaker!, track.uri),
     onSuccess: () => {
       toast({ message: `"${track.title}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -892,7 +893,7 @@ function NasAlbumRow({
     mutationFn: () => api.sonos.playAlbumNext(speaker!, album.objectId, 'nas'),
     onSuccess: () => {
       toast({ message: `"${album.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -901,7 +902,7 @@ function NasAlbumRow({
     mutationFn: () => api.sonos.addAlbumToQueue(speaker!, album.objectId, 'nas'),
     onSuccess: () => {
       toast({ message: `Added "${album.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
@@ -1160,7 +1161,7 @@ function SearchAlbumRow({
     mutationFn: () => api.sonos.playAlbumNext(speaker!, objectId, 'nas'),
     onSuccess: () => {
       toast({ message: `"${album.name}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })
@@ -1169,7 +1170,7 @@ function SearchAlbumRow({
     mutationFn: () => api.sonos.addAlbumToQueue(speaker!, objectId, 'nas'),
     onSuccess: () => {
       toast({ message: `Added "${album.name}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })

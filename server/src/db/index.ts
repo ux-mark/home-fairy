@@ -1,6 +1,7 @@
 import Database, { type Database as DatabaseType } from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
+import { classifySourceUri } from '../lib/source-uri.js'
 
 const dbPath = process.env.FAIRY_DB_PATH || './data/thefairies.sqlite'
 const dbDir = path.dirname(dbPath)
@@ -712,6 +713,43 @@ export function initDb(): void {
   const favCols = db.prepare("PRAGMA table_info('user_favourites')").all() as { name: string }[]
   if (!favCols.map(c => c.name).includes('artist')) {
     db.exec('ALTER TABLE user_favourites ADD COLUMN artist TEXT DEFAULT NULL')
+  }
+
+  // Migration: fairylist_items saved from the queue stored Sonos-encoded
+  // Spotify URIs (x-sonos-spotify:…) with source='nas'. Reclassify the rows we
+  // can provably decode to source='spotify' with the canonical spotify: URI.
+  // Idempotent — the LIKE filter matches nothing once rows are normalised.
+  const badSpotifyItems = db.prepare(
+    "SELECT id, fairylist_id, source_uri FROM fairylist_items WHERE source_uri LIKE 'x-sonos-spotify:%'",
+  ).all() as Array<{ id: number; fairylist_id: number; source_uri: string }>
+  if (badSpotifyItems.length > 0) {
+    const findDupe = db.prepare(
+      'SELECT id FROM fairylist_items WHERE fairylist_id = ? AND source = ? AND source_uri = ? AND id != ?',
+    )
+    const updateItem = db.prepare('UPDATE fairylist_items SET source = ?, source_uri = ? WHERE id = ?')
+    const deleteItem = db.prepare('DELETE FROM fairylist_items WHERE id = ?')
+    const migrateItems = db.transaction(() => {
+      let fixed = 0
+      let deduped = 0
+      for (const row of badSpotifyItems) {
+        const { kind, source, normalizedUri } = classifySourceUri(row.source_uri)
+        if (kind !== 'spotify') continue // only touch rows we can provably classify
+        // UNIQUE(fairylist_id, source, source_uri) — if the normalised row
+        // already exists, drop this duplicate instead of colliding.
+        if (findDupe.get(row.fairylist_id, source, normalizedUri, row.id)) {
+          deleteItem.run(row.id)
+          deduped++
+        } else {
+          updateItem.run(source, normalizedUri, row.id)
+          fixed++
+        }
+      }
+      return { fixed, deduped }
+    })
+    const { fixed, deduped } = migrateItems()
+    if (fixed > 0 || deduped > 0) {
+      console.log(`[db] Normalised ${fixed} fairylist Spotify URIs (${deduped} duplicates removed)`)
+    }
   }
 
   // Seed defaults for a fresh database

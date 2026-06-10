@@ -14,10 +14,12 @@ interface PendingAction {
   onUndo: () => void
 }
 
-interface UseUndoableQueueActionResult {
+export interface UseUndoableQueueActionResult {
   pendingAction: PendingAction | null
   scheduleAction: (label: string, onCommit: () => void, onUndo: () => void) => void
   triggerUndo: () => void
+  /** Disarm the pending undo without committing or undoing (e.g. the action itself failed). */
+  cancelAction: () => void
 }
 
 export function useUndoableQueueAction(windowMs = 5000): UseUndoableQueueActionResult {
@@ -49,5 +51,13 @@ export function useUndoableQueueAction(windowMs = 5000): UseUndoableQueueActionR
     setPendingAction(null)
   }
 
-  return { pendingAction, scheduleAction, triggerUndo }
+  function cancelAction() {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    setPendingAction(null)
+  }
+
+  return { pendingAction, scheduleAction, triggerUndo, cancelAction }
 }

@@ -11,7 +11,10 @@ import {
 import { arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { api } from '@/lib/api'
 import type { FairylistItem } from '@/lib/api'
+import { invalidateQueue } from '@/lib/queueCache'
 import { useToast } from '@/hooks/useToast'
+import { useUndoableQueueAction } from '@/hooks/useUndoableQueueAction'
+import { useFairylistPlay, skippedSuffix } from '@/hooks/useFairylistPlay'
 
 // ── useFairylistEditor ────────────────────────────────────────────────────────
 
@@ -115,10 +118,27 @@ export function useFairylistEditor({
     },
   })
 
-  const playMutation = useMutation({
-    mutationFn: () => api.fairylists.play(fairylistId, effectiveSpeaker!),
-    onSuccess: () => toast({ message: 'Playing Fairylist' }),
-    onError: () => toast({ message: 'Could not play Fairylist', type: 'error' }),
+  const undo = useUndoableQueueAction()
+  const playWithUndo = useFairylistPlay(effectiveSpeaker, undo)
+
+  const playMutation = {
+    ...playWithUndo,
+    mutate: () => playWithUndo.mutate({ id: fairylistId, name: data?.fairylist.name ?? 'Fairylist' }),
+  }
+
+  const queueMutation = useMutation({
+    mutationFn: (mode: 'append' | 'next') => api.fairylists.queue(fairylistId, effectiveSpeaker!, mode),
+    onSuccess: (result, mode) => {
+      const name = data?.fairylist.name ?? 'Fairylist'
+      const suffix = skippedSuffix(result?.skipped)
+      toast({
+        message: mode === 'next'
+          ? `"${name}" will play next${suffix}`
+          : `Added "${name}" to queue${suffix}`,
+      })
+      invalidateQueue(queryClient, effectiveSpeaker)
+    },
+    onError: () => toast({ message: 'Could not queue Fairylist', type: 'error' }),
   })
 
   function handleDragEnd(event: DragEndEvent) {
@@ -177,6 +197,9 @@ export function useFairylistEditor({
     removeMutation,
     reorderMutation,
     playMutation,
+    queueMutation,
+    // Undo (for the queue-replacing Play)
+    undo,
     // Handlers
     handleSaveName,
     startEditing,

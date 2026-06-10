@@ -6,6 +6,7 @@ import { useSortable } from '@dnd-kit/sortable'
 import { Check, GripVertical, Play, Trash2 } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosQueueItem } from '@/lib/api'
+import { toSpotifyUri } from '@/lib/normalizeUri'
 import { useToast } from '@/hooks/useToast'
 import { useSwipeGesture } from '@/hooks/useSwipeGesture'
 import { cn } from '@/lib/utils'
@@ -94,7 +95,11 @@ export function QueueItemRow({
     transition,
   }
 
-  const source = item.uri?.startsWith('spotify:') ? 'spotify' : 'nas'
+  // Queue URIs come wrapped (x-sonos-spotify:spotify%3atrack%3a…) — classify
+  // via the normalised form and store the bare spotify: URI where applicable.
+  const spotifyUri = toSpotifyUri(item.uri)
+  const source = spotifyUri ? 'spotify' : 'nas'
+  const sourceUri = spotifyUri ?? item.uri
 
   const playNow = useMutation({
     mutationFn: () => api.sonos.seekToTrack(speaker, index + 1),
@@ -112,7 +117,7 @@ export function QueueItemRow({
     mutationFn: () =>
       api.favourites.add({
         source,
-        source_uri: item.uri,
+        source_uri: sourceUri,
         title: item.title,
         album_art_uri: item.albumArtUri ?? undefined,
       }),
@@ -290,14 +295,14 @@ export function QueueItemRow({
               removeLabel="Remove from queue"
               fairylistTrack={{
                 source,
-                source_uri: item.uri,
+                source_uri: sourceUri,
                 title: item.title,
                 artist: item.artist,
                 album_art_uri: item.albumArtUri ?? undefined,
               }}
               spotifyTrack={
-                item.uri?.startsWith('spotify:')
-                  ? { trackUri: item.uri, trackName: item.title }
+                spotifyUri
+                  ? { trackUri: spotifyUri, trackName: item.title }
                   : undefined
               }
             />

@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
+import { invalidateQueue } from '@/lib/queueCache'
 import type { SonosLibraryTrack } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { MusicListItem } from '../MusicListItem'
@@ -30,7 +31,7 @@ export function NasTrackRow({
     mutationFn: () => api.sonos.addToQueue(speaker!, track.uri),
     onSuccess: () => {
       toast({ message: `Added "${track.title}" to queue` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
@@ -39,7 +40,7 @@ export function NasTrackRow({
     mutationFn: () => api.sonos.playNext(speaker!, track.uri),
     onSuccess: () => {
       toast({ message: `"${track.title}" will play next` })
-      queryClient.invalidateQueries({ queryKey: ['sonos-queue', speaker] })
+      invalidateQueue(queryClient, speaker)
     },
     onError: () => toast({ message: 'Failed to play next', type: 'error' }),
   })

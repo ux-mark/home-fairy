@@ -5,15 +5,17 @@ import { AlertTriangle, ArrowUp } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosQueueItem, SonosPlaybackState } from '@/lib/api'
 import { useQueueSync } from '@/hooks/useQueueSync'
-import { normalizeUri } from '@/lib/normalizeUri'
+import { normalizeUri, toSpotifyUri } from '@/lib/normalizeUri'
 import { useQueueSelection } from '@/hooks/useQueueSelection'
 import { useUndoableQueueAction } from '@/hooks/useUndoableQueueAction'
+import { useQueueClear } from '@/hooks/useQueueClear'
 import { useToast } from '@/hooks/useToast'
 import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { QueueEmptyState } from './QueueEmptyState'
 import { QueueBulkActionBar } from './QueueBulkActionBar'
 import { QueueHeader } from './QueueHeader'
+import { UndoSnackbar } from './UndoSnackbar'
 import { NowPlayingCard } from './queue/NowPlayingCard'
 import { UpNextWindow } from './queue/UpNextWindow'
 import { PlayedHistorySection } from './queue/PlayedHistorySection'
@@ -47,6 +49,7 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
 
   const selection = useQueueSelection()
   const undo = useUndoableQueueAction()
+  const handleClearRequest = useQueueClear(speaker, undo)
 
   const [swipedIndex, setSwipedIndex] = useState<number | null>(null)
   const [showJumpPill, setShowJumpPill] = useState(false)
@@ -190,14 +193,15 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
       if (!queue) return
       const tracks = indices.map(i => queue[i]).filter(Boolean)
       await Promise.all(
-        tracks.map(t =>
-          api.favourites.add({
-            source: t.uri?.startsWith('spotify:') ? 'spotify' : 'nas',
-            source_uri: t.uri,
+        tracks.map(t => {
+          const spotifyUri = toSpotifyUri(t.uri)
+          return api.favourites.add({
+            source: spotifyUri ? 'spotify' : 'nas',
+            source_uri: spotifyUri ?? t.uri,
             title: t.title,
             album_art_uri: t.albumArtUri ?? undefined,
-          }),
-        ),
+          })
+        }),
       )
     },
     onSuccess: () => {
@@ -232,44 +236,6 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
       arrayMove([...queue], from, to),
     )
     reorderMutation.mutate({ from, to })
-  }
-
-  function handleClearRequest() {
-    if (!queue || queue.length === 0) return
-    const snapshot = [...queue]
-    const snapshotUris = snapshot.map(t => t.uri).filter(Boolean)
-
-    // Optimistic client clear
-    queryClient.setQueryData<SonosQueueItem[]>(queueKey, [])
-
-    // Fire the server clear immediately — the user expects the speaker to stop
-    // queueing up these tracks right away, not after a 5s grace period.
-    api.sonos.clearQueue(speaker).catch(() => {
-      toast({ message: 'Could not clear queue', type: 'error' })
-      queryClient.setQueryData<SonosQueueItem[]>(queueKey, snapshot)
-    })
-
-    undo.scheduleAction(
-      `Queue cleared · ${snapshot.length} ${snapshot.length === 1 ? 'track' : 'tracks'}`,
-      // Commit: nothing to do — the clear already happened.
-      () => {},
-      // Undo: restore the client state and re-add everything on the server.
-      () => {
-        queryClient.setQueryData<SonosQueueItem[]>(queueKey, snapshot)
-        if (snapshotUris.length > 0) {
-          api.sonos
-            .restoreQueue(speaker, snapshotUris)
-            .then(() => {
-              toast({ message: `Restored ${snapshotUris.length} tracks` })
-              queryClient.invalidateQueries({ queryKey: queueKey })
-            })
-            .catch(() => {
-              toast({ message: 'Could not restore queue', type: 'error' })
-              queryClient.invalidateQueries({ queryKey: queueKey })
-            })
-        }
-      },
-    )
   }
 
   function handleBulkRemove() {
@@ -480,25 +446,11 @@ export function QueueView({ speaker, open, onClose, currentTrackUri, playbackSta
 
         {/* Undo snackbar — fixed to bottom of panel, above scroll area */}
         {undo.pendingAction && (
-          <div
-            className={cn(
-              'absolute bottom-16 left-1/2 -translate-x-1/2 z-30',
-              'flex items-center gap-3 rounded-full px-4 py-2.5 shadow-lg',
-              'bg-slate-800 border border-slate-700',
-            )}
-            role="status"
-            aria-live="polite"
-          >
-            <span className="text-sm text-slate-200 whitespace-nowrap">
-              {undo.pendingAction.label}
-            </span>
-            <button
-              onClick={undo.triggerUndo}
-              className="text-sm font-semibold text-fairy-400 hover:text-fairy-300 transition-colors focus-visible:outline-2 focus-visible:outline-fairy-500 rounded"
-            >
-              Undo
-            </button>
-          </div>
+          <UndoSnackbar
+            label={undo.pendingAction.label}
+            onUndo={undo.triggerUndo}
+            className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30"
+          />
         )}
 
         {/* Jump to now-playing pill */}
