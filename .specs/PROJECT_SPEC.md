@@ -12,7 +12,7 @@ Home Fairy is a home automation control system with a React frontend and Express
 - **Process manager (production)**: PM2
 - **External services (managed by PM2)**:
   - `kasa-sidecar` — Python FastAPI sidecar for Kasa device control (port 3002, source: `server/kasa/`)
-  - `sonos-http-api` — [node-sonos-http-api](https://github.com/jishi/node-sonos-http-api) for Sonos speaker control (port 3003, installed at `~/node-sonos-http-api/`)
+  - `sonos-http-api` — [node-sonos-http-api](https://github.com/jishi/node-sonos-http-api) for Sonos speaker control (port 3003, installed at `~/node-sonos-http-api/`). Cloned pristine from jishi upstream; `deploy-to-pi.sh` then copies the `*.patch` files from `home-fairy/sonos-patches/` into the install and wires `patch-package` so the patches re-apply on every `npm install`. See `sonos-patches/README.md` for the patch's history and what to do if upstream changes break it.
 
 ## Project Structure
 ```

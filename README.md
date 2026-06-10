@@ -24,7 +24,7 @@ Three PM2-managed processes run on the Pi:
 
 - **home-fairy** (port 3001) -- Express server with React SPA, SQLite database, Socket.io for real-time updates
 - **kasa-sidecar** (port 3002) -- Python FastAPI service using python-kasa for direct local Kasa device communication
-- **sonos-http-api** (port 3003) -- [node-sonos-http-api](https://github.com/jishi/node-sonos-http-api) for Sonos speaker control
+- **sonos-http-api** (port 3003) -- [node-sonos-http-api](https://github.com/jishi/node-sonos-http-api) for Sonos speaker control. `deploy-to-pi.sh` applies the patches in `sonos-patches/` to this clone via `patch-package` — see `sonos-patches/README.md` for what they fix and why.
 
 ## Prerequisites
 
