@@ -2,7 +2,8 @@ import { Router, type Request, type Response } from 'express'
 import { z } from 'zod'
 import axios from 'axios'
 import { createHash } from 'crypto'
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'fs'
+import { mkdirSync, readFileSync, readdirSync, unlinkSync } from 'fs'
+import { readFile, writeFile, readdir, stat, unlink, utimes } from 'fs/promises'
 import { join } from 'path'
 import { db, getAll, getOne, run } from '../db/index.js'
 import { sonosClient } from '../lib/sonos-client.js'
@@ -69,13 +70,79 @@ function sweepStaleArtCache(): void {
   }
 }
 
+/**
+ * Size-capped LRU eviction. The cache previously grew without bound (489MB /
+ * 9 500 files at its worst — larger than the database). Cache hits touch the
+ * image's mtime, so sorting by mtime ascending evicts least-recently-used
+ * first. Evicts down to 90% of the cap so it doesn't run again immediately.
+ */
+const ART_CACHE_MAX_BYTES = 100 * 1024 * 1024
+const ART_CACHE_LOW_WATER = ART_CACHE_MAX_BYTES * 0.9
+let evictionRunning = false
+
+async function evictArtCacheOverCap(): Promise<void> {
+  if (evictionRunning) return
+  evictionRunning = true
+  try {
+    const entries: Array<{ imgPath: string; metaPath: string; bytes: number; mtimeMs: number }> = []
+    let totalBytes = 0
+    for (const file of await readdir(ART_CACHE_DIR)) {
+      if (file.endsWith('.meta.json')) continue
+      const imgPath = join(ART_CACHE_DIR, file)
+      try {
+        const s = await stat(imgPath)
+        if (!s.isFile()) continue
+        entries.push({ imgPath, metaPath: `${imgPath}.meta.json`, bytes: s.size, mtimeMs: s.mtimeMs })
+        totalBytes += s.size
+      } catch { /* raced with a delete — skip */ }
+    }
+    if (totalBytes <= ART_CACHE_MAX_BYTES) return
+
+    entries.sort((a, b) => a.mtimeMs - b.mtimeMs)
+    let evicted = 0
+    for (const entry of entries) {
+      if (totalBytes <= ART_CACHE_LOW_WATER) break
+      try { await unlink(entry.imgPath) } catch { /* already gone */ }
+      try { await unlink(entry.metaPath) } catch { /* already gone */ }
+      totalBytes -= entry.bytes
+      evicted++
+    }
+    console.log(
+      `[ArtCache] evicted ${evicted} LRU entries; cache now ~${Math.round(totalBytes / 1024 / 1024)}MB`,
+    )
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    console.warn('[ArtCache] eviction failed:', msg)
+  } finally {
+    evictionRunning = false
+  }
+}
+
+// Re-check the cap opportunistically once enough new bytes have been written.
+const EVICTION_CHECK_AFTER_BYTES = 10 * 1024 * 1024
+let bytesWrittenSinceCheck = 0
+
+function noteArtCacheWrite(bytes: number): void {
+  bytesWrittenSinceCheck += bytes
+  if (bytesWrittenSinceCheck >= EVICTION_CHECK_AFTER_BYTES) {
+    bytesWrittenSinceCheck = 0
+    void evictArtCacheOverCap()
+  }
+}
+
 // Defer the sweep until after the registry has had time to discover speakers.
 // We retry once if the first attempt finds no speakers (registry still warming).
+// The LRU eviction pass follows the sweep either way — it doesn't need the
+// registry, just the directory.
 setTimeout(() => {
   if (speakerRegistry.list().length > 0) {
     sweepStaleArtCache()
+    void evictArtCacheOverCap()
   } else {
-    setTimeout(sweepStaleArtCache, 30_000)
+    setTimeout(() => {
+      sweepStaleArtCache()
+      void evictArtCacheOverCap()
+    }, 30_000)
   }
 }, 10_000)
 
@@ -207,17 +274,22 @@ router.get('/art-proxy', async (req: Request, res: Response) => {
 
   const { imgPath, metaPath } = artCachePath(url)
 
-  // Serve from disk cache if both files exist
-  if (existsSync(imgPath) && existsSync(metaPath)) {
-    try {
-      const meta = JSON.parse(readFileSync(metaPath, 'utf-8')) as { contentType?: string }
+  // Serve from disk cache if present. Async I/O — this handler used to do
+  // sync reads, blocking the event loop on SD-card latency per request.
+  try {
+    const [metaRaw, imgStat] = await Promise.all([readFile(metaPath, 'utf-8'), stat(imgPath)])
+    if (imgStat.isFile()) {
+      const meta = JSON.parse(metaRaw) as { contentType?: string }
       res.set('Content-Type', meta.contentType || 'image/jpeg')
       res.set('Cache-Control', 'public, max-age=31536000, immutable')
       res.sendFile(imgPath)
+      // Touch mtime so LRU eviction sees this entry as recently used
+      const now = new Date()
+      void utimes(imgPath, now, now).catch(() => {})
       return
-    } catch {
-      // Corrupted cache entry — fall through to re-fetch
     }
+  } catch {
+    // Missing or corrupted cache entry — fall through to re-fetch
   }
 
   // Fetch from upstream with a generous timeout for slow NAS devices
@@ -238,8 +310,9 @@ router.get('/art-proxy', async (req: Request, res: Response) => {
 
     // Write to disk cache (don't block response on failure)
     try {
-      writeFileSync(imgPath, upstream.data)
-      writeFileSync(metaPath, JSON.stringify({ contentType, url, cachedAt: new Date().toISOString() }))
+      await writeFile(imgPath, upstream.data)
+      await writeFile(metaPath, JSON.stringify({ contentType, url, cachedAt: new Date().toISOString() }))
+      noteArtCacheWrite(upstream.data.byteLength)
     } catch {
       // Cache write failed — not critical, serve the image anyway
     }
