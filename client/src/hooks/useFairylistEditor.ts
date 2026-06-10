@@ -13,6 +13,8 @@ import { api } from '@/lib/api'
 import type { FairylistItem } from '@/lib/api'
 import { invalidateQueue } from '@/lib/queueCache'
 import { useToast } from '@/hooks/useToast'
+import { useUndoableQueueAction } from '@/hooks/useUndoableQueueAction'
+import { useFairylistPlay, skippedSuffix } from '@/hooks/useFairylistPlay'
 
 // ── useFairylistEditor ────────────────────────────────────────────────────────
 
@@ -116,21 +118,24 @@ export function useFairylistEditor({
     },
   })
 
-  const playMutation = useMutation({
-    mutationFn: () => api.fairylists.play(fairylistId, effectiveSpeaker!),
-    onSuccess: () => {
-      const name = data?.fairylist.name
-      toast({ message: name ? `Playing "${name}" — replaced queue` : 'Playing Fairylist — replaced queue' })
-      invalidateQueue(queryClient, effectiveSpeaker)
-    },
-    onError: () => toast({ message: 'Could not play Fairylist', type: 'error' }),
-  })
+  const undo = useUndoableQueueAction()
+  const playWithUndo = useFairylistPlay(effectiveSpeaker, undo)
+
+  const playMutation = {
+    ...playWithUndo,
+    mutate: () => playWithUndo.mutate({ id: fairylistId, name: data?.fairylist.name ?? 'Fairylist' }),
+  }
 
   const queueMutation = useMutation({
     mutationFn: (mode: 'append' | 'next') => api.fairylists.queue(fairylistId, effectiveSpeaker!, mode),
-    onSuccess: (_data, mode) => {
+    onSuccess: (result, mode) => {
       const name = data?.fairylist.name ?? 'Fairylist'
-      toast({ message: mode === 'next' ? `"${name}" will play next` : `Added "${name}" to queue` })
+      const suffix = skippedSuffix(result?.skipped)
+      toast({
+        message: mode === 'next'
+          ? `"${name}" will play next${suffix}`
+          : `Added "${name}" to queue${suffix}`,
+      })
       invalidateQueue(queryClient, effectiveSpeaker)
     },
     onError: () => toast({ message: 'Could not queue Fairylist', type: 'error' }),
@@ -193,6 +198,8 @@ export function useFairylistEditor({
     reorderMutation,
     playMutation,
     queueMutation,
+    // Undo (for the queue-replacing Play)
+    undo,
     // Handlers
     handleSaveName,
     startEditing,

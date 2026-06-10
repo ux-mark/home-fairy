@@ -426,31 +426,12 @@ function RadioStationRow({
   station: SonosRadioStation
   speaker: string | null
 }) {
-  const queryClient = useQueryClient()
   const { toast } = useToast()
 
   const play = useMutation({
     mutationFn: () => api.sonos.playFavourite(speaker!, station.title),
     onSuccess: () => toast({ message: `Playing ${station.title}` }),
     onError: () => toast({ message: `Failed to play ${station.title}`, type: 'error' }),
-  })
-
-  const playNext = useMutation({
-    mutationFn: () => api.sonos.playNext(speaker!, station.uri),
-    onSuccess: () => {
-      toast({ message: `${station.title} will play next` })
-      invalidateQueue(queryClient, speaker)
-    },
-    onError: () => toast({ message: `Failed to queue ${station.title}`, type: 'error' }),
-  })
-
-  const addToQueue = useMutation({
-    mutationFn: () => api.sonos.addToQueue(speaker!, station.uri),
-    onSuccess: () => {
-      toast({ message: `Added "${station.title}" to queue` })
-      invalidateQueue(queryClient, speaker)
-    },
-    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
 
   const addToFavourites = useMutation({
@@ -475,9 +456,9 @@ function RadioStationRow({
       playPending={play.isPending}
       disabled={!speaker}
       menuProps={{
+        // Radio streams can't sit on a Sonos queue — omit the queue actions
+        // entirely rather than offer ones that always fail.
         label: station.title,
-        onPlayNext: () => playNext.mutate(),
-        onAddToQueue: () => addToQueue.mutate(),
         onAddToFavourites: () => addToFavourites.mutate(),
         fairylistTrack: {
           source: 'radio',

@@ -28,6 +28,7 @@ import { ArtworkImage } from './ArtworkImage'
 import { SourceBadge } from './SourceBadge'
 import { MusicItemMenu } from './MusicItemMenu'
 import { FairylistActionsMenu } from './FairylistActionsMenu'
+import { UndoSnackbar } from './UndoSnackbar'
 import { cn } from '@/lib/utils'
 import { useFairylistEditor } from '@/hooks/useFairylistEditor'
 
@@ -243,6 +244,7 @@ export function FairylistDetail({ fairylistId, onBack, effectiveSpeaker }: Fairy
     removeMutation,
     playMutation,
     queueMutation,
+    undo,
     handleSaveName,
     startEditing,
   } = useFairylistEditor({ fairylistId, effectiveSpeaker, onDeleteSuccess: onBack })
@@ -371,7 +373,7 @@ export function FairylistDetail({ fairylistId, onBack, effectiveSpeaker }: Fairy
           onClick={() => playMutation.mutate()}
           aria-label={`Play all tracks in ${fairylist.name}`}
           className={cn(
-            'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg',
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-lg',
             'bg-fairy-500 text-white transition-colors hover:bg-fairy-400',
             'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
             'disabled:opacity-40',
@@ -391,7 +393,6 @@ export function FairylistDetail({ fairylistId, onBack, effectiveSpeaker }: Fairy
           onAddToQueue={() => queueMutation.mutate('append')}
           onPlayNext={() => queueMutation.mutate('next')}
           onDelete={() => setShowDeleteConfirm(true)}
-          buttonClassName="h-9 w-9"
         />
       </div>
 
@@ -436,6 +437,15 @@ export function FairylistDetail({ fairylistId, onBack, effectiveSpeaker }: Fairy
           To add more tracks, search in Browse and use the track menu to add to this Fairylist.
         </p>
       </div>
+
+      {/* Undo snackbar for the queue-replacing Play */}
+      {undo.pendingAction && (
+        <UndoSnackbar
+          label={undo.pendingAction.label}
+          onUndo={undo.triggerUndo}
+          className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2"
+        />
+      )}
 
       {/* Delete confirmation dialog */}
       <Dialog.Root open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>

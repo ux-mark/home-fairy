@@ -1,5 +1,5 @@
 import { useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation } from '@tanstack/react-query'
 import { useWindowVirtualizer } from '@tanstack/react-virtual'
 import {
   AlertTriangle,
@@ -8,7 +8,6 @@ import {
   RefreshCw,
 } from 'lucide-react'
 import { api } from '@/lib/api'
-import { invalidateQueue } from '@/lib/queueCache'
 import type { SonosRadioStation } from '@/lib/api'
 import { useToast } from '@/hooks/useToast'
 import { useDebounce } from '@/hooks/useBrowseShared'
@@ -89,31 +88,12 @@ function StationRow({
   onPick?: (station: SonosRadioStation) => void
   selectedTitle?: string
 }) {
-  const queryClient = useQueryClient()
   const { toast } = useToast()
 
   const play = useMutation({
     mutationFn: () => api.sonos.playFavourite(speaker!, station.title),
     onSuccess: () => toast({ message: `Playing ${station.title}` }),
     onError: () => toast({ message: `Failed to play ${station.title}`, type: 'error' }),
-  })
-
-  const playNext = useMutation({
-    mutationFn: () => api.sonos.playNext(speaker!, station.uri),
-    onSuccess: () => {
-      toast({ message: `${station.title} will play next` })
-      invalidateQueue(queryClient, speaker)
-    },
-    onError: () => toast({ message: `Failed to queue ${station.title}`, type: 'error' }),
-  })
-
-  const addToQueue = useMutation({
-    mutationFn: () => api.sonos.addToQueue(speaker!, station.uri),
-    onSuccess: () => {
-      toast({ message: `Added "${station.title}" to queue` })
-      invalidateQueue(queryClient, speaker)
-    },
-    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
   })
 
   const addToFavourites = useMutation({
@@ -186,11 +166,10 @@ function StationRow({
           <Play className="h-4 w-4" aria-hidden="true" />
         </button>
 
+        {/* Radio streams can't sit on a Sonos queue — no queue actions here */}
         <MusicItemMenu
           label={station.title}
           disabled={!speaker}
-          onPlayNext={() => playNext.mutate()}
-          onAddToQueue={() => addToQueue.mutate()}
           onAddToFavourites={() => addToFavourites.mutate()}
           fairylistTrack={{
             source: 'radio',

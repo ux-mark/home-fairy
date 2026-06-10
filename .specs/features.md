@@ -1,7 +1,7 @@
 # Feature Overview
 
 > Written from the user's perspective — what you can do, not how it's built.
-> Updated: 2026-03-29
+> Updated: 2026-06-10
 
 ---
 
@@ -341,6 +341,26 @@ Leaving Browse and coming back within the same session (via the Browse nav link,
 **Status**: available
 
 A user-curated list of favourite tracks, albums, playlists, and radio stations drawn from any source. Tap to play instantly. Drag to reorder. Add items from the Browse tab. Remove items with a swipe or long-press. Source badges indicate where each item comes from (NAS, Spotify, Radio, Sonos).
+
+### Fairylist Whole-List Queueing
+**Status**: available
+
+Every Fairylist row (and the Fairylist detail header) has a menu with whole-list actions: "Add to queue" appends every track to the speaker's queue, and "Play next" slots them all in straight after the current track. Tracks that can't be queued (such as radio streams) are skipped, and the confirmation message tells you how many were skipped.
+
+### Fairylist Play (Replaces the Queue, Undoable)
+**Status**: available
+
+Tapping Play on a Fairylist replaces the speaker's queue with the full list and starts playing. Because that wipes whatever was queued, a 5-second undo snackbar appears — tap Undo and your previous queue is put back exactly as it was. If the queue was already empty, you just get a plain confirmation.
+
+### One-Tap Queue Clear with Undo
+**Status**: available
+
+The inline "Up next" header on the Now Playing page has a Clear button that empties the speaker's queue immediately — the old confirmation dialogue is gone. A 5-second undo snackbar appears instead; tap Undo to restore the cleared tracks. The full queue view's Clear button behaves the same way.
+
+### Add to Queue / Play Next Across Sources
+**Status**: available
+
+"Add to queue" and "Play next" now work for both Spotify and NAS items, including playlists saved from the queue. Radio stations can't sit on a Sonos queue, so those options aren't offered on radio rows.
 
 ---
 

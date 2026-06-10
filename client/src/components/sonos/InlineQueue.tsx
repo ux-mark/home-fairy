@@ -135,6 +135,15 @@ export function InlineQueue({
           <Music2 className="h-4 w-4" aria-hidden="true" />
           Queue is empty — start playing something to build it up.
         </div>
+        {/* Undo snackbar must survive the optimistic clear-to-empty, or the
+            user can never undo a clear started from this header. */}
+        {undo.pendingAction && (
+          <UndoSnackbar
+            label={undo.pendingAction.label}
+            onUndo={undo.triggerUndo}
+            className="fixed bottom-20 left-1/2 z-50 -translate-x-1/2"
+          />
+        )}
       </div>
     )
   }

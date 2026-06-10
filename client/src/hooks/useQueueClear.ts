@@ -30,6 +30,9 @@ export function useQueueClear(speaker: string, undo: UseUndoableQueueActionResul
     api.sonos.clearQueue(speaker).catch(() => {
       toast({ message: 'Could not clear queue', type: 'error' })
       queryClient.setQueryData<SonosQueueItem[]>(queueKey, snapshot)
+      // Disarm the undo — pressing it after a failed clear would double-add
+      // the queue via /restore.
+      undo.cancelAction()
     })
 
     undo.scheduleAction(

@@ -16,8 +16,6 @@ export interface FairylistActionsMenuProps {
   onAddToQueue: () => void
   onPlayNext: () => void
   onDelete: () => void
-  /** Class for the trigger button (size varies by context) */
-  buttonClassName?: string
 }
 
 const menuItemCls =
@@ -31,7 +29,6 @@ export function FairylistActionsMenu({
   onAddToQueue,
   onPlayNext,
   onDelete,
-  buttonClassName,
 }: FairylistActionsMenuProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null)
@@ -64,10 +61,9 @@ export function FairylistActionsMenu({
         aria-haspopup="menu"
         aria-expanded={menuOpen}
         className={cn(
-          'flex items-center justify-center rounded-lg',
+          'flex h-11 w-11 items-center justify-center rounded-lg',
           'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
           'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-          buttonClassName ?? 'h-10 w-10',
         )}
       >
         <MoreVertical className="h-4 w-4" aria-hidden="true" />
