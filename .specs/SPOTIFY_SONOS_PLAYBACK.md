@@ -14,6 +14,26 @@ Spotify playback through Sonos requires URI format translation. Raw Spotify URIs
 | `next` | Inserts at queue position `trackNo + 1` without seeking |
 | `queue` | Appends to the end of the queue |
 
+### Why `next` no longer goes through node-sonos-http-api
+
+The `next` action computes its insert position from **cached event state**
+(`coordinator.state.trackNo + 1`). When that cache is stale — observed
+2026-06-10 with a speaker grouped under another room's coordinator — the
+speaker rejects the AddURIToQueue call with a UPnP 500 until the cache
+catches up (4 of 8 fairylist tracks were dropped that way).
+
+The server now performs Spotify `next` itself: `playSpotifyNext()` in
+`server/src/lib/sonos-queue.ts` builds the queue-form URI and SA_RINCON
+DIDL metadata (`server/src/lib/spotify-didl.ts`), resolves group members to
+their coordinator via the speaker registry, and issues `AddURIToQueue` with
+`EnqueueAsNext=1` and `DesiredFirstTrackNumberEnqueued=0` — the speaker
+resolves "after the current track" itself, so no cached position is
+involved. The Spotify service id is read once per process from a read-only
+`ListAvailableServices` call (`sonosClient.getSpotifyService`). If that
+lookup fails (e.g. Spotify unlinked), the code falls back to the HTTP API
+action. `queue` (append) still goes through node-sonos-http-api: it passes
+no position, so it has no staleness problem.
+
 ### URI Translation
 
 node-sonos-http-api translates Spotify URIs as follows:

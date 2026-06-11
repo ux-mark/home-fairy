@@ -44,6 +44,7 @@ sonosClient.addToQueueSOAP = async (_ip, uri) => {
 sonosClient.playNextSOAP = async (_ip, uri) => {
   calls.push(`soap-next:${uri}`)
 }
+sonosClient.getSpotifyService = async () => ({ sid: 12, serviceType: 3079 })
 sonosClient.clearQueue = async () => {
   calls.push('clear')
 }
@@ -178,9 +179,9 @@ describe('POST /api/fairylists/:id/queue/:speaker', () => {
     assert.equal(res.status, 200)
     assert.equal(res.body.queued, 3)
     assert.deepEqual(calls, [
-      'spotify:next:spotify:track:three',
+      'soap-next:x-sonos-spotify:spotify%3Atrack%3Athree?sid=12&flags=32&sn=1',
       'soap-next:x-file-cifs://nas/two.flac',
-      'spotify:next:spotify:track:one',
+      'soap-next:x-sonos-spotify:spotify%3Atrack%3Aone?sid=12&flags=32&sn=1',
     ])
     assert.ok(!calls.includes('clear'))
   })
