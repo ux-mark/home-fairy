@@ -36,6 +36,8 @@ const SPEAKER_INFO = {
 let calls: string[] = []
 let queueContents: SonosQueueItem[] = []
 let containerTracks: Array<{ title: string; artist: string; album: string; albumArtUri: string; uri: string }> = []
+// Metadata passed to playNextSOAP, captured per call for shape assertions.
+let soapNextMetadata: string[] = []
 
 speakerRegistry.resolveByRoom = async () => SPEAKER_INFO
 speakerRegistry.getByUuid = () => SPEAKER_INFO
@@ -46,9 +48,11 @@ sonosClient.playSpotifyUri = async (speaker, uri, action) => {
 sonosClient.addToQueueSOAP = async (_ip, uri) => {
   calls.push(`soap-add:${uri}`)
 }
-sonosClient.playNextSOAP = async (_ip, uri) => {
+sonosClient.playNextSOAP = async (_ip, uri, metadata = '') => {
   calls.push(`soap-next:${uri}`)
+  soapNextMetadata.push(metadata)
 }
+sonosClient.getSpotifyService = async () => ({ sid: 12, serviceType: 3079 })
 sonosClient.clearQueue = async () => {
   calls.push('clear')
 }
@@ -104,6 +108,7 @@ beforeEach(() => {
   calls = []
   queueContents = []
   containerTracks = []
+  soapNextMetadata = []
 })
 
 describe('queueItemOnSpeaker dispatch', () => {
@@ -113,9 +118,25 @@ describe('queueItemOnSpeaker dispatch', () => {
     assert.deepEqual(calls, ['spotify:queue:spotify:track:abc'])
   })
 
-  test('spotify URI in next mode uses the spotify next action', async () => {
+  test('spotify URI in next mode goes through SOAP with the queue-form URI and SA_RINCON metadata', async () => {
     await queueItemOnSpeaker('Living Room', 'spotify:track:abc', 'next')
-    assert.deepEqual(calls, ['spotify:next:spotify:track:abc'])
+    assert.deepEqual(calls, ['soap-next:x-sonos-spotify:spotify%3Atrack%3Aabc?sid=12&flags=32&sn=1'])
+    assert.equal(soapNextMetadata.length, 1)
+    assert.match(soapNextMetadata[0], /SA_RINCON3079_X_#Svc3079-0-Token/)
+    assert.match(soapNextMetadata[0], /id="00030020spotify%3Atrack%3Aabc"/)
+  })
+
+  test('spotify next falls back to the HTTP API action when the service lookup fails', async () => {
+    const original = sonosClient.getSpotifyService
+    sonosClient.getSpotifyService = async () => {
+      throw new Error('Spotify is not registered with this Sonos household')
+    }
+    try {
+      await queueItemOnSpeaker('Living Room', 'spotify:track:abc', 'next')
+      assert.deepEqual(calls, ['spotify:next:spotify:track:abc'])
+    } finally {
+      sonosClient.getSpotifyService = original
+    }
   })
 
   test('x-sonos-spotify queue URI is normalised before dispatch', async () => {
@@ -175,13 +196,14 @@ describe('POST /queue/:speaker/add and /playnext', () => {
     assert.deepEqual(calls, ['spotify:queue:spotify:track:abc'])
   })
 
-  test('x-sonos-spotify URI normalised on playnext', async () => {
+  test('x-sonos-spotify URI normalised on playnext, then queued via SOAP', async () => {
     const res = await fetchJson('POST', '/api/sonos/queue/Living%20Room/playnext', {
       uri: 'x-sonos-spotify:spotify%3atrack%3aabc?sid=12&flags=8232&sn=4',
     })
     assert.equal(res.status, 200)
     assert.deepEqual(res.body, { speaker: 'Living Room', action: 'play-next' })
-    assert.deepEqual(calls, ['spotify:next:spotify:track:abc'])
+    assert.deepEqual(calls, ['soap-next:x-sonos-spotify:spotify%3Atrack%3Aabc?sid=12&flags=32&sn=1'])
+    assert.match(soapNextMetadata[0] ?? '', /SA_RINCON3079/)
   })
 
   test('NAS file URI keeps the SOAP path', async () => {

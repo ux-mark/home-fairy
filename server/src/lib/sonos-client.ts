@@ -3,9 +3,38 @@ import { readFileSync, statSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import { speakerRegistry } from './speaker-registry.js'
+import { spotifyServiceTypeFromSid, type SpotifyServiceInfo } from './spotify-didl.js'
 
 const SONOS_API_URL = process.env.SONOS_API_URL || 'http://localhost:3003'
 const TIMEOUT = 5000
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+/**
+ * Pull Spotify's service id out of a ListAvailableServices SOAP response.
+ * The descriptor list arrives entity-escaped inside the envelope, so the
+ * response is unescaped before scanning the <Service …> tags. Exported for
+ * tests.
+ */
+export function parseSpotifyServiceId(soapResponse: string): number | null {
+  const xml = soapResponse
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+  for (const tag of xml.match(/<Service\b[^>]*>/g) ?? []) {
+    if (!/\bName="Spotify"/.test(tag)) continue
+    const id = tag.match(/\bId="(\d+)"/)
+    if (id) return Number(id[1])
+  }
+  return null
+}
 
 export class SonosApiError extends Error {
   status: number | undefined
@@ -182,6 +211,7 @@ interface NasLibraryTrack {
 
 class SonosClient {
   private api: AxiosInstance
+  private spotifyService: SpotifyServiceInfo | null = null
 
   constructor() {
     this.api = axios.create({
@@ -464,12 +494,7 @@ class SonosClient {
    * Bypasses node-sonos-http-api which mangles URIs containing special characters.
    */
   async addToQueueSOAP(speakerIp: string, uri: string): Promise<void> {
-    // Escape XML special characters in the URI
-    const xmlUri = uri
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
+    const xmlUri = escapeXml(uri)
 
     const body = `<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
@@ -505,14 +530,14 @@ class SonosClient {
    * itself, unlike jishi's spotify.js which passes an explicit trackNo+1 read
    * from possibly-stale event state. Both land in the same place; 0 avoids
    * the stale-trackNo race, so this stays as-is.
+   *
+   * Music-service URIs (Spotify) are rejected unless `metadata` carries the
+   * SA_RINCON DIDL-Lite token — see spotify-didl.ts. NAS file URIs queue
+   * fine with empty metadata.
    */
-  async playNextSOAP(speakerIp: string, uri: string): Promise<void> {
-    // Escape XML special characters in the URI
-    const xmlUri = uri
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
+  async playNextSOAP(speakerIp: string, uri: string, metadata = ''): Promise<void> {
+    const xmlUri = escapeXml(uri)
+    const xmlMetadata = escapeXml(metadata)
 
     const body = `<?xml version="1.0" encoding="utf-8"?>
 <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
@@ -520,7 +545,7 @@ class SonosClient {
     <u:AddURIToQueue xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
       <InstanceID>0</InstanceID>
       <EnqueuedURI>${xmlUri}</EnqueuedURI>
-      <EnqueuedURIMetaData></EnqueuedURIMetaData>
+      <EnqueuedURIMetaData>${xmlMetadata}</EnqueuedURIMetaData>
       <DesiredFirstTrackNumberEnqueued>0</DesiredFirstTrackNumberEnqueued>
       <EnqueueAsNext>1</EnqueueAsNext>
     </u:AddURIToQueue>
@@ -537,6 +562,47 @@ class SonosClient {
         timeout: 10_000,
       },
     )
+  }
+
+  /**
+   * Resolve the Spotify music-service id registered with this Sonos
+   * household via a read-only ListAvailableServices call against any
+   * speaker. serviceType is (sid << 8) + 7 — the same derivation
+   * sonos-discovery's parse-services helper uses. Cached for the process
+   * lifetime: the id only changes if the user relinks Spotify in the Sonos
+   * app, which is rare enough that a server restart is an acceptable ask.
+   *
+   * Throws when Spotify is not registered (e.g. account unlinked) — callers
+   * fall back to node-sonos-http-api's spotify action.
+   */
+  async getSpotifyService(speakerIp: string): Promise<SpotifyServiceInfo> {
+    if (this.spotifyService) return this.spotifyService
+
+    const body = `<?xml version="1.0" encoding="utf-8"?>
+<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+  <s:Body>
+    <u:ListAvailableServices xmlns:u="urn:schemas-upnp-org:service:MusicServices:1"></u:ListAvailableServices>
+  </s:Body>
+</s:Envelope>`
+    const { data } = await axios.post(
+      `http://${speakerIp}:1400/MusicServices/Control`,
+      body,
+      {
+        headers: {
+          'Content-Type': 'text/xml; charset=utf-8',
+          'SOAPAction': '"urn:schemas-upnp-org:service:MusicServices:1#ListAvailableServices"',
+        },
+        timeout: 10_000,
+        responseType: 'text',
+      },
+    )
+
+    const sid = parseSpotifyServiceId(typeof data === 'string' ? data : String(data))
+    if (sid === null) {
+      throw new SonosApiError('Spotify is not registered with this Sonos household')
+    }
+    this.spotifyService = { sid, serviceType: spotifyServiceTypeFromSid(sid) }
+    return this.spotifyService
   }
 
   /**

@@ -14,7 +14,7 @@ import { sonosManager } from '../lib/sonos-manager.js'
 import { emit } from '../lib/socket.js'
 import { findPodcastFeedUrl, getLatestEpisodeUrl } from '../lib/podcast-resolver.js'
 import { classifySourceUri } from '../lib/source-uri.js'
-import { queueItemOnSpeaker } from '../lib/sonos-queue.js'
+import { queueItemOnSpeaker, playSpotifyNext } from '../lib/sonos-queue.js'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 const SONOS_API_URL = process.env.SONOS_API_URL || 'http://localhost:3003'
@@ -930,7 +930,7 @@ router.post('/queue/:speaker/playnext-album', async (req: Request, res: Response
     const { uri, source } = parsed.data
 
     if (source === 'spotify') {
-      await sonosClient.playSpotifyUri(speaker, uri, 'next')
+      await playSpotifyNext(speaker, uri)
       emit('sonos:playback-update', { speaker })
       const spotifyQueue = await sonosClient.getQueue(speaker)
       emit('sonos:queue-update', { speaker, action: 'playnext', queue: rewriteQueueArt(spotifyQueue) })
@@ -1759,7 +1759,8 @@ if (process.env.NODE_ENV !== 'production') {
 
 // POST /play-spotify/:speaker — play a Spotify URI through Sonos
 // Accepts: { uri: string, action?: 'now' | 'queue' | 'next' }
-// Uses node-sonos-http-api's native spotify action for correct URI translation.
+// 'now' and 'queue' use node-sonos-http-api's spotify action; 'next' goes
+// through playSpotifyNext so the speaker resolves the insert position itself.
 router.post('/play-spotify/:speaker', async (req: Request, res: Response) => {
   try {
     const speaker = Array.isArray(req.params.speaker) ? req.params.speaker[0] : req.params.speaker
@@ -1769,7 +1770,8 @@ router.post('/play-spotify/:speaker', async (req: Request, res: Response) => {
       return
     }
     const safeAction = action === 'queue' || action === 'next' ? action : 'now'
-    await sonosClient.playSpotifyUri(speaker, uri, safeAction)
+    if (safeAction === 'next') await playSpotifyNext(speaker, uri)
+    else await sonosClient.playSpotifyUri(speaker, uri, safeAction)
     emit('sonos:playback-update', { speaker })
     const queue = await sonosClient.getQueue(speaker)
     emit('sonos:queue-update', { speaker, action: safeAction === 'queue' ? 'add' : 'playnext', queue: rewriteQueueArt(queue) })
