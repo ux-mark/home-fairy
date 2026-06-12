@@ -189,6 +189,23 @@ test('Country artist with Spotify ID loads albums page', async ({ page }) => {
 
   await setupCommonRoutes(page)
 
+  // Mock the artist detail endpoint so the heading shows the artist name.
+  // No followers field — the test verifies NAS-style layout (song counts, not follower counts).
+  await page.route(/\/api\/spotify\/artists\/3gd8FJtBJtkRxdfbTu19U2$/, route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: '3gd8FJtBJtkRxdfbTu19U2',
+        name: 'Mumford & Sons',
+        images: [{ url: 'https://example.com/mumford.jpg', height: 300, width: 300 }],
+        genres: ['folk rock'],
+        uri: 'spotify:artist:3gd8FJtBJtkRxdfbTu19U2',
+        external_urls: { spotify: 'https://open.spotify.com/artist/3gd8FJtBJtkRxdfbTu19U2' },
+      }),
+    }),
+  )
+
   // Mock the album fetch for the real Spotify artist
   await page.route(/\/api\/spotify\/artists\/3gd8FJtBJtkRxdfbTu19U2\/albums/, route =>
     route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(MOCK_ALBUMS) }),
