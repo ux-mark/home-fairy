@@ -37,11 +37,17 @@ import { useTheme } from '@/hooks/useTheme'
 import type { Theme } from '@/hooks/useTheme'
 import { Section } from '@/components/settings/Section'
 import { NightModeSection } from '@/components/settings/NightModeSection'
+import { HushingHomeSection } from '@/components/settings/HushingHomeSection'
 import { SubwaySection } from '@/components/settings/SubwaySection'
 import { IndicatorSection } from '@/components/settings/IndicatorSection'
 import { WeatherIndicatorSection } from '@/components/settings/WeatherIndicatorSection'
 import { DataManagementSection } from '@/components/settings/DataManagementSection'
 import { MusicSection } from '@/components/settings/MusicSection'
+import { LocationLocaleSection } from '@/components/settings/LocationLocaleSection'
+import { HubitatSection } from '@/components/settings/HubitatSection'
+import { LifxSection } from '@/components/settings/LifxSection'
+import { WeatherSection } from '@/components/settings/WeatherSection'
+import { SpotifySection } from '@/components/settings/SpotifySection'
 import { authClient } from '@/lib/auth-client'
 import { AccessLinksSection } from '@/components/settings/AccessLinksSection'
 
@@ -281,10 +287,14 @@ function TimersSection() {
   const queryClient = useQueryClient()
   const { toast } = useToast()
 
+  // Initial fetch happens immediately; the 1 s tick only runs once we know
+  // there is at least one active timer to count down. Without this gate,
+  // every Settings page visit fired a query every second forever, even when
+  // there were no timers.
   const { data: timers } = useQuery({
     queryKey: ['system', 'timers'],
     queryFn: api.system.getTimers,
-    refetchInterval: 1000,
+    refetchInterval: q => ((q.state.data?.length ?? 0) > 0 ? 1000 : false),
   })
 
   const cancelMutation = useMutation({
@@ -642,7 +652,7 @@ function AccountSection() {
     const label = newRole === 'admin' ? 'Manager' : 'Resident'
     if (!window.confirm(`${action === 'promote' ? 'Promote' : 'Demote'} ${userName} to ${label}?`)) return
     try {
-      const result = await authClient.admin.setRole({ userId, role: newRole })
+      const result = await authClient.admin.setRole({ userId, role: newRole as 'user' | 'admin' })
       if (result.error) {
         toast({ message: result.error.message || `Failed to ${action} user`, type: 'error' })
       } else {
@@ -914,6 +924,7 @@ export default function SettingsPage() {
           isOpen={openCategory === 'preferences'}
           onToggle={() => handleToggle('preferences')}
         >
+          <LocationLocaleSection />
           <ThemeSection />
           <GeneralSection />
         </CategoryAccordion>
@@ -925,6 +936,7 @@ export default function SettingsPage() {
           isOpen={openCategory === 'music'}
           onToggle={() => handleToggle('music')}
         >
+          <SpotifySection />
           <MusicSection />
         </CategoryAccordion>
 
@@ -937,6 +949,9 @@ export default function SettingsPage() {
         >
           <ModesSection />
           <NightModeSection />
+          <div id="hushing-home">
+            <HushingHomeSection />
+          </div>
         </CategoryAccordion>
 
         <CategoryAccordion
@@ -957,6 +972,7 @@ export default function SettingsPage() {
           isOpen={openCategory === 'weather'}
           onToggle={() => handleToggle('weather')}
         >
+          <WeatherSection />
           <WeatherIndicatorSection />
         </CategoryAccordion>
 
@@ -967,6 +983,8 @@ export default function SettingsPage() {
           isOpen={openCategory === 'system'}
           onToggle={() => handleToggle('system')}
         >
+          <HubitatSection />
+          <LifxSection />
           <DevicesSection />
           <TimersSection />
           <DataManagementSection />

@@ -17,19 +17,30 @@ import motionRoutes from './routes/motion.js'
 import dashboardRoutes from './routes/dashboard.js'
 import kasaRoutes from './routes/kasa.js'
 import sonosRoutes from './routes/sonos.js'
+import spotifyRoutes from './routes/spotify.js'
+import favouritesRoutes from './routes/favourites.js'
+import fairylistsRoutes from './routes/fairylists.js'
 import deviceLinksRoutes from './routes/device-links.js'
 import accessLinksRoutes from './routes/access-links.js'
 import accessLinksPublicRoutes from './routes/access-links-public.js'
+import userActionsRouter from './routes/user-actions.js'
+import settingsRoutes from './routes/settings.js'
+import settingsHubitatRoutes from './routes/settings-hubitat.js'
+import settingsSpotifyRoutes from './routes/settings-spotify.js'
+import * as settingsStore from './lib/settings-store.js'
 import { motionHandler } from './lib/motion-handler.js'
 import { sunModeScheduler } from './lib/sun-mode-scheduler.js'
 import { timeTriggerScheduler } from './lib/time-trigger-scheduler.js'
 import { timerManager } from './lib/timer-manager.js'
 import { activateScene } from './lib/scene-executor.js'
+import { isHushingActive } from './lib/hushing.js'
 import { weatherIndicator } from './lib/weather-indicator.js'
 import { startHistoryCollector, stopHistoryCollector } from './lib/history-collector.js'
 import { notificationService } from './lib/notification-service.js'
 import { startKasaPoller, stopKasaPoller } from './lib/kasa-poller.js'
 import { sonosManager } from './lib/sonos-manager.js'
+import { speakerRegistry } from './lib/speaker-registry.js'
+import { log } from './lib/logger.js'
 import { setSocketServer } from './lib/socket.js'
 import { auth } from './lib/auth.js'
 import { toNodeHandler, fromNodeHeaders } from 'better-auth/node'
@@ -68,8 +79,12 @@ setInterval(() => {
   }
 }, 5 * 60_000).unref()
 
-// Validate required environment variables
-const REQUIRED_ENV = ['LIFX_TOKEN', 'HUBITAT_TOKEN', 'HUB_BASE_URL', 'LATITUDE', 'LONGITUDE', 'OPENWEATHER_API'] as const
+// Validate required environment variables.
+// Note: LIFX_TOKEN, HUBITAT_TOKEN, HUB_BASE_URL, LATITUDE, LONGITUDE, and
+// OPENWEATHER_API have moved into app_settings (see settings-store.ts) and
+// are seeded from env on first boot. They're no longer required to boot —
+// integrations that need missing values will fail gracefully when called.
+const REQUIRED_ENV: readonly string[] = []
 const missing = REQUIRED_ENV.filter(key => !process.env[key])
 if (missing.length > 0) {
   console.error(`[startup] Missing required environment variables: ${missing.join(', ')}`)
@@ -79,6 +94,20 @@ if (missing.length > 0) {
 
 // Initialize database
 initDb()
+
+// Hydrate settings cache + seed from env on first boot.
+// Order matters: migrations → hydrate → seed → HTTP listen.
+settingsStore.hydrate()
+settingsStore.seedFromEnvIfMissing()
+// After env-seed, guarantee the Hubitat webhook secret exists. The UI no
+// longer asks the user to type it (Phase 6, WI #4) — we auto-generate one
+// on first boot so the assembled webhook URL the user copies into Hubitat
+// is always complete.
+settingsStore.ensureHubitatWebhookSecret()
+// Phase 7 (WI #4): if an existing user has `SPOTIFY_REDIRECT_URI=https://host/api/spotify/callback`
+// in their .env, lift the host part into `spotify.publicBaseUrl` so the new UI
+// works without them re-typing the address. Idempotent.
+settingsStore.migrateSpotifyPublicBaseUrl()
 
 const app = express()
 
@@ -116,19 +145,39 @@ app.use('/api/motion', requireAuth, motionRoutes)
 app.use('/api/dashboard', requireAuth, dashboardRoutes)
 app.use('/api/kasa', requireAuth, kasaRoutes)
 app.use('/api/sonos', requireAuth, sonosRoutes)
+// Spotify router: /auth and /callback are public (OAuth flow); protected routes apply requireAuth internally
+app.use('/api/spotify', spotifyRoutes)
+app.use('/api/favourites', requireAuth, favouritesRoutes)
+app.use('/api/fairylists', requireAuth, fairylistsRoutes)
 app.use('/api/device-links', requireAuth, deviceLinksRoutes)
 app.use('/api/access-links', requireAuth, accessLinksRoutes)
+app.use('/api/user-actions', requireAuth, userActionsRouter)
+// Hubitat-specific settings sub-routes (webhook URL + regenerate). Mounted
+// before the generic settings router so the `/hubitat/webhook-url` and
+// `/hubitat/regenerate-secret` paths don't get swallowed by the
+// `/:group` matcher.
+app.use('/api/settings/hubitat', requireAuth, settingsHubitatRoutes)
+// Spotify-specific settings sub-routes (derived redirect URI + public-base-url
+// PUT). Same ordering rationale as Hubitat — must be mounted before the
+// generic `/:group` matcher swallows `/spotify/redirect-uri` etc.
+app.use('/api/settings/spotify', requireAuth, settingsSpotifyRoutes)
+app.use('/api/settings', requireAuth, settingsRoutes)
 
 // Hubitat webhook handler
 app.post('/hubitat', async (req, res) => {
-  // Validate webhook secret
-  const HUBITAT_WEBHOOK_SECRET = process.env.HUBITAT_WEBHOOK_SECRET
-  if (HUBITAT_WEBHOOK_SECRET) {
-    const token = (req.headers['x-hubitat-token'] as string) || (req.query.token as string)
-    if (token !== HUBITAT_WEBHOOK_SECRET) {
-      res.status(401).json({ error: 'Invalid webhook token' })
-      return
-    }
+  // Validate webhook secret. We never accept unsigned webhooks: if no secret
+  // is configured, reject with 503 so callers see "not configured" rather
+  // than silently trusting unauthenticated POSTs.
+  const { webhookSecret } = settingsStore.getHubitat()
+  if (!webhookSecret) {
+    console.warn('[hubitat] webhook rejected: HUBITAT webhook secret not configured in Settings')
+    res.status(503).json({ error: 'Hubitat webhook secret not configured — set it in Settings' })
+    return
+  }
+  const token = (req.headers['x-hubitat-token'] as string) || (req.query.token as string)
+  if (token !== webhookSecret) {
+    res.status(401).json({ error: 'Invalid webhook token' })
+    return
   }
 
   const clientIp = req.ip || 'unknown'
@@ -174,10 +223,7 @@ app.post('/hubitat', async (req, res) => {
     }
 
     // Log the event
-    run(
-      'INSERT INTO logs (message, debug, category) VALUES (?, ?, ?)',
-      [`Hubitat: ${displayName} ${eventName} = ${eventValue}`, JSON.stringify(event), 'hubitat'],
-    )
+    log(`Hubitat: ${displayName} ${eventName} = ${eventValue}`, 'hubitat', null, JSON.stringify(event))
 
     // Use device ID for hub_devices lookups when available (more robust than label which can change)
     const hubWhereClause = deviceId ? 'id = ?' : 'label = ?'
@@ -219,10 +265,7 @@ app.post('/hubitat', async (req, res) => {
         const batteryLevel = Number(eventValue)
         if (batteryLevel < 5) {
           console.error(`Critical battery: ${displayName} at ${batteryLevel}%`)
-          run(
-            'INSERT INTO logs (message, category) VALUES (?, ?)',
-            [`Critical battery: ${displayName} at ${batteryLevel}%`, 'battery'],
-          )
+          log(`Critical battery: ${displayName} at ${batteryLevel}%`, 'battery')
           notificationService.create({
             severity: 'critical',
             category: 'battery',
@@ -235,10 +278,7 @@ app.post('/hubitat', async (req, res) => {
           })
         } else if (batteryLevel < 15) {
           console.warn(`Low battery: ${displayName} at ${batteryLevel}%`)
-          run(
-            'INSERT INTO logs (message, category) VALUES (?, ?)',
-            [`Low battery: ${displayName} at ${batteryLevel}%`, 'battery'],
-          )
+          log(`Low battery: ${displayName} at ${batteryLevel}%`, 'battery')
           notificationService.create({
             severity: 'warning',
             category: 'battery',
@@ -389,12 +429,13 @@ notificationService.setEmitter((event, data) => io.emit(event, data))
 
 // Wire up scene timer expiry — activate the target scene when the timer fires
 timerManager.setOnExpire(async (targetScene, sceneName) => {
+  if (isHushingActive()) {
+    log(`Hushing Home active — suppressing scene timer (${sceneName} -> ${targetScene})`, 'timer')
+    return
+  }
   try {
     console.log(`Scene timer expired: ${sceneName} -> activating ${targetScene}`)
-    run(
-      'INSERT INTO logs (message, category) VALUES (?, ?)',
-      [`Scene timer expired (${sceneName}): activating "${targetScene}"`, 'timer'],
-    )
+    log(`Scene timer expired (${sceneName}): activating "${targetScene}"`, 'timer')
     await activateScene(targetScene, new Set(), 'timer')
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -412,6 +453,7 @@ httpServer.listen(PORT, () => {
   startKasaPoller(io)
   sonosManager.setIsRoomLocked((room) => motionHandler.isRoomLocked(room))
   sonosManager.init()
+  speakerRegistry.init()
 })
 
 // Graceful shutdown
@@ -428,9 +470,10 @@ function shutdown(signal: string): void {
   stopHistoryCollector()
   stopKasaPoller()
   sonosManager.shutdown()
+  speakerRegistry.shutdown()
   motionHandler.shutdown()
   weatherIndicator.stop()
-  sunModeScheduler.clearTimers()
+  sunModeScheduler.shutdown()
   timeTriggerScheduler.clearTimers()
 
   io.close(() => {

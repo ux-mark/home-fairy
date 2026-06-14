@@ -1,10 +1,14 @@
-import { Outlet, NavLink, useLocation } from 'react-router-dom'
+import React, { useCallback, useEffect, useRef } from 'react'
+import { Outlet, NavLink, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Home, DoorOpen, Sparkles, LayoutGrid, Settings, BarChart3, User } from 'lucide-react'
+import { Home, DoorOpen, Sparkles, LayoutGrid, Settings, BarChart3, User, Play, Search, Heart } from 'lucide-react'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useDashboardSocket } from '@/hooks/useSocket'
 import { useScrollRestoration } from '@/hooks/useScrollRestoration'
+import { useTrackSonosBrowsePath, getSonosBrowseEntryPath } from '@/hooks/useSonosBrowseMemory'
+import { useNavStack } from '@/hooks/useNavStack'
+import { NavStackContext } from '@/contexts/NavStackContext'
 import ToastContainer from '@/components/ui/Toast'
 import NotificationBell from '@/components/notifications/NotificationBell'
 import { LucideIcon } from '@/components/ui/LucideIcon'
@@ -16,7 +20,7 @@ function HomeFairyIcon({ className }: { className?: string }) {
   )
 }
 
-const BASE_NAV_ITEMS = [
+const HOME_NAV_ITEMS = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/rooms', icon: DoorOpen, label: 'Rooms' },
   { to: '/scenes', icon: Sparkles, label: 'Scenes' },
@@ -24,10 +28,97 @@ const BASE_NAV_ITEMS = [
   { to: '/dashboard', icon: BarChart3, label: 'Insights' },
 ] as const
 
+const SONOS_NAV_ITEMS = [
+  { to: '/', icon: Home, label: 'Home' },
+  { to: '/sonos/playing', icon: Play, label: 'Playing' },
+  { to: '/sonos/browse', icon: Search, label: 'Browse' },
+  { to: '/sonos/favourites', icon: Heart, label: 'Favourites' },
+  { to: '/sonos/insights', icon: BarChart3, label: 'Insights' },
+] as const
+
+/** Check if a nav item should appear active for the current path */
+function isNavActive(itemTo: string, pathname: string, isRouterActive: boolean): boolean {
+  // "Playing" should also be active on the bare /sonos path
+  if (itemTo === '/sonos/playing' && pathname === '/sonos') return true
+  return isRouterActive
+}
+
 export default function AppLayout() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const navigationType = useNavigationType()
   useDashboardSocket()
   useScrollRestoration()
+  useTrackSonosBrowsePath()
+  const navStack = useNavStack()
+
+  // Skip /sonos/playing when the user presses Back from a /sonos/browse*
+  // page. Pressing Back after "Change music" or the Browse nav should keep
+  // the user inside their browse history rather than bouncing through Now
+  // Playing. We detect a POP that lands on Playing coming from Browse and
+  // immediately call navigate(-1) again.
+  const prevPathnameRef = useRef<string>(location.pathname)
+  useEffect(() => {
+    const prev = prevPathnameRef.current
+    prevPathnameRef.current = location.pathname
+    if (
+      navigationType === 'POP' &&
+      location.pathname === '/sonos/playing' &&
+      prev.startsWith('/sonos/browse')
+    ) {
+      navigate(-1)
+    }
+  }, [location.pathname, navigationType, navigate])
+
+  // Sonos nav (Playing / Browse / Favourites / Insights) behaves like a tab
+  // bar. When the user is already inside Sonos, switching sections replaces
+  // the current history entry so that browser Back returns to the page they
+  // were on BEFORE they started flipping between Sonos sections — rather
+  // than accumulating intermediate tab-switches in history.
+  const isSonosPath = location.pathname.startsWith('/sonos')
+
+  // Clicking "Browse" uses the smart resume hook: if the target URL exists in
+  // the in-app nav stack, walk back to it (preserving the full history chain
+  // behind it); otherwise push a fresh entry. Never use { replace: true }
+  // here — REPLACE would overwrite the current entry and create duplicate-
+  // entry Back traps where the first press appears to do nothing.
+  const handleBrowseNavClick = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>) => {
+      if (e.defaultPrevented) return
+      if (e.button !== 0) return
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      const target = getSonosBrowseEntryPath()
+      if (target === location.pathname + location.search) return
+      e.preventDefault()
+      // If the target URL is in the in-app nav stack, walk back to it so the
+      // full history chain behind it is preserved. Otherwise push a new entry.
+      // Never use replace:true — REPLACE overwrites the current entry and
+      // creates duplicate-entry Back traps.
+      const depth = navStack.findDepth(target)
+      if (depth != null && depth > 0) {
+        navigate(-depth)
+      } else {
+        navigate(target)
+      }
+    },
+    [navigate, location.pathname, location.search, navStack],
+  )
+
+  // For the other Sonos nav items, replace when already inside Sonos so
+  // that Back skips the intra-Sonos tab switch.
+  const handleSonosTabNavClick = useCallback(
+    (to: string) =>
+      (e: React.MouseEvent<HTMLAnchorElement>) => {
+        if (e.defaultPrevented) return
+        if (e.button !== 0) return
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+        if (!isSonosPath) return
+        if (to === location.pathname) return
+        e.preventDefault()
+        navigate(to, { replace: true })
+      },
+    [navigate, location.pathname, isSonosPath],
+  )
 
   const { data: session } = authClient.useSession()
   const role = session?.user?.role
@@ -37,26 +128,49 @@ export default function AppLayout() {
     queryFn: api.system.getCurrent,
   })
 
-  // Build nav items based on role
+  // Detect Sonos context
+  const isSonosContext = location.pathname.startsWith('/sonos')
+  const activeNavItems = isSonosContext ? SONOS_NAV_ITEMS : HOME_NAV_ITEMS
+
+  // Pick the correct click handler for a Sonos-nav item. `/` (Home) is a
+  // real exit from Sonos so we leave it alone; Browse has its own
+  // resume-to-last-visited logic; the other Sonos items use the tab-style
+  // replace so Back skips intra-Sonos tab switches.
+  function sonosNavOnClick(to: string) {
+    if (to === '/sonos/browse') return handleBrowseNavClick
+    if (to === '/') return undefined
+    if (SONOS_NAV_ITEMS.some(n => n.to === to)) return handleSonosTabNavClick(to)
+    return undefined
+  }
+
+  // Build nav items based on role (home context only)
   const navItems: { to: string; icon: React.ComponentType<React.SVGProps<SVGSVGElement>>; label: string }[] = [
-    ...BASE_NAV_ITEMS,
-    ...(role === 'admin'
+    ...activeNavItems,
+    ...(!isSonosContext && role === 'admin'
       ? [{ to: '/settings', icon: Settings, label: 'Settings' }]
-      : role === 'user'
+      : !isSonosContext && role === 'user'
         ? [{ to: '/account', icon: User, label: 'Account' }]
         : []),
   ]
 
   // Bottom nav: for admin, exclude settings (it's in the header icon area on mobile)
   // For user, include account in bottom nav
-  const bottomNavItems = role === 'admin'
+  const bottomNavItems = !isSonosContext && role === 'admin'
     ? navItems.filter(item => item.to !== '/settings')
     : navItems
 
+  // Derive page title
+  const pageTitle = navItems.find(
+    n =>
+      n.to === location.pathname ||
+      (n.to !== '/' && location.pathname.startsWith(n.to)),
+  )?.label ?? (isSonosContext ? 'Sonos' : 'Home Fairy')
+
   return (
+    <NavStackContext.Provider value={navStack}>
     <div className="flex min-h-svh flex-col md:flex-row">
       {/* Desktop sidebar */}
-      <aside className="sidebar hidden w-56 shrink-0 border-r md:flex md:flex-col">
+      <aside className="sidebar hidden w-56 shrink-0 border-r md:sticky md:top-0 md:flex md:max-h-svh md:flex-col md:self-start md:overflow-y-auto">
         <div className="flex items-center gap-2 border-b px-5 py-4">
           <HomeFairyIcon className="h-6 w-6" />
           <h1 className="text-heading text-lg font-semibold">Home Fairy</h1>
@@ -70,24 +184,30 @@ export default function AppLayout() {
           </div>
         )}
         <nav className="flex flex-1 flex-col gap-1 p-3">
-          {navItems.map(({ to, icon: Icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === '/'}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                  isActive
-                    ? 'bg-fairy-500/15 text-fairy-400'
-                    : 'text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]',
-                )
-              }
-            >
-              <Icon className="h-5 w-5" />
-              {label}
-            </NavLink>
+          {navItems.map(({ to, icon: Icon, label }, index) => (
+            <React.Fragment key={to}>
+              {isSonosContext && index === 1 && (
+                <hr className="my-1 border-[var(--border-primary)]" aria-hidden="true" />
+              )}
+              <NavLink
+                to={to}
+                end={to === '/'}
+                onClick={sonosNavOnClick(to)}
+                className={({ isActive }) => {
+                  const active = isNavActive(to, location.pathname, isActive)
+                  return cn(
+                    'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
+                    'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                    active
+                      ? 'bg-fairy-500/15 text-fairy-400'
+                      : 'text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]',
+                  )
+                }}
+              >
+                <Icon className="h-5 w-5" />
+                {label}
+              </NavLink>
+            </React.Fragment>
           ))}
         </nav>
       </aside>
@@ -102,11 +222,7 @@ export default function AppLayout() {
               Home Fairy
             </h1>
             <h2 className="text-heading hidden text-lg font-semibold md:block">
-              {navItems.find(
-                n =>
-                  n.to === location.pathname ||
-                  (n.to !== '/' && location.pathname.startsWith(n.to)),
-              )?.label ?? 'Home Fairy'}
+              {pageTitle}
             </h2>
           </div>
           <div className="flex items-center gap-2">
@@ -162,29 +278,41 @@ export default function AppLayout() {
       {/* Mobile bottom nav */}
       <nav className="chrome fixed inset-x-0 bottom-0 z-40 border-t pb-[env(safe-area-inset-bottom)] md:hidden">
         <div className="flex items-stretch justify-evenly">
-          {bottomNavItems.map(({ to, icon: Icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === '/'}
-              className={({ isActive }) =>
-                cn(
-                  'flex min-h-[60px] flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors',
-                  'focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-fairy-500',
-                  isActive
-                    ? 'text-fairy-400'
-                    : 'text-[var(--text-muted)] active:text-[var(--text-secondary)]',
-                )
-              }
-            >
-              <Icon className="h-5 w-5" />
-              <span className="leading-normal">{label}</span>
-            </NavLink>
+          {bottomNavItems.map(({ to, icon: Icon, label }, index) => (
+            <React.Fragment key={to}>
+              {isSonosContext && index === 1 && (
+                <div className="my-3 w-px bg-[var(--border-primary)]" aria-hidden="true" />
+              )}
+              <NavLink
+                to={to}
+                end={to === '/'}
+                onClick={sonosNavOnClick(to)}
+                className={({ isActive }) => {
+                  const active = isNavActive(to, location.pathname, isActive)
+                  return cn(
+                    'flex min-h-[60px] flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors',
+                    'focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-fairy-500',
+                    active
+                      ? 'text-fairy-400'
+                      : 'text-[var(--text-muted)] active:text-[var(--text-secondary)]',
+                  )
+                }}
+              >
+                <Icon className="h-5 w-5" />
+                <span className="leading-normal">{label}</span>
+              </NavLink>
+            </React.Fragment>
           ))}
         </div>
+        {isSonosContext && (
+          <div className="text-center pb-1">
+            <span className="text-[10px] font-medium text-[var(--text-muted)]">Sonos</span>
+          </div>
+        )}
       </nav>
 
       <ToastContainer />
     </div>
+    </NavStackContext.Provider>
   )
 }

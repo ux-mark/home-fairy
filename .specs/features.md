@@ -1,7 +1,7 @@
 # Feature Overview
 
 > Written from the user's perspective — what you can do, not how it's built.
-> Updated: 2026-03-29
+> Updated: 2026-06-10
 
 ---
 
@@ -35,10 +35,13 @@ Colour-coded status card (green/orange/red) for all configured subway stops. Col
 
 Current outdoor temperature, weather description, humidity, and wind speed. Temperature displays in your configured unit. Only shown when weather data is available.
 
-### Mute All Speakers
+### Music Controls (3-button row)
 **Status**: available
 
-One-tap toggle to mute or unmute all Sonos speakers simultaneously. Only appears when speakers are configured.
+When speakers are configured, a three-button row replaces the single mute button:
+- **Speakers** — navigates to the Sonos page for full playback management
+- **Play / Pause** — plays or pauses all speakers simultaneously (icon-only, universally recognised)
+- **Mute / Unmute** — mutes or unmutes all speakers simultaneously (icon-only)
 
 ### Auto / Manual Room Toggle
 **Status**: available
@@ -49,6 +52,11 @@ Switch any room between Auto (motion-driven automation) and Manual mode directly
 **Status**: available
 
 When night mode has locked rooms, a button appears to unlock all rooms, returning them to normal operation.
+
+### Hushing Home
+**Status**: available
+
+A single-tap button on the home screen activates Hushing Home. When active, a single global scene (configured in Settings) runs across all rooms and all motion-triggered scene changes are paused — every room is locked. Deactivate with the same button to resume normal automation. If no scene has been configured, the button navigates to Settings to set one up.
 
 ---
 
@@ -96,7 +104,7 @@ View all scenes assigned to the room, filter by mode, activate/deactivate scenes
 ### Sonos Auto-Play Rules
 **Status**: available
 
-Add auto-play rules that trigger Sonos playback on mode changes. Choose a favourite, podcast feed, or "continue what's playing." Configure trigger conditions and play limits.
+Add auto-play rules that trigger Sonos playback on motion. Choose a favourite, podcast feed, or "continue what's playing." Each rule is triggered by **either** a mode (fires while that mode is active) **or** a local time-of-day window (fires whenever motion lands inside it) — never both. Days of the week are an optional refinement on either basis. Configure trigger conditions and a `max_plays` limit; mode rules reset their counter on each mode change, time/day rules reset at local midnight. Schedule evaluation uses your configured timezone from Settings.
 
 ### Sensor List
 **Status**: available
@@ -291,11 +299,72 @@ View playback state (Playing/Paused/Stopped). Play, pause, skip, adjust volume w
 ### Auto-Play Rules
 **Status**: available
 
-Create rules for what plays when the system mode changes. Supports Sonos favourites, podcast feeds, and "continue what's playing." Configure conditions and max-plays limits.
+Create rules that play music on motion. Supports Sonos favourites, podcast feeds, and "continue what's playing." Each rule's trigger basis is **Mode XOR Time window** — either a mode the rule fires while in, or a local time-of-day window the rule fires within, but never both. Days of the week are an optional refinement on top. Configure trigger conditions and a `max_plays` limit; mode rules reset their counter on each mode change, time/day rules reset at local midnight. Schedule evaluation uses your configured timezone from Settings.
 
 ---
 
-## 12. Kasa Device Management
+## 12. Sonos Playback Management (`/sonos`)
+
+### Speaker Cards with Playback Controls
+**Status**: available
+
+Per-speaker cards showing now-playing information (album art, track title, artist) with playback state badge (Playing / Paused / Stopped). Each card has Play/Pause, Stop (when active), and Change Music buttons.
+
+### Music Selection
+**Status**: available
+
+Tap "Change music" on a speaker card to open a bottom sheet with the Favourite Selector. Browse by content type (Radio, Playlists, Podcasts, Albums, etc.). Selecting a favourite plays it on that speaker immediately.
+
+### Volume Control
+**Status**: available
+
+Per-speaker volume slider (horizontal, debounced). Master volume slider at the top adjusts all speakers to the same level simultaneously.
+
+### Tab Navigation
+**Status**: available
+
+Three tabs: Now Playing, Browse, and Favourites. Each tab is accessible via the bottom nav bar with an icon and label.
+
+### Now Playing Tab
+**Status**: available
+
+Speaker cards showing now-playing information (album art, track title, artist) with playback state badge (Playing / Paused / Stopped). Each card has Play/Pause, Stop (when active), and Change Music buttons. Master volume slider at the top adjusts all speakers simultaneously. Per-speaker volume sliders (horizontal, debounced) are shown on each card.
+
+### Browse Tab
+**Status**: available
+
+Browse and search for music across multiple sources from a single screen. A horizontal source filter strip lets you narrow to a specific source: NAS/Pi local library (by genre), Spotify playlists, Sonos Radio, and Sonos Favourites. An "All" view shows a preview of each source. A search bar at the top finds content across all selected sources. Tap any item to play it on the active speaker.
+
+Leaving Browse and coming back within the same session (via the Browse nav link, or the "Change music" / "Browse music" buttons on speaker cards) resumes at the exact location you left — the same source filter, search query, and, if you had drilled into a playlist, album, or artist, the same detail page. Because the Sonos nav tabs (Playing / Browse / Favourites / Insights) behave like a tab bar from here on, pressing Back after resuming into Browse returns you to the previous step of your browse session rather than the Now Playing page you briefly peeked at.
+
+### Favourites Tab
+**Status**: available
+
+A user-curated list of favourite tracks, albums, playlists, and radio stations drawn from any source. Tap to play instantly. Drag to reorder. Add items from the Browse tab. Remove items with a swipe or long-press. Source badges indicate where each item comes from (NAS, Spotify, Radio, Sonos).
+
+### Fairylist Whole-List Queueing
+**Status**: available
+
+Every Fairylist row (and the Fairylist detail header) has a menu with whole-list actions: "Add to queue" appends every track to the speaker's queue, and "Play next" slots them all in straight after the current track. Tracks that can't be queued (such as radio streams) are skipped, and the confirmation message tells you how many were skipped.
+
+### Fairylist Play (Replaces the Queue, Undoable)
+**Status**: available
+
+Tapping Play on a Fairylist replaces the speaker's queue with the full list and starts playing. Because that wipes whatever was queued, a 5-second undo snackbar appears — tap Undo and your previous queue is put back exactly as it was. If the queue was already empty, you just get a plain confirmation.
+
+### One-Tap Queue Clear with Undo
+**Status**: available
+
+The inline "Up next" header on the Now Playing page has a Clear button that empties the speaker's queue immediately — the old confirmation dialogue is gone. A 5-second undo snackbar appears instead; tap Undo to restore the cleared tracks. The full queue view's Clear button behaves the same way.
+
+### Add to Queue / Play Next Across Sources
+**Status**: available
+
+"Add to queue" and "Play next" now work for both Spotify and NAS items, including playlists saved from the queue. Radio stations can't sit on a Sonos queue, so those options aren't offered on radio rows.
+
+---
+
+## 13. Kasa Device Management
 
 ### Device List and Controls
 **Status**: available
@@ -369,6 +438,31 @@ Any logged-in user (Manager or Resident) can change their own password from thei
 - Temperature unit: Celsius or Fahrenheit
 - Energy rate and currency symbol for cost estimates
 
+### Location and Locale Settings
+**Status**: available
+
+Set latitude, longitude, timezone and locale from the UI. Drives auto-play schedule gating, sun-tracking, and weather queries. Migrated from `.env`.
+
+### Hubitat Settings
+**Status**: available
+
+Configure Hubitat base URL, API token, and webhook secret from the UI. Test connection in-place. Migrated from `.env`.
+
+### LIFX Settings
+**Status**: available
+
+Configure the LIFX API token from the UI. Test connection in-place. Migrated from `.env`.
+
+### OpenWeather Settings
+**Status**: available
+
+Configure the OpenWeather API key from the UI. Test connection uses your saved location. Migrated from `.env`. Note: distinct from the Weather Indicator display section.
+
+### Spotify Settings
+**Status**: available
+
+Configure Spotify Client ID and Client Secret from the UI. The Redirect URI is derived from your public base URL (also set here) and shown read-only with a Copy button — paste it into the Spotify developer console under "Redirect URIs". Test connection runs a client-credentials grant. Migrated from `.env`.
+
 ### Music (Sonos)
 **Status**: available
 
@@ -398,3 +492,22 @@ Configure a LIFX light to reflect weather conditions using customisable colours 
 - Data management: view metrics, delete history by age/source
 - System health: version, uptime, database status
 - System logs with category filtering
+
+---
+
+## 16. User Action Tracking
+
+### Scene Attribution
+**Status**: available
+
+Every scene tracks who created it, who last edited it, and who last activated it. The Scenes list's Recent tab shows "Activated by [Name] · time ago". The Scene Editor displays creator and last modifier metadata, plus a Recent Activity timeline showing the last 10 actions on that scene.
+
+### Fairy Queen System Identity
+**Status**: available
+
+Legacy and automated content (motion-triggered scenes, timer activations, pre-existing scenes) is attributed to the Fairy Queen — the system's original spirit. Her name appears as a linked emerald-coloured link wherever it's shown; tapping it navigates to a whimsical profile page at `/fairy-queen` with sparkle effects, fun facts, stats, and a timeline of her recent enchantments. Other user names are displayed as plain text (not linked).
+
+### User Action Audit Log
+**Status**: available
+
+A `user_actions` table records who performed what action (create, update, delete, activate, deactivate) on which entity (currently scenes, extensible to rooms, devices, etc.). Queryable via `GET /api/user-actions` with optional filters for entity type, entity ID, and user ID.

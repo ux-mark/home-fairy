@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Speaker, Wifi, WifiOff, Trash2, Plus, Plug, Link2 } from 'lucide-react'
+import { Speaker, Wifi, WifiOff, Trash2, Plus, Plug, Link2, Info } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { SonosZone, SonosSpeakerMapping, Room, KasaDevice } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -374,6 +374,26 @@ export default function SonosSetupPage() {
 
       {/* Connection status */}
       <ConnectionStatus />
+
+      {/* DHCP reservation tip — Sonos speakers move between IPs as their DHCP leases renew,
+          and the music API caches the old address, so playback silently breaks. */}
+      <aside
+        aria-label="Sonos network tip"
+        className="mb-4 flex items-start gap-3 rounded-lg border border-fairy-500/20 bg-fairy-500/5 px-3 py-3 text-sm"
+      >
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" aria-hidden="true" />
+        <div>
+          <p className="font-medium text-heading">
+            Reserve a fixed IP for each speaker on your router.
+          </p>
+          <p className="mt-1 text-xs text-caption">
+            Sonos speakers can move between IPs when your router renews their DHCP leases, and the music
+            API caches the old address — which silently breaks playback until it's restarted. A DHCP
+            reservation (sometimes called a &ldquo;static lease&rdquo;) pins each speaker to one IP and
+            prevents this.
+          </p>
+        </div>
+      </aside>
 
       {/* Loading skeleton */}
       {isLoading ? (

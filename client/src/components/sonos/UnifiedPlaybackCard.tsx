@@ -1,0 +1,421 @@
+import { useState, useCallback } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
+import { Music, Music2, Tv, ImageOff } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { api } from '@/lib/api'
+import { useToast } from '@/hooks/useToast'
+import { useGoToBrowseResumed } from '@/hooks/useGoToBrowseResumed'
+import { Skeleton } from '@/components/ui/Skeleton'
+import type { SonosPlaybackState, SonosGroupInfo, SonosNowPlayingEntry } from '@/lib/api'
+import { ProgressBar } from './ProgressBar'
+import { PlaybackControls } from './PlaybackControls'
+import { SpeakerVolumeControl } from './SpeakerVolumeControl'
+import { InlineQueue } from './InlineQueue'
+import { QueueView } from './QueueView'
+import { GroupSpeakersPanel } from './GroupSpeakersPanel'
+import { proxyArtUrl } from './ArtworkImage'
+
+// ── Props ─────────────────────────────────────────────────────────────────────
+
+export interface UnifiedPlaybackCardProps {
+  speaker: string
+  roomName: string
+  state: SonosPlaybackState | null
+  group?: SonosGroupInfo | null
+  allSpeakers: SonosNowPlayingEntry[]
+  error?: boolean
+  loading?: boolean
+  onRefresh: () => void
+  /**
+   * 'card'  — compact layout for speaker/group cards.
+   * 'full'  — large artwork layout for the Playing page.
+   */
+  variant: 'card' | 'full'
+  /** Show volume slider (default: false — card variant handles volume separately) */
+  showVolume?: boolean
+  /** Show full QueueView trigger in the queue section (default: false) */
+  showFullQueue?: boolean
+  /** Show the grouped speakers panel at the bottom (default: true) */
+  showGroupSpeakers?: boolean
+  /** Show the inline queue preview + full queue trigger (default: true) */
+  showQueue?: boolean
+  /** Additional className for the root element */
+  className?: string
+}
+
+// ── Component ─────────────────────────────────────────────────────────────────
+
+/**
+ * Shared playback card component used by both SpeakerCards and the Playing page.
+ *
+ * Configurable via props:
+ * - variant='card'  → compact artwork, no progress bar, limited queue, no volume
+ * - variant='full'  → large artwork, progress bar, full queue trigger, volume with group popover
+ */
+export function UnifiedPlaybackCard({
+  speaker,
+  roomName,
+  state,
+  group,
+  allSpeakers,
+  error,
+  loading,
+  onRefresh,
+  variant,
+  showVolume = false,
+  showFullQueue = false,
+  showGroupSpeakers = true,
+  showQueue = true,
+  className,
+}: UnifiedPlaybackCardProps) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const navigate = useNavigate()
+  const goToBrowseResumed = useGoToBrowseResumed()
+  const [queueViewOpen, setQueueViewOpen] = useState(false)
+
+  const invalidate = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ['sonos', 'now-playing'] })
+  }, [queryClient])
+
+  const seekMutation = useMutation({
+    mutationFn: (seconds: number) => api.sonos.seek(speaker, seconds),
+    onSuccess: invalidate,
+    onError: () => toast({ message: 'Could not seek', type: 'error' }),
+  })
+
+  // ── Loading ─────────────────────────────────────────────────────────────
+
+  if (loading) {
+    if (variant === 'full') {
+      return (
+        <div className={cn('flex flex-col gap-6 px-1 py-4', className)}>
+          <Skeleton className="mx-auto aspect-square w-full max-w-xs rounded-xl" />
+          <div className="space-y-2">
+            <Skeleton className="h-6 w-3/4 rounded-lg" />
+            <Skeleton className="h-4 w-1/2 rounded-lg" />
+            <Skeleton className="h-4 w-2/5 rounded-lg" />
+          </div>
+          <Skeleton className="h-8 w-full rounded-lg" />
+          <Skeleton className="h-14 w-full rounded-xl" />
+        </div>
+      )
+    }
+    return null
+  }
+
+  // ── Error ────────────────────────────────────────────────────────────────
+
+  if (error) {
+    return (
+      <div className={cn('rounded-lg bg-red-500/10 px-3 py-2 text-sm text-red-400', className)}>
+        Could not reach this speaker.{' '}
+        <button
+          onClick={onRefresh}
+          className="underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  // ── Empty ────────────────────────────────────────────────────────────────
+
+  if (!state || (state.playbackState === 'STOPPED' && !state.currentTrack.title && !state.currentTrack.stationName)) {
+    if (variant === 'full') {
+      return (
+        <div className={cn('flex flex-col items-center justify-center gap-6 py-12 text-center', className)}>
+          <Music2 className="h-16 w-16 text-caption/30" aria-hidden="true" />
+          <div>
+            <h2 className="text-lg font-semibold text-heading">Nothing playing</h2>
+            <p className="mt-1 max-w-xs text-sm text-caption">
+              Start playing music from the Favourites tab or your Sonos app.
+            </p>
+          </div>
+          <button
+            onClick={() => goToBrowseResumed(speaker)}
+            className={cn(
+              'flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-5 text-sm font-medium transition-colors',
+              'surface text-body hover:brightness-95 dark:hover:brightness-110',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            )}
+            aria-label="Browse music"
+          >
+            <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
+            Browse music
+          </button>
+        </div>
+      )
+    }
+    return (
+      <div className={cn('flex items-center gap-3', className)}>
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-tertiary)]" aria-hidden="true">
+          <Music2 className="h-6 w-6 text-caption/40" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-heading">{roomName}</p>
+          <p className="text-xs text-caption">Nothing playing</p>
+        </div>
+        <button
+          onClick={() => goToBrowseResumed(speaker)}
+          className={cn(
+            'flex min-h-[44px] items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors',
+            'surface text-body hover:brightness-95 dark:hover:brightness-110',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          )}
+          aria-label="Browse music"
+        >
+          <Music className="h-4 w-4 shrink-0" aria-hidden="true" />
+          Browse
+        </button>
+      </div>
+    )
+  }
+
+  if (!state) return null
+
+  const { currentTrack } = state
+  const isTv = state.inputSource === 'tv'
+  const isLineIn = state.inputSource === 'line-in'
+  const isLineSource = isTv || isLineIn
+  const isPlaying = state.playbackState === 'PLAYING'
+
+  const title = isTv
+    ? 'TV Audio'
+    : currentTrack.stationName || currentTrack.title || 'Unknown track'
+  const artist = isTv ? null : currentTrack.artist || null
+  const album = isTv ? null : currentTrack.album || null
+  const artUri = currentTrack.albumArtUri
+  const showArt = !isLineSource && !!artUri
+  const elapsed = state.elapsedTime ?? 0
+  const duration = state.duration ?? 0
+  const trackUri = currentTrack.uri
+
+  function handleArtworkClick() {
+    if (trackUri && !isLineSource) {
+      navigate(`/sonos/track?uri=${encodeURIComponent(trackUri)}&speaker=${encodeURIComponent(speaker)}`)
+    }
+  }
+
+  // ── Full variant ─────────────────────────────────────────────────────────
+
+  if (variant === 'full') {
+    return (
+      <div className={cn('flex flex-col gap-5', className)}>
+        {/* Large album art — tappable */}
+        <button
+          onClick={handleArtworkClick}
+          disabled={isLineSource || !trackUri}
+          aria-label={trackUri && !isLineSource ? `View details for ${title}` : undefined}
+          className={cn(
+            'mx-auto aspect-square w-full max-w-xs overflow-hidden rounded-xl',
+            'bg-[var(--bg-secondary)] flex items-center justify-center',
+            !isPlaying && 'opacity-80',
+            (isLineSource || !trackUri) && 'cursor-default',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          )}
+        >
+          {isLineSource ? (
+            <Tv className="h-16 w-16 text-caption" aria-hidden="true" />
+          ) : showArt ? (
+            <img
+              src={proxyArtUrl(artUri) ?? ''}
+              alt=""
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <ImageOff className="h-16 w-16 text-caption" aria-hidden="true" />
+          )}
+        </button>
+
+        {/* Track metadata — title tappable */}
+        <div className="min-w-0 text-center">
+          <button
+            onClick={handleArtworkClick}
+            disabled={isLineSource || !trackUri}
+            className={cn(
+              'text-xl font-semibold leading-tight text-heading',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 rounded',
+              (isLineSource || !trackUri) && 'cursor-default',
+            )}
+          >
+            {title}
+          </button>
+          {artist && (
+            <p className="mt-1 text-base text-caption">{artist}</p>
+          )}
+          {album && (
+            <p className="mt-0.5 text-sm text-caption/70">{album}</p>
+          )}
+        </div>
+
+        {/* Progress bar */}
+        <ProgressBar
+          elapsed={elapsed}
+          duration={duration}
+          playing={isPlaying}
+          onSeek={seconds => seekMutation.mutate(seconds)}
+        />
+
+        {/* Playback controls */}
+        <PlaybackControls
+          speaker={speaker}
+          state={state}
+          onInvalidate={invalidate}
+        />
+
+        {/* Volume — with group popover */}
+        {showVolume && (
+          <div>
+            <p className="mb-2 text-xs font-medium text-caption">Volume</p>
+            <SpeakerVolumeControl
+              speaker={speaker}
+              roomName={roomName}
+              volume={state.volume}
+              group={group}
+              allSpeakers={allSpeakers}
+            />
+          </div>
+        )}
+
+        {/* Queue section — compact preview + optional full QueueView trigger */}
+        {showQueue && (
+          <>
+            <InlineQueue
+              speaker={speaker}
+              currentTrackUri={trackUri ?? null}
+              playbackState={state}
+              onViewFullQueue={showFullQueue ? () => setQueueViewOpen(true) : undefined}
+            />
+            {showFullQueue && (
+              <QueueView
+                speaker={speaker}
+                open={queueViewOpen}
+                onClose={() => setQueueViewOpen(false)}
+                currentTrackUri={trackUri ?? null}
+                playbackState={state}
+              />
+            )}
+          </>
+        )}
+
+        {/* Group speakers panel */}
+        {showGroupSpeakers && (
+          <GroupSpeakersPanel
+            coordinatorSpeaker={speaker}
+            group={group}
+            allSpeakers={allSpeakers}
+          />
+        )}
+      </div>
+    )
+  }
+
+  // ── Card variant ─────────────────────────────────────────────────────────
+
+  return (
+    <div className={cn('flex flex-col gap-3', className)}>
+      {/* Compact now-playing row: artwork + track info — tappable */}
+      <button
+        onClick={handleArtworkClick}
+        disabled={isLineSource || !trackUri}
+        aria-label={trackUri && !isLineSource ? `View details for ${title}` : undefined}
+        className={cn(
+          'flex items-center gap-3 w-full text-left rounded-lg',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          (isLineSource || !trackUri) && 'cursor-default',
+        )}
+      >
+        {/* Album art */}
+        <div
+          className={cn(
+            'relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-[var(--bg-tertiary)]',
+            !isPlaying && 'opacity-60',
+          )}
+          aria-hidden="true"
+        >
+          {isLineSource ? (
+            <Tv className="h-6 w-6 text-caption" aria-hidden="true" />
+          ) : showArt ? (
+            <img
+              src={proxyArtUrl(artUri) ?? ''}
+              alt=""
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <ImageOff className="h-6 w-6 text-caption" aria-hidden="true" />
+          )}
+        </div>
+
+        {/* Track info */}
+        <div className="min-w-0 flex-1">
+          <p className={cn(
+            'truncate text-sm font-semibold leading-tight',
+            isPlaying ? 'text-heading' : 'text-caption',
+          )}>
+            {title}
+          </p>
+          {artist && (
+            <p className="mt-0.5 truncate text-xs text-caption">{artist}</p>
+          )}
+          {album && (
+            <p className="mt-0.5 truncate text-[11px] text-caption/70">{album}</p>
+          )}
+        </div>
+      </button>
+
+      {/* Playback controls */}
+      <PlaybackControls
+        speaker={speaker}
+        state={state}
+        onInvalidate={invalidate}
+      />
+
+      {/* Volume (card variant — optional, usually false) */}
+      {showVolume && (
+        <div>
+          <p className="mb-1.5 text-xs font-medium text-caption">Volume</p>
+          <SpeakerVolumeControl
+            speaker={speaker}
+            roomName={roomName}
+            volume={state.volume}
+            group={group}
+            allSpeakers={allSpeakers}
+          />
+        </div>
+      )}
+
+      {/* Queue — compact preview; QueueView is the full surface */}
+      {showQueue && (
+        <>
+          <InlineQueue
+            speaker={speaker}
+            currentTrackUri={trackUri ?? null}
+            playbackState={state}
+            onViewFullQueue={showFullQueue ? () => setQueueViewOpen(true) : undefined}
+          />
+          {showFullQueue && (
+            <QueueView
+              speaker={speaker}
+              open={queueViewOpen}
+              onClose={() => setQueueViewOpen(false)}
+              currentTrackUri={trackUri ?? null}
+              playbackState={state}
+            />
+          )}
+        </>
+      )}
+
+      {/* Group speakers panel */}
+      {showGroupSpeakers && (
+        <GroupSpeakersPanel
+          coordinatorSpeaker={speaker}
+          group={group}
+          allSpeakers={allSpeakers}
+        />
+      )}
+    </div>
+  )
+}

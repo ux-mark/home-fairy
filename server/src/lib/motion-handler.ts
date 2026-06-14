@@ -1,8 +1,11 @@
 import { getAll, getOne, run } from '../db/index.js'
+import { log } from './logger.js'
+import { FAIRY_QUEEN } from './constants.js'
 import { activateScene, deactivateScene } from './scene-executor.js'
 import { mtaIndicator } from './mta-indicator.js'
 import { weatherIndicator } from './weather-indicator.js'
 import { sonosManager } from './sonos-manager.js'
+import { isHushingActive } from './hushing.js'
 
 interface RoomTimer {
   timeout: NodeJS.Timeout
@@ -33,17 +36,6 @@ interface DefaultSceneRow {
   scene_name: string
   active_from: string | null
   active_to: string | null
-}
-
-function log(message: string, category = 'motion'): void {
-  try {
-    run('INSERT INTO logs (message, category) VALUES (?, ?)', [
-      message,
-      category,
-    ])
-  } catch {
-    console.error('Failed to write log:', message)
-  }
 }
 
 function debugLog(message: string): void {
@@ -85,7 +77,7 @@ export class MotionHandler {
           this.lockedRooms.add(name)
         }
         if (this.lockedRooms.size > 0) {
-          log(`Restored ${this.lockedRooms.size} room locks from database`, 'system')
+          log(`Restored ${this.lockedRooms.size} room locks from database`, 'system', FAIRY_QUEEN)
         }
       }
     } catch {
@@ -112,7 +104,7 @@ export class MotionHandler {
   lockRooms(roomNames: string[]): void {
     for (const name of roomNames) {
       this.lockedRooms.add(name)
-      log(`Room locked: ${name}`)
+      log(`Room locked: ${name}`, 'motion', FAIRY_QUEEN)
     }
     this.persistLockedRooms()
   }
@@ -120,7 +112,7 @@ export class MotionHandler {
   // Unlock all rooms — called when wake mode is reached
   unlockAllRooms(): void {
     if (this.lockedRooms.size > 0) {
-      log(`Unlocking ${this.lockedRooms.size} rooms`)
+      log(`Unlocking ${this.lockedRooms.size} rooms`, 'motion', FAIRY_QUEEN)
       this.lockedRooms.clear()
       this.persistLockedRooms()
     }
@@ -255,7 +247,7 @@ export class MotionHandler {
     // Find which room this sensor belongs to
     const deviceRoom = this.findRoomForSensor(deviceId, sensorName)
     if (!deviceRoom) {
-      log(`Motion sensor "${sensorName}" not assigned to any room`)
+      log(`Motion sensor "${sensorName}" not assigned to any room`, 'motion', FAIRY_QUEEN)
       return
     }
 
@@ -270,10 +262,10 @@ export class MotionHandler {
     } catch { /* don't let activity tracking break motion handling */ }
 
     if (value === 'active') {
-      log(`Motion active: ${sensorName} in ${roomName}`)
+      const parentId = log(`Motion active in ${roomName} (${sensorName})`, 'motion', FAIRY_QUEEN)
 
       // Cancel any existing timer for this room
-      this.cancelRoomTimer(roomName)
+      this.cancelRoomTimer(roomName, parentId)
 
       // Notify Sonos manager of room activity (non-blocking, has its own guards)
       sonosManager.onRoomMotionActive(roomName).catch(() => {})
@@ -290,7 +282,7 @@ export class MotionHandler {
         roomName,
       ])
       if (!room) {
-        log(`Room "${roomName}" not found in database`)
+        log(`Room "${roomName}" not found in database`, 'motion', FAIRY_QUEEN)
         return
       }
       if (!room.auto) {
@@ -326,6 +318,13 @@ export class MotionHandler {
         return
       }
 
+      // Check if Hushing Home is globally active — skip auto activation
+      const manualRow = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'hushing_active'")
+      if (manualRow?.value === 'true') {
+        debugLog(`Motion in ${roomName} but Hushing Home is active — skipping scene activation`)
+        return
+      }
+
       // Check for manual scene override — user explicitly activated a scene, skip auto
       // If scene_manual is set but current_scene is empty, the flag is stale (e.g. server restart) — clear it
       if (room.scene_manual) {
@@ -347,17 +346,17 @@ export class MotionHandler {
 
       // Only activate if it differs from current scene
       if (sceneName !== room.current_scene) {
-        log(`Activating scene "${sceneName}" for room ${roomName}`)
+        log(`Motion active in ${roomName} → activating ${sceneName}`, 'motion', FAIRY_QUEEN, undefined, parentId)
         try {
-          await activateScene(sceneName)
+          await activateScene(sceneName, undefined, 'auto', undefined, parentId)
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err)
-          log(`Error activating scene: ${msg}`)
+          log(`Error activating scene: ${msg}`, 'motion', FAIRY_QUEEN, undefined, parentId)
         }
       }
     } else {
       // inactive
-      log(`Motion inactive: ${sensorName} in ${roomName}`)
+      const inactiveParentId = log(`Motion inactive in ${roomName} (${sensorName})`, 'motion', FAIRY_QUEEN)
 
       // Check if ALL sensors in this room are inactive
       const roomSensors = getAll<DeviceRoomRow>(
@@ -394,12 +393,18 @@ export class MotionHandler {
 
       const durationMs = room.timer * 60 * 1000
       log(
-        `All sensors inactive in ${roomName}, starting ${room.timer}min timer`,
+        `Motion inactive in ${roomName} → starting ${room.timer}m timer`, 'motion', FAIRY_QUEEN, undefined, inactiveParentId,
       )
 
       const timeout = setTimeout(async () => {
         this.roomTimers.delete(roomName)
-        log(`Timer expired for ${roomName}, deactivating scene`)
+
+        if (isHushingActive()) {
+          log(`Hushing Home active — suppressing room timer deactivation for ${roomName}`, 'motion', FAIRY_QUEEN)
+          return
+        }
+
+        const timerParentId = log(`Timer expired for ${roomName}, deactivating scene`, 'motion', FAIRY_QUEEN)
 
         const currentRoom = getOne<RoomRow>(
           'SELECT * FROM rooms WHERE name = ?',
@@ -407,10 +412,10 @@ export class MotionHandler {
         )
         if (currentRoom?.current_scene) {
           try {
-            await deactivateScene(currentRoom.current_scene)
+            await deactivateScene(currentRoom.current_scene, undefined, timerParentId)
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err)
-            log(`Error deactivating scene: ${msg}`)
+            log(`Error deactivating scene: ${msg}`, 'motion', FAIRY_QUEEN, undefined, timerParentId)
           }
         }
         // Clear manual override flag when room goes inactive
@@ -426,13 +431,21 @@ export class MotionHandler {
     }
   }
 
-  cancelRoomTimer(roomName: string): void {
+  cancelRoomTimer(roomName: string, parentId?: number): void {
     const timer = this.roomTimers.get(roomName)
     if (timer) {
       clearTimeout(timer.timeout)
       this.roomTimers.delete(roomName)
-      log(`Cancelled timer for ${roomName}`)
+      log(`Cancelled timer for ${roomName}`, 'motion', FAIRY_QUEEN, undefined, parentId)
     }
+  }
+
+  cancelAllRoomTimers(): void {
+    for (const [roomName, timer] of this.roomTimers) {
+      clearTimeout(timer.timeout)
+      log(`Hushing Home active — cancelled room inactivity timer for ${roomName}`, 'motion', FAIRY_QUEEN)
+    }
+    this.roomTimers.clear()
   }
 
   getTimerStatus(): { roomName: string; remainingMs: number }[] {

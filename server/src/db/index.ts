@@ -1,6 +1,7 @@
 import Database, { type Database as DatabaseType } from 'better-sqlite3'
 import path from 'path'
 import fs from 'fs'
+import { classifySourceUri } from '../lib/source-uri.js'
 
 const dbPath = process.env.FAIRY_DB_PATH || './data/thefairies.sqlite'
 const dbDir = path.dirname(dbPath)
@@ -13,6 +14,15 @@ const db: DatabaseType = new Database(dbPath)
 
 db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = ON')
+
+// Pi/SD-card tuning. WAL makes synchronous=NORMAL safe (fsync at checkpoint,
+// not per-transaction) — the default FULL costs an SD-card fsync on every
+// insert, which the motion handler and pollers pay constantly.
+db.pragma('synchronous = NORMAL')
+db.pragma('busy_timeout = 5000')
+db.pragma('cache_size = -64000') // 64MB page cache
+db.pragma('temp_store = MEMORY') // GROUP BY/ORDER BY scratch in RAM, not SD
+db.pragma('mmap_size = 134217728') // 128MB mmap window for reads
 
 export function initDb(): void {
   db.exec(`
@@ -27,6 +37,8 @@ export function initDb(): void {
       current_scene TEXT,
       last_active TEXT,
       scene_manual INTEGER DEFAULT 0,
+      created_by TEXT DEFAULT 'fairy-queen',
+      updated_by TEXT DEFAULT 'fairy-queen',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now'))
     );
@@ -39,8 +51,11 @@ export function initDb(): void {
       active_from TEXT,
       active_to TEXT,
       last_activated_at TEXT DEFAULT NULL,
+      last_activated_by TEXT DEFAULT 'fairy-queen',
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
+      created_by TEXT DEFAULT 'fairy-queen',
+      updated_by TEXT DEFAULT 'fairy-queen',
       sort_order INTEGER DEFAULT 0
     );
 
@@ -71,6 +86,8 @@ export function initDb(): void {
       message TEXT NOT NULL,
       debug TEXT,
       category TEXT,
+      user_id TEXT,
+      user_name TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -130,6 +147,26 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_device_history_lookup
       ON device_history (source, source_id, recorded_at);
 
+    -- Insights queries aggregate across all devices of a source within a
+    -- time window (WHERE source = ? AND recorded_at > ?). The lookup index
+    -- above can't serve that shape — source_id in the middle blocks the
+    -- range scan — so they were scanning every row of the source.
+    CREATE INDEX IF NOT EXISTS idx_device_history_window
+      ON device_history (source, recorded_at);
+
+    -- Bare recorded_at indexes serve the hourly retention prune's
+    -- "recorded_at < cutoff" delete; the composite indexes above lead with
+    -- source/event_type and can't, leaving the prune a full scan.
+    CREATE INDEX IF NOT EXISTS idx_device_history_recorded
+      ON device_history (recorded_at);
+
+    -- hub_devices.label is used as a JOIN key by motion-handler's lux query
+    -- (device_rooms.device_label = h.label) and by several scene-executor
+    -- lookups for Twinkly / Fairy devices. Without this index those JOINs
+    -- scan the full hub_devices table on every motion event.
+    CREATE INDEX IF NOT EXISTS idx_hub_devices_label
+      ON hub_devices (label);
+
     CREATE TABLE IF NOT EXISTS room_activity (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       room_name TEXT NOT NULL,
@@ -141,8 +178,26 @@ export function initDb(): void {
     CREATE INDEX IF NOT EXISTS idx_room_activity_lookup
       ON room_activity (room_name, recorded_at);
 
+    -- Activity insights are house-wide: WHERE event_type = 'motion_active'
+    -- AND recorded_at > <window>, no room filter. The per-room index above
+    -- can't serve that, so those six queries were full-scanning the table.
+    CREATE INDEX IF NOT EXISTS idx_room_activity_event_window
+      ON room_activity (event_type, recorded_at);
+
+    CREATE INDEX IF NOT EXISTS idx_room_activity_recorded
+      ON room_activity (recorded_at);
+
     CREATE INDEX IF NOT EXISTS idx_logs_category
       ON logs (category, created_at DESC);
+
+    -- Serves the unfiltered recent-logs listing (ORDER BY created_at DESC
+    -- LIMIT) and the retention prune's created_at range delete; neither can
+    -- use idx_logs_category because category leads it.
+    CREATE INDEX IF NOT EXISTS idx_logs_created_at
+      ON logs (created_at);
+
+    CREATE INDEX IF NOT EXISTS idx_logs_parent_id
+      ON logs (parent_id) WHERE parent_id IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -183,6 +238,8 @@ export function initDb(): void {
     CREATE TABLE IF NOT EXISTS modes (
       name TEXT PRIMARY KEY,
       display_order INTEGER DEFAULT 0,
+      created_by TEXT DEFAULT 'fairy-queen',
+      updated_by TEXT DEFAULT 'fairy-queen',
       created_at TEXT DEFAULT (datetime('now'))
     );
 
@@ -245,7 +302,7 @@ export function initDb(): void {
     CREATE TABLE IF NOT EXISTS sonos_auto_play (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       room_name TEXT,
-      mode_name TEXT NOT NULL REFERENCES modes(name) ON UPDATE CASCADE ON DELETE CASCADE,
+      mode_name TEXT REFERENCES modes(name) ON UPDATE CASCADE ON DELETE CASCADE,
       favourite_name TEXT NOT NULL,
       trigger_type TEXT NOT NULL CHECK(trigger_type IN ('mode_change', 'if_not_playing', 'if_source_not')),
       trigger_value TEXT,
@@ -275,7 +332,139 @@ export function initDb(): void {
       user_id TEXT NOT NULL,
       used_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS user_actions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      user_name TEXT NOT NULL,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT NOT NULL,
+      details TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_actions_entity
+      ON user_actions (entity_type, entity_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_user_actions_user
+      ON user_actions (user_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS spotify_tokens (
+      id INTEGER PRIMARY KEY,
+      access_token TEXT NOT NULL,
+      refresh_token TEXT NOT NULL,
+      expires_at INTEGER NOT NULL,
+      scope TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS user_favourites (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      source TEXT NOT NULL CHECK(source IN ('sonos','spotify','nas','radio')),
+      source_uri TEXT NOT NULL,
+      title TEXT NOT NULL,
+      artist TEXT,
+      album_art_uri TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id, source, source_uri)
+    );
+
+    CREATE TABLE IF NOT EXISTS artist_countries (
+      spotify_artist_id TEXT PRIMARY KEY,
+      artist_name TEXT NOT NULL,
+      country_code TEXT,
+      country_name TEXT,
+      sub_region TEXT,
+      image_url TEXT,
+      source TEXT NOT NULL DEFAULT 'musicbrainz',
+      musicbrainz_id TEXT,
+      confidence TEXT NOT NULL DEFAULT 'high',
+      resolved_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_artist_countries_name
+      ON artist_countries (artist_name COLLATE NOCASE);
+
+    CREATE TABLE IF NOT EXISTS track_countries (
+      spotify_track_id TEXT PRIMARY KEY,
+      track_name TEXT NOT NULL,
+      isrc TEXT,
+      artist_ids TEXT NOT NULL DEFAULT '[]',
+      musicbrainz_recording_id TEXT,
+      resolved_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_track_countries_isrc
+      ON track_countries (isrc) WHERE isrc IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS fairylists (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS fairylist_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      fairylist_id INTEGER NOT NULL REFERENCES fairylists(id) ON DELETE CASCADE,
+      source TEXT NOT NULL CHECK(source IN ('sonos','spotify','nas','radio')),
+      source_uri TEXT NOT NULL,
+      title TEXT NOT NULL,
+      artist TEXT,
+      album_art_uri TEXT,
+      sort_order INTEGER DEFAULT 0,
+      added_by TEXT NOT NULL,
+      added_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(fairylist_id, source, source_uri)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_fairylist_items_list
+      ON fairylist_items (fairylist_id, sort_order);
+
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key        TEXT PRIMARY KEY,
+      value      TEXT NOT NULL,           -- JSON-encoded scalar/object
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS spotify_pinned_playlists (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id TEXT NOT NULL,
+      playlist_id TEXT NOT NULL,
+      uri TEXT NOT NULL,
+      name TEXT NOT NULL,
+      image_url TEXT,
+      owner_display_name TEXT,
+      owner_id TEXT,
+      track_total INTEGER,
+      is_editorial INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(user_id, playlist_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_spotify_pinned_user
+      ON spotify_pinned_playlists (user_id, sort_order);
   `)
+
+  // Migration: add user tracking columns to scenes
+  const sceneCols = db.prepare("PRAGMA table_info('scenes')").all() as { name: string }[]
+  const sceneColNames = sceneCols.map(c => c.name)
+  if (!sceneColNames.includes('created_by')) {
+    db.exec(`ALTER TABLE scenes ADD COLUMN created_by TEXT DEFAULT 'fairy-queen'`)
+  }
+  if (!sceneColNames.includes('updated_by')) {
+    db.exec(`ALTER TABLE scenes ADD COLUMN updated_by TEXT DEFAULT 'fairy-queen'`)
+  }
+  if (!sceneColNames.includes('last_activated_by')) {
+    db.exec(`ALTER TABLE scenes ADD COLUMN last_activated_by TEXT DEFAULT 'fairy-queen'`)
+  }
 
   // Add max_plays column to sonos_auto_play table if it doesn't exist
   const autoPlayCols = db.prepare("PRAGMA table_info('sonos_auto_play')").all() as { name: string }[]
@@ -285,6 +474,94 @@ export function initDb(): void {
   }
   if (!autoPlayColNames.includes('podcast_feed_url')) {
     db.exec('ALTER TABLE sonos_auto_play ADD COLUMN podcast_feed_url TEXT DEFAULT NULL')
+  }
+  if (!autoPlayCols.some(c => c.name === 'nas_uri')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN nas_uri TEXT DEFAULT NULL')
+  }
+  if (!autoPlayCols.some(c => c.name === 'spotify_uri')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN spotify_uri TEXT DEFAULT NULL')
+  }
+  // Phase 4: schedule gating (days of week + time window)
+  if (!autoPlayColNames.includes('days_of_week')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN days_of_week TEXT DEFAULT NULL')
+  }
+  if (!autoPlayColNames.includes('time_start')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN time_start TEXT DEFAULT NULL')
+  }
+  if (!autoPlayColNames.includes('time_end')) {
+    db.exec('ALTER TABLE sonos_auto_play ADD COLUMN time_end TEXT DEFAULT NULL')
+  }
+
+  // Drop the NOT NULL constraint from sonos_auto_play.mode_name so a rule can
+  // be scheduled by time window alone (Mode XOR Time-window). SQLite has no
+  // ALTER TABLE … DROP NOT NULL — rebuild the table preserving data.
+  const modeNameCol = autoPlayCols.find(c => c.name === 'mode_name') as
+    | { name: string; notnull: number }
+    | undefined
+  if (modeNameCol && modeNameCol.notnull === 1) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE sonos_auto_play__new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        room_name TEXT,
+        mode_name TEXT REFERENCES modes(name) ON UPDATE CASCADE ON DELETE CASCADE,
+        favourite_name TEXT NOT NULL,
+        trigger_type TEXT NOT NULL CHECK(trigger_type IN ('mode_change', 'if_not_playing', 'if_source_not')),
+        trigger_value TEXT,
+        enabled INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now')),
+        max_plays INTEGER DEFAULT NULL,
+        podcast_feed_url TEXT DEFAULT NULL,
+        nas_uri TEXT DEFAULT NULL,
+        spotify_uri TEXT DEFAULT NULL,
+        days_of_week TEXT DEFAULT NULL,
+        time_start TEXT DEFAULT NULL,
+        time_end TEXT DEFAULT NULL
+      );
+      INSERT INTO sonos_auto_play__new
+        (id, room_name, mode_name, favourite_name, trigger_type, trigger_value,
+         enabled, created_at, updated_at, max_plays, podcast_feed_url, nas_uri,
+         spotify_uri, days_of_week, time_start, time_end)
+      SELECT id, room_name, mode_name, favourite_name, trigger_type, trigger_value,
+             enabled, created_at, updated_at, max_plays, podcast_feed_url, nas_uri,
+             spotify_uri, days_of_week, time_start, time_end
+      FROM sonos_auto_play;
+      DROP TABLE sonos_auto_play;
+      ALTER TABLE sonos_auto_play__new RENAME TO sonos_auto_play;
+      COMMIT;
+    `)
+    console.log('[db] Rebuilt sonos_auto_play with nullable mode_name')
+  }
+
+  // Migration: add user tracking columns to rooms
+  const roomTrackCols = db.prepare("PRAGMA table_info('rooms')").all() as { name: string }[]
+  const roomTrackColNames = roomTrackCols.map(c => c.name)
+  if (!roomTrackColNames.includes('created_by')) {
+    db.exec(`ALTER TABLE rooms ADD COLUMN created_by TEXT DEFAULT 'fairy-queen'`)
+  }
+  if (!roomTrackColNames.includes('updated_by')) {
+    db.exec(`ALTER TABLE rooms ADD COLUMN updated_by TEXT DEFAULT 'fairy-queen'`)
+  }
+
+  // Migration: add user tracking columns to modes
+  const modeTrackCols = db.prepare("PRAGMA table_info('modes')").all() as { name: string }[]
+  const modeTrackColNames = modeTrackCols.map(c => c.name)
+  if (!modeTrackColNames.includes('created_by')) {
+    db.exec(`ALTER TABLE modes ADD COLUMN created_by TEXT DEFAULT 'fairy-queen'`)
+  }
+  if (!modeTrackColNames.includes('updated_by')) {
+    db.exec(`ALTER TABLE modes ADD COLUMN updated_by TEXT DEFAULT 'fairy-queen'`)
+  }
+
+  // Migration: add user tracking columns to logs
+  const logsCols = db.prepare("PRAGMA table_info('logs')").all() as { name: string }[]
+  const logsColNames = logsCols.map(c => c.name)
+  if (!logsColNames.includes('user_id')) {
+    db.exec(`ALTER TABLE logs ADD COLUMN user_id TEXT`)
+  }
+  if (!logsColNames.includes('user_name')) {
+    db.exec(`ALTER TABLE logs ADD COLUMN user_name TEXT`)
   }
 
   // Add sonos columns to rooms table if they don't exist
@@ -301,6 +578,66 @@ export function initDb(): void {
   }
   if (!colNames.includes('promoted')) {
     db.exec('ALTER TABLE rooms ADD COLUMN promoted INTEGER DEFAULT 0')
+  }
+  if (!colNames.includes('hush_scene')) {
+    if (colNames.includes('manual_scene')) {
+      // Rename existing manual_scene column to hush_scene
+      db.exec('ALTER TABLE rooms RENAME COLUMN manual_scene TO hush_scene')
+      console.log('[db] Renamed rooms.manual_scene → hush_scene')
+    } else {
+      db.exec('ALTER TABLE rooms ADD COLUMN hush_scene TEXT DEFAULT NULL')
+    }
+  }
+
+  // Migrate current_state key from manual_active to hush_active (legacy)
+  const hushActiveRow = db.prepare("SELECT value FROM current_state WHERE key = 'hush_active'").get() as { value: string } | undefined
+  if (!hushActiveRow) {
+    const oldManualRow = db.prepare("SELECT value FROM current_state WHERE key = 'manual_active'").get() as { value: string } | undefined
+    if (oldManualRow) {
+      db.prepare(
+        `INSERT INTO current_state (key, value, updated_at)
+         VALUES ('hush_active', ?, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      ).run(oldManualRow.value)
+      db.prepare("DELETE FROM current_state WHERE key = 'manual_active'").run()
+      console.log('[db] Migrated current_state key manual_active → hush_active')
+    }
+  }
+
+  // Migration: rename current_state key hush_active → hushing_active
+  const hushingActiveRow = db.prepare("SELECT value FROM current_state WHERE key = 'hushing_active'").get() as { value: string } | undefined
+  if (!hushingActiveRow) {
+    const oldHushRow = db.prepare("SELECT value FROM current_state WHERE key = 'hush_active'").get() as { value: string } | undefined
+    if (oldHushRow) {
+      db.prepare(
+        `INSERT INTO current_state (key, value, updated_at)
+         VALUES ('hushing_active', ?, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      ).run(oldHushRow.value)
+      db.prepare("DELETE FROM current_state WHERE key = 'hush_active'").run()
+      console.log('[db] Migrated current_state key hush_active → hushing_active')
+    }
+  }
+
+  // Migration: seed hushing_scene from first configured room hush_scene if not already set
+  const hushingSceneRow = db.prepare("SELECT value FROM current_state WHERE key = 'hushing_scene'").get() as { value: string } | undefined
+  if (!hushingSceneRow) {
+    const firstHushRoom = db.prepare('SELECT hush_scene FROM rooms WHERE hush_scene IS NOT NULL LIMIT 1').get() as { hush_scene: string } | undefined
+    const sceneValue = firstHushRoom?.hush_scene ?? null
+    if (sceneValue) {
+      db.prepare(
+        `INSERT INTO current_state (key, value, updated_at)
+         VALUES ('hushing_scene', ?, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+      ).run(sceneValue)
+      console.log(`[db] Seeded hushing_scene from room hush_scene: ${sceneValue}`)
+    }
+  }
+
+  // Migration: drop hush_scene column from rooms (superseded by current_state hushing_scene)
+  if (colNames.includes('hush_scene')) {
+    db.exec('ALTER TABLE rooms DROP COLUMN hush_scene')
+    console.log('[db] Dropped rooms.hush_scene column')
   }
 
   // Add active column to tables that need device deactivation support (existing DBs)
@@ -366,6 +703,55 @@ export function initDb(): void {
     }
   }
 
+  // Migration: add image_url to artist_countries
+  const artistCountryCols = db.prepare("PRAGMA table_info('artist_countries')").all() as { name: string }[]
+  if (!artistCountryCols.map(c => c.name).includes('image_url')) {
+    db.exec('ALTER TABLE artist_countries ADD COLUMN image_url TEXT DEFAULT NULL')
+  }
+
+  // Migration: add artist column to user_favourites
+  const favCols = db.prepare("PRAGMA table_info('user_favourites')").all() as { name: string }[]
+  if (!favCols.map(c => c.name).includes('artist')) {
+    db.exec('ALTER TABLE user_favourites ADD COLUMN artist TEXT DEFAULT NULL')
+  }
+
+  // Migration: fairylist_items saved from the queue stored Sonos-encoded
+  // Spotify URIs (x-sonos-spotify:…) with source='nas'. Reclassify the rows we
+  // can provably decode to source='spotify' with the canonical spotify: URI.
+  // Idempotent — the LIKE filter matches nothing once rows are normalised.
+  const badSpotifyItems = db.prepare(
+    "SELECT id, fairylist_id, source_uri FROM fairylist_items WHERE source_uri LIKE 'x-sonos-spotify:%'",
+  ).all() as Array<{ id: number; fairylist_id: number; source_uri: string }>
+  if (badSpotifyItems.length > 0) {
+    const findDupe = db.prepare(
+      'SELECT id FROM fairylist_items WHERE fairylist_id = ? AND source = ? AND source_uri = ? AND id != ?',
+    )
+    const updateItem = db.prepare('UPDATE fairylist_items SET source = ?, source_uri = ? WHERE id = ?')
+    const deleteItem = db.prepare('DELETE FROM fairylist_items WHERE id = ?')
+    const migrateItems = db.transaction(() => {
+      let fixed = 0
+      let deduped = 0
+      for (const row of badSpotifyItems) {
+        const { kind, source, normalizedUri } = classifySourceUri(row.source_uri)
+        if (kind !== 'spotify') continue // only touch rows we can provably classify
+        // UNIQUE(fairylist_id, source, source_uri) — if the normalised row
+        // already exists, drop this duplicate instead of colliding.
+        if (findDupe.get(row.fairylist_id, source, normalizedUri, row.id)) {
+          deleteItem.run(row.id)
+          deduped++
+        } else {
+          updateItem.run(source, normalizedUri, row.id)
+          fixed++
+        }
+      }
+      return { fixed, deduped }
+    })
+    const { fixed, deduped } = migrateItems()
+    if (fixed > 0 || deduped > 0) {
+      console.log(`[db] Normalised ${fixed} fairylist Spotify URIs (${deduped} duplicates removed)`)
+    }
+  }
+
   // Seed defaults for a fresh database
   seedDefaults()
 }
@@ -410,18 +796,36 @@ function seedDefaults(): void {
   }
 }
 
+// Cache of prepared statements keyed by their SQL text. better-sqlite3 does
+// NOT cache statements internally — `db.prepare(sql)` re-parses the SQL
+// every call (~50–500 µs depending on complexity). The motion path runs
+// 10–15 prepared queries per event; reusing prepared statements saves
+// 10–30 ms per event end-to-end without changing semantics.
+//
+// Statements bind parameters at `.run/.get/.all` time, so a cached
+// statement is safe to reuse across callers and across transactions.
+const _stmtCache = new Map<string, Database.Statement>()
+export function prepareCached(sql: string): Database.Statement {
+  let stmt = _stmtCache.get(sql)
+  if (!stmt) {
+    stmt = db.prepare(sql)
+    _stmtCache.set(sql, stmt)
+  }
+  return stmt
+}
+
 export function getAll<T>(sql: string, params?: unknown[]): T[] {
-  const stmt = db.prepare(sql)
+  const stmt = prepareCached(sql)
   return (params ? stmt.all(...params) : stmt.all()) as T[]
 }
 
 export function getOne<T>(sql: string, params?: unknown[]): T | undefined {
-  const stmt = db.prepare(sql)
+  const stmt = prepareCached(sql)
   return (params ? stmt.get(...params) : stmt.get()) as T | undefined
 }
 
 export function run(sql: string, params?: unknown[]): Database.RunResult {
-  const stmt = db.prepare(sql)
+  const stmt = prepareCached(sql)
   return params ? stmt.run(...params) : stmt.run()
 }
 

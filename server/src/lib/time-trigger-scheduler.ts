@@ -1,7 +1,10 @@
 import { getAll, getOne, run } from '../db/index.js'
+import { log } from './logger.js'
+import { FAIRY_QUEEN } from './constants.js'
 import type { Server as SocketServer } from 'socket.io'
 import { motionHandler } from './motion-handler.js'
 import { sonosManager } from './sonos-manager.js'
+import { isHushingActive } from './hushing.js'
 
 interface TimeTrigger {
   id: number
@@ -35,6 +38,50 @@ class TimeTriggerScheduler {
     const now = new Date()
     const todayDow = (now.getDay() + 6) % 7  // Convert JS Sunday=0 to Monday=0
 
+    // Catch-up: find the latest trigger that should have already fired today
+    let latestPast: TimeTrigger | null = null
+    for (const trigger of triggers) {
+      if (trigger.trigger_days) {
+        try {
+          const days: number[] = JSON.parse(trigger.trigger_days)
+          if (!days.includes(todayDow)) continue
+        } catch { continue }
+      }
+      const [h, m] = trigger.trigger_time.split(':').map(Number)
+      const triggerDate = new Date(now)
+      triggerDate.setHours(h, m, 0, 0)
+      if (triggerDate.getTime() <= now.getTime()) {
+        if (!latestPast || trigger.trigger_time > latestPast.trigger_time) {
+          latestPast = trigger
+        }
+      }
+    }
+
+    if (latestPast) {
+      const currentModeRow = getOne<{ value: string }>(
+        "SELECT value FROM current_state WHERE key = 'mode'",
+      )
+      const sleepRow = getOne<{ value: string }>(
+        "SELECT value FROM current_state WHERE key = 'sleep_mode_name'",
+      )
+      const sleepMode = sleepRow?.value || null
+      const wakeModeRow = getOne<{ value: string }>(
+        "SELECT value FROM current_state WHERE key = 'pref_night_wake_mode'",
+      )
+      const wakeMode = wakeModeRow?.value || 'Morning'
+
+      const shouldTransition = (() => {
+        if (sleepMode && currentModeRow?.value === sleepMode) {
+          return latestPast!.mode_name === wakeMode
+        }
+        return currentModeRow?.value !== latestPast!.mode_name
+      })()
+
+      if (shouldTransition) {
+        this.transitionMode(latestPast.mode_name, `scheduled time (${latestPast.trigger_time}) (catch-up)`)
+      }
+    }
+
     for (const trigger of triggers) {
       // Check day-of-week filter
       if (trigger.trigger_days) {
@@ -64,6 +111,10 @@ class TimeTriggerScheduler {
   }
 
   private transitionMode(mode: string, trigger: string) {
+    if (isHushingActive()) {
+      log(`Hushing Home active — suppressing time-trigger mode transition to "${mode}" (${trigger})`, 'system', FAIRY_QUEEN)
+      return
+    }
     try {
       // Check if current mode is the sleep mode — don't override it
       // UNLESS this transition IS the wake mode (which should unlock from sleep)
@@ -87,10 +138,7 @@ class TimeTriggerScheduler {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
         [mode],
       )
-      run(
-        'INSERT INTO logs (message, category) VALUES (?, ?)',
-        [`Auto mode transition: ${mode} (triggered by ${trigger})`, 'system'],
-      )
+      log(`Fairy Queen changed mode to ${mode} (scheduled ${trigger})`, 'system', FAIRY_QUEEN)
 
       // Check if this triggers wake unlock
       const wakeModeRow = getOne<{ value: string }>(
@@ -99,10 +147,7 @@ class TimeTriggerScheduler {
       const wakeMode = wakeModeRow?.value || 'Morning'
       if (mode === wakeMode && motionHandler.getLockedRooms().length > 0) {
         motionHandler.unlockAllRooms()
-        run(
-          'INSERT INTO logs (message, category) VALUES (?, ?)',
-          [`Wake mode reached (${mode}) — all rooms unlocked`, 'system'],
-        )
+        log(`Wake mode reached (${mode}) — all rooms unlocked`, 'system', FAIRY_QUEEN)
       }
 
       if (this.io) {
@@ -147,10 +192,7 @@ class TimeTriggerScheduler {
       .map(t => `${t.trigger_time} -> ${t.mode_name}`)
       .join(', ')
     try {
-      run(
-        'INSERT INTO logs (message, category) VALUES (?, ?)',
-        [`Time trigger schedule: ${schedule}`, 'system'],
-      )
+      log(`Time trigger schedule: ${schedule}`, 'system')
     } catch {
       // ignore logging failures
     }

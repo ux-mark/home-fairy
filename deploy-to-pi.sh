@@ -9,7 +9,7 @@ set -e
 #   Up to 5 timestamped backups are kept automatically.
 
 PI_HOST="queen@192.168.10.201"
-PI_DIR="/home/queen/thefairies-app"
+PI_DIR="/home/queen/home-fairy"
 LOCAL_DB="server/data/thefairies.sqlite"
 INCLUDE_DB=false
 
@@ -45,7 +45,7 @@ echo ""
 echo "Step 2: Installing, building, and starting on Pi..."
 ssh -t "$PI_HOST" bash -s << 'REMOTE'
 set -e
-cd ~/thefairies-app
+cd ~/home-fairy
 
 echo "Installing Node dependencies..."
 npm run install:all
@@ -59,19 +59,43 @@ if [ ! -d "venv" ]; then
 fi
 venv/bin/pip install -q -r requirements.txt
 echo "   Python dependencies installed"
-cd ~/thefairies-app
+cd ~/home-fairy
 
 echo ""
 echo "Setting up Sonos HTTP API..."
 SONOS_DIR="$HOME/node-sonos-http-api"
+PATCH_SRC="$HOME/home-fairy/sonos-patches"
+
 if [ ! -d "$SONOS_DIR" ]; then
-  echo "   Cloning node-sonos-http-api..."
+  echo "   Cloning node-sonos-http-api (jishi upstream)..."
   git clone https://github.com/jishi/node-sonos-http-api.git "$SONOS_DIR"
-  cd "$SONOS_DIR" && npm install && cd ~/thefairies-app
 else
   echo "   Updating node-sonos-http-api..."
-  cd "$SONOS_DIR" && git pull && npm install && cd ~/thefairies-app
+  cd "$SONOS_DIR" && git pull && cd ~/home-fairy
 fi
+
+# Copy home-fairy's vendored patches into the install and wire patch-package
+# so they re-apply on every `npm install`. See sonos-patches/README.md.
+echo "   Applying home-fairy patches to node-sonos-http-api..."
+mkdir -p "$SONOS_DIR/patches"
+cp "$PATCH_SRC"/*.patch "$SONOS_DIR/patches/"
+cd "$SONOS_DIR"
+if ! grep -q '"patch-package"' package.json; then
+  npm install --save-dev patch-package
+  node -e '
+    const fs = require("fs");
+    const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
+    p.scripts = p.scripts || {};
+    if (p.scripts.postinstall && p.scripts.postinstall !== "patch-package") {
+      p.scripts.postinstall = p.scripts.postinstall + " && patch-package";
+    } else {
+      p.scripts.postinstall = "patch-package";
+    }
+    fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
+  '
+fi
+npm install
+cd ~/home-fairy
 mkdir -p "$SONOS_DIR/logs"
 # Configure Sonos API to use port 3003 (consistent with 3001/3002)
 echo '{"port": 3003}' > "$SONOS_DIR/settings.json"
@@ -94,17 +118,26 @@ which pm2 > /dev/null 2>&1 || sudo npm install -g pm2
 
 echo ""
 echo "Starting services..."
-pm2 stop all 2>/dev/null || true
-pm2 start ecosystem.config.cjs
+# startOrReload: starts apps not yet running, reloads ones that are.
+# Touches only apps in this ecosystem file — leaves unrelated PM2 apps alone
+# (this Pi also runs code-fairy and coding-fairy under the same daemon).
+pm2 startOrReload ecosystem.config.cjs --update-env
 pm2 save
 
 echo ""
 echo "Running health check..."
 sleep 3
-if pm2 show thefairies | grep -q "online"; then
-  echo "Health check passed - thefairies is online"
-else
-  echo "WARNING: thefairies is not online! Check logs: pm2 logs thefairies"
+HEALTH_OK=true
+for app in home-fairy kasa-sidecar sonos-http-api; do
+  if pm2 jlist 2>/dev/null | grep -q "\"name\":\"$app\".*\"status\":\"online\""; then
+    echo "  $app: online"
+  else
+    echo "  $app: NOT ONLINE (check: pm2 logs $app)"
+    HEALTH_OK=false
+  fi
+done
+if [ "$HEALTH_OK" != true ]; then
+  echo "WARNING: one or more services failed health check."
 fi
 
 echo ""

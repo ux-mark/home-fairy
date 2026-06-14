@@ -7,12 +7,12 @@ Home Fairy is a home automation control system with a React frontend and Express
 - **Language**: TypeScript (frontend and backend)
 - **Frontend**: React 19, Vite, Tailwind CSS v4, Radix UI, react-colorful (HSV picker), TanStack Query, Socket.io client, PWA
 - **Backend**: Express 5, better-sqlite3, Socket.io, axios, Zod validation, SunCalc, gtfs-realtime-bindings
-- **Database**: SQLite with WAL mode. Tables: rooms, scenes, scene_rooms, scene_modes, room_auto_scenes, modes, mode_triggers, light_rooms, device_rooms, hub_devices, kasa_devices, sonos_speakers, sonos_auto_play, current_state, logs, device_history, room_activity, notifications
+- **Database**: SQLite with WAL mode. Tables: rooms, scenes, scene_rooms, scene_modes, room_auto_scenes, modes, mode_triggers, light_rooms, device_rooms, hub_devices, kasa_devices, sonos_speakers, sonos_auto_play, current_state, logs, device_history, room_activity, notifications, user_actions
 - **Package manager**: npm
 - **Process manager (production)**: PM2
 - **External services (managed by PM2)**:
   - `kasa-sidecar` — Python FastAPI sidecar for Kasa device control (port 3002, source: `server/kasa/`)
-  - `sonos-http-api` — [node-sonos-http-api](https://github.com/jishi/node-sonos-http-api) for Sonos speaker control (port 3003, installed at `~/node-sonos-http-api/`)
+  - `sonos-http-api` — [node-sonos-http-api](https://github.com/jishi/node-sonos-http-api) for Sonos speaker control (port 3003, installed at `~/node-sonos-http-api/`). Cloned pristine from jishi upstream; `deploy-to-pi.sh` then copies the `*.patch` files from `home-fairy/sonos-patches/` into the install and wires `patch-package` so the patches re-apply on every `npm install`. See `sonos-patches/README.md` for the patch's history and what to do if upstream changes break it.
 
 ## Project Structure
 ```
@@ -77,7 +77,7 @@ home-fairy/
 - Visual regression baselines: `.testing/baselines/`
 - Command: `npx playwright test --config .testing/playwright.config.ts`
 - Smoke command: `npx playwright test --config .testing/playwright.config.ts --grep @smoke`
-- Base URL: `http://localhost:8000`
+- Base URL: `http://localhost:8100` (isolated from production; unmocked API calls go to a dead-port proxy via `VITE_API_PROXY`)
 - Browsers: chromium (Mobile 375x812, Desktop 1280x720)
 
 ## Commands
@@ -92,8 +92,8 @@ npm run build            # Builds both client and server
 
 # Production (Pi)
 pm2 start ecosystem.config.cjs
-pm2 restart thefairies
-pm2 logs thefairies
+pm2 restart home-fairy
+pm2 logs home-fairy
 
 # Tests
 npx playwright test --config .testing/playwright.config.ts --reporter=list
@@ -201,9 +201,9 @@ Every device type has a dedicated detail route. Links to devices must use the co
 **Affected API types**: `PowerDevice`, `BatteryDevice`, `RoomIntelligenceData.devices`, `RoomIntelligenceData.batteryDevices`, `DeviceInsightsData.roomDevices`, `EnergyInsights.deviceCostRanking`.
 
 ## Pi Deployment
-- Repo location: ~/thefairies-app
+- Repo location: ~/home-fairy
 - Process manager: PM2 (ecosystem.config.cjs)
-- Database: ~/thefairies-app/server/data/thefairies.sqlite
+- Database: ~/home-fairy/server/data/thefairies.sqlite
 - External access: Cloudflare tunnel → home.thefairies.ie
 - Hubitat webhook: http://192.168.10.201:3001/hubitat
 

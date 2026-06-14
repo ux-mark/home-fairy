@@ -1,10 +1,33 @@
 import axios, { AxiosResponse } from 'axios'
+import https from 'node:https'
 import { run } from '../db/index.js'
+import { log } from './logger.js'
+import { getLifx } from './settings-store.js'
+
+// keepAlive reuses the TLS connection across calls — saves ~150–300 ms per
+// LIFX call (handshake) which compounds across a multi-light scene.
+const httpsAgent = new https.Agent({ keepAlive: true })
 
 const lifxApi = axios.create({
   baseURL: 'https://api.lifx.com/v1',
-  timeout: 10000,
-  headers: { Authorization: `Bearer ${process.env.LIFX_TOKEN}` },
+  // 3 s tolerates a slow cloud round-trip without parking the motion handler
+  // for the old 10 s on a transient outage. retryFailedLights is fire-and-
+  // forget at the call site, so any individual light that times out gets
+  // recovered out of band without blocking the rest of the scene.
+  timeout: 3000,
+  httpsAgent,
+})
+
+// Read the LIFX token from the settings-store on every request. This lets the
+// user update the token via Settings without restarting the server, and avoids
+// reading process.env at module-load time (before the settings cache hydrates).
+lifxApi.interceptors.request.use((config) => {
+  const { token } = getLifx()
+  if (!token) {
+    throw new Error('LIFX token not configured — set it in Settings')
+  }
+  config.headers.set('Authorization', `Bearer ${token}`)
+  return config
 })
 
 // ── Rate limit tracking ───────────────────────────────────────────────────────
@@ -44,7 +67,7 @@ async function withRetry<T>(fn: () => Promise<AxiosResponse<T>>, maxAttempts = 3
         const resetAt = Number(err.response.headers['x-ratelimit-reset'] ?? 0)
         const now = Math.floor(Date.now() / 1000)
         const waitMs = Math.max((resetAt - now) * 1000, 2000)
-        try { run('INSERT INTO logs (message, category) VALUES (?, ?)', [`LIFX rate limit 429: waiting ${waitMs}ms (attempt ${attempt}/${maxAttempts})`, 'lifx']) } catch { /* ignore */ }
+        try { log(`LIFX rate limit 429: waiting ${waitMs}ms (attempt ${attempt}/${maxAttempts})`, 'lifx') } catch { /* ignore */ }
         await new Promise((resolve) => setTimeout(resolve, waitMs))
         continue
       }

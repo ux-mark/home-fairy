@@ -1,3 +1,6 @@
+// Side-effect import: registers chart.js components on first render of any
+// chart-using component. See comment in TimeSeriesChart.tsx.
+import '@/lib/chartSetup'
 import { useState, useMemo } from 'react'
 import { Bar, Line } from 'react-chartjs-2'
 import type { ChartOptions, ChartData } from 'chart.js'

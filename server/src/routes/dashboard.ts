@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { getAll, getOne, run, db } from '../db/index.js'
+import { log } from '../lib/logger.js'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 import { getCurrentWeather } from '../lib/weather-client.js'
@@ -357,10 +358,7 @@ router.delete('/history', (req: Request, res: Response) => {
     }
 
     // Audit log
-    run(
-      'INSERT INTO logs (message, category) VALUES (?, ?)',
-      [`Data deletion: deleted ${deleted} rows (${description})`, 'system'],
-    )
+    log(`Data deletion: deleted ${deleted} rows (${description})`, 'system')
 
     // Reclaim disk space (WAL checkpoint only — VACUUM is too slow for Pi)
     db.pragma('wal_checkpoint(TRUNCATE)')

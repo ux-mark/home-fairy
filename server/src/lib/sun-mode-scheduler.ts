@@ -1,8 +1,11 @@
 import { getSunTimes, type SunTimes } from './sun-tracker.js'
 import { getOne, getAll, run } from '../db/index.js'
+import { log } from './logger.js'
+import { FAIRY_QUEEN } from './constants.js'
 import type { Server as SocketServer } from 'socket.io'
 import { motionHandler } from './motion-handler.js'
 import { sonosManager } from './sonos-manager.js'
+import { isHushingActive } from './hushing.js'
 
 interface SunModeMapping {
   sunPhase: string
@@ -12,12 +15,14 @@ interface SunModeMapping {
 
 class SunModeScheduler {
   private timers: ReturnType<typeof setTimeout>[] = []
+  private catchUpInterval: ReturnType<typeof setInterval> | null = null
   private io: SocketServer | null = null
 
   init(socketIo?: SocketServer) {
     this.io = socketIo ?? null
     this.scheduleToday()
     this.scheduleMidnightRefresh()
+    this.startCatchUpCheck()
   }
 
   scheduleToday() {
@@ -110,16 +115,17 @@ class SunModeScheduler {
   }
 
   private transitionMode(mode: string, sunPhase: string) {
+    if (isHushingActive()) {
+      log(`Hushing Home active — suppressing sun mode transition to "${mode}" (${sunPhase})`, 'system', FAIRY_QUEEN)
+      return
+    }
     try {
       run(
         `INSERT INTO current_state (key, value, updated_at) VALUES ('mode', ?, datetime('now'))
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
         [mode],
       )
-      run(
-        'INSERT INTO logs (message, category) VALUES (?, ?)',
-        [`Auto mode transition: ${mode} (triggered by ${sunPhase})`, 'system'],
-      )
+      log(`Fairy Queen changed mode to ${mode} (${sunPhase})`, 'system', FAIRY_QUEEN)
 
       // Check if this mode is the configured wake mode — unlock rooms if so
       const wakeModeRow = getOne<{ value: string }>(
@@ -128,10 +134,7 @@ class SunModeScheduler {
       const wakeMode = wakeModeRow?.value || 'Morning'
       if (mode === wakeMode && motionHandler.getLockedRooms().length > 0) {
         motionHandler.unlockAllRooms()
-        run(
-          'INSERT INTO logs (message, category) VALUES (?, ?)',
-          [`Wake mode reached (${mode}) — all rooms unlocked`, 'system'],
-        )
+        log(`Wake mode reached (${mode}) — all rooms unlocked`, 'system', FAIRY_QUEEN)
       }
 
       if (this.io) {
@@ -159,9 +162,64 @@ class SunModeScheduler {
     this.timers.push(timer)
   }
 
+  /**
+   * Periodic safety net: every 5 minutes, check if the current mode matches
+   * what sun times say it should be. Catches missed setTimeout callbacks
+   * (which can happen on resource-constrained systems like Raspberry Pi).
+   */
+  private startCatchUpCheck() {
+    if (this.catchUpInterval) clearInterval(this.catchUpInterval)
+    this.catchUpInterval = setInterval(() => {
+      try {
+        const sunTimes = getSunTimes()
+        const now = new Date()
+        const mappings = this.getMappings(sunTimes)
+        const sleepMode = this.getSleepModeName()
+
+        let currentShouldBe: SunModeMapping | null = null
+        for (const mapping of mappings) {
+          if (mapping.time.getTime() <= now.getTime()) {
+            currentShouldBe = mapping
+          }
+        }
+
+        if (!currentShouldBe) return
+
+        const currentModeRow = getOne<{ value: string }>(
+          "SELECT value FROM current_state WHERE key = 'mode'",
+        )
+        const currentMode = currentModeRow?.value
+        const wakeModeRow = getOne<{ value: string }>(
+          "SELECT value FROM current_state WHERE key = 'pref_night_wake_mode'",
+        )
+        const wakeMode = wakeModeRow?.value || 'Morning'
+
+        if (sleepMode && currentMode === sleepMode && currentShouldBe.mode !== wakeMode) {
+          // Sleep mode persists until wake mode — don't overwrite
+          return
+        }
+
+        if (currentMode !== currentShouldBe.mode) {
+          log(`Catch-up: mode should be ${currentShouldBe.mode} but is ${currentMode}, correcting`, 'system', FAIRY_QUEEN)
+          this.transitionMode(currentShouldBe.mode, currentShouldBe.sunPhase + ' (catch-up)')
+        }
+      } catch (err) {
+        console.error('Catch-up check failed:', err)
+      }
+    }, 5 * 60 * 1000) // every 5 minutes
+  }
+
   clearTimers() {
     for (const t of this.timers) clearTimeout(t)
     this.timers = []
+  }
+
+  shutdown() {
+    this.clearTimers()
+    if (this.catchUpInterval) {
+      clearInterval(this.catchUpInterval)
+      this.catchUpInterval = null
+    }
   }
 
   getSchedule(): { sunPhase: string; mode: string; time: string; isPast: boolean }[] {
@@ -180,10 +238,7 @@ class SunModeScheduler {
       .map(m => `${m.sunPhase} -> ${m.mode} at ${m.time.toLocaleTimeString()}`)
       .join(', ')
     try {
-      run(
-        'INSERT INTO logs (message, category) VALUES (?, ?)',
-        [`Sun mode schedule: ${schedule}`, 'system'],
-      )
+      log(`Sun mode schedule: ${schedule}`, 'system')
     } catch {
       // ignore logging failures
     }

@@ -1,0 +1,416 @@
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { AlertTriangle, CheckCircle2, Search, X, Music, Radio, HardDrive } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { api } from '@/lib/api'
+import type { SonosGenreAlbum, SpotifyAlbum, SpotifyArtist, SpotifyPlaylist } from '@/lib/api'
+import { NasBrowseView } from './NasBrowseView'
+import { SpotifyBrowseView } from './SpotifyBrowseView'
+import { RadioBrowseView } from './RadioBrowseView'
+import { UnifiedSearchResults } from './UnifiedSearchResults'
+import { SpeakerSelectorDropdown } from './SpeakerSelectorDropdown'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type SourceFilter = 'all' | 'nas' | 'spotify' | 'radio'
+
+interface SourceConfig {
+  id: SourceFilter
+  label: string
+  Icon: React.ElementType
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+
+const SOURCES: SourceConfig[] = [
+  { id: 'all', label: 'All', Icon: Search },
+  { id: 'nas', label: 'NAS', Icon: HardDrive },
+  { id: 'spotify', label: 'Spotify', Icon: Music },
+  { id: 'radio', label: 'Radio', Icon: Radio },
+]
+
+// Read a value from sessionStorage written by usePersistedState. Used to
+// seed initial state on PUSH navigation (where usePersistedState falls back
+// to its default). Returns undefined if no saved value matches the guard.
+function readSessionValue<T>(storageKey: string, guard: (v: unknown) => v is T): T | undefined {
+  try {
+    const raw = sessionStorage.getItem(storageKey)
+    if (raw == null) return undefined
+    const parsed = JSON.parse(raw) as unknown
+    return guard(parsed) ? parsed : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// ── Source status subtitle helpers ────────────────────────────────────────────
+
+function SpotifyStatusSubtitle() {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['spotify-status'],
+    queryFn: api.spotify.getStatus,
+    staleTime: 30_000,
+    retry: 1,
+  })
+
+  if (isLoading) return <p className="text-xs text-caption">Checking…</p>
+  if (isError) return (
+    <span className="flex items-center gap-1 text-xs text-amber-400">
+      <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+      Unavailable
+    </span>
+  )
+  if (data?.connected) return (
+    <span className="flex items-center gap-1 text-xs text-emerald-400">
+      <CheckCircle2 className="h-3 w-3" aria-hidden="true" />
+      Connected
+    </span>
+  )
+  if (data && !data.configured) return <p className="text-xs text-caption">Not configured</p>
+  return <p className="text-xs text-caption">Not connected</p>
+}
+
+function RadioStatusSubtitle() {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['sonos-radio-stations'],
+    queryFn: api.sonos.getRadioStations,
+    staleTime: 5 * 60_000,
+  })
+
+  if (isLoading) return <p className="text-xs text-caption">Checking…</p>
+  if (isError) return (
+    <span className="flex items-center gap-1 text-xs text-amber-400">
+      <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+      Unavailable
+    </span>
+  )
+  const count = data?.length ?? 0
+  return <p className="text-xs text-caption">{count} {count === 1 ? 'station' : 'stations'}</p>
+}
+
+function NasStatusSubtitle() {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['sonos-library-genres'],
+    queryFn: api.sonos.getLibraryGenres,
+    staleTime: 5 * 60_000,
+  })
+
+  if (isLoading) return <p className="text-xs text-caption">Checking…</p>
+  if (isError) return (
+    <span className="flex items-center gap-1 text-xs text-amber-400">
+      <AlertTriangle className="h-3 w-3" aria-hidden="true" />
+      Unavailable
+    </span>
+  )
+  const count = data?.length ?? 0
+  if (count === 0) return <p className="text-xs text-caption">Not indexed</p>
+  return <p className="text-xs text-caption">{count} genres</p>
+}
+
+// ── Source preview card (used in the 'all' view) ──────────────────────────────
+
+function SourcePreviewCard({
+  source,
+  onClick,
+}: {
+  source: SourceConfig
+  onClick: () => void
+}) {
+  const { label, Icon, id } = source
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-3 rounded-xl bg-[var(--bg-secondary)] px-4 py-3',
+        'text-left transition-colors hover:bg-[var(--bg-tertiary)]',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+        'min-h-[56px] w-full',
+      )}
+    >
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[var(--bg-tertiary)]">
+        <Icon className="h-5 w-5 text-fairy-400" aria-hidden="true" />
+      </span>
+      <div>
+        <p className="text-sm font-medium text-heading">{label}</p>
+        {id === 'spotify' && <SpotifyStatusSubtitle />}
+        {id === 'radio' && <RadioStatusSubtitle />}
+        {id === 'nas' && <NasStatusSubtitle />}
+      </div>
+    </button>
+  )
+}
+
+// ── All-sources overview ───────────────────────────────────────────────────────
+
+function AllSourcesView({ onSelectSource }: { onSelectSource: (s: SourceFilter) => void }) {
+  const sourcesWithoutAll = SOURCES.filter(s => s.id !== 'all')
+  return (
+    <div className="flex flex-col gap-3">
+      {sourcesWithoutAll.map(source => (
+        <SourcePreviewCard
+          key={source.id}
+          source={source}
+          onClick={() => onSelectSource(source.id)}
+        />
+      ))}
+    </div>
+  )
+}
+
+// ── BrowseTab ─────────────────────────────────────────────────────────────────
+
+interface BrowseTabProps {
+  targetSpeaker?: string
+}
+
+export function BrowseTab({ targetSpeaker }: BrowseTabProps = {}) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const { selectedSpeaker, setSelectedSpeaker } = usePlaybackState()
+
+  // ── Source filter: URL param is the canonical source of truth ────────────
+  // Precedence on entry:
+  //   1. ?source= URL param (set by tab clicks and by back-nav fallback URLs).
+  //   2. sessionStorage — resume when the URL has no param (e.g. bare
+  //      /sonos/browse after a hard reload or nav via a stored path).
+  //   3. 'all' — fresh session default.
+  const sourceFromUrl = searchParams.get('source') as SourceFilter | null
+  const activeSource: SourceFilter =
+    sourceFromUrl && ['all', 'nas', 'spotify', 'radio'].includes(sourceFromUrl)
+      ? (sourceFromUrl as SourceFilter)
+      : (readSessionValue<SourceFilter>(
+          'pageState:browse-source-filter',
+          (v): v is SourceFilter =>
+            typeof v === 'string' && ['all', 'nas', 'spotify', 'radio'].includes(v),
+        ) ?? 'all')
+
+  // ── Search query: URL param is the canonical source of truth ─────────────
+  // The input box is driven by local React state for instant response.
+  // The URL ?q= param is updated after 300 ms debounce (replace: true so we
+  // don't push a new history entry per keystroke). On mount, seed local state
+  // from the URL (if present) or from sessionStorage (for cross-tab / reload).
+  const qFromUrl = searchParams.get('q') ?? ''
+  const initialSearch = (() => {
+    if (qFromUrl !== '') return qFromUrl
+    return readSessionValue<string>(
+      'pageState:browse-search-query',
+      (v): v is string => typeof v === 'string',
+    ) ?? ''
+  })()
+
+  // localSearch: controlled input value (instant). searchQuery: debounced
+  // value used for actual queries and for the URL mirror.
+  const [localSearch, setLocalSearch] = useState<string>(initialSearch)
+  // Track debounce timer
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // searchQuery is derived: if the URL has ?q=, that's authoritative (handles
+  // Back navigation restoring a search). Otherwise fall back to localSearch so
+  // the input remains usable even before the debounce fires.
+  const searchQuery = qFromUrl !== '' ? qFromUrl : localSearch
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
+
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setLocalSearch(value)
+      try { sessionStorage.setItem('pageState:browse-search-query', JSON.stringify(value)) } catch { /* ignore */ }
+      if (debounceRef.current) clearTimeout(debounceRef.current)
+      debounceRef.current = setTimeout(() => {
+        setSearchParams(
+          prev => {
+            const next = new URLSearchParams(prev)
+            if (value) {
+              next.set('q', value)
+            } else {
+              next.delete('q')
+            }
+            return next
+          },
+          { replace: true },
+        )
+      }, 300)
+    },
+    [setSearchParams],
+  )
+
+  const handleSearchClear = useCallback(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    setLocalSearch('')
+    try { sessionStorage.setItem('pageState:browse-search-query', JSON.stringify('')) } catch { /* ignore */ }
+    setSearchParams(
+      prev => {
+        const next = new URLSearchParams(prev)
+        next.delete('q')
+        return next
+      },
+      { replace: true },
+    )
+  }, [setSearchParams])
+
+  const handleSetActiveSource = useCallback(
+    (source: SourceFilter) => {
+      try { sessionStorage.setItem('pageState:browse-source-filter', JSON.stringify(source)) } catch { /* ignore */ }
+      setSearchParams(
+        prev => {
+          const next = new URLSearchParams(prev)
+          next.set('source', source)
+          return next
+        },
+        { replace: true },
+      )
+    },
+    [setSearchParams],
+  )
+
+  // ── Sync URL back to local state when navigating back ────────────────────
+  // When user pops back to /sonos/browse?q=countries, the URL changes but
+  // localSearch stays stale. Sync it here.
+  useEffect(() => {
+    if (qFromUrl !== localSearch) {
+      setLocalSearch(qFromUrl)
+    }
+    // Only sync on URL-driven changes, not on every local keystroke
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qFromUrl])
+
+  // ── Sync targetSpeaker into global selection ──────────────────────────────
+  useEffect(() => {
+    if (targetSpeaker && targetSpeaker !== selectedSpeaker) {
+      setSelectedSpeaker(targetSpeaker)
+    }
+  }, [targetSpeaker, selectedSpeaker, setSelectedSpeaker])
+
+  // Use context speaker unless a targetSpeaker override is provided
+  const effectiveSpeaker = targetSpeaker ?? selectedSpeaker ?? undefined
+  const speakerQuery = effectiveSpeaker ? `?speaker=${encodeURIComponent(effectiveSpeaker)}` : ''
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Speaker selector */}
+      <div className="flex items-center">
+        <SpeakerSelectorDropdown /></div>
+      {/* Search bar */}
+      <div className="relative flex items-center">
+        <Search
+          className="pointer-events-none absolute left-3 h-4 w-4 text-caption"
+          aria-hidden="true"
+        />
+        <input
+          type="search"
+          value={localSearch}
+          onChange={e => handleSearchChange(e.target.value)}
+          placeholder="Search music…"
+          aria-label="Search music"
+          className={cn(
+            'w-full rounded-xl bg-[var(--bg-secondary)] py-3 pl-9 pr-10',
+            'min-h-[44px] text-sm text-body placeholder:text-caption',
+            'focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-fairy-500',
+            'border-none ring-0',
+          )}
+        />
+        {localSearch && (
+          <button
+            type="button"
+            onClick={handleSearchClear}
+            aria-label="Clear search"
+            className={cn(
+              'absolute right-3 flex h-5 w-5 items-center justify-center rounded-full bg-[var(--bg-tertiary)]',
+              'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-fairy-500',
+            )}
+          >
+            <X className="h-3 w-3 text-caption" aria-hidden="true" />
+          </button>
+        )}
+      </div>
+
+      {/* Source filter strip */}
+      <div
+        role="tablist"
+        aria-label="Browse by source"
+        className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {SOURCES.map(({ id, label }) => {
+          const isActive = activeSource === id
+          return (
+            <button
+              key={id}
+              id={`browse-tab-${id}`}
+              role="tab"
+              aria-selected={isActive}
+              aria-controls={`browse-panel-${id}`}
+              onClick={() => handleSetActiveSource(id)}
+              className={cn(
+                'shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors',
+                'min-h-[36px]',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                isActive
+                  ? 'bg-fairy-500 text-white'
+                  : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
+              )}
+            >
+              {label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Source content panel */}
+      <div
+        id={`browse-panel-${activeSource}`}
+        role="tabpanel"
+        aria-labelledby={`browse-tab-${activeSource}`}
+      >
+        {activeSource === 'all' && searchQuery ? (
+          <UnifiedSearchResults
+            searchQuery={searchQuery}
+            targetSpeaker={effectiveSpeaker}
+            onSelectNasArtist={(name) => {
+              handleSearchClear()
+              navigate(`/sonos/browse/nas/artist/${encodeURIComponent(name)}${speakerQuery}`)
+            }}
+            onSelectNasAlbum={(album: SonosGenreAlbum) => {
+              handleSearchClear()
+              navigate(
+                `/sonos/browse/nas/album/${encodeURIComponent(album.artist)}/${encodeURIComponent(album.name)}${speakerQuery}`,
+                { state: { objectId: album.objectId } },
+              )
+            }}
+            onSelectSpotifyAlbum={(album: SpotifyAlbum) => {
+              handleSearchClear()
+              navigate(`/sonos/browse/spotify/album/${encodeURIComponent(album.id)}${speakerQuery}`)
+            }}
+            onSelectSpotifyArtist={(artist: SpotifyArtist) => {
+              handleSearchClear()
+              navigate(`/sonos/browse/spotify/artist/${encodeURIComponent(artist.id)}${speakerQuery}`)
+            }}
+            onSelectSpotifyPlaylist={(playlist: SpotifyPlaylist) => {
+              handleSearchClear()
+              navigate(`/sonos/browse/spotify/playlist/${encodeURIComponent(playlist.id)}${speakerQuery}`)
+            }}
+          />
+        ) : activeSource === 'all' ? (
+          <AllSourcesView onSelectSource={handleSetActiveSource} />
+        ) : null}
+        {activeSource === 'nas' && (
+          <NasBrowseView
+            searchQuery={searchQuery}
+            targetSpeaker={effectiveSpeaker}
+          />
+        )}
+        {activeSource === 'spotify' && (
+          <SpotifyBrowseView
+            searchQuery={searchQuery}
+            targetSpeaker={effectiveSpeaker}
+          />
+        )}
+        {activeSource === 'radio' && (
+          <RadioBrowseView searchQuery={searchQuery} targetSpeaker={effectiveSpeaker} />
+        )}
+      </div>
+    </div>
+  )
+}

@@ -31,6 +31,8 @@ import type {
   DeviceRoomAssignment,
   DeactivatedDevice,
 } from '@/lib/api'
+import { UserName } from '@/components/ui/UserName'
+import { formatRelativeTime } from '@/lib/scene-utils'
 import { cn, hsbToHex, kelvinToHex, debounce, DEFAULT_MODES } from '@/lib/utils'
 import { StatusBadge } from '@/components/ui/Badge'
 import { Skeleton, SkeletonCard } from '@/components/ui/Skeleton'
@@ -89,9 +91,10 @@ function LightEditorCard({
   const [expanded, setExpanded] = useState(false)
   const isOn = state.power === 'on'
 
-  const previewHex = state.hasColor
-    ? hsbToHex(state.hue, state.saturation / 100, state.brightness / 100)
-    : kelvinToHex(state.kelvin)
+  const isWhiteMode = !state.hasColor || state.saturation <= 1
+  const previewHex = isWhiteMode
+    ? kelvinToHex(state.kelvin)
+    : hsbToHex(state.hue, state.saturation / 100, state.brightness / 100)
 
   const debouncedApiCall = useMemo(() => {
     return debounce(
@@ -120,12 +123,27 @@ function LightEditorCard({
     }
   }, [debouncedApiCall])
 
-  const handleLiveChange = useCallback(
+  // Build the next LightEditorState from a colour update
+  const applyUpdate = useCallback(
     (update: { color?: { h: number; s: number; v: number }; kelvin?: number; brightness?: number }) => {
-      if (!livePreview) return
-      debouncedApiCall(update)
+      const next = { ...state }
+      if (update.color) {
+        next.hue = update.color.h
+        next.saturation = update.color.s
+        // For colour lights, v encodes brightness — keep them in sync.
+        next.brightness = update.color.v
+      }
+      if (update.kelvin !== undefined) {
+        next.kelvin = update.kelvin
+        // Zero saturation so save serialises as kelvin (matches LIFX behaviour)
+        next.saturation = 0
+      }
+      // For kelvin lights, brightness comes from the dedicated slider.
+      if (!state.hasColor && update.brightness !== undefined)
+        next.brightness = update.brightness
+      return next
     },
-    [livePreview, debouncedApiCall],
+    [state],
   )
 
   return (
@@ -231,20 +249,33 @@ function LightEditorCard({
             minKelvin={state.minKelvin}
             maxKelvin={state.maxKelvin}
             onChange={update => {
-              const next = { ...state }
-              if (update.color) {
-                next.hue = update.color.h
-                next.saturation = update.color.s
-                // For colour lights, v encodes brightness — keep them in sync.
-                next.brightness = update.color.v
-              }
-              if (update.kelvin !== undefined) next.kelvin = update.kelvin
-              // For kelvin lights, brightness comes from the dedicated slider.
-              if (!state.hasColor && update.brightness !== undefined)
-                next.brightness = update.brightness
-              onChange(next)
+              // During drag: update parent state so picker props stay current (thumb follows finger),
+              // and fire a debounced API call for live preview if enabled.
+              onChange(applyUpdate(update))
+              debouncedApiCall(update)
             }}
-            onLiveChange={handleLiveChange}
+            onCommit={update => {
+              // Pointer up: cancel any pending debounced call and persist the final value.
+              debouncedApiCall.cancel()
+              onChange(applyUpdate(update))
+              // Fire the API call directly for live preview — the debounced call was
+              // just cancelled, so for tap-based controls (kelvin presets) that fire
+              // onChange + onCommit synchronously, the debounce never gets to execute.
+              if (livePreview) {
+                const lifxColor = update.color
+                  ? `hue:${update.color.h} saturation:${(update.color.s / 100).toFixed(2)}`
+                  : update.kelvin !== undefined
+                    ? `kelvin:${update.kelvin}`
+                    : undefined
+                const lifxBrightness = update.brightness !== undefined ? update.brightness / 100 : undefined
+                api.lifx.setState(state.selector, {
+                  power: 'on',
+                  color: lifxColor,
+                  brightness: lifxBrightness,
+                  duration: 0.3,
+                })
+              }
+            }}
           />
         </div>
       )}
@@ -508,6 +539,12 @@ export default function SceneEditorPage() {
   const { data: deactivatedDevices } = useQuery({
     queryKey: ['devices', 'deactivated'],
     queryFn: api.devices.getDeactivated,
+  })
+
+  const { data: activity } = useQuery({
+    queryKey: ['scene-activity', name],
+    queryFn: () => api.scenes.getActivity(name!),
+    enabled: !!name,
   })
 
   const availableModes = systemCurrent?.all_modes ?? [...DEFAULT_MODES]
@@ -793,15 +830,17 @@ export default function SceneEditorPage() {
         })
         if (!inScene) continue
 
+        // Use kelvin format when in white mode (saturation ≈ 0), hue/sat otherwise
+        const isWhiteMode = !ls.hasColor || ls.saturation <= 1
         lightCommands.push({
           type: 'lifx_light',
           name: ls.label,
           light_id: ls.lightId,
           selector: ls.selector,
           power: ls.power,
-          color: ls.hasColor
-            ? `hue:${ls.hue.toFixed(1)} saturation:${(ls.saturation / 100).toFixed(2)}`
-            : `kelvin:${ls.kelvin}`,
+          color: isWhiteMode
+            ? `kelvin:${ls.kelvin}`
+            : `hue:${ls.hue.toFixed(1)} saturation:${(ls.saturation / 100).toFixed(2)}`,
           brightness: ls.brightness / 100,
           duration: 1,
         })
@@ -1174,6 +1213,22 @@ export default function SceneEditorPage() {
             className="input-field h-12 min-w-0 flex-1 rounded-xl border px-4 text-lg font-semibold placeholder:text-[var(--text-muted)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
           />
         </div>
+
+        {/* Attribution metadata */}
+        {!!name && scene && (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-caption">
+            {scene.created_by && (
+              <span className="inline-flex items-center gap-1">
+                Created by <UserName userId={scene.created_by} name={scene.created_by_name ?? 'Fairy Queen'} />
+              </span>
+            )}
+            {scene.updated_by && scene.updated_by !== scene.created_by && (
+              <span className="inline-flex items-center gap-1">
+                Last edited by <UserName userId={scene.updated_by} name={scene.updated_by_name ?? 'Fairy Queen'} />
+              </span>
+            )}
+          </div>
+        )}
       </section>
 
       {/* ── Deactivated devices warning ───────────────────────────────────── */}
@@ -1814,6 +1869,33 @@ export default function SceneEditorPage() {
               </button>
             </form>
           </section>
+
+          {/* Activity log */}
+          {!!name && activity && activity.length > 0 && (
+            <section>
+              <h3 className="mb-3 text-sm font-semibold text-heading">Recent Activity</h3>
+              <div className="space-y-2">
+                {activity.slice(0, 10).map(a => (
+                  <div key={a.id} className="flex items-baseline justify-between gap-2 text-xs">
+                    <span className="text-body">
+                      <UserName userId={a.user_id} name={a.user_name} />
+                      {' '}
+                      <span className="text-caption">
+                        {a.action === 'activate' ? 'activated' :
+                         a.action === 'deactivate' ? 'deactivated' :
+                         a.action === 'update' ? 'edited' :
+                         a.action === 'create' ? 'created' : a.action}
+                        {a.details?.source ? ` (${a.details.source})` : ''}
+                      </span>
+                    </span>
+                    <span className="whitespace-nowrap text-caption">
+                      {formatRelativeTime(a.created_at)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* Danger zone */}
           <section>

@@ -2,13 +2,13 @@ import { sonosClient, type SonosZone } from './sonos-client.js'
 import { getAll, getOne, run } from '../db/index.js'
 import { emit } from './socket.js'
 import { getLatestEpisodeUrl } from './podcast-resolver.js'
+import { log as logToDb } from './logger.js'
+import { withSpeakerByRoom } from './speaker-registry.js'
+import { getLocation } from './settings-store.js'
+import { nowIn, withinWindow } from './schedule-window.js'
 
 function log(msg: string): void {
-  try {
-    run('INSERT INTO logs (message, category) VALUES (?, ?)', [msg, 'sonos'])
-  } catch {
-    console.log(`[sonos] ${msg}`)
-  }
+  logToDb(msg, 'sonos')
 }
 
 interface SonosSpeakerRow {
@@ -29,13 +29,18 @@ interface RoomRow {
 interface AutoPlayRow {
   id: number
   room_name: string | null
-  mode_name: string
+  mode_name: string | null
   favourite_name: string
   trigger_type: 'mode_change' | 'if_not_playing' | 'if_source_not'
   trigger_value: string | null
   enabled: number
   max_plays: number | null
   podcast_feed_url: string | null
+  nas_uri: string | null
+  spotify_uri: string | null
+  days_of_week: string | null
+  time_start: string | null
+  time_end: string | null
 }
 
 interface SpeakerTimer {
@@ -43,6 +48,71 @@ interface SpeakerTimer {
   roomName: string
   startedAt: number
   durationMs: number
+}
+
+/**
+ * Schedule gate for an auto-play rule. Returns true when the rule's mode,
+ * day-of-week and time-window filters all allow it to fire right now.
+ *
+ * Rule shape is Mode XOR Time-window (enforced by the route layer): a rule has
+ * either `mode_name` set (fires only when that mode is the active mode) or a
+ * `time_start`+`time_end` window (fires whenever local time is inside it),
+ * never both. `days_of_week` is an independent refinement on either basis;
+ * NULL means every day.
+ *
+ * Exported so the route layer and unit tests can exercise it without the
+ * SonosManager class.
+ */
+export function passesSchedule(rule: {
+  mode_name?: string | null
+  days_of_week: string | null
+  time_start: string | null
+  time_end: string | null
+}, currentMode: string | null = null, now: Date = new Date()): boolean {
+  const tz = getLocation().timezone || 'Europe/Dublin'
+  const { isoDay, hhmm } = nowIn(tz, now)
+
+  // Mode-bound rule: current mode must match exactly.
+  if (rule.mode_name) {
+    if (currentMode !== rule.mode_name) return false
+  }
+
+  if (rule.days_of_week) {
+    let allowed: number[]
+    try {
+      allowed = JSON.parse(rule.days_of_week) as number[]
+    } catch {
+      // Malformed JSON — be conservative and skip the rule rather than firing.
+      return false
+    }
+    if (!Array.isArray(allowed) || !allowed.includes(isoDay)) {
+      return false
+    }
+  }
+
+  if (rule.time_start && rule.time_end) {
+    if (!withinWindow(hhmm, rule.time_start, rule.time_end)) {
+      return false
+    }
+  }
+
+  return true
+}
+
+/**
+ * The "scope" a rule's max_plays counter is tied to. Mode rules reset when
+ * the mode session flips; time/day-only rules reset at local midnight in the
+ * configured timezone. Returned as a deterministic string so callers can
+ * detect transitions by string equality.
+ */
+function ruleScopeKey(rule: AutoPlayRow, currentMode: string | null, now: Date = new Date()): string {
+  if (rule.mode_name) return `mode:${currentMode ?? ''}`
+  const tz = getLocation().timezone || 'Europe/Dublin'
+  // YYYY-MM-DD in the configured TZ — flips at local midnight.
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+  })
+  return `day:${fmt.format(now)}`
 }
 
 class SonosManager {
@@ -56,7 +126,13 @@ class SonosManager {
   private shuttingDown = false
   private isRoomLockedFn: ((roomName: string) => boolean) | null = null
   private rulePlayCounts: Map<number, number> = new Map()
+  /** Last scope key seen per rule. Differing key on the next evaluation
+   *  means the rule's natural session (mode or day) has rolled — reset. */
+  private ruleLastScopeKey: Map<number, string> = new Map()
   private currentMode: string | null = null
+  private podcastArtCache: Map<string, string> = new Map()
+  private lastPlaybackFingerprint: string = ''
+  private lastZonesFingerprint: string = ''
 
   init(): void {
     this.loadRoomSpeakerMap()
@@ -81,15 +157,66 @@ class SonosManager {
     this.loadRoomSpeakerMap()
   }
 
+  /** Build a lightweight fingerprint of playback state across all zones */
+  private getPlaybackFingerprint(zones: SonosZone[]): string {
+    return zones.map(z => {
+      const s = z.coordinator.state
+      return `${z.coordinator.roomName}:${s.playbackState}:${s.currentTrack?.uri ?? ''}:${s.currentTrack?.title ?? ''}`
+    }).join('|')
+  }
+
+  /** Structural fingerprint covering everything our `sonos:zones-update`
+   *  consumers actually care about (playback state, current track, group
+   *  composition, volume, mute). Cheaper than two full JSON.stringify() of
+   *  the entire zones tree on every poll tick. */
+  private getZonesFingerprint(zones: SonosZone[]): string {
+    return zones
+      .map(z => {
+        const s = z.coordinator.state
+        const members = z.members
+          .map(m => `${m.roomName}=${m.uuid}`)
+          .join(',')
+        return [
+          z.coordinator.roomName,
+          z.coordinator.uuid,
+          s.playbackState,
+          s.currentTrack?.uri ?? '',
+          s.currentTrack?.title ?? '',
+          s.volume,
+          s.mute ? '1' : '0',
+          members,
+        ].join('|')
+      })
+      .join('||')
+  }
+
   private startZonePolling(): void {
     const poll = async () => {
       try {
         const newZones = await sonosClient.getZones()
-        const changed = JSON.stringify(newZones) !== JSON.stringify(this.zones)
+        const newFingerprint = this.getZonesFingerprint(newZones)
+        const changed = newFingerprint !== this.lastZonesFingerprint
+        this.lastZonesFingerprint = newFingerprint
         this.zones = newZones
         this.consecutiveFailures = 0
         if (changed) {
-          emit('sonos:zones-update', newZones)
+          emit('sonos:zones-update', this.injectPodcastArtIntoZones(newZones))
+        }
+        // Check for playback changes on every poll — a track advance or external
+        // play/pause changes the fingerprint without necessarily changing zone membership.
+        const playbackFingerprint = this.getPlaybackFingerprint(newZones)
+        if (playbackFingerprint !== this.lastPlaybackFingerprint) {
+          this.lastPlaybackFingerprint = playbackFingerprint
+          // Include the currently-playing speaker and track info so clients can
+          // update their queue highlight without waiting for a full now-playing fetch.
+          const playingZone = newZones.find(z => z.coordinator.state.playbackState === 'PLAYING')
+          const coordinator = playingZone?.coordinator
+          emit('sonos:playback-update', {
+            source: 'zone-poll',
+            speaker: coordinator?.roomName ?? null,
+            trackNo: coordinator?.state?.trackNo ?? null,
+            uri: coordinator?.state?.currentTrack?.uri ?? null,
+          })
         }
       } catch {
         this.consecutiveFailures++
@@ -99,7 +226,8 @@ class SonosManager {
       }
 
       if (this.shuttingDown) return
-      const interval = this.consecutiveFailures >= 5 ? 120_000 : 30_000
+      // Poll every 10s for responsive playback detection, back off to 120s on failures
+      const interval = this.consecutiveFailures >= 5 ? 120_000 : 10_000
       this.zoneRefreshTimer = setTimeout(poll, interval)
       this.zoneRefreshTimer.unref()
     }
@@ -117,7 +245,7 @@ class SonosManager {
 
   private isRoomFollowMeEnabled(roomName: string): boolean {
     const room = getOne<RoomRow>('SELECT * FROM rooms WHERE name = ?', [roomName])
-    return room?.sonos_follow_me === 1
+    return room?.auto === 1 && room?.sonos_follow_me === 1
   }
 
   private getSpeakerForRoom(roomName: string): string | undefined {
@@ -252,26 +380,32 @@ class SonosManager {
   }
 
   async onModeChange(newMode: string): Promise<void> {
-    // Mode change only resets play counts — auto-play rules are triggered by motion
+    // Track the current mode so passesSchedule + ruleScopeKey can see it. The
+    // per-rule scope-key check in evaluateAutoPlayRule handles count resets
+    // lazily, so we no longer need to clear rulePlayCounts en masse here.
     if (newMode !== this.currentMode) {
-      this.rulePlayCounts.clear()
       this.currentMode = newMode
-      log(`Mode changed to "${newMode}", auto-play repeat counts reset`)
+      log(`Mode changed to "${newMode}"`)
     }
   }
 
   /**
-   * Called when motion is detected in a room. Evaluates auto-play rules for the
-   * current mode. Not gated by lux, auto-enable, or night lockout — like follow-me.
+   * Called when motion is detected in a room. Evaluates every enabled auto-play
+   * rule for this room (or whole-house) — schedule gating happens per rule, so
+   * the SQL no longer filters by current mode. Not gated by lux, auto-enable
+   * or night lockout — like follow-me.
    * - Room-specific rules: fire only when that room activates
    * - Whole-house rules (room_name = null): fire on first motion in any room
    */
   async onRoomActive(roomName: string): Promise<void> {
-    const mode = this.currentMode ?? this.getCurrentModeFromDb()
+    // Cache the mode lookup in case it hasn't been set yet (e.g. fresh boot
+    // before the first mode-change event). passesSchedule + ruleScopeKey both
+    // read from this.currentMode after this line.
+    if (this.currentMode == null) this.currentMode = this.getCurrentModeFromDb()
 
     const rules = getAll<AutoPlayRow>(
-      'SELECT * FROM sonos_auto_play WHERE mode_name = ? AND enabled = 1 AND (room_name = ? OR room_name IS NULL)',
-      [mode, roomName],
+      'SELECT * FROM sonos_auto_play WHERE enabled = 1 AND (room_name = ? OR room_name IS NULL)',
+      [roomName],
     )
 
     if (rules.length === 0) return
@@ -293,6 +427,21 @@ class SonosManager {
   }
 
   private async evaluateAutoPlayRule(rule: AutoPlayRow): Promise<void> {
+    // Schedule gates run first: a rule outside its mode/day/window is silently
+    // skipped and its play count is untouched. Trigger conditions and max_plays
+    // apply only when the schedule allows.
+    if (!passesSchedule(rule, this.currentMode)) {
+      return
+    }
+
+    // Reset the per-rule count when its natural scope rolls: mode session for
+    // mode rules, calendar day (in configured TZ) for time/day-only rules.
+    const scopeKey = ruleScopeKey(rule, this.currentMode)
+    if (this.ruleLastScopeKey.get(rule.id) !== scopeKey) {
+      this.rulePlayCounts.delete(rule.id)
+      this.ruleLastScopeKey.set(rule.id, scopeKey)
+    }
+
     // Check repeat limit before any other logic
     if (rule.max_plays !== null) {
       const count = this.rulePlayCounts.get(rule.id) ?? 0
@@ -359,20 +508,55 @@ class SonosManager {
       return
     }
 
-    // Podcast rules: fetch latest episode from RSS and play directly
-    if (rule.podcast_feed_url) {
-      log(`Auto-play rule ${rule.id}: resolving podcast "${rule.favourite_name}" from RSS`)
-      const episode = await getLatestEpisodeUrl(rule.podcast_feed_url)
-      if (!episode) {
-        log(`Auto-play rule ${rule.id}: failed to resolve podcast episode`)
-        return
+    // Spotify, NAS library, podcast, or Sonos favourite playback
+    try {
+      if (rule.spotify_uri) {
+        log(`Auto-play rule ${rule.id}: playing Spotify "${rule.favourite_name}" on ${targetSpeaker}`)
+        await sonosClient.playSpotifyUri(targetSpeaker, rule.spotify_uri, 'now')
+      } else if (rule.nas_uri) {
+        log(`Auto-play rule ${rule.id}: playing NAS "${rule.favourite_name}" (${rule.nas_uri}) on ${targetSpeaker}`)
+        const isContainer = rule.nas_uri.startsWith('A:') || rule.nas_uri.startsWith('S:') || rule.nas_uri.startsWith('SQ:')
+        if (isContainer) {
+          const tracks = await sonosClient.getGenreAlbumTracks(rule.nas_uri)
+          if (tracks.length === 0) {
+            log(`Auto-play rule ${rule.id}: no tracks found in NAS container`)
+            return
+          }
+          await sonosClient.clearQueue(targetSpeaker)
+          await withSpeakerByRoom(targetSpeaker, async ({ ip, uuid }) => {
+            for (const track of tracks) {
+              try { await sonosClient.addToQueueSOAP(ip, track.uri) } catch { /* skip bad track */ }
+            }
+            await sonosClient.playQueueFromStart(ip, uuid)
+          })
+        } else {
+          await sonosClient.setAVTransportURI(targetSpeaker, rule.nas_uri)
+          await sonosClient.play(targetSpeaker)
+        }
+      } else if (rule.podcast_feed_url) {
+        log(`Auto-play rule ${rule.id}: resolving podcast "${rule.favourite_name}" from RSS`)
+        const episode = await getLatestEpisodeUrl(rule.podcast_feed_url)
+        if (!episode) {
+          log(`Auto-play rule ${rule.id}: failed to resolve podcast episode`)
+          return
+        }
+        log(`Auto-play rule ${rule.id}: playing episode "${episode.title}" on ${targetSpeaker}`)
+        await sonosClient.setAVTransportURI(targetSpeaker, episode.url)
+        await sonosClient.play(targetSpeaker)
+        // Cache artwork from the Sonos favourites list
+        void this.cachePodcastArtFromFavourites(targetSpeaker, rule.favourite_name)
+      } else {
+        this.podcastArtCache.delete(targetSpeaker)
+        log(`Auto-play rule ${rule.id}: playing "${rule.favourite_name}" on ${targetSpeaker}`)
+        await sonosClient.playFavourite(targetSpeaker, rule.favourite_name)
       }
-      log(`Auto-play rule ${rule.id}: playing episode "${episode.title}" on ${targetSpeaker}`)
-      await sonosClient.setAVTransportURI(targetSpeaker, episode.url)
-      await sonosClient.play(targetSpeaker)
-    } else {
-      log(`Auto-play rule ${rule.id}: playing "${rule.favourite_name}" on ${targetSpeaker}`)
-      await sonosClient.playFavourite(targetSpeaker, rule.favourite_name)
+    } catch (err) {
+      // The Sonos API request may have reached the speaker before the timeout,
+      // leaving it playing even though we got an error. Stop it to prevent
+      // follow-me from picking up orphaned playback.
+      log(`Auto-play rule ${rule.id}: playback failed, stopping speaker to clean up`)
+      try { await sonosClient.pause(targetSpeaker) } catch { /* best effort */ }
+      throw err
     }
     this.rulePlayCounts.set(rule.id, (this.rulePlayCounts.get(rule.id) ?? 0) + 1)
     emit('sonos:playback-update', { speaker: targetSpeaker })
@@ -402,6 +586,19 @@ class SonosManager {
     this.emitFollowMeUpdate()
   }
 
+  private async cachePodcastArtFromFavourites(speaker: string, favouriteName: string): Promise<void> {
+    try {
+      const favs = await sonosClient.getFavourites()
+      const fav = favs.find(f => f.title === favouriteName)
+      if (fav?.albumArtURI) {
+        this.podcastArtCache.set(speaker, fav.albumArtURI)
+        log(`Cached podcast art for ${speaker} from favourites`)
+      }
+    } catch {
+      // Non-critical — artwork is optional
+    }
+  }
+
   private cancelSpeakerTimer(roomName: string): void {
     const timer = this.speakerTimers.get(roomName)
     if (timer) {
@@ -429,6 +626,39 @@ class SonosManager {
 
   getZones(): SonosZone[] {
     return this.zones
+  }
+
+  setPodcastArt(speaker: string, url: string): void {
+    this.podcastArtCache.set(speaker, url)
+    log(`Cached podcast art for ${speaker}`)
+  }
+
+  clearPodcastArt(speaker: string): void {
+    this.podcastArtCache.delete(speaker)
+  }
+
+  getPodcastArt(speaker: string): string | null {
+    return this.podcastArtCache.get(speaker) ?? null
+  }
+
+  private injectPodcastArtIntoZones(zones: SonosZone[]): SonosZone[] {
+    return zones.map(zone => {
+      const art = this.podcastArtCache.get(zone.coordinator.roomName)
+      if (!art || zone.coordinator.state.currentTrack.albumArtUri) return zone
+      return {
+        ...zone,
+        coordinator: {
+          ...zone.coordinator,
+          state: {
+            ...zone.coordinator.state,
+            currentTrack: {
+              ...zone.coordinator.state.currentTrack,
+              albumArtUri: art,
+            },
+          },
+        },
+      }
+    })
   }
 
   shutdown(): void {

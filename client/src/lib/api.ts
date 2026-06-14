@@ -1,5 +1,77 @@
 // ── Types ────────────────────────────────────────────────────────────────────
 
+export type SettingsGroup = 'location' | 'hubitat' | 'lifx' | 'weather' | 'spotify'
+
+/** Server returns the literal string '<set>' for a secret that is set, or null. */
+export type SecretValue = '<set>' | null
+
+export interface LocationSettingsDto {
+  latitude: number | null
+  longitude: number | null
+  timezone: string
+  locale: string
+}
+
+export interface HubitatSettingsDto {
+  baseUrl: string | null
+  token: SecretValue
+  webhookSecret: SecretValue
+}
+
+export interface LifxSettingsDto {
+  token: SecretValue
+}
+
+export interface WeatherSettingsDto {
+  apiKey: SecretValue
+}
+
+export interface SpotifySettingsDto {
+  clientId: string | null
+  clientSecret: SecretValue
+  /**
+   * Phase 7 (WI #4): the legacy redirect URI field. Still present in
+   * responses (derived from `publicBaseUrl` when set, else echoed from the
+   * stored legacy value) but no longer user-editable from the Settings UI.
+   */
+  redirectUri: string | null
+  /** Public-facing base URL the user has configured, or null. */
+  publicBaseUrl: string | null
+}
+
+export interface SpotifyRedirectUriDto {
+  /** Full redirect URI to paste into the Spotify Developer Console, or null
+   *  when the user has not yet supplied a public base URL. */
+  redirectUri: string | null
+  publicBaseUrl: string | null
+}
+
+export interface HubitatWebhookUrlDto {
+  /** Full webhook URL the user pastes into Hubitat, or null if the server
+   *  couldn't auto-detect a LAN base URL (user must set FAIRY_PUBLIC_HOST). */
+  url: string | null
+  baseUrl: string | null
+  port: number
+  secretConfigured: boolean
+}
+
+export interface SettingsTestResult {
+  ok: boolean
+  // Location:
+  sunrise?: string
+  sunset?: string
+  now?: string
+  timezone?: string
+  // Hubitat:
+  devicesCount?: number
+  // Lifx:
+  lightsCount?: number
+  // Weather:
+  sample?: string
+  // Error:
+  error?: string
+}
+
 export interface Light {
   id: string
   uuid: string
@@ -44,6 +116,10 @@ export interface Room {
   sonos_follow_me: boolean
   sonos_auto_start: boolean
   icon: string | null
+  created_by?: string | null
+  updated_by?: string | null
+  created_by_name?: string | null
+  updated_by_name?: string | null
 }
 
 export interface RoomDetail extends Room {
@@ -65,7 +141,13 @@ export interface Scene {
   active_from?: string | null // "MM-DD" format
   active_to?: string | null   // "MM-DD" format
   last_activated_at?: string | null
+  last_activated_by?: string | null
+  last_activated_by_name?: string | null
   sort_order?: number
+  created_by?: string | null
+  updated_by?: string | null
+  created_by_name?: string | null
+  updated_by_name?: string | null
 }
 
 export interface SceneRoom {
@@ -247,6 +329,10 @@ export interface ModeWithTriggers {
   icon: string | null
   triggers: ModeTrigger[]
   isSleepMode: boolean
+  created_by?: string | null
+  updated_by?: string | null
+  created_by_name?: string | null
+  updated_by_name?: string | null
 }
 
 export interface ModeDependencies {
@@ -327,6 +413,11 @@ export interface NightStatus {
   active: boolean
   lockedRooms: string[]
   wakeMode: string
+}
+
+export interface HushingStatus {
+  active: boolean
+  sceneName: string | null
 }
 
 // ── Dashboard types ──────────────────────────────────────────────────────────
@@ -624,13 +715,37 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
       throw new Error('Unauthorized')
     }
     if (!res.ok) {
-      const text = await res.text().catch(() => '')
-      throw new Error(text || `API error: ${res.status}`)
+      let message = `API error: ${res.status}`
+      try {
+        const body = await res.json()
+        if (body?.error) message = body.error
+      } catch {
+        const text = await res.text().catch(() => '')
+        if (text && !text.startsWith('<!')) message = text
+      }
+      throw new Error(message)
+    }
+    if (res.status === 204 || res.headers.get('content-length') === '0') {
+      return undefined as T
     }
     return res.json()
   } finally {
     clearTimeout(timeoutId)
   }
+}
+
+/** Extract the `error` field from a server JSON error body, if available. */
+export function parseApiError(err: unknown): string | null {
+  try {
+    const msg = err instanceof Error ? err.message : String(err)
+    const parsed = JSON.parse(msg) as unknown
+    if (parsed && typeof parsed === 'object' && 'error' in parsed && typeof (parsed as Record<string, unknown>).error === 'string') {
+      return (parsed as { error: string }).error
+    }
+  } catch {
+    // not JSON — ignore
+  }
+  return null
 }
 
 // ── Sonos types ─────────────────────────────────────────────────────────────
@@ -642,6 +757,7 @@ export interface SonosTrack {
   albumArtUri: string
   type: string
   stationName?: string
+  uri?: string
 }
 
 export interface SonosPlaybackState {
@@ -652,6 +768,24 @@ export interface SonosPlaybackState {
   trackNo: number
   elapsedTime: number
   elapsedTimeFormatted: string
+  duration?: number
+  durationFormatted?: string
+  currentPlayMode?: string
+  inputSource?: 'tv' | 'line-in' | null
+}
+
+export interface SonosGroupInfo {
+  coordinator: string
+  members: string[]
+  isCoordinator: boolean
+}
+
+export interface SonosNowPlayingEntry {
+  roomName: string
+  speakerName: string
+  state: SonosPlaybackState | null
+  error?: boolean
+  group?: SonosGroupInfo | null
 }
 
 export interface SonosMember {
@@ -675,6 +809,97 @@ export interface SonosFavourite {
   contentClass?: string
 }
 
+export interface SonosLibraryArtist {
+  name: string
+  trackCount: number
+  albumCount: number
+}
+
+export interface SonosLibraryAlbum {
+  name: string
+  artist: string
+  trackCount: number
+}
+
+export interface SonosLibraryStatus {
+  available: boolean
+  artistCount: number
+}
+
+export interface SonosGenre {
+  title: string
+  artistCount: number
+}
+
+export interface SonosGenreAlbum {
+  name: string
+  artist: string
+  albumArtUri: string
+  objectId: string
+}
+
+export interface NasEnrichedAlbum extends SonosGenreAlbum {
+  artist_country: {
+    country_code: string | null
+    country_name: string | null
+    sub_region: string | null
+    confidence: string | null
+    image_url?: string | null
+  } | null
+}
+
+export interface NasEnrichedArtist extends SonosLibraryArtist {
+  country_code: string | null
+  country_name: string | null
+  sub_region: string | null
+  confidence: string | null
+  image_url?: string | null
+}
+
+export interface SonosRadioStation {
+  title: string
+  uri: string
+  albumArtUri?: string
+}
+
+export interface SonosLibraryTrack {
+  title: string
+  artist: string
+  album: string
+  albumArtUri: string | undefined
+  uri: string
+  duration_ms?: number
+}
+
+export interface SonosSearchArtist {
+  name: string
+  trackCount: number
+  albumArtUri: string | undefined
+}
+
+export interface SonosSearchAlbum {
+  name: string
+  artist: string
+  trackCount: number
+  albumArtUri: string | undefined
+}
+
+export interface SonosLibrarySearchResult {
+  artists: SonosSearchArtist[]
+  albums: SonosSearchAlbum[]
+  tracks: SonosLibraryTrack[]
+}
+
+export interface SonosQueueItem {
+  title: string
+  artist: string
+  album: string
+  albumArtUri: string
+  uri: string
+  /** Track duration in seconds — may be absent if not returned by Sonos API */
+  duration?: number
+}
+
 export interface SonosSpeakerMapping {
   id: number
   room_name: string
@@ -684,22 +909,318 @@ export interface SonosSpeakerMapping {
   created_at: string
 }
 
+export interface SonosSpeakerWithRoom extends SonosSpeakerMapping {
+  room_icon: string | null
+}
+
 export interface AutoPlayRule {
   id: number
   room_name: string | null
-  mode_name: string
+  /** Mode-bound rules set this; time-window rules leave it null. */
+  mode_name: string | null
   favourite_name: string
   trigger_type: 'mode_change' | 'if_not_playing' | 'if_source_not'
   trigger_value: string | null
   enabled: number
   max_plays: number | null
   podcast_feed_url: string | null
+  nas_uri: string | null
+  spotify_uri: string | null
+  /** ISO day numbers Mon=1..Sun=7. `null` means "every day". */
+  days_of_week: number[] | null
+  /** Local HH:MM (24h). `null` means no lower bound. */
+  time_start: string | null
+  /** Local HH:MM (24h). `null` means no upper bound. */
+  time_end: string | null
 }
 
 export interface FollowMeStatus {
   enabled: boolean
   activeRooms: string[]
   anchorRoom: string | null
+}
+
+// ── Spotify types ────────────────────────────────────────────────────────────
+
+export interface SpotifyImage {
+  url: string
+  height: number | null
+  width: number | null
+}
+
+export interface SpotifyPlaylist {
+  id: string
+  name: string
+  description: string | null
+  public: boolean | null
+  collaborative: boolean
+  images: SpotifyImage[]
+  tracks: { total: number; href: string }
+  uri: string
+  external_urls: { spotify: string }
+  owner: { display_name: string; id: string }
+}
+
+export interface SpotifyPinnedPlaylist {
+  id: number
+  playlist_id: string
+  uri: string
+  name: string
+  image_url: string | null
+  owner_display_name: string | null
+  owner_id: string | null
+  track_total: number | null
+  is_editorial: boolean
+  sort_order: number
+  created_at: string
+}
+
+export interface SpotifyPlaylistMetadata {
+  playlist_id: string
+  uri: string
+  name: string
+  image_url: string | null
+  owner_display_name: string | null
+  owner_id: string | null
+  track_total: number | null
+  is_editorial: boolean
+  via: 'api' | 'og'
+}
+
+export interface UserFavourite {
+  id: number
+  user_id: string
+  source: 'sonos' | 'spotify' | 'nas' | 'radio'
+  source_uri: string
+  title: string
+  artist?: string | null
+  album_art_uri: string | null
+  sort_order: number
+  created_at: string
+}
+
+export interface AddFavouriteInput {
+  source: 'sonos' | 'spotify' | 'nas' | 'radio'
+  source_uri: string
+  title: string
+  artist?: string
+  album_art_uri?: string
+}
+
+export interface SpotifyTrack {
+  id: string
+  name: string
+  duration_ms: number
+  explicit: boolean
+  uri: string
+  external_urls: { spotify: string }
+  artists: Array<{ id: string; name: string }>
+  album: {
+    id: string
+    name: string
+    images: SpotifyImage[]
+    uri: string
+  }
+}
+
+export interface SpotifyStatus {
+  connected: boolean
+  configured: boolean
+  display_name?: string
+  needs_reauth?: boolean
+}
+
+export interface Fairylist {
+  id: number
+  name: string
+  created_by: string
+  created_at: string
+  item_count: number
+}
+
+export interface FairylistItem {
+  id: number
+  fairylist_id: number
+  source: 'sonos' | 'spotify' | 'nas' | 'radio'
+  source_uri: string
+  title: string
+  artist: string | null
+  album_art_uri: string | null
+  sort_order: number
+  added_by: string
+  added_at: string
+}
+
+export interface AddFairylistItemInput {
+  source: 'sonos' | 'spotify' | 'nas' | 'radio'
+  source_uri: string
+  title: string
+  artist?: string
+  album_art_uri?: string
+}
+
+export interface FairylistQueueResult {
+  success: boolean
+  queued: number
+  skipped: { title: string; reason: string }[]
+}
+
+export interface SpotifyPlaylistTrackItem {
+  added_at: string
+  track: SpotifyTrack | null
+}
+
+export interface SpotifySearchResult {
+  tracks?: {
+    items: SpotifyTrack[]
+    total: number
+    next: string | null
+    offset: number
+    limit: number
+  }
+  playlists?: {
+    items: SpotifyPlaylist[]
+    total: number
+    next: string | null
+    offset: number
+    limit: number
+  }
+  albums?: {
+    items: Array<{
+      id: string
+      name: string
+      images: SpotifyImage[]
+      artists: Array<{ id: string; name: string }>
+      uri: string
+      external_urls: { spotify: string }
+    }>
+    total: number
+    next: string | null
+    offset: number
+    limit: number
+  }
+  artists?: {
+    items: Array<{
+      id: string
+      name: string
+      images: SpotifyImage[]
+      genres: string[]
+      uri: string
+      external_urls: { spotify: string }
+    }>
+    total: number
+    next: string | null
+    offset: number
+    limit: number
+  }
+}
+
+export interface SpotifyAlbum {
+  id: string
+  name: string
+  images: SpotifyImage[]
+  artists: Array<{ id: string; name: string }>
+  uri: string
+  external_urls: { spotify: string }
+  release_date: string
+  total_tracks: number
+  album_type: string
+}
+
+export interface SpotifyAlbumTrack {
+  id: string
+  name: string
+  duration_ms: number
+  explicit: boolean
+  uri: string
+  track_number: number
+  artists: Array<{ id: string; name: string }>
+}
+
+export interface SpotifyShow {
+  id: string
+  name: string
+  description: string
+  images: SpotifyImage[]
+  publisher: string
+  uri: string
+  external_urls: { spotify: string }
+  total_episodes: number
+}
+
+export interface SpotifyEpisode {
+  id: string
+  name: string
+  description: string
+  duration_ms: number
+  images: SpotifyImage[]
+  uri: string
+  release_date: string
+  explicit: boolean
+}
+
+export interface SpotifyArtist {
+  id: string
+  name: string
+  images: Array<{ url: string; height: number | null; width: number | null }>
+  genres: string[]
+  uri: string
+  external_urls: { spotify: string }
+  followers?: { total: number }
+  popularity?: number
+}
+
+// ── Artist country enrichment types ──────────────────────────────────────────
+
+export interface ArtistCountry {
+  spotify_artist_id: string
+  artist_name: string
+  country_code: string | null
+  country_name: string | null
+  sub_region: string | null
+  image_url?: string | null
+  source: 'wikidata' | 'musicbrainz' | 'manual'
+  musicbrainz_id: string | null
+  confidence: 'high' | 'medium' | 'low' | null
+  resolved_at?: string
+  updated_at?: string
+}
+
+export interface EnrichmentProgress {
+  total: number
+  processed: number
+  resolved: number
+  failed: number
+  status: 'idle' | 'running' | 'complete' | 'error'
+  started_at?: string
+  error?: string
+}
+
+export interface EnrichedAlbumItem {
+  added_at: string
+  album: SpotifyAlbum
+  artist_countries: Array<{
+    artist_id: string
+    artist_name: string
+    country_code: string | null
+    country_name: string | null
+    sub_region: string | null
+    confidence: string | null
+    image_url?: string | null
+  }>
+}
+
+// ── User action types ────────────────────────────────────────────────────────
+
+export interface UserAction {
+  id: number
+  user_id: string
+  user_name: string
+  action: string
+  entity_type: string
+  entity_id: string
+  details?: Record<string, unknown> | null
+  created_at: string
 }
 
 // ── Access link types ────────────────────────────────────────────────────────
@@ -864,6 +1385,18 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ scenes }),
       }),
+    getActivity: (name: string, limit = 20) =>
+      fetchApi<UserAction[]>('/scenes/' + encodeURIComponent(name) + '/activity?limit=' + limit),
+  },
+  userActions: {
+    get: (params?: { entity_type?: string; entity_id?: string; user_id?: string; limit?: number }) => {
+      const q = new URLSearchParams()
+      if (params?.entity_type) q.set('entity_type', params.entity_type)
+      if (params?.entity_id) q.set('entity_id', params.entity_id)
+      if (params?.user_id) q.set('user_id', params.user_id)
+      if (params?.limit) q.set('limit', String(params.limit))
+      return fetchApi<UserAction[]>('/user-actions?' + q.toString())
+    },
   },
   lights: {
     getRoomAssignments: () => fetchApi<LightRoom[]>('/lights/rooms'),
@@ -967,6 +1500,10 @@ export const api = {
     guestNight: () => fetchApi<{ success: boolean; mode: string; excludeRooms: string[]; actions: string[] }>('/system/guest-night', { method: 'POST' }),
     getNightStatus: () => fetchApi<NightStatus>('/system/night/status'),
     unlockNight: () => fetchApi<{ success: boolean }>('/system/night/unlock', { method: 'POST' }),
+    activateHushing: () => fetchApi<{ success: boolean; sceneName: string }>('/system/hushing', { method: 'POST' }),
+    deactivateHushing: () => fetchApi<{ success: boolean }>('/system/hushing/deactivate', { method: 'POST' }),
+    getHushingStatus: () => fetchApi<HushingStatus>('/system/hushing/status'),
+    setHushingScene: (scene: string | null) => fetchApi<{ sceneName: string | null }>('/system/hushing/scene', { method: 'PUT', body: JSON.stringify({ scene }) }),
     getMtaStatus: (station?: string, direction?: string, routes?: string) =>
       fetchApi<MtaStatus>(`/system/mta/status?station=${station || '120'}&direction=${direction || 'S'}${routes ? '&routes=' + routes : ''}`),
     getMtaArrivals: (station?: string, direction?: string, routes?: string) =>
@@ -1036,9 +1573,39 @@ export const api = {
           message: string
           debug: string | null
           category: string | null
+          user_id: string | null
+          user_name: string | null
           created_at: string
         }[]
       >('/system/logs' + (qs ? '?' + qs : ''))
+    },
+    getActivity: (limit?: number, before?: number, category?: string, room?: string) => {
+      const params = new URLSearchParams()
+      if (limit) params.set('limit', String(limit))
+      if (before) params.set('before', String(before))
+      if (category) params.set('category', category)
+      if (room) params.set('room', room)
+      const qs = params.toString()
+      return fetchApi<
+        {
+          id: number
+          message: string
+          type: string
+          room: string | null
+          user: string | null
+          isFairyQueen: boolean
+          timestamp: string
+          category: string | null
+          childCount: number
+          children: {
+            id: number
+            message: string
+            debug: string | null
+            category: string | null
+            created_at: string
+          }[]
+        }[]
+      >('/system/activity' + (qs ? '?' + qs : ''))
     },
   },
   devices: {
@@ -1169,6 +1736,7 @@ export const api = {
         body: JSON.stringify({ enabled }),
       }),
     getSpeakers: () => fetchApi<SonosSpeakerMapping[]>('/sonos/speakers'),
+    getSpeakersWithRooms: () => fetchApi<SonosSpeakerWithRoom[]>('/sonos/speakers-with-rooms'),
     setSpeaker: (data: { room_name: string; speaker_name: string; favourite?: string | null; default_volume?: number }) =>
       fetchApi<SonosSpeakerMapping>('/sonos/speakers', {
         method: 'POST',
@@ -1199,8 +1767,49 @@ export const api = {
         method: 'POST',
         body: JSON.stringify({ favourite_name: favouriteName }),
       }),
+    play: (speaker: string) =>
+      fetchApi<{ speaker: string; action: string }>('/sonos/play/' + encodeURIComponent(speaker), {
+        method: 'POST',
+      }),
+    pause: (speaker: string) =>
+      fetchApi<{ speaker: string; action: string }>('/sonos/pause/' + encodeURIComponent(speaker), {
+        method: 'POST',
+      }),
+    next: (speaker: string) =>
+      fetchApi<{ speaker: string; action: string }>('/sonos/next/' + encodeURIComponent(speaker), {
+        method: 'POST',
+      }),
+    previous: (speaker: string) =>
+      fetchApi<{ speaker: string; action: string }>('/sonos/previous/' + encodeURIComponent(speaker), {
+        method: 'POST',
+      }),
+    joinGroup: (speaker: string, target: string) =>
+      fetchApi<{ speaker: string; target: string; action: string }>(
+        '/sonos/group/' + encodeURIComponent(speaker) + '/join/' + encodeURIComponent(target),
+        { method: 'POST' },
+      ),
+    leaveGroup: (speaker: string) =>
+      fetchApi<{ speaker: string; action: string }>(
+        '/sonos/group/' + encodeURIComponent(speaker) + '/leave',
+        { method: 'POST' },
+      ),
+    playFavourite: (speaker: string, name: string) =>
+      fetchApi<{ speaker: string; favourite: string }>('/sonos/play-favourite/' + encodeURIComponent(speaker), {
+        method: 'POST',
+        body: JSON.stringify({ name }),
+      }),
+    playAll: () =>
+      fetchApi<{ action: string; affectedSpeakers: number }>('/sonos/play-all', { method: 'POST' }),
+    pauseAll: () =>
+      fetchApi<{ action: string; affectedSpeakers: number }>('/sonos/pause-all', { method: 'POST' }),
+    getNowPlaying: () => fetchApi<SonosNowPlayingEntry[]>('/sonos/now-playing'),
     setVolume: (speaker: string, level: number) =>
       fetchApi<{ speaker: string; volume: number }>('/sonos/volume/' + encodeURIComponent(speaker), {
+        method: 'PUT',
+        body: JSON.stringify({ level }),
+      }),
+    setGroupVolume: (speaker: string, level: number) =>
+      fetchApi<{ speaker: string; groupVolume: number }>('/sonos/group-volume/' + encodeURIComponent(speaker), {
         method: 'PUT',
         body: JSON.stringify({ level }),
       }),
@@ -1216,7 +1825,133 @@ export const api = {
       }),
     getMuteStatus: () =>
       fetchApi<{ allMuted: boolean; mutedCount: number; totalSpeakers: number }>('/sonos/mute-status'),
+    getPlayStatus: () =>
+      fetchApi<{ anyPlaying: boolean; allPlaying: boolean; playingCount: number; totalSpeakers: number }>('/sonos/play-status'),
     health: () => fetchApi<{ available: boolean }>('/sonos/health'),
+    getLibraryGenres: () =>
+      fetchApi<SonosGenre[]>('/sonos/library/genres'),
+    getGenreAlbums: (genre: string) =>
+      fetchApi<SonosGenreAlbum[]>('/sonos/library/genre/' + encodeURIComponent(genre)),
+    getGenreAlbumTracks: (objectId: string) =>
+      fetchApi<SonosLibraryTrack[]>('/sonos/library/genre-album-tracks?objectId=' + encodeURIComponent(objectId)),
+    getLibraryStatus: () =>
+      fetchApi<SonosLibraryStatus>('/sonos/library/status'),
+    reloadLibrary: () =>
+      fetchApi<{ loaded: boolean }>('/sonos/library/reload', { method: 'POST' }),
+    getLibraryArtists: () =>
+      fetchApi<SonosLibraryArtist[]>('/sonos/library/artists'),
+    getLibraryAlbums: () =>
+      fetchApi<SonosGenreAlbum[]>('/sonos/library/albums'),
+    getArtistTracks: (name: string) =>
+      fetchApi<SonosLibraryTrack[]>('/sonos/library/artist/' + encodeURIComponent(name)),
+    getAlbumTracks: (objectId: string) =>
+      fetchApi<SonosLibraryTrack[]>('/sonos/library/album-tracks?objectId=' + encodeURIComponent(objectId)),
+    getLibrarySongs: () =>
+      fetchApi<SonosLibraryTrack[]>('/sonos/library/songs'),
+    searchLibrary: (query: string) =>
+      fetchApi<SonosLibrarySearchResult>('/sonos/library/search?q=' + encodeURIComponent(query)),
+    // NAS artist country enrichment
+    enrichNasArtists: () =>
+      fetchApi<{ status: string; total: number }>('/sonos/library/enrich-artists', { method: 'POST' }),
+    getNasEnrichmentStatus: () =>
+      fetchApi<EnrichmentProgress>('/sonos/library/enrichment-status'),
+    cancelNasEnrichment: () =>
+      fetchApi<{ ok: boolean }>('/sonos/library/enrich-artists/cancel', { method: 'POST' }),
+    getEnrichedNasAlbums: () =>
+      fetchApi<{ items: NasEnrichedAlbum[]; total: number; cached_artists: number; uncached_artists: number }>('/sonos/library/albums/enriched'),
+    getEnrichedNasArtists: () =>
+      fetchApi<{ items: NasEnrichedArtist[]; total: number }>('/sonos/library/artists/enriched'),
+    getRadioStations: () =>
+      fetchApi<SonosRadioStation[]>('/sonos/radio/stations'),
+    getQueue: (speaker: string) =>
+      fetchApi<SonosQueueItem[]>(`/sonos/queue/${encodeURIComponent(speaker)}`),
+    addToQueue: (speaker: string, uri: string) =>
+      fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/add`, {
+        method: 'POST',
+        body: JSON.stringify({ uri }),
+      }),
+    playNext: (speaker: string, uri: string) =>
+      fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/playnext`, {
+        method: 'POST',
+        body: JSON.stringify({ uri }),
+      }),
+    removeFromQueue: (speaker: string, index: number) =>
+      fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/remove/${index}`, {
+        method: 'DELETE',
+      }),
+    reorderQueue: (speaker: string, from: number, to: number) =>
+      fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/reorder`, {
+        method: 'POST',
+        body: JSON.stringify({ from, to }),
+      }),
+    clearQueue: (speaker: string) =>
+      fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/clear`, {
+        method: 'DELETE',
+      }),
+    restoreQueue: (speaker: string, uris: string[]) =>
+      fetchApi<{ added: number; failedCount: number }>(
+        `/sonos/queue/${encodeURIComponent(speaker)}/restore`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ uris }),
+        },
+      ),
+    seekToTrack: (speaker: string, trackNumber: number) =>
+      fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/seek/${trackNumber}`, {
+        method: 'POST',
+      }),
+    saveQueueAsFairylist: (speaker: string, fairylistId: number) =>
+      fetchApi<void>(`/sonos/queue/${encodeURIComponent(speaker)}/save-as-fairylist`, {
+        method: 'POST',
+        body: JSON.stringify({ fairylistId }),
+      }),
+    playUri: (speaker: string, uri: string) =>
+      fetchApi<{ speaker: string; uri: string }>(
+        `/sonos/play-uri/${encodeURIComponent(speaker)}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({ uri }),
+        },
+      ),
+    playSpotify: (speaker: string, uri: string, action?: 'now' | 'queue' | 'next') =>
+      fetchApi<{ speaker: string; uri: string; action: string }>(
+        `/sonos/play-spotify/${encodeURIComponent(speaker)}`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ uri, action }),
+        },
+      ),
+    shuffle: (speaker: string, enabled: boolean) =>
+      fetchApi<void>(`/sonos/shuffle/${encodeURIComponent(speaker)}`, {
+        method: 'POST',
+        body: JSON.stringify({ enabled }),
+      }),
+    repeat: (speaker: string, enabled: boolean, mode?: 'off' | 'all' | 'one') =>
+      fetchApi<void>(`/sonos/repeat/${encodeURIComponent(speaker)}`, {
+        method: 'POST',
+        body: JSON.stringify({ enabled, ...(mode ? { mode } : {}) }),
+      }),
+    seek: (speaker: string, seconds: number) =>
+      fetchApi<void>(`/sonos/seek/${encodeURIComponent(speaker)}`, {
+        method: 'POST',
+        body: JSON.stringify({ seconds }),
+      }),
+    addAlbumToQueue: (speaker: string, uri: string, source: 'spotify' | 'nas') =>
+      fetchApi<{ speaker: string; action: string }>(
+        `/sonos/queue/${encodeURIComponent(speaker)}/add-album`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ uri, source }),
+        },
+      ),
+    playAlbumNext: (speaker: string, uri: string, source: 'spotify' | 'nas') =>
+      fetchApi<{ speaker: string; action: string }>(
+        `/sonos/queue/${encodeURIComponent(speaker)}/playnext-album`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ uri, source }),
+        },
+      ),
   },
 
   deviceLinks: {
@@ -1238,6 +1973,187 @@ export const api = {
       fetchApi<{ deleted: boolean }>(`/device-links/${id}`, { method: 'DELETE' }),
   },
 
+  spotify: {
+    getStatus: () => fetchApi<SpotifyStatus>('/spotify/status'),
+    disconnect: () => fetchApi<{ ok: boolean }>('/spotify/disconnect', { method: 'POST' }),
+    getPlaylists: (limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: SpotifyPlaylist[]; total: number; next: string | null }>(
+        '/spotify/playlists' + (qs ? '?' + qs : ''),
+      )
+    },
+    getPlaylistTracks: (id: string, limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: SpotifyPlaylistTrackItem[]; total: number; next: string | null }>(
+        '/spotify/playlists/' + encodeURIComponent(id) + '/tracks' + (qs ? '?' + qs : ''),
+      )
+    },
+    getPlaylistMetadata: (id: string) =>
+      fetchApi<SpotifyPlaylistMetadata>(
+        '/spotify/playlists/' + encodeURIComponent(id) + '/metadata',
+      ),
+    getPinnedPlaylists: () => fetchApi<SpotifyPinnedPlaylist[]>('/spotify/pinned'),
+    pinPlaylist: (input: string) =>
+      fetchApi<SpotifyPinnedPlaylist>('/spotify/pinned', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ input }),
+      }),
+    unpinPlaylist: (playlistId: string) =>
+      fetchApi<void>('/spotify/pinned/' + encodeURIComponent(playlistId), {
+        method: 'DELETE',
+      }),
+    search: (q: string, types?: string[], limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      params.set('q', q)
+      if (types?.length) params.set('types', types.join(','))
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      return fetchApi<SpotifySearchResult>('/spotify/search?' + params.toString())
+    },
+    getSavedAlbums: (limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: Array<{ added_at: string; album: SpotifyAlbum }>; total: number; next: string | null }>(
+        '/spotify/albums' + (qs ? '?' + qs : ''),
+      )
+    },
+    getAlbumTracks: (id: string, limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: SpotifyAlbumTrack[]; total: number; next: string | null }>(
+        '/spotify/albums/' + encodeURIComponent(id) + '/tracks' + (qs ? '?' + qs : ''),
+      )
+    },
+    getSavedShows: (limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: Array<{ added_at: string; show: SpotifyShow }>; total: number; next: string | null }>(
+        '/spotify/shows' + (qs ? '?' + qs : ''),
+      )
+    },
+    getShowEpisodes: (id: string, limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: SpotifyEpisode[]; total: number; next: string | null }>(
+        '/spotify/shows/' + encodeURIComponent(id) + '/episodes' + (qs ? '?' + qs : ''),
+      )
+    },
+    getSavedTracks: (limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: Array<{ added_at: string; track: SpotifyTrack }>; total: number; next: string | null }>(
+        '/spotify/tracks' + (qs ? '?' + qs : ''),
+      )
+    },
+    getArtists: (limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: SpotifyArtist[]; total: number; scope_warning?: string }>(
+        '/spotify/artists' + (qs ? '?' + qs : ''),
+      )
+    },
+    getArtist: (id: string) =>
+      fetchApi<SpotifyArtist>('/spotify/artists/' + encodeURIComponent(id)),
+    getArtistAlbums: (id: string, limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: SpotifyAlbum[]; total: number; next: string | null }>(
+        '/spotify/artists/' + encodeURIComponent(id) + '/albums' + (qs ? '?' + qs : ''),
+      )
+    },
+    // Artist country enrichment
+    enrichArtists: (artistIds?: Array<{ id: string; name: string }>) =>
+      fetchApi<{ status: string; total: number }>('/spotify/enrich-artists', {
+        method: 'POST',
+        body: JSON.stringify(artistIds ? { artist_ids: artistIds } : {}),
+      }),
+    getEnrichmentStatus: () =>
+      fetchApi<EnrichmentProgress>('/spotify/enrichment-status'),
+    cancelEnrichment: () =>
+      fetchApi<{ ok: boolean }>('/spotify/enrich-artists/cancel', { method: 'POST' }),
+    backfillImages: () =>
+      fetchApi<{ spotify: { updated: number; total: number }; nas: { updated: number; total: number }; total_updated: number }>('/spotify/backfill-images', {
+        method: 'POST',
+      }),
+    getArtistCountries: () =>
+      fetchApi<{ items: ArtistCountry[]; total: number }>('/spotify/artist-countries'),
+    getArtistCountry: (id: string) =>
+      fetchApi<ArtistCountry>('/spotify/artist-countries/' + encodeURIComponent(id)),
+    updateArtistCountry: (id: string, data: { country_code: string; country_name: string; sub_region?: string; artist_name?: string }) =>
+      fetchApi<ArtistCountry>('/spotify/artist-countries/' + encodeURIComponent(id), {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    getEnrichedAlbums: (limit?: number, offset?: number) => {
+      const params = new URLSearchParams()
+      if (limit !== undefined) params.set('limit', String(limit))
+      if (offset !== undefined) params.set('offset', String(offset))
+      const qs = params.toString()
+      return fetchApi<{ items: EnrichedAlbumItem[]; total: number; next: string | null; cached_artists: number; uncached_artists: number }>(
+        '/spotify/albums/enriched' + (qs ? '?' + qs : ''),
+      )
+    },
+    addToPlaylist: (playlistId: string, uri: string) =>
+      fetchApi<unknown>('/spotify/playlists/' + playlistId + '/tracks', { method: 'POST', body: JSON.stringify({ uri }) }),
+    createPlaylist: (name: string) =>
+      fetchApi<{ id: string; name: string; tracks: { total: number } }>('/spotify/playlists', { method: 'POST', body: JSON.stringify({ name }) }),
+  },
+
+  fairylists: {
+    list: () => fetchApi<Fairylist[]>('/fairylists'),
+    get: (id: number) => fetchApi<{ fairylist: Fairylist; items: FairylistItem[] }>('/fairylists/' + id),
+    create: (name: string) => fetchApi<Fairylist>('/fairylists', { method: 'POST', body: JSON.stringify({ name }) }),
+    rename: (id: number, name: string) => fetchApi<Fairylist>('/fairylists/' + id, { method: 'PUT', body: JSON.stringify({ name }) }),
+    remove: (id: number) => fetchApi<unknown>('/fairylists/' + id, { method: 'DELETE' }),
+    addItem: (id: number, data: AddFairylistItemInput) => fetchApi<FairylistItem>('/fairylists/' + id + '/items', { method: 'POST', body: JSON.stringify(data) }),
+    removeItem: (fairylistId: number, itemId: number) => fetchApi<unknown>('/fairylists/' + fairylistId + '/items/' + itemId, { method: 'DELETE' }),
+    reorder: (id: number, ids: number[]) => fetchApi<unknown>('/fairylists/' + id + '/items/reorder', { method: 'PUT', body: JSON.stringify({ ids }) }),
+    play: (id: number, speaker: string) =>
+      fetchApi<FairylistQueueResult>('/fairylists/' + id + '/play/' + encodeURIComponent(speaker), { method: 'POST' }),
+    queue: (id: number, speaker: string, mode: 'append' | 'next') =>
+      fetchApi<FairylistQueueResult>(
+        '/fairylists/' + id + '/queue/' + encodeURIComponent(speaker),
+        { method: 'POST', body: JSON.stringify({ mode }) },
+      ),
+  },
+
+  favourites: {
+    list: () => fetchApi<UserFavourite[]>('/favourites'),
+    add: (data: AddFavouriteInput) =>
+      fetchApi<UserFavourite>('/favourites', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    remove: (id: number) =>
+      fetchApi<void>(`/favourites/${id}`, { method: 'DELETE' }),
+    reorder: (ids: number[]) =>
+      fetchApi<{ success: boolean }>('/favourites/reorder', {
+        method: 'PUT',
+        body: JSON.stringify({ ids }),
+      }),
+  },
+
   accessLinks: {
     list: () => fetchApi<AccessLink[]>('/access-links'),
     create: (data: CreateAccessLinkInput) =>
@@ -1255,4 +2171,25 @@ export const api = {
         body: JSON.stringify(body ?? {}),
       }),
   },
+
+  settings: {
+    getGroup: <T = unknown>(group: SettingsGroup) =>
+      fetchApi<T>(`/settings/${group}`),
+    putGroup: <T = unknown>(group: SettingsGroup, body: unknown) =>
+      fetchApi<T>(`/settings/${group}`, { method: 'PUT', body: JSON.stringify(body) }),
+    test: <T = unknown>(group: SettingsGroup, body: unknown) =>
+      fetchApi<T>(`/settings/${group}/test`, { method: 'POST', body: JSON.stringify(body) }),
+    hubitatWebhookUrl: () =>
+      fetchApi<HubitatWebhookUrlDto>('/settings/hubitat/webhook-url'),
+    regenerateHubitatSecret: () =>
+      fetchApi<HubitatWebhookUrlDto>('/settings/hubitat/regenerate-secret', { method: 'POST' }),
+    spotifyRedirectUri: () =>
+      fetchApi<SpotifyRedirectUriDto>('/settings/spotify/redirect-uri'),
+    setSpotifyPublicBaseUrl: (publicBaseUrl: string | null) =>
+      fetchApi<SpotifyRedirectUriDto>('/settings/spotify/public-base-url', {
+        method: 'PUT',
+        body: JSON.stringify({ publicBaseUrl }),
+      }),
+  },
+
 }

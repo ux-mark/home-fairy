@@ -2,36 +2,21 @@ import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import * as Switch from '@radix-ui/react-switch'
-import { Pencil, Volume2, VolumeX, Zap, CirclePause, CircleSlash, Plug, Link2, Unlink } from 'lucide-react'
-import { io, Socket } from 'socket.io-client'
-import { api, type Room, type AutoPlayRule, type KasaDevice, type DeviceLink } from '@/lib/api'
+import { Pencil, Volume2, VolumeX } from 'lucide-react'
+import { api, type Room, type AutoPlayRule } from '@/lib/api'
+import { getSocketAsync } from '@/hooks/useSocket'
+import { DeviceLinkManager } from '@/components/DeviceLinkManager'
 import { cn } from '@/lib/utils'
 import { BackLink } from '@/components/ui/BackLink'
 import { DetailPageSkeleton, Skeleton } from '@/components/ui/Skeleton'
 import { Accordion } from '@/components/ui/Accordion'
-import { PillSelect } from '@/components/ui/PillSelect'
-import { CardRadioGroup } from '@/components/ui/CardRadioGroup'
-import { FavouriteSelector } from '@/components/sonos/FavouriteSelector'
+import { AutoPlayRuleEditor, type AutoPlayRulePayload } from '@/components/sonos/AutoPlayRuleEditor'
+import { describeRule, describeRuleAccessible } from '@/lib/auto-play-description'
 import { useToast } from '@/hooks/useToast'
 
-// ── Socket singleton (reuse the same pattern as useSocket.ts) ─────────────────
-
-let _socket: Socket | null = null
-
-function getSocket(): Socket {
-  if (!_socket) {
-    const url = import.meta.env.DEV ? 'http://localhost:3001' : window.location.origin
-    _socket = io(url, {
-      transports: ['websocket', 'polling'],
-      withCredentials: true,
-      reconnection: true,
-      reconnectionAttempts: Infinity,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 30000,
-    })
-  }
-  return _socket
-}
+// Use the deferred shared socket from `@/hooks/useSocket` rather than a
+// per-page singleton — one connection per tab, and the heavy socket.io
+// transport stays out of the cold-load chunk graph.
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -45,30 +30,14 @@ function formatPlaybackState(state: string): string {
   }
 }
 
+const RULE_DESCRIBE_OPTS = { labelNasFromLibrary: true } as const
+
 function formatRuleSentence(rule: AutoPlayRule): { main: string; condition?: string } {
-  const isPodcast = !!rule.podcast_feed_url
-  const action = rule.favourite_name === '__continue__'
-    ? "Continue what's already playing"
-    : isPodcast
-      ? `Play latest "${rule.favourite_name}" episode`
-      : `Play "${rule.favourite_name}"`
-  const main = `${action} when mode changes to "${rule.mode_name}".`
-  let condition: string | undefined
-  if (rule.trigger_type === 'if_not_playing') {
-    condition = 'Only if nothing is playing.'
-  } else if (rule.trigger_type === 'if_source_not' && rule.trigger_value) {
-    condition = `Only if "${rule.trigger_value}" is not active.`
-  }
-  if (rule.max_plays !== null) {
-    const limitText = rule.max_plays === 1 ? 'Plays once per mode change.' : `Plays ${rule.max_plays} times per mode change.`
-    condition = condition ? `${condition} ${limitText}` : limitText
-  }
-  return { main, condition }
+  return describeRule(rule, RULE_DESCRIBE_OPTS)
 }
 
 function formatRuleAccessible(rule: AutoPlayRule): string {
-  const { main, condition } = formatRuleSentence(rule)
-  return condition ? `${main} ${condition}` : main
+  return describeRuleAccessible(rule, RULE_DESCRIBE_OPTS)
 }
 
 // ── SwitchRow subcomponent ────────────────────────────────────────────────────
@@ -116,228 +85,6 @@ function SwitchRow({ id, label, description, checked, disabled, onCheckedChange 
   )
 }
 
-// ── PowerSourceSection ───────────────────────────────────────────────────────
-
-interface PowerSourceSectionProps {
-  roomName: string
-  links: DeviceLink[]
-  linksLoading: boolean
-  kasaDevices: KasaDevice[] | undefined
-  showPlugPicker: boolean
-  setShowPlugPicker: (v: boolean) => void
-  unlinkConfirmId: number | null
-  setUnlinkConfirmId: (id: number | null) => void
-  onLink: (kasaId: string) => void
-  onUnlink: (id: number) => void
-  linkPending: boolean
-  unlinkPending: boolean
-}
-
-function formatCost(cost: number | null | undefined, symbol: string): string {
-  if (cost == null) return '—'
-  return `${symbol}${cost.toFixed(2)}`
-}
-
-function PowerSourceSection({
-  roomName,
-  links,
-  linksLoading,
-  kasaDevices,
-  showPlugPicker,
-  setShowPlugPicker,
-  unlinkConfirmId,
-  setUnlinkConfirmId,
-  onLink,
-  onUnlink,
-  linkPending,
-  unlinkPending,
-}: PowerSourceSectionProps) {
-  const [plugSearch, setPlugSearch] = useState('')
-  const powerLinks = links.filter(l => l.linkType === 'power')
-  const linkedIds = new Set(powerLinks.map(l => l.targetId))
-
-  // Only show plugs and sockets (outlets) that have emeter — NOT strips
-  const eligiblePlugs = (kasaDevices ?? []).filter(
-    d => d.has_emeter && (d.device_type === 'plug' || d.device_type === 'outlet'),
-  )
-
-  const filteredPlugs = plugSearch.trim()
-    ? eligiblePlugs.filter(p => p.label.toLowerCase().includes(plugSearch.toLowerCase()))
-    : eligiblePlugs
-
-  return (
-    <section aria-labelledby={`power-source-heading-${roomName}`}>
-      {linksLoading ? (
-        <Skeleton className="h-14 w-full rounded-lg" />
-      ) : powerLinks.length === 0 && !showPlugPicker ? (
-        <div className="rounded-lg border border-dashed border-[var(--border-secondary)] p-4">
-          <p className="text-sm text-caption">
-            No power source linked. Link a smart plug to track the energy cost of this speaker.
-          </p>
-          <button
-            onClick={() => setShowPlugPicker(true)}
-            className="mt-3 flex min-h-[44px] items-center gap-2 rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] px-3 py-2 text-sm text-heading transition-colors hover:bg-[var(--bg-tertiary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-          >
-            <Plug className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
-            Link a smart plug
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {powerLinks.map(link => {
-            const t = link.target
-            const isConfirming = unlinkConfirmId === link.id
-            return (
-              <div key={link.id} className="card rounded-xl border p-4">
-                <div className="flex flex-wrap items-start gap-3">
-                  <div className="rounded-full bg-fairy-500/10 p-1.5 text-fairy-400 shrink-0" aria-hidden="true">
-                    <Plug className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-heading">
-                      {t?.label ?? link.targetId}
-                    </p>
-                    {t ? (
-                      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-caption">
-                        <span>
-                          {t.isOnline ? (
-                            <span className="text-green-400">Online</span>
-                          ) : (
-                            <span className="text-slate-400">Offline</span>
-                          )}
-                        </span>
-                        {t.power != null && (
-                          <span>{t.power.toFixed(1)} W now</span>
-                        )}
-                        {t.todayCost != null && (
-                          <span>Today: {formatCost(t.todayCost, t.currencySymbol)}</span>
-                        )}
-                        {t.monthlyCost != null && (
-                          <span>This month: {formatCost(t.monthlyCost, t.currencySymbol)}</span>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="mt-0.5 text-xs text-caption">Device data unavailable</p>
-                    )}
-                  </div>
-                  {isConfirming ? (
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-body">Remove link?</span>
-                      <button
-                        onClick={() => onUnlink(link.id)}
-                        disabled={unlinkPending}
-                        className="flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {unlinkPending ? 'Removing...' : 'Remove'}
-                      </button>
-                      <button
-                        onClick={() => setUnlinkConfirmId(null)}
-                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg border border-[var(--border-secondary)] px-3 py-2 text-sm text-heading transition-colors hover:bg-[var(--bg-tertiary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => setUnlinkConfirmId(link.id)}
-                      className="flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-lg bg-red-500/10 px-3 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                      aria-label={`Remove power source link for ${t?.label ?? link.targetId}`}
-                    >
-                      <Unlink className="h-4 w-4" aria-hidden="true" />
-                      Remove
-                    </button>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Plug picker */}
-      {showPlugPicker && (
-        <div className="mt-3 rounded-xl border border-[var(--border-secondary)] bg-[var(--bg-secondary)] p-4">
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-sm font-medium text-heading">Select a smart plug</p>
-            <button
-              onClick={() => { setShowPlugPicker(false); setPlugSearch('') }}
-              className="text-xs text-caption hover:text-heading transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-          {eligiblePlugs.length > 3 && (
-            <input
-              type="text"
-              value={plugSearch}
-              onChange={e => setPlugSearch(e.target.value)}
-              placeholder="Search plugs and sockets..."
-              className="mb-3 w-full rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-primary)] px-3 py-2 text-sm text-heading placeholder:text-caption focus:border-fairy-500 focus:outline-none"
-            />
-          )}
-          {eligiblePlugs.length === 0 ? (
-            <p className="text-sm text-caption">
-              No energy-monitoring smart plugs found. Make sure your Kasa devices are discovered and have energy monitoring enabled.
-            </p>
-          ) : filteredPlugs.length === 0 ? (
-            <p className="text-sm text-caption">No plugs match your search.</p>
-          ) : (
-            <div className="space-y-2">
-              {filteredPlugs.map(plug => {
-                const alreadyLinked = linkedIds.has(plug.id)
-                return (
-                  <button
-                    key={plug.id}
-                    onClick={() => !alreadyLinked && onLink(plug.id)}
-                    disabled={alreadyLinked || linkPending}
-                    className={cn(
-                      'flex w-full min-h-[44px] items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm transition-colors',
-                      alreadyLinked
-                        ? 'cursor-default border-fairy-500/30 bg-fairy-500/10 text-fairy-400'
-                        : 'border-[var(--border-secondary)] text-heading hover:border-fairy-500/50 hover:bg-[var(--bg-tertiary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
-                      (linkPending && !alreadyLinked) && 'cursor-not-allowed opacity-50',
-                    )}
-                    aria-pressed={alreadyLinked}
-                  >
-                    <Plug className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
-                    <span className="min-w-0 flex-1">{plug.label}</span>
-                    {alreadyLinked && (
-                      <span className="ml-auto shrink-0 text-xs text-fairy-400">
-                        <Link2 className="inline h-3 w-3 mr-0.5" aria-hidden="true" />
-                        Linked
-                      </span>
-                    )}
-                    {!alreadyLinked && !plug.is_online && (
-                      <span className="ml-auto shrink-0 text-xs text-slate-400">Offline</span>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          )}
-          <button
-            onClick={() => setShowPlugPicker(false)}
-            className="mt-3 text-xs text-caption hover:text-body focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-          >
-            Cancel
-          </button>
-        </div>
-      )}
-
-      {/* Add another plug button (when links exist) */}
-      {powerLinks.length > 0 && !showPlugPicker && (
-        <button
-          onClick={() => setShowPlugPicker(true)}
-          className="mt-3 flex min-h-[44px] items-center gap-2 text-xs text-fairy-400 hover:text-fairy-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-        >
-          <Plug className="h-3 w-3" aria-hidden="true" />
-          Link another plug
-        </button>
-      )}
-    </section>
-  )
-}
-
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function SonosDetailPage() {
@@ -351,8 +98,6 @@ export default function SonosDetailPage() {
   const [rulesOpen, setRulesOpen] = useState(true)
 
   const [powerSourceOpen, setPowerSourceOpen] = useState(true)
-  const [showPlugPicker, setShowPlugPicker] = useState(false)
-  const [unlinkConfirmId, setUnlinkConfirmId] = useState<number | null>(null)
 
   // Room dropdown state
   const [roomDropdownOpen, setRoomDropdownOpen] = useState(false)
@@ -361,44 +106,6 @@ export default function SonosDetailPage() {
   // Inline add/edit rule form state
   const [showAddRuleForm, setShowAddRuleForm] = useState(false)
   const [editingRuleId, setEditingRuleId] = useState<number | null>(null)
-  const [newRuleFavourite, setNewRuleFavourite] = useState('')
-  const [newRuleMode, setNewRuleMode] = useState('')
-  const [newRuleTriggerType, setNewRuleTriggerType] = useState<AutoPlayRule['trigger_type']>('if_not_playing')
-  const [newRuleSourceValue, setNewRuleSourceValue] = useState('')
-  const [newRuleMaxPlays, setNewRuleMaxPlays] = useState<string>('')
-  const [podcastFeedUrl, setPodcastFeedUrl] = useState<string | null>(null)
-  const [podcastResolving, setPodcastResolving] = useState(false)
-  const [podcastFailed, setPodcastFailed] = useState(false)
-  const [manualFeedUrl, setManualFeedUrl] = useState('')
-
-  // Auto-detect podcast when favourite changes
-  useEffect(() => {
-    const fav = newRuleFavourite
-    if (!fav || fav === '__continue__') {
-      setPodcastFeedUrl(null)
-      setPodcastFailed(false)
-      setManualFeedUrl('')
-      return
-    }
-    let cancelled = false
-    setPodcastResolving(true)
-    setPodcastFailed(false)
-    api.sonos.resolvePodcast(fav).then(result => {
-      if (cancelled) return
-      setPodcastResolving(false)
-      if (result.isPodcast) {
-        if (result.feedUrl) {
-          setPodcastFeedUrl(result.feedUrl)
-        } else {
-          setPodcastFailed(true)
-          setPodcastFeedUrl(null)
-        }
-      } else {
-        setPodcastFeedUrl(null)
-      }
-    }).catch(() => { if (!cancelled) setPodcastResolving(false) })
-    return () => { cancelled = true }
-  }, [newRuleFavourite])
 
   // Local default volume (slider) -- tracked as delta from server value
   const [volumeDelta, setVolumeDelta] = useState<number | null>(null)
@@ -425,11 +132,6 @@ export default function SonosDetailPage() {
     staleTime: 60_000,
   })
 
-  const { data: favourites } = useQuery({
-    queryKey: ['sonos', 'favourites'],
-    queryFn: api.sonos.getFavourites,
-    staleTime: 60_000,
-  })
 
   const { data: autoPlayRules } = useQuery({
     queryKey: ['sonos', 'auto-play'],
@@ -453,32 +155,25 @@ export default function SonosDetailPage() {
     staleTime: 60_000,
   })
 
-  const { data: deviceLinks = [], isLoading: linksLoading } = useQuery({
-    queryKey: ['device-links', 'sonos', assignedRoom?.name],
-    queryFn: () => api.deviceLinks.getForDevice('sonos', assignedRoom!.name),
-    enabled: !!assignedRoom?.name,
-    staleTime: 30_000,
-  })
-
-  const { data: kasaDevices } = useQuery({
-    queryKey: ['kasa', 'devices'],
-    queryFn: api.kasa.getDevices,
-    enabled: showPlugPicker,
-    staleTime: 30_000,
-  })
-
   // ── Socket subscription ──────────────────────────────────────────────────────
 
   useEffect(() => {
-    const s = getSocket()
+    let cancelled = false
+    let cleanup: (() => void) | undefined
 
     function handlePlaybackUpdate() {
       queryClient.invalidateQueries({ queryKey: ['sonos', 'state', speaker] })
     }
 
-    s.on('sonos:playback-update', handlePlaybackUpdate)
+    getSocketAsync().then(socket => {
+      if (cancelled) return
+      socket.on('sonos:playback-update', handlePlaybackUpdate)
+      cleanup = () => socket.off('sonos:playback-update', handlePlaybackUpdate)
+    })
+
     return () => {
-      s.off('sonos:playback-update', handlePlaybackUpdate)
+      cancelled = true
+      cleanup?.()
     }
   }, [queryClient, speaker])
 
@@ -531,7 +226,7 @@ export default function SonosDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sonos', 'auto-play'] })
       toast({ message: 'Auto-play rule added' })
-      resetRuleForm()
+      setShowAddRuleForm(false)
     },
     onError: () => toast({ message: 'Failed to add rule', type: 'error' }),
   })
@@ -561,66 +256,14 @@ export default function SonosDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sonos', 'auto-play'] })
       toast({ message: 'Auto-play rule updated' })
-      resetRuleForm()
+      setEditingRuleId(null)
     },
     onError: () => toast({ message: 'Failed to update rule', type: 'error' }),
   })
 
-  const createLinkMutation = useMutation({
-    mutationFn: (kasaId: string) =>
-      api.deviceLinks.create({
-        source_type: 'sonos',
-        source_id: assignedRoom!.name,
-        target_type: 'kasa',
-        target_id: kasaId,
-      }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['device-links', 'sonos', assignedRoom?.name] })
-      setShowPlugPicker(false)
-      toast({ message: 'Smart plug linked as power source' })
-    },
-    onError: (err: Error) => {
-      const msg = err.message.includes('already exists')
-        ? 'That plug is already linked to this speaker.'
-        : 'Failed to link plug. Try again.'
-      toast({ message: msg, type: 'error' })
-    },
-  })
-
-  const deleteLinkMutation = useMutation({
-    mutationFn: (id: number) => api.deviceLinks.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['device-links', 'sonos', assignedRoom?.name] })
-      setUnlinkConfirmId(null)
-      toast({ message: 'Power source unlinked' })
-    },
-    onError: () => toast({ message: 'Failed to unlink. Try again.', type: 'error' }),
-  })
-
-  function resetRuleForm() {
-    setShowAddRuleForm(false)
-    setEditingRuleId(null)
-    setNewRuleFavourite('')
-    setNewRuleMode('')
-    setNewRuleTriggerType('if_not_playing')
-    setNewRuleSourceValue('')
-    setNewRuleMaxPlays('')
-    setPodcastFeedUrl(null)
-    setPodcastFailed(false)
-    setManualFeedUrl('')
-  }
-
   function openEditRule(rule: AutoPlayRule) {
     setShowAddRuleForm(false)
     setEditingRuleId(rule.id)
-    setNewRuleFavourite(rule.favourite_name)
-    setNewRuleMode(rule.mode_name)
-    setNewRuleTriggerType(rule.trigger_type)
-    setNewRuleSourceValue(rule.trigger_value ?? '')
-    setNewRuleMaxPlays(rule.max_plays !== null ? String(rule.max_plays) : '')
-    setPodcastFeedUrl(rule.podcast_feed_url ?? null)
-    setPodcastFailed(false)
-    setManualFeedUrl('')
   }
 
   // ── Live volume + mute mutations ────────────────────────────────────────────
@@ -641,6 +284,7 @@ export default function SonosDetailPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sonos', 'state', speaker] })
     },
+    onSettled: () => setLiveVolume(null),
     onError: () => toast({ message: 'Failed to set volume', type: 'error' }),
   })
 
@@ -661,7 +305,6 @@ export default function SonosDetailPage() {
         setMuteMutation.mutate(false)
       }
       setLiveVolumeMutation.mutate(value)
-      setLiveVolume(null)
     }, 300)
   }
 
@@ -693,7 +336,7 @@ export default function SonosDetailPage() {
   if (!speaker) {
     return (
       <div>
-        <BackLink to="/devices" label="All devices" />
+        <BackLink to="/sonos/playing" label="Now Playing" />
         <div className="card rounded-xl border p-5" role="alert">
           <p className="text-sm text-body">Speaker not found.</p>
         </div>
@@ -709,7 +352,7 @@ export default function SonosDetailPage() {
     <div className="space-y-6">
       {/* Header */}
       <header>
-        <BackLink to="/devices" label="All devices" />
+        <BackLink to="/sonos/playing" label="Now Playing" />
         <div className="flex flex-wrap items-start justify-between gap-2">
           <h1 className="text-heading text-lg font-semibold">{speaker}</h1>
           {assignedRoom && (
@@ -966,154 +609,24 @@ export default function SonosDetailPage() {
 
                   if (isEditing) {
                     return (
-                      <li key={rule.id} className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] p-4 space-y-4">
-                        <p className="text-heading text-sm font-medium">Edit auto-play rule</p>
-
-                        {/* Room — read-only */}
-                        <div>
-                          <p className="text-heading text-sm mb-1.5">Room</p>
-                          <span className="inline-flex items-center rounded-full bg-fairy-500/10 px-3 py-1.5 text-sm font-medium text-fairy-400">{assignedRoom.name}</span>
-                        </div>
-
-                        {/* Favourite */}
-                        <div>
-                          <label htmlFor="edit-rule-favourite" className="text-heading text-sm mb-1.5 block">Favourite</label>
-                          <FavouriteSelector
-                            favourites={favourites ?? []}
-                            value={newRuleFavourite}
-                            onChange={setNewRuleFavourite}
-                            id="edit-rule-favourite"
-                          />
-                          {podcastResolving && (
-                            <p className="text-caption text-xs mt-1">Detecting podcast...</p>
-                          )}
-                          {podcastFeedUrl && !podcastResolving && (
-                            <p className="text-xs mt-1 text-fairy-400">Podcast detected. The latest episode will play automatically.</p>
-                          )}
-                          {podcastFailed && !podcastResolving && (
-                            <div className="mt-2">
-                              <p className="text-xs text-amber-400 mb-1">Podcast detected, but we could not find its feed automatically.</p>
-                              <input
-                                type="url"
-                                value={manualFeedUrl}
-                                onChange={e => setManualFeedUrl(e.target.value)}
-                                placeholder="Paste the podcast RSS feed URL"
-                                className="w-full h-11 rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                              />
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Mode */}
-                        <div>
-                          <p className="text-heading text-sm mb-1.5">Mode</p>
-                          <PillSelect
-                            id="edit-rule-mode"
-                            options={modes?.map(m => ({ value: m.name, label: m.name })) ?? []}
-                            value={newRuleMode}
-                            onChange={setNewRuleMode}
-                            placeholder="Select a mode"
-                            aria-label="Select a mode"
-                          />
-                        </div>
-
-                        {/* Condition */}
-                        {newRuleFavourite !== '__continue__' && (
-                          <div>
-                            <p className="text-heading text-sm mb-2">Condition</p>
-                            <CardRadioGroup
-                              name="edit-trigger-type"
-                              options={[
-                                { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
-                                { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
-                                { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
-                              ]}
-                              value={newRuleTriggerType}
-                              onChange={(v) => setNewRuleTriggerType(v as AutoPlayRule['trigger_type'])}
-                              aria-label="Trigger condition"
-                            />
-                            {newRuleTriggerType === 'if_source_not' && (
-                              <div className="mt-3">
-                                <label htmlFor="edit-rule-source" className="text-caption text-xs mb-1.5 block">Source</label>
-                                <PillSelect
-                                  id="edit-rule-source"
-                                  options={(availableSources ?? []).map(s => ({ value: s, label: s }))}
-                                  value={newRuleSourceValue}
-                                  onChange={setNewRuleSourceValue}
-                                  aria-label="Select a source"
-                                />
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Repeat limit */}
-                        <div>
-                          <p className="text-heading text-sm mb-1.5">Repeat limit</p>
-                          <p className="text-caption text-xs mb-2">
-                            How many times this rule fires per mode change
-                          </p>
-                          <PillSelect
-                            id="detail-edit-rule-max-plays"
-                            options={[
-                              { value: '', label: 'Unlimited' },
-                              { value: '1', label: 'Once' },
-                              { value: '2', label: '2 times' },
-                              { value: '3', label: '3 times' },
-                              { value: '5', label: '5 times' },
-                            ]}
-                            value={newRuleMaxPlays}
-                            onChange={setNewRuleMaxPlays}
-                          />
-                        </div>
-
-                        {/* Save / Cancel */}
-                        <div className="flex items-center gap-2 pt-1">
-                          <button
-                            onClick={() => {
-                              if (!newRuleFavourite || !newRuleMode) return
-                              const effectiveTrigger = newRuleFavourite === '__continue__' ? 'mode_change' : newRuleTriggerType
-                              editRuleMutation.mutate({
-                                id: rule.id,
-                                data: {
-                                  mode_name: newRuleMode,
-                                  favourite_name: newRuleFavourite,
-                                  trigger_type: effectiveTrigger,
-                                  trigger_value: effectiveTrigger === 'if_source_not' ? newRuleSourceValue : null,
-                                  max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
-                                  podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
-                                },
-                              })
-                            }}
-                            disabled={!newRuleFavourite || !newRuleMode || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || editRuleMutation.isPending}
-                            className="rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                          >
-                            {editRuleMutation.isPending ? 'Saving...' : 'Save changes'}
-                          </button>
-                          <button
-                            onClick={resetRuleForm}
-                            className="rounded-lg px-4 py-2 min-h-[44px] border border-[var(--border-secondary)] bg-[var(--bg-secondary)] text-heading text-sm hover:bg-[var(--bg-tertiary)] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                          >
-                            Cancel
-                          </button>
-                        </div>
-
-                        {/* Danger zone */}
-                        <div className="border-t border-red-500/20 pt-4 mt-4">
-                          <p className="text-sm font-medium text-red-400 mb-2">Danger zone</p>
-                          <button
-                            onClick={() => deleteRuleMutation.mutate(rule.id)}
-                            disabled={deleteRuleMutation.isPending}
-                            className={cn(
-                              'rounded-lg px-4 py-2 min-h-[44px] text-sm font-medium transition-colors',
-                              'border border-red-500/30 text-red-400 hover:bg-red-500/10',
-                              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-500',
-                              'disabled:cursor-not-allowed disabled:opacity-40',
-                            )}
-                          >
-                            {deleteRuleMutation.isPending ? 'Deleting...' : 'Delete this rule'}
-                          </button>
-                        </div>
+                      <li key={rule.id}>
+                        <AutoPlayRuleEditor
+                          mode="edit"
+                          rule={rule}
+                          fixedRoom={assignedRoom.name}
+                          availableModes={modes ?? []}
+                          availableSources={availableSources ?? []}
+                          idPrefix={`detail-edit-rule-${rule.id}`}
+                          className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] p-4"
+                          onSave={(data: AutoPlayRulePayload) => editRuleMutation.mutate({
+                            id: rule.id,
+                            data: { ...data },
+                          })}
+                          onCancel={() => setEditingRuleId(null)}
+                          onDelete={() => deleteRuleMutation.mutate(rule.id)}
+                          isSaving={editRuleMutation.isPending}
+                          isDeleting={deleteRuleMutation.isPending}
+                        />
                       </li>
                     )
                   }
@@ -1175,144 +688,20 @@ export default function SonosDetailPage() {
             )}
 
             {showAddRuleForm ? (
-              <div className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] p-4 space-y-4">
-                <p className="text-heading text-sm font-medium">New auto-play rule</p>
-
-                {/* Room — read-only */}
-                <div>
-                  <p className="text-heading text-sm mb-1.5">Room</p>
-                  <span className="inline-flex items-center rounded-full bg-fairy-500/10 px-3 py-1.5 text-sm font-medium text-fairy-400">{assignedRoom.name}</span>
-                </div>
-
-                {/* Favourite */}
-                <div>
-                  <label htmlFor="detail-rule-favourite" className="text-heading text-sm mb-1.5 block">
-                    Favourite
-                  </label>
-                  <FavouriteSelector
-                    favourites={favourites ?? []}
-                    value={newRuleFavourite}
-                    onChange={setNewRuleFavourite}
-                    id="detail-rule-favourite"
-                  />
-                  {podcastResolving && (
-                    <p className="text-caption text-xs mt-1">Detecting podcast...</p>
-                  )}
-                  {podcastFeedUrl && !podcastResolving && (
-                    <p className="text-xs mt-1 text-fairy-400">Podcast detected. The latest episode will play automatically.</p>
-                  )}
-                  {podcastFailed && !podcastResolving && (
-                    <div className="mt-2">
-                      <p className="text-xs text-amber-400 mb-1">Podcast detected, but we could not find its feed automatically.</p>
-                      <input
-                        type="url"
-                        value={manualFeedUrl}
-                        onChange={e => setManualFeedUrl(e.target.value)}
-                        placeholder="Paste the podcast RSS feed URL"
-                        className="w-full h-11 rounded-lg border border-[var(--border-secondary)] surface px-3 text-sm text-heading placeholder:text-caption focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {/* Mode */}
-                <div>
-                  <p className="text-heading text-sm mb-1.5">Mode</p>
-                  <PillSelect
-                    id="detail-rule-mode"
-                    options={modes?.map(m => ({ value: m.name, label: m.name })) ?? []}
-                    value={newRuleMode}
-                    onChange={setNewRuleMode}
-                    placeholder="Select a mode"
-                    aria-label="Select a mode"
-                  />
-                </div>
-
-                {/* Condition — hidden when __continue__ (only mode_change makes sense) */}
-                {newRuleFavourite !== '__continue__' && (
-                  <div>
-                    <p className="text-heading text-sm mb-2">Condition</p>
-                    <CardRadioGroup
-                      name="detail-trigger-type"
-                      options={[
-                        { value: 'if_not_playing', label: 'Only if nothing is playing', description: 'Skipped when music is already playing.', icon: CirclePause },
-                        { value: 'mode_change', label: 'Always when mode changes', description: 'Starts playback every time this mode activates.', icon: Zap },
-                        { value: 'if_source_not', label: 'Only if a source is not active', description: 'Skipped when a specific source is playing.', icon: CircleSlash },
-                      ]}
-                      value={newRuleTriggerType}
-                      onChange={(v) => setNewRuleTriggerType(v as AutoPlayRule['trigger_type'])}
-                      aria-label="Trigger condition"
-                    />
-                    {newRuleTriggerType === 'if_source_not' && (
-                      <div className="mt-3">
-                        <label htmlFor="detail-rule-source" className="text-caption text-xs mb-1.5 block">
-                          Source
-                        </label>
-                        <PillSelect
-                          id="detail-rule-source"
-                          options={(availableSources ?? []).map(s => ({ value: s, label: s }))}
-                          value={newRuleSourceValue}
-                          onChange={setNewRuleSourceValue}
-                          aria-label="Select a source"
-                        />
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Repeat limit */}
-                <div>
-                  <p className="text-heading text-sm mb-1.5">Repeat limit</p>
-                  <p className="text-caption text-xs mb-2">
-                    How many times this rule fires per mode change
-                  </p>
-                  <PillSelect
-                    id="detail-add-rule-max-plays"
-                    options={[
-                      { value: '', label: 'Unlimited' },
-                      { value: '1', label: 'Once' },
-                      { value: '2', label: '2 times' },
-                      { value: '3', label: '3 times' },
-                      { value: '5', label: '5 times' },
-                    ]}
-                    value={newRuleMaxPlays}
-                    onChange={setNewRuleMaxPlays}
-                  />
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-2 pt-1">
-                  <button
-                    onClick={() => {
-                      if (!newRuleFavourite || !newRuleMode) return
-                      const effectiveTrigger = newRuleFavourite === '__continue__' ? 'mode_change' : newRuleTriggerType
-                      createRuleMutation.mutate({
-                        room_name: assignedRoom.name,
-                        mode_name: newRuleMode,
-                        favourite_name: newRuleFavourite,
-                        trigger_type: effectiveTrigger,
-                        trigger_value: effectiveTrigger === 'if_source_not' ? newRuleSourceValue : null,
-                        enabled: 1,
-                        max_plays: newRuleMaxPlays ? Number(newRuleMaxPlays) : null,
-                        podcast_feed_url: podcastFeedUrl ?? (podcastFailed && manualFeedUrl ? manualFeedUrl : null),
-                      })
-                    }}
-                    disabled={!newRuleFavourite || !newRuleMode || (newRuleTriggerType === 'if_source_not' && newRuleFavourite !== '__continue__' && !newRuleSourceValue) || createRuleMutation.isPending}
-                    className="rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                  >
-                    {createRuleMutation.isPending ? 'Saving...' : 'Save rule'}
-                  </button>
-                  <button
-                    onClick={resetRuleForm}
-                    className="rounded-lg px-4 py-2 min-h-[44px] border border-[var(--border-secondary)] bg-[var(--bg-secondary)] text-heading text-sm hover:bg-[var(--bg-tertiary)] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
+              <AutoPlayRuleEditor
+                mode="add"
+                fixedRoom={assignedRoom.name}
+                availableModes={modes ?? []}
+                availableSources={availableSources ?? []}
+                idPrefix="detail-add-rule"
+                className="rounded-lg border border-[var(--border-secondary)] bg-[var(--bg-secondary)] p-4"
+                onSave={(data: AutoPlayRulePayload) => createRuleMutation.mutate({ ...data, enabled: 1 })}
+                onCancel={() => setShowAddRuleForm(false)}
+                isSaving={createRuleMutation.isPending}
+              />
             ) : !editingRuleId && (
               <button
-                onClick={() => { resetRuleForm(); setShowAddRuleForm(true) }}
+                onClick={() => { setEditingRuleId(null); setShowAddRuleForm(true) }}
                 className="rounded-lg px-4 py-2 min-h-[44px] bg-fairy-500 text-white text-sm font-medium hover:bg-fairy-600 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500"
               >
                 Add auto-play rule
@@ -1336,19 +725,10 @@ export default function SonosDetailPage() {
           open={powerSourceOpen}
           onToggle={() => setPowerSourceOpen(v => !v)}
         >
-          <PowerSourceSection
-            roomName={assignedRoom.name}
-            links={deviceLinks}
-            linksLoading={linksLoading}
-            kasaDevices={kasaDevices}
-            showPlugPicker={showPlugPicker}
-            setShowPlugPicker={setShowPlugPicker}
-            unlinkConfirmId={unlinkConfirmId}
-            setUnlinkConfirmId={setUnlinkConfirmId}
-            onLink={kasaId => createLinkMutation.mutate(kasaId)}
-            onUnlink={id => deleteLinkMutation.mutate(id)}
-            linkPending={createLinkMutation.isPending}
-            unlinkPending={deleteLinkMutation.isPending}
+          <DeviceLinkManager
+            sourceType="sonos"
+            sourceId={assignedRoom.name}
+            description="No power source linked. Link a smart plug to track the energy cost of this speaker."
           />
         </Accordion>
       )}

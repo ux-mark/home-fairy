@@ -1,4 +1,5 @@
 import { getOne, getAll, run, db } from '../db/index.js'
+import { log } from './logger.js'
 import { notificationService } from './notification-service.js'
 import { invalidateInsightsCache } from './insights-engine.js'
 
@@ -72,10 +73,7 @@ function getDeviceLabel(deviceType: string, deviceId: string): string {
 }
 
 function logToDb(message: string): void {
-  run(
-    `INSERT INTO logs (message, category, created_at) VALUES (?, 'device_health', datetime('now'))`,
-    [message],
-  )
+  log(message, 'device_health')
 }
 
 function setActiveFlag(deviceType: DeviceType, deviceId: string, active: 0 | 1): void {

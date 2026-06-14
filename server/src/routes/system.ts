@@ -1,6 +1,9 @@
 import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { getAll, getOne, run, db } from '../db/index.js'
+import { FAIRY_QUEEN } from '../lib/constants.js'
+import { logUserAction } from '../lib/user-action-logger.js'
+import { log } from '../lib/logger.js'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 import { notificationService } from '../lib/notification-service.js'
@@ -21,6 +24,8 @@ import { sonosManager } from '../lib/sonos-manager.js'
 import { motionHandler } from '../lib/motion-handler.js'
 import { emit } from '../lib/socket.js'
 import { deviceHealthService } from '../lib/device-health-service.js'
+import { activateScene, deactivateScene } from '../lib/scene-executor.js'
+import { narrate } from '../lib/activity-narrator.js'
 
 const router = Router()
 
@@ -40,6 +45,8 @@ interface LogRow {
   message: string
   debug: string | null
   category: string | null
+  user_id: string | null
+  user_name: string | null
   created_at: string
 }
 
@@ -126,6 +133,7 @@ router.put('/preferences', (req: Request, res: Response) => {
 router.put('/mode', (req: Request, res: Response) => {
   try {
     const body = modeSchema.parse(req.body)
+    const user = (req as any).user ?? FAIRY_QUEEN
     run(
       `INSERT INTO current_state (key, value, updated_at)
        VALUES ('mode', ?, datetime('now'))
@@ -140,12 +148,11 @@ router.put('/mode', (req: Request, res: Response) => {
     const wakeMode = wakeModeRow?.value || 'Morning'
     if (body.mode === wakeMode && motionHandler.getLockedRooms().length > 0) {
       motionHandler.unlockAllRooms()
-      run(
-        "INSERT INTO logs (message, category, created_at) VALUES (?, 'system', datetime('now'))",
-        [`Wake mode reached (${body.mode}) — all rooms unlocked`],
-      )
+      log(`Wake mode reached (${body.mode}) — all rooms unlocked`, 'system')
     }
 
+    log(`${user.name} changed mode to ${body.mode}`, 'system', user)
+    logUserAction(user.id, user.name, 'activate', 'mode', body.mode)
     emit('mode:change', { mode: body.mode })
     sonosManager.onModeChange(body.mode).catch(() => {})
     res.json({ mode: body.mode })
@@ -210,10 +217,146 @@ router.get('/logs', (req: Request, res: Response) => {
   }
 })
 
-// GET /weather — current weather from OpenWeather
+// GET /activity — grouped activity feed with Fairy Queen narratives
+router.get('/activity', (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 25, 1), 50)
+    const before = req.query.before ? Number(req.query.before) : undefined
+    const category = req.query.category as string | undefined
+    const room = req.query.room as string | undefined
+
+    // Build WHERE clause for parent logs (parent_id IS NULL)
+    // The activity feed only shows events that are meaningful to users.
+    // Everything else belongs in Raw Logs.
+    const conditions: string[] = [
+      'parent_id IS NULL',
+      // Exclude raw sensor telemetry and internal system chatter
+      "category NOT IN ('hubitat', 'sonos', 'kasa', 'lifx')",
+      // Exclude standalone motion events (no scene change)
+      "NOT (category = 'motion' AND message LIKE 'Motion active in %' AND message NOT LIKE '%→%')",
+      "NOT (category = 'motion' AND message LIKE 'Motion inactive in %')",
+      "NOT (message LIKE 'Cancelled timer for %')",
+      // Exclude orphaned device-level messages (children that have no parent_id set from before this feature)
+      "NOT (message LIKE 'Batch set %')",
+      "NOT (message LIKE 'Batch turned off %')",
+      "NOT (message LIKE 'Turned off %')",
+      "NOT (message LIKE 'Skipping deactivated %')",
+      "NOT (message LIKE 'Hubitat device %')",
+      "NOT (message LIKE 'Kasa device %')",
+      "NOT (message LIKE 'Twinkly %')",
+      "NOT (message LIKE 'Fairy device %')",
+      "NOT (message LIKE 'LIFX effect %')",
+      "NOT (message LIKE 'Stopped effects %')",
+      "NOT (message LIKE 'Error in batch %')",
+      "NOT (message LIKE 'Mode updated to:%')",
+      "NOT (message LIKE 'Scene timer:%')",
+      "NOT (message LIKE 'Chained scene %')",
+      "NOT (message LIKE 'Room locked:%')",
+      "NOT (message LIKE 'Restored %room locks%')",
+      "NOT (message LIKE 'Sun mode schedule:%')",
+      "NOT (message LIKE 'Time trigger schedule:%')",
+      "NOT (message LIKE 'Retry %')",
+      "NOT (message LIKE 'All failed %')",
+      "NOT (message LIKE 'Skipping retry %')",
+      "NOT (message LIKE '% light(s) failed in batch%')",
+      // Exclude MTA indicator internal updates (only keep trigger start/stop)
+      "NOT (message LIKE 'Light updated:%')",
+      "NOT (message LIKE 'Indicator light turned off')",
+      "NOT (message LIKE 'Indicator started:%')",
+      // Exclude duplicate scene logs that will be children of motion/timer parents going forward
+      // (for old logs without parent_id, the scene activation/deactivation shows alongside the motion log)
+      "NOT (category = 'scene' AND message LIKE 'Fairy Queen activated %' AND message LIKE '%(auto)%')",
+      "NOT (category = 'scene' AND message LIKE 'Fairy Queen deactivated %')",
+    ]
+    const params: unknown[] = []
+
+    if (before) {
+      conditions.push('id < ?')
+      params.push(before)
+    }
+    if (category) {
+      // If user explicitly requests a filtered category, override the exclusion
+      conditions.length = 1 // keep only parent_id IS NULL
+      conditions.push('category = ?')
+      params.length = 0
+      params.push(category)
+    }
+
+    const whereClause = conditions.join(' AND ')
+    const parents = getAll<LogRow>(
+      `SELECT * FROM logs WHERE ${whereClause} ORDER BY created_at DESC LIMIT ?`,
+      [...params, limit],
+    )
+
+    if (parents.length === 0) {
+      res.json([])
+      return
+    }
+
+    // Batch-fetch all children for these parents
+    const parentIds = parents.map(p => p.id)
+    const placeholders = parentIds.map(() => '?').join(',')
+    const children = getAll<LogRow>(
+      `SELECT * FROM logs WHERE parent_id IN (${placeholders}) ORDER BY id ASC`,
+      parentIds,
+    )
+
+    // Group children by parent_id
+    const childrenByParent = new Map<number, LogRow[]>()
+    for (const child of children) {
+      const list = childrenByParent.get(child.parent_id!) || []
+      list.push(child)
+      childrenByParent.set(child.parent_id!, list)
+    }
+
+    // Build activity items
+    const activities = parents.map(parent => {
+      const parentChildren = childrenByParent.get(parent.id) || []
+      const narrative = narrate(parent, parentChildren)
+
+      return {
+        id: parent.id,
+        message: narrative.message,
+        type: narrative.type,
+        room: narrative.room,
+        user: parent.user_name,
+        isFairyQueen: narrative.isFairyQueen,
+        timestamp: parent.created_at,
+        category: parent.category,
+        childCount: parentChildren.length,
+        children: parentChildren,
+      }
+    })
+
+    // Deduplicate consecutive identical messages (e.g. repeated weather updates)
+    const deduped: typeof activities = []
+    for (const activity of activities) {
+      const prev = deduped[deduped.length - 1]
+      if (prev && prev.message === activity.message) continue
+      deduped.push(activity)
+    }
+
+    // Optional room filter (applied after narration since room is extracted from messages)
+    const filtered = room
+      ? deduped.filter(a => a.room?.toLowerCase() === room.toLowerCase())
+      : deduped
+
+    res.json(filtered)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// GET /weather — current weather from OpenWeather. When the user opens the
+// home page they need a current reading, so we ask for weather no older than
+// 5 minutes here regardless of the user's background "Check every" setting.
+// (Background timers — indicator, history collector — leave the argument
+// unset and inherit the user's dial.)
+const WEATHER_UI_MAX_AGE_MS = 5 * 60 * 1000
 router.get('/weather', async (_req: Request, res: Response) => {
   try {
-    const weather = await getCurrentWeather()
+    const weather = await getCurrentWeather(WEATHER_UI_MAX_AGE_MS)
     res.json(weather)
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -342,8 +485,8 @@ function parseTrigger(row: ModeTriggerRow) {
 // GET /modes — get all modes with their triggers
 router.get('/modes', (_req: Request, res: Response) => {
   try {
-    const modeRows = getAll<{ name: string; icon: string | null }>(
-      'SELECT name, icon FROM modes ORDER BY display_order',
+    const modeRows = getAll<{ name: string; icon: string | null; created_by: string; updated_by: string }>(
+      'SELECT name, icon, created_by, updated_by FROM modes ORDER BY display_order',
     )
     const sleepRow = getOne<CurrentStateRow>(
       "SELECT value FROM current_state WHERE key = 'sleep_mode_name'",
@@ -357,11 +500,31 @@ router.get('/modes', (_req: Request, res: Response) => {
       triggersByMode[t.mode_name].push(t)
     }
 
-    const result = modeRows.map(({ name, icon }) => ({
+    // Collect unique user IDs for batch name lookup
+    const userIds = new Set<string>()
+    for (const row of modeRows) {
+      if (row.created_by && row.created_by !== 'fairy-queen') userIds.add(row.created_by)
+      if (row.updated_by && row.updated_by !== 'fairy-queen') userIds.add(row.updated_by)
+    }
+    const userNameMap = new Map<string, string>([[FAIRY_QUEEN.id, FAIRY_QUEEN.name]])
+    if (userIds.size > 0) {
+      const placeholders = [...userIds].map(() => '?').join(',')
+      const users = getAll<{ id: string; name: string }>(
+        `SELECT id, name FROM user WHERE id IN (${placeholders})`,
+        [...userIds],
+      )
+      for (const u of users) userNameMap.set(u.id, u.name)
+    }
+
+    const result = modeRows.map(({ name, icon, created_by, updated_by }) => ({
       name,
       icon: icon ?? null,
       triggers: (triggersByMode[name] ?? []).map(parseTrigger),
       isSleepMode: name === sleepModeName,
+      created_by: created_by ?? FAIRY_QUEEN.id,
+      updated_by: updated_by ?? FAIRY_QUEEN.id,
+      created_by_name: userNameMap.get(created_by ?? FAIRY_QUEEN.id) ?? FAIRY_QUEEN.name,
+      updated_by_name: userNameMap.get(updated_by ?? FAIRY_QUEEN.id) ?? FAIRY_QUEEN.name,
     }))
 
     res.json(result)
@@ -386,8 +549,13 @@ router.post('/modes', (req: Request, res: Response) => {
       return
     }
 
+    const user = (req as any).user ?? FAIRY_QUEEN
     const maxOrder = getOne<{ m: number | null }>('SELECT MAX(display_order) as m FROM modes')
-    run('INSERT INTO modes (name, display_order, icon) VALUES (?, ?, ?)', [body.mode, (maxOrder?.m ?? 0) + 1, body.icon ?? null])
+    run(
+      'INSERT INTO modes (name, display_order, icon, created_by, updated_by) VALUES (?, ?, ?, ?, ?)',
+      [body.mode, (maxOrder?.m ?? 0) + 1, body.icon ?? null, user.id, user.id],
+    )
+    logUserAction(user.id, user.name, 'create', 'mode', body.mode)
     res.json(getAllModeNames())
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -444,9 +612,11 @@ router.put('/modes/:mode', (req: Request, res: Response) => {
       return
     }
 
+    const user = (req as any).user ?? FAIRY_QUEEN
+
     // Update icon if provided (can be done without a rename)
     if (body.icon !== undefined) {
-      run('UPDATE modes SET icon = ? WHERE name = ?', [body.icon, oldName])
+      run('UPDATE modes SET icon = ?, updated_by = ? WHERE name = ?', [body.icon, user.id, oldName])
     }
 
     // Perform rename if a new name was provided
@@ -474,7 +644,7 @@ router.put('/modes/:mode', (req: Request, res: Response) => {
 
       const renameTransaction = db.transaction(() => {
         // 1. Rename in modes table — CASCADE propagates to mode_triggers and scene_modes
-        run('UPDATE modes SET name = ? WHERE name = ?', [newName, oldName])
+        run('UPDATE modes SET name = ?, updated_by = ? WHERE name = ?', [newName, user.id, oldName])
 
         // 2. If current mode matches old name, update it
         const currentModeRow = getOne<CurrentStateRow>(
@@ -504,6 +674,7 @@ router.put('/modes/:mode', (req: Request, res: Response) => {
       renameTransaction()
     }
 
+    logUserAction(user.id, user.name, 'update', 'mode', effectiveName)
     res.json({ name: effectiveName, updatedScenes })
   } catch (err) {
     if (err instanceof z.ZodError) {
@@ -526,12 +697,16 @@ router.delete('/modes/:mode', (req: Request, res: Response) => {
       return
     }
 
+    const user = (req as any).user ?? FAIRY_QUEEN
+
     // Count affected scenes BEFORE delete for the response
     const affectedSceneCount = getOne<{ cnt: number }>(
       'SELECT COUNT(DISTINCT scene_name) as cnt FROM scene_modes WHERE mode_name = ?',
       [modeName],
     )
     const affectedScenes = affectedSceneCount?.cnt ?? 0
+
+    logUserAction(user.id, user.name, 'delete', 'mode', modeName)
 
     const deleteTransaction = db.transaction(() => {
       // 1. Delete from modes table — CASCADE propagates to mode_triggers and scene_modes
@@ -1370,15 +1545,13 @@ async function runAllOff(excludeRooms: string[] = []): Promise<string[]> {
 }
 
 // POST /all-off — turn off everything except excluded devices
-router.post('/all-off', async (_req: Request, res: Response) => {
+router.post('/all-off', async (req: Request, res: Response) => {
   try {
     const actions = await runAllOff()
+    const user = (req as any).user ?? FAIRY_QUEEN
 
     // Log the action
-    run(
-      "INSERT INTO logs (message, category, created_at) VALUES (?, 'system', datetime('now'))",
-      [`All Off executed: ${actions.length} actions`],
-    )
+    log(`${user.name} executed All Off (${actions.length} actions)`, 'system', user)
 
     emit('scene:change', { action: 'all_off' })
     res.json({ success: true, actions })
@@ -1389,7 +1562,7 @@ router.post('/all-off', async (_req: Request, res: Response) => {
 })
 
 // POST /nighttime — Sleep Time mode + all off with bedroom exclusion + room lockout
-router.post('/nighttime', async (_req: Request, res: Response) => {
+router.post('/nighttime', async (req: Request, res: Response) => {
   try {
     // Set mode to Sleep Time
     run(
@@ -1420,10 +1593,8 @@ router.post('/nighttime', async (_req: Request, res: Response) => {
     )
     const wakeMode = wakeModeRow?.value || 'Morning'
 
-    run(
-      "INSERT INTO logs (message, category, created_at) VALUES (?, 'system', datetime('now'))",
-      [`Nighttime executed: all lights off, motion-responsive rooms [${excludeRooms.join(', ')}], locked ${roomsToLock.length} rooms, wake mode: ${wakeMode}, ${actions.length} actions`],
-    )
+    const nighttimeUser = (req as any).user ?? FAIRY_QUEEN
+    log(`${nighttimeUser.name} activated Nighttime (locked ${roomsToLock.length} rooms, wake mode: ${wakeMode})`, 'system', nighttimeUser)
 
     emit('mode:change', { mode: 'Sleep Time' })
     emit('scene:change', { action: 'nighttime' })
@@ -1436,7 +1607,7 @@ router.post('/nighttime', async (_req: Request, res: Response) => {
 })
 
 // POST /guest-night — Sleep Time mode + all off with guest room exclusions + room lockout
-router.post('/guest-night', async (_req: Request, res: Response) => {
+router.post('/guest-night', async (req: Request, res: Response) => {
   try {
     // Set mode to Sleep Time
     run(
@@ -1475,10 +1646,8 @@ router.post('/guest-night', async (_req: Request, res: Response) => {
     )
     const wakeMode = wakeModeRow?.value || 'Morning'
 
-    run(
-      "INSERT INTO logs (message, category, created_at) VALUES (?, 'system', datetime('now'))",
-      [`Guest Night executed: excluded rooms [${excludeRooms.join(', ')}], locked ${roomsToLock.length} rooms, wake mode: ${wakeMode}, ${actions.length} actions`],
-    )
+    const guestNightUser = (req as any).user ?? FAIRY_QUEEN
+    log(`${guestNightUser.name} activated Guest Night (excluded: ${excludeRooms.join(', ')}, locked ${roomsToLock.length} rooms)`, 'system', guestNightUser)
 
     emit('mode:change', { mode: 'Sleep Time' })
     emit('scene:change', { action: 'guest_night' })
@@ -1509,13 +1678,11 @@ router.get('/night/status', (_req: Request, res: Response) => {
 })
 
 // POST /night/unlock — manually unlock all rooms (emergency override)
-router.post('/night/unlock', (_req: Request, res: Response) => {
+router.post('/night/unlock', (req: Request, res: Response) => {
   try {
+    const user = (req as any).user ?? FAIRY_QUEEN
     motionHandler.unlockAllRooms()
-    run(
-      "INSERT INTO logs (message, category, created_at) VALUES (?, 'system', datetime('now'))",
-      ['Manual night unlock: all rooms unlocked'],
-    )
+    log(`${user.name} unlocked all rooms`, 'system', user)
     res.json({ success: true })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
@@ -1700,6 +1867,103 @@ router.post('/devices/:type/:id/reactivate', (req: Request, res: Response) => {
     const result = deviceHealthService.reactivateDevice(type as 'hub' | 'kasa' | 'lifx', id)
     emit('device:reactivated', { deviceType: type, deviceId: id })
     res.json(result)
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// POST /hushing — activate Hushing Home (global scene from current_state)
+router.post('/hushing', async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user ?? FAIRY_QUEEN
+    const sceneRow = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'hushing_scene'")
+    if (!sceneRow?.value) {
+      res.status(400).json({ error: 'No hushing scene configured. Set one in Settings → Hushing Home.' })
+      return
+    }
+    const sceneName = sceneRow.value
+
+    await activateScene(sceneName)
+
+    run(
+      `INSERT INTO current_state (key, value, updated_at)
+       VALUES ('hushing_active', 'true', datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+
+    // Cancel all in-flight automation timers so nothing turns lights off during hush
+    timerManager.cancelAll()
+    motionHandler.cancelAllRoomTimers()
+
+    const allRooms = getAll<{ name: string }>('SELECT name FROM rooms')
+    motionHandler.lockRooms(allRooms.map(r => r.name))
+    sonosManager.onLockedStateActivated().catch(() => {})
+
+    log(`${user.name} activated Hushing Home (scene: ${sceneName})`, 'system', user)
+    emit('scene:change', { action: 'hushing_activate' })
+    res.json({ success: true, sceneName })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// POST /hushing/deactivate — deactivate Hushing Home
+router.post('/hushing/deactivate', (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user ?? FAIRY_QUEEN
+    run(
+      `INSERT INTO current_state (key, value, updated_at)
+       VALUES ('hushing_active', 'false', datetime('now'))
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    )
+    motionHandler.unlockAllRooms()
+
+    // Resume schedulers — catch up to whatever mode should be active now
+    sunModeScheduler.refreshFromDb()
+    timeTriggerScheduler.refreshFromDb()
+
+    log(`${user.name} deactivated Hushing Home`, 'system', user)
+    emit('scene:change', { action: 'hushing_deactivate' })
+    res.json({ success: true })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// GET /hushing/status — get current Hushing Home state
+router.get('/hushing/status', (_req: Request, res: Response) => {
+  try {
+    const activeRow = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'hushing_active'")
+    const sceneRow = getOne<{ value: string }>("SELECT value FROM current_state WHERE key = 'hushing_scene'")
+    res.json({ active: activeRow?.value === 'true', sceneName: sceneRow?.value ?? null })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// PUT /hushing/scene — set or update the global hushing scene
+router.put('/hushing/scene', (req: Request, res: Response) => {
+  try {
+    const { scene } = req.body as { scene: string | null }
+    if (scene !== null && typeof scene !== 'string') {
+      res.status(400).json({ error: 'scene must be a string or null' })
+      return
+    }
+    if (scene === null) {
+      run("DELETE FROM current_state WHERE key = 'hushing_scene'")
+    } else {
+      run(
+        `INSERT INTO current_state (key, value, updated_at)
+         VALUES ('hushing_scene', ?, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        [scene],
+      )
+    }
+    res.json({ sceneName: scene })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })

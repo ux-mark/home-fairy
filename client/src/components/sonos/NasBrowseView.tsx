@@ -1,0 +1,1405 @@
+import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useWindowVirtualizer } from '@tanstack/react-virtual'
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  Disc3,
+  Globe,
+  Loader2,
+  MapPin,
+  Music2,
+  Play,
+  RefreshCw,
+  User,
+} from 'lucide-react'
+import { api } from '@/lib/api'
+import { invalidateQueue } from '@/lib/queueCache'
+import type {
+  SonosLibraryTrack,
+  SonosSearchArtist,
+  SonosSearchAlbum,
+  SonosGenreAlbum,
+  NasEnrichedAlbum,
+  NasEnrichedArtist,
+  EnrichmentProgress,
+} from '@/lib/api'
+import { useToast } from '@/hooks/useToast'
+import { useDebounce } from '@/hooks/useBrowseShared'
+import { usePersistedState } from '@/hooks/usePersistedState'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { Accordion } from '@/components/ui/Accordion'
+import { cn } from '@/lib/utils'
+import { ArtworkImage } from './ArtworkImage'
+import { CountryList, CountryArtistList, type CountryArtistItem } from './CountryBrowse'
+import { isValidIsoCode } from './countryUtils'
+import { ActiveTrackIndicator } from './ActiveTrackIndicator'
+import { MusicItemMenu } from './MusicItemMenu'
+import { MusicListItem } from './MusicListItem'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type NasView = 'home' | 'country-artists'
+type BrowseMode = 'countries' | 'albums' | 'artists' | 'songs'
+
+// ── Track row ─────────────────────────────────────────────────────────────────
+
+function TrackRow({
+  track,
+  speaker,
+  isActive = false,
+  isPlaying = false,
+}: {
+  track: SonosLibraryTrack
+  speaker: string | null
+  isActive?: boolean
+  isPlaying?: boolean
+}) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.playUri(speaker!, track.uri),
+    onSuccess: () => toast({ message: `Playing "${track.title}"` }),
+    onError: () => toast({ message: 'Failed to play track', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.addToQueue(speaker!, track.uri),
+    onSuccess: () => {
+      toast({ message: `Added "${track.title}" to queue` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playNext(speaker!, track.uri),
+    onSuccess: () => {
+      toast({ message: `"${track.title}" will play next` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToFavourites = useMutation({
+    mutationFn: () => api.favourites.add({
+      source: 'nas',
+      source_uri: track.uri,
+      title: track.title,
+      album_art_uri: track.albumArtUri,
+    }),
+    onSuccess: () => toast({ message: `Added "${track.title}" to favourites` }),
+    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
+  })
+
+  return (
+    <li className={cn('flex items-center gap-3 px-4 py-2.5', isActive && 'bg-fairy-500/10')}>
+      <div className="relative shrink-0">
+        <ArtworkImage src={track.albumArtUri} size={40} fallback="disc" />
+        {isActive && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black/40">
+            <ActiveTrackIndicator isActive={isActive} isPlaying={isPlaying} />
+          </div>
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-heading">{track.title || 'Unknown track'}</p>
+        <p className="truncate text-xs text-caption">
+          {[track.artist, track.album].filter(Boolean).join(' · ')}
+        </p>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1">
+        {/* Play now — universally recognisable icon, icon-only acceptable */}
+        <button
+          type="button"
+          disabled={!speaker || playNow.isPending}
+          onClick={() => playNow.mutate()}
+          aria-label={`Play ${track.title}`}
+          className={cn(
+            'flex h-11 w-11 items-center justify-center rounded-lg',
+            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'disabled:opacity-40',
+          )}
+        >
+          <Play className="h-4 w-4" aria-hidden="true" />
+        </button>
+
+        {/* Three-dot menu */}
+        <MusicItemMenu
+          label={track.title || 'Unknown track'}
+          disabled={!speaker}
+          onPlayNext={() => playNext.mutate()}
+          onAddToQueue={() => addToQueue.mutate()}
+          onAddToFavourites={() => addToFavourites.mutate()}
+          fairylistTrack={{
+            source: 'nas',
+            source_uri: track.uri,
+            title: track.title || 'Unknown track',
+            artist: track.artist,
+            album_art_uri: track.albumArtUri,
+          }}
+        />
+      </div>
+    </li>
+  )
+}
+
+// ── Skeleton helpers ─────────────────────────────────────────────────────────
+
+function ListSkeleton({ count = 8 }: { count?: number }) {
+  return (
+    <ul aria-busy="true" aria-label="Loading">
+      {Array.from({ length: count }).map((_, i) => (
+        <li key={i} className="flex items-center gap-3 px-4 py-2.5">
+          <Skeleton className="h-10 w-10 shrink-0 rounded-md" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-3.5 w-3/4 rounded" />
+            <Skeleton className="h-3 w-1/2 rounded" />
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// ── Error state ───────────────────────────────────────────────────────────────
+
+function ErrorState({
+  title = 'NAS library unavailable',
+  message,
+  onRetry,
+}: {
+  title?: string
+  message: string
+  onRetry: () => void
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+      <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
+      <div>
+        <p className="text-sm font-medium text-heading">{title}</p>
+        <p className="mt-1 max-w-xs text-xs text-caption">{message}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        className={cn(
+          'flex items-center gap-2 rounded-lg bg-[var(--bg-secondary)] px-4 py-2 text-sm font-medium text-body',
+          'transition-colors hover:bg-[var(--bg-tertiary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+        Retry
+      </button>
+    </div>
+  )
+}
+
+// ── Browse mode tabs ──────────────────────────────────────────────────────────
+
+function BrowseModeTabs({
+  mode,
+  onChangeMode,
+}: {
+  mode: BrowseMode
+  onChangeMode: (m: BrowseMode) => void
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Browse by"
+      className="mb-4 flex gap-2 overflow-x-auto pb-0.5"
+    >
+      {(['countries', 'albums', 'artists', 'songs'] as const).map(m => (
+        <button
+          key={m}
+          role="tab"
+          aria-selected={mode === m}
+          onClick={() => onChangeMode(m)}
+          className={cn(
+            'shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors',
+            'min-h-[36px]',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            mode === m
+              ? 'bg-fairy-500 text-white'
+              : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
+          )}
+        >
+          {m === 'countries' ? 'Countries' : m === 'albums' ? 'Albums' : m === 'artists' ? 'Artists' : 'Songs'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── NAS enrichment status bar ────────────────────────────────────────────────
+
+function NasEnrichmentStatusBar() {
+  const { data: progress, refetch } = useQuery({
+    queryKey: ['nas-enrichment-status'],
+    queryFn: () => api.sonos.getNasEnrichmentStatus(),
+    staleTime: 2_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 2_000 : false
+    },
+  })
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const enrich = useMutation({
+    mutationFn: () => api.sonos.enrichNasArtists(),
+    onSuccess: (data) => {
+      if (data.status === 'started') {
+        toast({ message: `Enriching ${data.total} artists...` })
+        refetch()
+      } else if (data.status === 'already_running') {
+        toast({ message: 'Enrichment already in progress' })
+      } else if (data.status === 'no_artists') {
+        toast({ message: 'No artists to enrich' })
+      }
+    },
+    onError: () => toast({ message: 'Failed to start enrichment', type: 'error' }),
+  })
+
+  const cancel = useMutation({
+    mutationFn: () => api.sonos.cancelNasEnrichment(),
+    onSuccess: () => {
+      toast({ message: 'Enrichment cancelled' })
+      refetch()
+      queryClient.invalidateQueries({ queryKey: ['nas-enriched-artists'] })
+      queryClient.invalidateQueries({ queryKey: ['nas-enriched-albums'] })
+    },
+  })
+
+  const isRunning = progress?.status === 'running'
+  const pct = progress && progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0
+
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => isRunning ? cancel.mutate() : enrich.mutate()}
+        disabled={enrich.isPending || cancel.isPending}
+        className={cn(
+          'flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[36px]',
+          isRunning
+            ? 'bg-amber-400/10 text-amber-300 hover:bg-amber-400/20'
+            : 'bg-[var(--bg-secondary)] text-caption hover:bg-[var(--bg-tertiary)] hover:text-body',
+        )}
+      >
+        {isRunning ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            {pct}% ({progress.resolved} resolved) — Cancel
+          </>
+        ) : (
+          <>
+            <Globe className="h-3.5 w-3.5" aria-hidden="true" />
+            Enrich countries
+          </>
+        )}
+      </button>
+      {progress?.status === 'complete' && progress.resolved > 0 && (
+        <span className="text-xs text-caption">
+          {progress.resolved} of {progress.total} resolved
+        </span>
+      )}
+      <NasBackfillArtworkButton disabled={isRunning} />
+    </div>
+  )
+}
+
+function NasBackfillArtworkButton({ disabled }: { disabled: boolean }) {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+
+  const backfill = useMutation({
+    mutationFn: () => api.spotify.backfillImages(),
+    onSuccess: (data) => {
+      if (data.total_updated > 0) {
+        toast({ message: `Updated ${data.total_updated} artist images` })
+        queryClient.invalidateQueries({ queryKey: ['nas-enriched-artists'] })
+        queryClient.invalidateQueries({ queryKey: ['nas-enriched-albums'] })
+      } else {
+        toast({ message: 'All artist images are up to date' })
+      }
+    },
+    onError: () => toast({ message: 'Failed to fetch artwork', type: 'error' }),
+  })
+
+  return (
+    <button
+      type="button"
+      onClick={() => backfill.mutate()}
+      disabled={backfill.isPending || disabled}
+      className={cn(
+        'flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+        'min-h-[36px]',
+        'bg-[var(--bg-secondary)] text-caption hover:bg-[var(--bg-tertiary)] hover:text-body',
+        backfill.isPending && 'opacity-50',
+      )}
+    >
+      {backfill.isPending ? (
+        <>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+          Fetching artwork...
+        </>
+      ) : (
+        <>
+          <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+          Fetch artwork
+        </>
+      )}
+    </button>
+  )
+}
+
+// ── Artist list ──────────────────────────────────────────────────────────────
+
+type NasArtistSort = 'a-z' | 'country'
+
+function ArtistList({
+  onSelectArtist,
+}: {
+  onSelectArtist: (name: string) => void
+}) {
+  const [sort, setSort] = useState<NasArtistSort>('a-z')
+  const [collapsedCountries, setCollapsedCountries] = useState<Set<string>>(new Set())
+  const queryClient = useQueryClient()
+
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['nas-enriched-artists'],
+    queryFn: api.sonos.getEnrichedNasArtists,
+    staleTime: 5 * 60_000,
+  })
+
+  // Refresh when enrichment completes
+  const { data: enrichStatus } = useQuery({
+    queryKey: ['nas-enrichment-status'],
+    queryFn: () => api.sonos.getNasEnrichmentStatus(),
+    staleTime: 5_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 3_000 : false
+    },
+  })
+
+  const prevStatus = useRef(enrichStatus?.status)
+  useEffect(() => {
+    if (prevStatus.current === 'running' && enrichStatus?.status === 'complete') {
+      queryClient.invalidateQueries({ queryKey: ['nas-enriched-artists'] })
+    }
+    prevStatus.current = enrichStatus?.status
+  }, [enrichStatus?.status, queryClient])
+
+  if (isLoading) return <ListSkeleton />
+
+  if (isError) {
+    return (
+      <ErrorState
+        message={(error as Error).message ?? 'Failed to load artists'}
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  const artists = data?.items ?? []
+
+  if (artists.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+        <div>
+          <p className="text-sm font-medium text-heading">No music found</p>
+          <p className="mt-1 max-w-xs text-xs text-caption">
+            Your NAS library hasn't been indexed yet. Make sure a music library share is configured in the Sonos app.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const hasCountryData = artists.some(a => a.country_code !== null)
+
+  const toggleCountry = (country: string) => {
+    setCollapsedCountries(prev => {
+      const next = new Set(prev)
+      if (next.has(country)) next.delete(country)
+      else next.add(country)
+      return next
+    })
+  }
+
+  // Group by country
+  const countryGroups = new Map<string, NasEnrichedArtist[]>()
+  for (const a of artists) {
+    const hasValidCode = isValidIsoCode(a.country_code)
+    const key = hasValidCode ? (a.country_name ?? a.country_code!) : 'Not Known'
+    if (!countryGroups.has(key)) countryGroups.set(key, [])
+    countryGroups.get(key)!.push(a)
+  }
+  const sortedGroups = Array.from(countryGroups.entries())
+    .map(([country, items]) => ({ country, items }))
+    .sort((a, b) => {
+      if (a.country === 'Not Known') return 1
+      if (b.country === 'Not Known') return -1
+      return a.country.localeCompare(b.country, undefined, { sensitivity: 'base' })
+    })
+
+  return (
+    <div>
+      {hasCountryData && (
+        <div className="mb-3 flex gap-2">
+          {([
+            { value: 'a-z' as const, label: 'A – Z', icon: User },
+            { value: 'country' as const, label: 'Country', icon: MapPin },
+          ]).map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setSort(opt.value)}
+              className={cn(
+                'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                'min-h-[32px]',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                sort === opt.value
+                  ? 'bg-fairy-500 text-white'
+                  : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
+              )}
+            >
+              <opt.icon className="h-3.5 w-3.5" aria-hidden="true" />
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <NasEnrichmentStatusBar />
+
+      {sort === 'country' && hasCountryData ? (
+        <div className="-mx-4">
+          {sortedGroups.map(group => {
+            const isCollapsed = collapsedCountries.has(group.country)
+            return (
+              <div key={group.country}>
+                <button
+                  type="button"
+                  onClick={() => toggleCountry(group.country)}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-4 py-2.5 text-left',
+                    'bg-[var(--bg-secondary)] transition-colors hover:bg-[var(--bg-tertiary)]',
+                    'min-h-[40px]',
+                  )}
+                  aria-expanded={!isCollapsed}
+                >
+                  <MapPin className="h-4 w-4 shrink-0 text-fairy-500" aria-hidden="true" />
+                  <span className="flex-1 text-sm font-semibold text-heading">{group.country}</span>
+                  <span className="text-xs text-caption">{group.items.length}</span>
+                  <ChevronDown
+                    className={cn('h-4 w-4 text-caption/50 transition-transform', isCollapsed && '-rotate-90')}
+                    aria-hidden="true"
+                  />
+                </button>
+                {!isCollapsed && (
+                  <ul>
+                    {group.items.map(artist => (
+                      <li key={artist.name}>
+                        <NasArtistRow artist={artist} onSelect={onSelectArtist} showCountry={false} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <VirtualisedArtistList
+          artists={artists}
+          onSelect={onSelectArtist}
+          showCountry={hasCountryData}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Virtualised flat artist list ─────────────────────────────────────────────
+function VirtualisedArtistList({
+  artists,
+  onSelect,
+  showCountry,
+}: {
+  artists: NasEnrichedArtist[]
+  onSelect: (name: string) => void
+  showCountry: boolean
+}) {
+  const parentRef = useRef<HTMLDivElement>(null)
+  const virtualizer = useWindowVirtualizer({
+    count: artists.length,
+    estimateSize: () => 64,
+    overscan: 8,
+    scrollMargin: parentRef.current?.offsetTop ?? 0,
+    getItemKey: i => artists[i].name,
+  })
+  return (
+    <div
+      ref={parentRef}
+      role="list"
+      className="-mx-4"
+      style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
+    >
+      {virtualizer.getVirtualItems().map(item => {
+        const artist = artists[item.index]
+        return (
+          <div
+            key={item.key}
+            role="listitem"
+            data-index={item.index}
+            ref={virtualizer.measureElement}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)`,
+            }}
+          >
+            <NasArtistRow artist={artist} onSelect={onSelect} showCountry={showCountry} />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// Returns the button body without an outer wrapper so the caller chooses
+// `<li>` (country-grouped) or an absolutely-positioned virtual row (flat).
+function NasArtistRow({
+  artist,
+  onSelect,
+  showCountry,
+}: {
+  artist: NasEnrichedArtist
+  onSelect: (name: string) => void
+  showCountry: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(artist.name)}
+      className={cn(
+        'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+        'transition-colors hover:bg-[var(--bg-secondary)]',
+        'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+        'min-h-[44px]',
+      )}
+    >
+      <ArtworkImage src={artist.image_url} size={40} rounded="rounded-full" fallback="user" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
+        <p className="text-xs text-caption">
+          {artist.albumCount} {artist.albumCount === 1 ? 'album' : 'albums'} · {artist.trackCount} {artist.trackCount === 1 ? 'track' : 'tracks'}
+          {showCountry && artist.country_code && (
+            <span className="text-caption/60"> · {artist.country_code}</span>
+          )}
+        </p>
+      </div>
+      <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+    </button>
+  )
+}
+
+// ── Album list ───────────────────────────────────────────────────────────────
+
+type NasAlbumSort = 'a-z' | 'country'
+
+function AlbumList({
+  onSelectAlbum,
+  speaker,
+  onDrillIntoAlbum,
+  selectedObjectId,
+}: {
+  onSelectAlbum: (album: SonosGenreAlbum) => void
+  speaker: string | null
+  onDrillIntoAlbum?: (album: SonosGenreAlbum) => void
+  selectedObjectId?: string
+}) {
+  const [sort, setSort] = useState<NasAlbumSort>('a-z')
+  const [collapsedCountries, setCollapsedCountries] = useState<Set<string>>(new Set())
+  const queryClient = useQueryClient()
+
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['nas-enriched-albums'],
+    queryFn: api.sonos.getEnrichedNasAlbums,
+    staleTime: 5 * 60_000,
+  })
+
+  // Refresh when enrichment completes
+  const { data: enrichStatus } = useQuery({
+    queryKey: ['nas-enrichment-status'],
+    queryFn: () => api.sonos.getNasEnrichmentStatus(),
+    staleTime: 5_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 3_000 : false
+    },
+  })
+
+  const prevStatus = useRef(enrichStatus?.status)
+  useEffect(() => {
+    if (prevStatus.current === 'running' && enrichStatus?.status === 'complete') {
+      queryClient.invalidateQueries({ queryKey: ['nas-enriched-albums'] })
+    }
+    prevStatus.current = enrichStatus?.status
+  }, [enrichStatus?.status, queryClient])
+
+  if (isLoading) return <ListSkeleton />
+
+  if (isError) {
+    return (
+      <ErrorState
+        message={(error as Error).message ?? 'Failed to load albums'}
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  const albums = data?.items ?? []
+
+  if (albums.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+        <p className="text-sm font-medium text-heading">No albums found</p>
+      </div>
+    )
+  }
+
+  const hasCountryData = albums.some(a => a.artist_country?.country_code)
+
+  const toggleCountry = (country: string) => {
+    setCollapsedCountries(prev => {
+      const next = new Set(prev)
+      if (next.has(country)) next.delete(country)
+      else next.add(country)
+      return next
+    })
+  }
+
+  // Group by country
+  const countryGroups = new Map<string, NasEnrichedAlbum[]>()
+  for (const a of albums) {
+    const cc = a.artist_country?.country_code
+    const hasValidCode = isValidIsoCode(cc)
+    const key = hasValidCode ? (a.artist_country?.country_name ?? cc) : 'Not Known'
+    if (!countryGroups.has(key)) countryGroups.set(key, [])
+    countryGroups.get(key)!.push(a)
+  }
+  const sortedGroups = Array.from(countryGroups.entries())
+    .map(([country, items]) => ({ country, countryCode: items[0]?.artist_country?.country_code ?? null, items }))
+    .sort((a, b) => {
+      if (a.country === 'Not Known') return 1
+      if (b.country === 'Not Known') return -1
+      return a.country.localeCompare(b.country, undefined, { sensitivity: 'base' })
+    })
+
+  return (
+    <div>
+      {hasCountryData && (
+        <div className="mb-3 flex gap-2">
+          {([
+            { value: 'a-z' as const, label: 'A – Z', icon: Disc3 },
+            { value: 'country' as const, label: 'Country', icon: MapPin },
+          ]).map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setSort(opt.value)}
+              className={cn(
+                'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+                'min-h-[32px]',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                sort === opt.value
+                  ? 'bg-fairy-500 text-white'
+                  : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
+              )}
+            >
+              <opt.icon className="h-3.5 w-3.5" aria-hidden="true" />
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <NasEnrichmentStatusBar />
+
+      {sort === 'country' && hasCountryData ? (
+        <div className="-mx-4">
+          {sortedGroups.map(group => {
+            const isCollapsed = collapsedCountries.has(group.country)
+            return (
+              <div key={group.country}>
+                <button
+                  type="button"
+                  onClick={() => toggleCountry(group.country)}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-4 py-2.5 text-left',
+                    'bg-[var(--bg-secondary)] transition-colors hover:bg-[var(--bg-tertiary)]',
+                    'min-h-[40px]',
+                  )}
+                  aria-expanded={!isCollapsed}
+                >
+                  <MapPin className="h-4 w-4 shrink-0 text-fairy-500" aria-hidden="true" />
+                  <span className="flex-1 text-sm font-semibold text-heading">{group.country}</span>
+                  <span className="text-xs text-caption">{group.items.length}</span>
+                  <ChevronDown
+                    className={cn('h-4 w-4 text-caption/50 transition-transform', isCollapsed && '-rotate-90')}
+                    aria-hidden="true"
+                  />
+                </button>
+                {!isCollapsed && (
+                  <ul>
+                    {group.items.map(album => (
+                      <NasAlbumRow key={album.objectId} album={album} onSelect={onSelectAlbum} showCountry={false} speaker={speaker} onDrillDown={onDrillIntoAlbum ? () => onDrillIntoAlbum(album) : undefined} selectedObjectId={selectedObjectId} />
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        <VirtualisedAlbumList
+          albums={albums}
+          onSelectAlbum={onSelectAlbum}
+          showCountry={hasCountryData}
+          speaker={speaker}
+          onDrillIntoAlbum={onDrillIntoAlbum}
+          selectedObjectId={selectedObjectId}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Virtualised flat album list ──────────────────────────────────────────────
+function VirtualisedAlbumList({
+  albums,
+  onSelectAlbum,
+  showCountry,
+  speaker,
+  onDrillIntoAlbum,
+  selectedObjectId,
+}: {
+  albums: NasEnrichedAlbum[]
+  onSelectAlbum: (album: SonosGenreAlbum) => void
+  showCountry: boolean
+  speaker: string | null
+  onDrillIntoAlbum?: (album: SonosGenreAlbum) => void
+  selectedObjectId?: string
+}) {
+  const parentRef = useRef<HTMLDivElement>(null)
+  // NasAlbumRow → MusicListItem; the row height is 48px artwork + 20px
+  // vertical padding ≈ 68px. measureElement on each rendered child will
+  // refine the actual height as items come into view.
+  const virtualizer = useWindowVirtualizer({
+    count: albums.length,
+    estimateSize: () => 68,
+    overscan: 8,
+    scrollMargin: parentRef.current?.offsetTop ?? 0,
+    getItemKey: i => albums[i].objectId,
+  })
+  return (
+    <div
+      ref={parentRef}
+      role="list"
+      className="-mx-4"
+      style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
+    >
+      {virtualizer.getVirtualItems().map(item => {
+        const album = albums[item.index]
+        return (
+          <div
+            key={item.key}
+            data-index={item.index}
+            ref={virtualizer.measureElement}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)`,
+            }}
+          >
+            <NasAlbumRow
+              album={album}
+              onSelect={onSelectAlbum}
+              showCountry={showCountry}
+              speaker={speaker}
+              onDrillDown={onDrillIntoAlbum ? () => onDrillIntoAlbum(album) : undefined}
+              selectedObjectId={selectedObjectId}
+              wrapAs="div"
+            />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function NasAlbumRow({
+  album,
+  onSelect,
+  showCountry,
+  speaker,
+  onDrillDown,
+  selectedObjectId,
+  wrapAs,
+}: {
+  album: NasEnrichedAlbum
+  onSelect: (album: SonosGenreAlbum) => void
+  showCountry: boolean
+  speaker: string | null
+  onDrillDown?: () => void
+  selectedObjectId?: string
+  /** Wrapper element for the row — forwarded to MusicListItem. Default `'li'`. */
+  wrapAs?: 'li' | 'div'
+}) {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+  const countryCode = album.artist_country?.country_code ?? null
+
+  const playAlbum = useMutation({
+    mutationFn: () => api.sonos.addAlbumToQueue(speaker!, album.objectId, 'nas'),
+    onSuccess: () => toast({ message: `Playing "${album.name}"` }),
+    onError: () => toast({ message: 'Failed to play album', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playAlbumNext(speaker!, album.objectId, 'nas'),
+    onSuccess: () => {
+      toast({ message: `"${album.name}" will play next` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.addAlbumToQueue(speaker!, album.objectId, 'nas'),
+    onSuccess: () => {
+      toast({ message: `Added "${album.name}" to queue` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const addToFavourites = useMutation({
+    mutationFn: () => api.favourites.add({
+      source: 'nas',
+      source_uri: album.objectId,
+      title: album.name,
+      album_art_uri: album.albumArtUri,
+    }),
+    onSuccess: () => toast({ message: `Added "${album.name}" to favourites` }),
+    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
+  })
+
+  const subtitle = [
+    album.artist,
+    showCountry && countryCode ? countryCode : null,
+  ].filter(Boolean).join(' · ')
+
+  const pickMode = !!onDrillDown
+  const isSelected = pickMode && selectedObjectId === album.objectId
+
+  return (
+    <MusicListItem
+      as={wrapAs}
+      artwork={{ src: album.albumArtUri, size: 48, fallback: 'disc' }}
+      title={album.name}
+      subtitle={subtitle}
+      onTap={() => onSelect(album)}
+      pickMode={pickMode}
+      onDrillDown={onDrillDown}
+      isCurrentTrack={isSelected}
+      isPlaying={false}
+      {...(!pickMode && {
+        onPlay: () => playAlbum.mutate(),
+        playDisabled: !speaker,
+        playPending: playAlbum.isPending,
+        disabled: !speaker,
+        menuProps: {
+          label: album.name,
+          onPlayNext: () => playNext.mutate(),
+          onAddToQueue: () => addToQueue.mutate(),
+          onAddToFavourites: () => addToFavourites.mutate(),
+          fairylistTrack: {
+            source: 'nas',
+            source_uri: album.objectId,
+            title: album.name,
+            artist: album.artist,
+            album_art_uri: album.albumArtUri,
+          },
+        },
+      })}
+    />
+  )
+}
+
+// ── NAS country wrappers (data-fetching shells around shared CountryBrowse components) ──
+
+function NasCountryList({
+  onSelectCountry,
+}: {
+  onSelectCountry: (code: string, name: string) => void
+}) {
+  const queryClient = useQueryClient()
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['nas-enriched-artists'],
+    queryFn: api.sonos.getEnrichedNasArtists,
+    staleTime: 5 * 60_000,
+  })
+
+  const { data: enrichStatus } = useQuery({
+    queryKey: ['nas-enrichment-status'],
+    queryFn: () => api.sonos.getNasEnrichmentStatus(),
+    staleTime: 5_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 3_000 : false
+    },
+  })
+
+  const prevStatus = useRef(enrichStatus?.status)
+  useEffect(() => {
+    if (prevStatus.current === 'running' && enrichStatus?.status === 'complete') {
+      queryClient.invalidateQueries({ queryKey: ['nas-enriched-artists'] })
+    }
+    prevStatus.current = enrichStatus?.status
+  }, [enrichStatus?.status, queryClient])
+
+  const artists: CountryArtistItem[] = (data?.items ?? []).map(a => ({
+    id: a.name,
+    name: a.name,
+    country_code: a.country_code,
+    country_name: a.country_name,
+    sub_region: a.sub_region,
+    image_url: a.image_url,
+  }))
+
+  return (
+    <CountryList
+      artists={artists}
+      isLoading={isLoading}
+      isError={isError}
+      error={error as Error | null}
+      onRetry={() => refetch()}
+      onSelectCountry={onSelectCountry}
+      enrichmentStatusBar={<NasEnrichmentStatusBar />}
+    />
+  )
+}
+
+function NasCountryArtistList({
+  countryCode,
+  countryName,
+  onSelectArtist,
+  onBack,
+}: {
+  countryCode: string
+  countryName: string
+  onSelectArtist: (name: string) => void
+  onBack: () => void
+}) {
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['nas-enriched-artists'],
+    queryFn: api.sonos.getEnrichedNasArtists,
+    staleTime: 5 * 60_000,
+  })
+
+  const artists: CountryArtistItem[] = (data?.items ?? []).map(a => ({
+    id: a.name,
+    name: a.name,
+    country_code: a.country_code,
+    country_name: a.country_name,
+    sub_region: a.sub_region,
+    image_url: a.image_url,
+  }))
+
+  return (
+    <CountryArtistList
+      countryCode={countryCode}
+      countryName={countryName}
+      artists={artists}
+      isLoading={isLoading}
+      isError={isError}
+      error={error as Error | null}
+      onRetry={() => refetch()}
+      onBack={onBack}
+      renderArtistRow={(artist) => (
+        <NasArtistRow
+          key={artist.id}
+          artist={(data?.items ?? []).find(a => a.name === artist.name)!}
+          onSelect={onSelectArtist}
+          showCountry={false}
+        />
+      )}
+    />
+  )
+}
+
+// ── Songs list ───────────────────────────────────────────────────────────────
+
+function SongsList({ speaker }: { speaker: string | null }) {
+  const { data: tracks, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['sonos-library-songs'],
+    queryFn: api.sonos.getLibrarySongs,
+    staleTime: 5 * 60_000,
+  })
+
+  if (isLoading) return <ListSkeleton />
+
+  if (isError) {
+    return (
+      <ErrorState
+        message={(error as Error).message ?? 'Failed to load songs'}
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  if (!tracks || tracks.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+        <p className="text-sm font-medium text-heading">No songs found</p>
+      </div>
+    )
+  }
+
+  return (
+    <ul className="-mx-4">
+      {tracks.map((track: SonosLibraryTrack, i: number) => (
+        <TrackRow key={track.uri + ':' + i} track={track} speaker={speaker} />
+      ))}
+    </ul>
+  )
+}
+
+// ── Search result artist row ──────────────────────────────────────────────────
+
+function SearchArtistRow({
+  artist,
+  onSelect,
+}: {
+  artist: SonosSearchArtist
+  onSelect: (name: string) => void
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(artist.name)}
+        className={cn(
+          'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+          'transition-colors hover:bg-[var(--bg-secondary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <ArtworkImage src={artist.albumArtUri} size={40} rounded="rounded-full" fallback="user" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
+          <p className="text-xs text-caption">
+            {artist.trackCount} {artist.trackCount === 1 ? 'track' : 'tracks'}
+          </p>
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+      </button>
+    </li>
+  )
+}
+
+// ── Search result album row ───────────────────────────────────────────────────
+
+function SearchAlbumRow({
+  album,
+  onSelect,
+  speaker,
+}: {
+  album: SonosSearchAlbum
+  onSelect: (album: SonosGenreAlbum) => void
+  speaker: string | null
+}) {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+
+  const objectId = `A:ALBUMARTIST/${encodeURIComponent(album.artist)}/${encodeURIComponent(album.name)}`
+  const albumArtUri = album.albumArtUri ?? ''
+
+  const playAlbum = useMutation({
+    mutationFn: () => api.sonos.addAlbumToQueue(speaker!, objectId, 'nas'),
+    onSuccess: () => toast({ message: `Playing "${album.name}"` }),
+    onError: () => toast({ message: 'Failed to play album', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playAlbumNext(speaker!, objectId, 'nas'),
+    onSuccess: () => {
+      toast({ message: `"${album.name}" will play next` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.addAlbumToQueue(speaker!, objectId, 'nas'),
+    onSuccess: () => {
+      toast({ message: `Added "${album.name}" to queue` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const addToFavourites = useMutation({
+    mutationFn: () => api.favourites.add({
+      source: 'nas',
+      source_uri: objectId,
+      title: album.name,
+      album_art_uri: albumArtUri,
+    }),
+    onSuccess: () => toast({ message: `Added "${album.name}" to favourites` }),
+    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
+  })
+
+  const subtitle = album.trackCount
+    ? `${album.artist} · ${album.trackCount} ${album.trackCount === 1 ? 'song' : 'songs'}`
+    : album.artist
+
+  return (
+    <MusicListItem
+      artwork={{ src: albumArtUri, size: 40, fallback: 'disc' }}
+      title={album.name}
+      subtitle={subtitle}
+      onTap={() => onSelect({ name: album.name, artist: album.artist, albumArtUri, objectId })}
+      onPlay={() => playAlbum.mutate()}
+      playDisabled={!speaker}
+      playPending={playAlbum.isPending}
+      disabled={!speaker}
+      menuProps={{
+        label: album.name,
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
+        onAddToFavourites: () => addToFavourites.mutate(),
+        fairylistTrack: {
+          source: 'nas',
+          source_uri: objectId,
+          title: album.name,
+          artist: album.artist,
+          album_art_uri: albumArtUri,
+        },
+      }}
+    />
+  )
+}
+
+// ── Search results view ───────────────────────────────────────────────────────
+
+function SearchResults({
+  query,
+  speaker,
+  onSelectArtist,
+  onSelectAlbum,
+}: {
+  query: string
+  speaker: string | null
+  onSelectArtist: (name: string) => void
+  onSelectAlbum: (album: SonosGenreAlbum) => void
+}) {
+  const [artistsOpen, setArtistsOpen] = useState(true)
+  const [albumsOpen, setAlbumsOpen] = useState(true)
+  const [songsOpen, setSongsOpen] = useState(true)
+
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['sonos-library-search', query],
+    queryFn: () => api.sonos.searchLibrary(query),
+    staleTime: 60_000,
+    enabled: query.length > 0,
+  })
+
+  if (isLoading) return <ListSkeleton count={5} />
+
+  if (isError) {
+    return (
+      <ErrorState
+        message={(error as Error).message ?? 'Search failed'}
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  const artists = data?.artists ?? []
+  const albums = data?.albums ?? []
+  const tracks = data?.tracks ?? []
+  const totalResults = artists.length + albums.length + tracks.length
+
+  if (!data || totalResults === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+        <div>
+          <p className="text-sm font-medium text-heading">No results for "{query}"</p>
+          <p className="mt-1 text-xs text-caption">Try a different search term</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {artists.length > 0 && (
+        <Accordion
+          id="nas-search-artists"
+          title="Artists"
+          open={artistsOpen}
+          onToggle={() => setArtistsOpen(v => !v)}
+          count={artists.length}
+          card={false}
+        >
+          <ul className="-mx-4">
+            {artists.map(artist => (
+              <SearchArtistRow key={artist.name} artist={artist} onSelect={onSelectArtist} />
+            ))}
+          </ul>
+        </Accordion>
+      )}
+      {albums.length > 0 && (
+        <Accordion
+          id="nas-search-albums"
+          title="Albums"
+          open={albumsOpen}
+          onToggle={() => setAlbumsOpen(v => !v)}
+          count={albums.length}
+          card={false}
+        >
+          <ul className="-mx-4">
+            {albums.map((album, i) => (
+              <SearchAlbumRow key={album.name + ':' + album.artist + ':' + i} album={album} onSelect={onSelectAlbum} speaker={speaker} />
+            ))}
+          </ul>
+        </Accordion>
+      )}
+      {tracks.length > 0 && (
+        <Accordion
+          id="nas-search-songs"
+          title="Songs"
+          open={songsOpen}
+          onToggle={() => setSongsOpen(v => !v)}
+          count={tracks.length}
+          card={false}
+        >
+          <ul className="-mx-4">
+            {tracks.map((track, i) => (
+              <TrackRow key={track.uri + ':' + i} track={track} speaker={speaker} />
+            ))}
+          </ul>
+        </Accordion>
+      )}
+    </div>
+  )
+}
+
+// ── NasBrowseView ─────────────────────────────────────────────────────────────
+
+interface NasBrowseViewProps {
+  searchQuery: string
+  targetSpeaker?: string | null
+  onPickAlbum?: (album: SonosGenreAlbum) => void
+  onDrillIntoAlbum?: (album: SonosGenreAlbum) => void
+  onPickArtist?: (name: string) => void
+  selectedObjectId?: string
+}
+
+export function NasBrowseView({ searchQuery, targetSpeaker, onPickAlbum, onDrillIntoAlbum, onPickArtist, selectedObjectId }: NasBrowseViewProps) {
+  const [view, setView] = useState<NasView>('home')
+  const [browseMode, setBrowseMode] = usePersistedState<BrowseMode>('nas-browse-mode', 'countries')
+  const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
+  const { selectedSpeaker } = usePlaybackState()
+  const speaker = targetSpeaker ?? selectedSpeaker
+  const navigate = useNavigate()
+  const speakerQuery = speaker ? `?speaker=${encodeURIComponent(speaker)}` : ''
+
+  const debouncedQuery = useDebounce(searchQuery.trim(), 300)
+  const isSearching = debouncedQuery.length > 0
+
+  function handleSelectArtist(name: string) {
+    if (onPickArtist) { onPickArtist(name); return }
+    navigate(`/sonos/browse/nas/artist/${encodeURIComponent(name)}${speakerQuery}`)
+  }
+
+  function handleSelectAlbum(album: SonosGenreAlbum) {
+    if (onPickAlbum) { onPickAlbum(album); return }
+    navigate(
+      `/sonos/browse/nas/album/${encodeURIComponent(album.artist)}/${encodeURIComponent(album.name)}${speakerQuery}`,
+      { state: { objectId: album.objectId } },
+    )
+  }
+
+  function handleSelectCountry(code: string, name: string) {
+    setSelectedCountry({ code, name })
+    setView('country-artists')
+  }
+
+  function handleBack() {
+    if (view === 'country-artists') {
+      setView('home')
+      setSelectedCountry(null)
+    }
+  }
+
+  if (isSearching) {
+    return (
+      <SearchResults
+        query={debouncedQuery}
+        speaker={speaker}
+        onSelectArtist={handleSelectArtist}
+        onSelectAlbum={handleSelectAlbum}
+      />
+    )
+  }
+
+  if (view === 'country-artists' && selectedCountry) {
+    return (
+      <NasCountryArtistList
+        countryCode={selectedCountry.code}
+        countryName={selectedCountry.name}
+        onSelectArtist={handleSelectArtist}
+        onBack={handleBack}
+      />
+    )
+  }
+
+  return (
+    <div>
+      <BrowseModeTabs mode={browseMode} onChangeMode={setBrowseMode} />
+      {browseMode === 'countries' && <NasCountryList onSelectCountry={handleSelectCountry} />}
+      {browseMode === 'albums' && <AlbumList onSelectAlbum={handleSelectAlbum} speaker={speaker} onDrillIntoAlbum={onDrillIntoAlbum} selectedObjectId={selectedObjectId} />}
+      {browseMode === 'artists' && <ArtistList onSelectArtist={handleSelectArtist} />}
+      {browseMode === 'songs' && <SongsList speaker={speaker} />}
+    </div>
+  )
+}

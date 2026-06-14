@@ -33,8 +33,33 @@ function LightRow({ light }: { light: Light }) {
 
   const toggleMutation = useMutation({
     mutationFn: () => api.lifx.toggle(`id:${light.id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }),
-    onError: () => toast({ message: 'Failed to toggle light', type: 'error' }),
+    // Optimistic toggle — flip the cached power state immediately so the
+    // power icon and brightness label react before the cloud round-trip.
+    //
+    // We deliberately do NOT invalidate the cache on settle. The mutation
+    // ack means "command queued at LIFX cloud", not "device state confirmed";
+    // an immediate refetch would pull pre-toggle state from /lights/all
+    // (LIFX cloud lags ~1–2 s behind acks) and stomp the optimistic value.
+    // The natural staleTime + the next user navigation eventually reconcile.
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ['lifx', 'lights'] })
+      const previous = queryClient.getQueryData<Light[]>(['lifx', 'lights'])
+      queryClient.setQueryData<Light[]>(['lifx', 'lights'], old => {
+        if (!old) return old
+        return old.map(l =>
+          l.id === light.id
+            ? { ...l, power: l.power === 'on' ? 'off' : 'on' }
+            : l,
+        )
+      })
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['lifx', 'lights'], context.previous)
+      }
+      toast({ message: 'Failed to toggle light', type: 'error' })
+    },
   })
 
   const identifyMutation = useMutation({
@@ -44,7 +69,24 @@ function LightRow({ light }: { light: Light }) {
   const setStateMutation = useMutation({
     mutationFn: (b: number) =>
       api.lifx.setState(`id:${light.id}`, { brightness: b / 100, duration: 0.3 }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['lifx', 'lights'] }),
+    // Optimistic brightness — keep the cached value in sync with the slider
+    // commit. Same no-invalidate-on-settle reasoning as toggleMutation.
+    onMutate: async (b: number) => {
+      await queryClient.cancelQueries({ queryKey: ['lifx', 'lights'] })
+      const previous = queryClient.getQueryData<Light[]>(['lifx', 'lights'])
+      queryClient.setQueryData<Light[]>(['lifx', 'lights'], old => {
+        if (!old) return old
+        return old.map(l =>
+          l.id === light.id ? { ...l, brightness: b / 100 } : l,
+        )
+      })
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(['lifx', 'lights'], context.previous)
+      }
+    },
   })
 
   const handleBrightnessCommit = () => {

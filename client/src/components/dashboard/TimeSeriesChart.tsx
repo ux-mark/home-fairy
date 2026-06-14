@@ -1,3 +1,8 @@
+// Register chart.js components as a side-effect of this module loading.
+// chartSetup used to be imported eagerly from main.tsx, which dragged
+// chart.js into the cold-load entry chunk on every visit. Now it only
+// loads when a chart actually renders.
+import '@/lib/chartSetup'
 import { Line } from 'react-chartjs-2'
 import type { ChartOptions, ChartData } from 'chart.js'
 import { parseServerDate } from '@/lib/utils'

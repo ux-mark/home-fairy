@@ -1,0 +1,2257 @@
+import { useState, useRef, useEffect, useMemo } from 'react'
+import { useWindowVirtualizer } from '@tanstack/react-virtual'
+import { useNavigate } from 'react-router-dom'
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import * as Popover from '@radix-ui/react-popover'
+import {
+  AlertTriangle,
+  ArrowDownAZ,
+  ArrowDownZA,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Clock,
+  Disc3,
+  Globe,
+  History,
+  Info,
+  Loader2,
+  MapPin,
+  Mic2,
+  Music2,
+  Pin,
+  Play,
+  Plus,
+  RefreshCw,
+} from 'lucide-react'
+import { api } from '@/lib/api'
+import { invalidateQueue } from '@/lib/queueCache'
+import type {
+  SpotifyPlaylist,
+  SpotifyPinnedPlaylist,
+  SpotifyTrack,
+  SpotifyAlbum,
+  SpotifyShow,
+  SpotifyArtist,
+  EnrichedAlbumItem,
+  EnrichmentProgress,
+} from '@/lib/api'
+import { PinSpotifyPlaylistDialog } from './PinSpotifyPlaylistDialog'
+import { useToast } from '@/hooks/useToast'
+import { useDebounce } from '@/hooks/useBrowseShared'
+import { usePersistedState } from '@/hooks/usePersistedState'
+import { usePlaybackState } from '@/hooks/usePlaybackState'
+import { Skeleton } from '@/components/ui/Skeleton'
+import { Accordion } from '@/components/ui/Accordion'
+import { cn } from '@/lib/utils'
+import { CountryList, CountryArtistList, type CountryArtistItem } from './CountryBrowse'
+import { ArtworkImage } from './ArtworkImage'
+import { ActiveTrackIndicator } from './ActiveTrackIndicator'
+import { MusicItemMenu } from './MusicItemMenu'
+import { MusicListItem } from './MusicListItem'
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type SpotifyView = 'home' | 'country-artists'
+type BrowseMode = 'playlists' | 'countries' | 'podcasts' | 'albums' | 'artists' | 'songs'
+type PlaylistSort = 'recent' | 'oldest' | 'a-z' | 'z-a'
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function formatDuration(ms: number): string {
+  const totalSecs = Math.round(ms / 1000)
+  const mins = Math.floor(totalSecs / 60)
+  const secs = totalSecs % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+// ── Skeleton helpers ─────────────────────────────────────────────────────────
+
+function ListSkeleton({ count = 8 }: { count?: number }) {
+  return (
+    <ul aria-busy="true" aria-label="Loading">
+      {Array.from({ length: count }).map((_, i) => (
+        <li key={i} className="flex items-center gap-3 px-4 py-2.5">
+          <Skeleton className="h-12 w-12 shrink-0 rounded-md" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-3.5 w-3/4 rounded" />
+            <Skeleton className="h-3 w-1/2 rounded" />
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function TrackListSkeleton({ count = 5 }: { count?: number }) {
+  return (
+    <ul aria-busy="true" aria-label="Loading tracks">
+      {Array.from({ length: count }).map((_, i) => (
+        <li key={i} className="flex items-center gap-3 px-4 py-2.5">
+          <Skeleton className="h-10 w-10 shrink-0 rounded-md" />
+          <div className="flex-1 space-y-2">
+            <Skeleton className="h-3.5 w-3/4 rounded" />
+            <Skeleton className="h-3 w-1/2 rounded" />
+          </div>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+// ── Error state ───────────────────────────────────────────────────────────────
+
+function ErrorState({
+  title = 'Something went wrong',
+  message,
+  onRetry,
+}: {
+  title?: string
+  message: string
+  onRetry: () => void
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+      <AlertTriangle className="h-8 w-8 text-amber-400" aria-hidden="true" />
+      <div>
+        <p className="text-sm font-medium text-heading">{title}</p>
+        <p className="mt-1 max-w-xs text-xs text-caption">{message}</p>
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        className={cn(
+          'flex items-center gap-2 rounded-lg bg-[var(--bg-secondary)] px-4 py-2 text-sm font-medium text-body',
+          'transition-colors hover:bg-[var(--bg-tertiary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <RefreshCw className="h-4 w-4" aria-hidden="true" />
+        Retry
+      </button>
+    </div>
+  )
+}
+
+// ── Connect Spotify prompt ────────────────────────────────────────────────────
+
+function ConnectSpotifyPrompt({ configured }: { configured: boolean }) {
+  if (!configured) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#1DB954]/10">
+          <Music2 className="h-8 w-8 text-[#1DB954]" aria-hidden="true" />
+        </div>
+        <div>
+          <p className="text-base font-semibold text-heading">Spotify not configured</p>
+          <p className="mt-1 max-w-xs text-sm text-caption">
+            Add your Spotify Developer credentials to the server .env file, then restart.
+          </p>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+      <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[#1DB954]/10">
+        <Music2 className="h-8 w-8 text-[#1DB954]" aria-hidden="true" />
+      </div>
+      <div>
+        <p className="text-base font-semibold text-heading">Connect Spotify</p>
+        <p className="mt-1 max-w-xs text-sm text-caption">
+          Link your Spotify account to browse playlists and control playback.
+        </p>
+      </div>
+      <a
+        href="/api/spotify/auth"
+        className={cn(
+          'flex items-center gap-2 rounded-xl bg-[#1DB954] px-6 py-3 text-sm font-semibold text-white',
+          'transition-opacity hover:opacity-90',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        Connect Spotify
+      </a>
+    </div>
+  )
+}
+
+// ── Browse mode tabs ──────────────────────────────────────────────────────────
+
+function BrowseModeTabs({
+  mode,
+  onChangeMode,
+}: {
+  mode: BrowseMode
+  onChangeMode: (m: BrowseMode) => void
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Browse by"
+      className="mb-4 flex gap-2 overflow-x-auto pb-0.5"
+    >
+      {(['playlists', 'countries', 'podcasts', 'albums', 'artists', 'songs'] as const).map(m => (
+        <button
+          key={m}
+          role="tab"
+          aria-selected={mode === m}
+          onClick={() => onChangeMode(m)}
+          className={cn(
+            'shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-colors',
+            'min-h-[36px]',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            mode === m
+              ? 'bg-fairy-500 text-white'
+              : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
+          )}
+        >
+          {m === 'playlists' ? 'Playlists' : m === 'countries' ? 'Countries' : m === 'podcasts' ? 'Podcasts' : m === 'albums' ? 'Albums' : m === 'artists' ? 'Artists' : 'Songs'}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// ── Spotify track row ─────────────────────────────────────────────────────────
+
+function SpotifyTrackRow({
+  track,
+  speaker,
+  isActive = false,
+  isPlaying = false,
+}: {
+  track: SpotifyTrack
+  speaker: string | null
+  isActive?: boolean
+  isPlaying?: boolean
+}) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'now'),
+    onSuccess: () => toast({ message: `Playing "${track.name}"` }),
+    onError: () => toast({ message: 'Failed to play track', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'queue'),
+    onSuccess: () => {
+      toast({ message: `Added "${track.name}" to queue` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, track.uri, 'next'),
+    onSuccess: () => {
+      toast({ message: `"${track.name}" will play next` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToFavourites = useMutation({
+    mutationFn: () => api.favourites.add({
+      source: 'spotify',
+      source_uri: track.uri,
+      title: track.name,
+      album_art_uri: track.album.images?.[0]?.url,
+    }),
+    onSuccess: () => toast({ message: `Added "${track.name}" to favourites` }),
+    onError: () => toast({ message: 'Failed to add to favourites', type: 'error' }),
+  })
+
+  const artistNames = track.artists.map(a => a.name).join(', ')
+
+  return (
+    <li className={cn('flex items-center gap-3 px-4 py-2.5', isActive && 'bg-fairy-500/10')}>
+      <div className="relative shrink-0">
+        <ArtworkImage images={track.album.images} size={40} />
+        {isActive && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-md bg-black/40">
+            <ActiveTrackIndicator isActive={isActive} isPlaying={isPlaying} />
+          </div>
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium text-heading">{track.name}</p>
+        <p className="truncate text-xs text-caption">
+          {[artistNames, track.album.name].filter(Boolean).join(' · ')}
+        </p>
+      </div>
+
+      <div className="flex shrink-0 items-center gap-1">
+        <span className="mr-1 text-xs text-caption/70">{formatDuration(track.duration_ms)}</span>
+
+        <button
+          type="button"
+          disabled={!speaker || playNow.isPending}
+          onClick={() => playNow.mutate()}
+          aria-label={`Play ${track.name}`}
+          className={cn(
+            'flex h-11 w-11 items-center justify-center rounded-lg',
+            'text-caption transition-colors hover:bg-[var(--bg-tertiary)] hover:text-body',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'disabled:opacity-40',
+          )}
+        >
+          <Play className="h-4 w-4" aria-hidden="true" />
+        </button>
+
+        <MusicItemMenu
+          label={track.name}
+          disabled={!speaker}
+          onPlayNext={() => playNext.mutate()}
+          onAddToQueue={() => addToQueue.mutate()}
+          onAddToFavourites={() => addToFavourites.mutate()}
+          fairylistTrack={{
+            source: 'spotify',
+            source_uri: track.uri,
+            title: track.name,
+            artist: artistNames,
+            album_art_uri: track.album.images?.[0]?.url,
+          }}
+          spotifyTrack={{ trackUri: track.uri, trackName: track.name }}
+        />
+      </div>
+    </li>
+  )
+}
+
+// ── Playlist list ─────────────────────────────────────────────────────────────
+
+const PLAYLIST_SORT_OPTIONS: Array<{ value: PlaylistSort; label: string; icon: typeof Clock }> = [
+  { value: 'recent', label: 'Recently added', icon: Clock },
+  { value: 'oldest', label: 'Oldest first', icon: History },
+  { value: 'a-z', label: 'A – Z', icon: ArrowDownAZ },
+  { value: 'z-a', label: 'Z – A', icon: ArrowDownZA },
+]
+
+function playlistSortLabel(sort: PlaylistSort): string {
+  return PLAYLIST_SORT_OPTIONS.find(opt => opt.value === sort)?.label ?? 'Recently added'
+}
+
+// Sorts that only operate on the currently-loaded slice of playlists (not the
+// full remote library). The amber warning surfaces this trade-off to the user.
+const PARTIAL_PLAYLIST_SORTS: PlaylistSort[] = ['oldest', 'a-z', 'z-a']
+
+function sortPlaylists(playlists: SpotifyPlaylist[], sort: PlaylistSort): SpotifyPlaylist[] {
+  if (sort === 'recent') return playlists
+  // Spotify returns playlists in reverse-chronological add order, so reversing
+  // the loaded slice yields oldest-first. No date field exists on SpotifyPlaylist.
+  if (sort === 'oldest') return [...playlists].reverse()
+  const sorted = [...playlists].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+  return sort === 'z-a' ? sorted.reverse() : sorted
+}
+
+function PlaylistSortMenu({
+  sort,
+  onChange,
+}: {
+  sort: PlaylistSort
+  onChange: (value: PlaylistSort) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const active = PLAYLIST_SORT_OPTIONS.find(opt => opt.value === sort) ?? PLAYLIST_SORT_OPTIONS[0]
+  const ActiveIcon = active.icon
+
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <button
+          type="button"
+          aria-label={`Sort playlists. Currently sorted by ${active.label}.`}
+          className={cn(
+            'group inline-flex min-h-[44px] items-center gap-2 rounded-lg px-3 py-2',
+            'bg-[var(--bg-secondary)] text-xs font-medium text-body',
+            'transition-colors hover:bg-[var(--bg-tertiary)]',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+            'data-[state=open]:bg-[var(--bg-tertiary)]',
+          )}
+        >
+          <ActiveIcon className="h-4 w-4 shrink-0 text-caption" aria-hidden="true" />
+          <span className="text-caption">Sort by</span>
+          <span className="text-heading">{active.label}</span>
+          <ChevronDown
+            className="h-4 w-4 shrink-0 text-caption transition-transform group-data-[state=open]:rotate-180"
+            aria-hidden="true"
+          />
+        </button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          side="bottom"
+          align="end"
+          sideOffset={6}
+          collisionPadding={12}
+          className={cn(
+            'z-50 min-w-[14rem] rounded-xl p-1',
+            'border border-[var(--border-primary)] bg-[var(--bg-secondary)] shadow-xl',
+            'data-[state=open]:animate-in data-[state=closed]:animate-out',
+            'data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0',
+            'data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95',
+          )}
+          aria-label="Playlist sort options"
+        >
+          <div role="menu" aria-label="Sort playlists by" className="flex flex-col gap-0.5">
+            {PLAYLIST_SORT_OPTIONS.map(opt => {
+              const Icon = opt.icon
+              const isActive = sort === opt.value
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={isActive}
+                  onClick={() => {
+                    onChange(opt.value)
+                    setOpen(false)
+                  }}
+                  className={cn(
+                    'flex min-h-[44px] w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm',
+                    'transition-colors',
+                    'focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-fairy-500',
+                    isActive
+                      ? 'bg-[var(--bg-tertiary)] text-heading'
+                      : 'text-body hover:bg-[var(--bg-tertiary)] hover:text-heading',
+                  )}
+                >
+                  <Icon className="h-4 w-4 shrink-0 text-caption" aria-hidden="true" />
+                  <span className="flex-1">{opt.label}</span>
+                  {isActive ? (
+                    <Check className="h-4 w-4 shrink-0 text-fairy-400" aria-hidden="true" />
+                  ) : (
+                    <span className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
+  )
+}
+
+const PINNED_BADGE_CLS =
+  'inline-flex items-center gap-1 rounded-md bg-fairy-400/15 px-1.5 py-0.5 text-[10px] font-semibold text-fairy-400'
+
+function PinnedBadge({ label = 'Pinned', title }: { label?: string; title?: string }) {
+  return (
+    <span className={PINNED_BADGE_CLS} title={title ?? label}>
+      <Pin className="h-2.5 w-2.5" aria-hidden="true" />
+      {label}
+    </span>
+  )
+}
+
+function PlaylistRow({
+  playlist,
+  speaker,
+  onSelect,
+  isPinned,
+  pickMode = false,
+  isSelected = false,
+}: {
+  playlist: SpotifyPlaylist
+  speaker: string | null
+  onSelect: (playlist: SpotifyPlaylist) => void
+  isPinned: boolean
+  pickMode?: boolean
+  isSelected?: boolean
+}) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'now'),
+    onSuccess: () => toast({ message: `Playing "${playlist.name}"` }),
+    onError: () => toast({ message: 'Failed to play playlist', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'next'),
+    onSuccess: () => {
+      toast({ message: `"${playlist.name}" will play next` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'queue'),
+    onSuccess: () => {
+      toast({ message: `Added "${playlist.name}" to queue` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const pinPlaylist = useMutation({
+    mutationFn: () => api.spotify.pinPlaylist(playlist.uri),
+    onSuccess: () => {
+      toast({ message: `Pinned "${playlist.name}"` })
+      queryClient.invalidateQueries({ queryKey: ['spotify-pinned'] })
+    },
+    onError: (err: Error) =>
+      toast({ message: err.message || 'Failed to pin playlist', type: 'error' }),
+  })
+
+  const songCount = playlist.tracks.total
+  const ownerName = playlist.owner?.display_name?.trim() || 'Unknown'
+  const subtitle = `${songCount} ${songCount === 1 ? 'song' : 'songs'} · ${ownerName}`
+
+  return (
+    <MusicListItem
+      artwork={{ images: playlist.images, size: 48 }}
+      title={playlist.name}
+      subtitle={subtitle}
+      onTap={() => onSelect(playlist)}
+      pickMode={pickMode}
+      isCurrentTrack={isSelected}
+      isPlaying={false}
+      {...(!pickMode && {
+        onPlay: () => playNow.mutate(),
+        playPending: playNow.isPending,
+        disabled: !speaker,
+        menuProps: {
+          label: playlist.name,
+          onPin: isPinned ? undefined : () => pinPlaylist.mutate(),
+          onPlayNext: () => playNext.mutate(),
+          onAddToQueue: () => addToQueue.mutate(),
+          fairylistTrack: {
+            source: 'spotify',
+            source_uri: playlist.uri,
+            title: playlist.name,
+            album_art_uri: playlist.images?.[0]?.url,
+          },
+        },
+      })}
+      badge={isPinned ? <PinnedBadge /> : undefined}
+    />
+  )
+}
+
+const PLAYLIST_PAGE_SIZE = 50
+
+function PinnedPlaylistRow({
+  pinned,
+  speaker,
+  onSelect,
+  pickMode = false,
+  isSelected = false,
+  wrapAs,
+}: {
+  pinned: SpotifyPinnedPlaylist
+  speaker: string | null
+  onSelect: (pinned: SpotifyPinnedPlaylist) => void
+  pickMode?: boolean
+  isSelected?: boolean
+  /** Forwarded to MusicListItem so virtualised callers can use `'div'`. */
+  wrapAs?: 'li' | 'div'
+}) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, pinned.uri, 'now'),
+    onSuccess: () => toast({ message: `Playing "${pinned.name}"` }),
+    onError: () => toast({ message: 'Failed to play playlist', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, pinned.uri, 'next'),
+    onSuccess: () => {
+      toast({ message: `"${pinned.name}" will play next` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, pinned.uri, 'queue'),
+    onSuccess: () => {
+      toast({ message: `Added "${pinned.name}" to queue` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const unpin = useMutation({
+    mutationFn: () => api.spotify.unpinPlaylist(pinned.playlist_id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['spotify-pinned'] })
+      toast({ message: `Unpinned "${pinned.name}"` })
+    },
+    onError: () => toast({ message: 'Could not unpin', type: 'error' }),
+  })
+
+  const ownerName = pinned.owner_display_name?.trim() || (pinned.is_editorial ? 'Spotify' : 'Unknown')
+  const countPart = pinned.track_total != null
+    ? `${pinned.track_total} ${pinned.track_total === 1 ? 'song' : 'songs'} · `
+    : ''
+  const subtitle = `${countPart}${ownerName}`
+  const images = pinned.image_url
+    ? [{ url: pinned.image_url, height: null, width: null }]
+    : []
+
+  return (
+    <MusicListItem
+      as={wrapAs}
+      artwork={{ images, size: 48 }}
+      title={pinned.name}
+      subtitle={subtitle}
+      onTap={() => onSelect(pinned)}
+      pickMode={pickMode}
+      isCurrentTrack={isSelected}
+      isPlaying={false}
+      {...(!pickMode && {
+        onPlay: () => playNow.mutate(),
+        playPending: playNow.isPending,
+        disabled: !speaker,
+        menuProps: {
+          label: pinned.name,
+          onPlayNext: () => playNext.mutate(),
+          onAddToQueue: () => addToQueue.mutate(),
+          fairylistTrack: {
+            source: 'spotify',
+            source_uri: pinned.uri,
+            title: pinned.name,
+            album_art_uri: pinned.image_url ?? undefined,
+          },
+          onRemove: () => unpin.mutate(),
+          removeLabel: 'Unpin playlist',
+        },
+      })}
+    />
+  )
+}
+
+// ── Virtualised pinned list ──────────────────────────────────────────────────
+function VirtualisedPinnedList({
+  pinned,
+  speaker,
+  onSelectPinned,
+  pickMode,
+  selectedUri,
+}: {
+  pinned: SpotifyPinnedPlaylist[]
+  speaker: string | null
+  onSelectPinned: (pinned: SpotifyPinnedPlaylist) => void
+  pickMode?: boolean
+  selectedUri?: string
+}) {
+  const parentRef = useRef<HTMLDivElement>(null)
+  const virtualizer = useWindowVirtualizer({
+    count: pinned.length,
+    estimateSize: () => 68,
+    overscan: 6,
+    scrollMargin: parentRef.current?.offsetTop ?? 0,
+    getItemKey: i => pinned[i].playlist_id,
+  })
+  return (
+    <div
+      ref={parentRef}
+      role="list"
+      className="-mx-4 mb-2"
+      style={{ height: virtualizer.getTotalSize(), position: 'relative' }}
+    >
+      {virtualizer.getVirtualItems().map(item => {
+        const p = pinned[item.index]
+        return (
+          <div
+            key={item.key}
+            data-index={item.index}
+            ref={virtualizer.measureElement}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${item.start - virtualizer.options.scrollMargin}px)`,
+            }}
+          >
+            <PinnedPlaylistRow
+              pinned={p}
+              speaker={speaker}
+              onSelect={onSelectPinned}
+              pickMode={pickMode}
+              isSelected={selectedUri === p.uri}
+              wrapAs="div"
+            />
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function PlaylistList({
+  onSelect,
+  onSelectPinned,
+  speaker,
+  pickMode = false,
+  selectedUri,
+}: {
+  onSelect: (playlist: SpotifyPlaylist) => void
+  onSelectPinned: (pinned: SpotifyPinnedPlaylist) => void
+  speaker: string | null
+  pickMode?: boolean
+  selectedUri?: string
+}) {
+  const [sort, setSort] = useState<PlaylistSort>('recent')
+  const [pinDialogOpen, setPinDialogOpen] = useState(false)
+  const sentinelRef = useRef<HTMLDivElement | null>(null)
+
+  const { data: pinnedData } = useQuery({
+    queryKey: ['spotify-pinned'],
+    queryFn: () => api.spotify.getPinnedPlaylists(),
+    staleTime: 5 * 60_000,
+  })
+  const pinned = useMemo(() => pinnedData ?? [], [pinnedData])
+  const pinnedIdSet = useMemo(() => new Set(pinned.map(p => p.playlist_id)), [pinned])
+
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: ['spotify-playlists'],
+    queryFn: ({ pageParam }) => api.spotify.getPlaylists(PLAYLIST_PAGE_SIZE, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      if (!lastPage.next) return undefined
+      return allPages.length * PLAYLIST_PAGE_SIZE
+    },
+    staleTime: 5 * 60_000,
+  })
+
+  const allPlaylists = useMemo(
+    () => data?.pages.flatMap(p => p.items) ?? [],
+    [data],
+  )
+  const totalCount = data?.pages[0]?.total ?? allPlaylists.length
+  const loadedCount = allPlaylists.length
+
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || !hasNextPage || isFetchingNextPage) return
+    const observer = new IntersectionObserver(
+      entries => {
+        if (entries[0]?.isIntersecting) fetchNextPage()
+      },
+      { rootMargin: '200px 0px' },
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, loadedCount])
+
+  if (isLoading) return <ListSkeleton />
+
+  if (isError) {
+    return (
+      <ErrorState
+        title="Spotify unavailable"
+        message={(error as Error).message ?? 'Could not load playlists. Check your internet connection and try again.'}
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  const playlists = sortPlaylists(allPlaylists, sort)
+  const hasAnything = playlists.length > 0 || pinned.length > 0
+
+  if (!hasAnything) {
+    return (
+      <div>
+        <PinnedHeader onPin={() => setPinDialogOpen(true)} count={0} />
+        {pinned.length === 0 && <SpotifyApiInfoNote />}
+        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+          <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-medium text-heading">No playlists found</p>
+            <p className="mt-1 max-w-xs text-xs text-caption">
+              Your Spotify account doesn't have any playlists yet. Paste a share link above to pin one.
+            </p>
+          </div>
+        </div>
+        <PinSpotifyPlaylistDialog open={pinDialogOpen} onOpenChange={setPinDialogOpen} />
+      </div>
+    )
+  }
+
+  const isPartialSort = PARTIAL_PLAYLIST_SORTS.includes(sort)
+  const hasMoreToLoad = !!hasNextPage
+  const allLoaded = loadedCount >= totalCount && totalCount > 0
+
+  return (
+    <div>
+      <PinnedHeader onPin={() => setPinDialogOpen(true)} count={pinned.length} />
+      {pinned.length > 0 && (
+        <VirtualisedPinnedList
+          pinned={pinned}
+          speaker={speaker}
+          onSelectPinned={onSelectPinned}
+          pickMode={pickMode}
+          selectedUri={selectedUri}
+        />
+      )}
+      {pinned.length === 0 && <SpotifyApiInfoNote />}
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-1 pt-1">
+        <p className="text-xs text-caption" aria-live="polite">
+          {totalCount > 0
+            ? `${loadedCount.toLocaleString()} of ${totalCount.toLocaleString()} ${totalCount === 1 ? 'playlist' : 'playlists'}`
+            : ''}
+        </p>
+        <PlaylistSortMenu sort={sort} onChange={setSort} />
+      </div>
+      {isPartialSort && hasMoreToLoad && (
+        <div className="mx-1 mb-2 rounded-lg border border-amber-400/30 bg-amber-400/5 px-3 py-2 text-xs text-caption">
+          Sorting {playlistSortLabel(sort)} only covers the {loadedCount.toLocaleString()} playlists loaded so far.{' '}
+          <button
+            type="button"
+            onClick={() => fetchNextPage()}
+            disabled={isFetchingNextPage}
+            className={cn(
+              'font-medium text-fairy-400 underline underline-offset-2 hover:text-fairy-300',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              'disabled:opacity-50',
+            )}
+          >
+            {isFetchingNextPage ? 'Loading…' : 'Load more'}
+          </button>
+        </div>
+      )}
+      <ul className="-mx-4">
+        {playlists.map(playlist => (
+          <PlaylistRow
+            key={playlist.id}
+            playlist={playlist}
+            speaker={speaker}
+            onSelect={onSelect}
+            isPinned={pinnedIdSet.has(playlist.id)}
+            pickMode={pickMode}
+            isSelected={selectedUri === playlist.uri}
+          />
+        ))}
+      </ul>
+      {hasMoreToLoad && (
+        <div ref={sentinelRef} className="flex items-center justify-center py-6" aria-hidden={!isFetchingNextPage}>
+          {isFetchingNextPage ? (
+            <div className="flex items-center gap-2 text-xs text-caption">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              <span>Loading more playlists…</span>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fetchNextPage()}
+              className={cn(
+                'rounded-lg bg-[var(--bg-secondary)] px-4 py-2 text-xs font-medium text-body',
+                'transition-colors hover:bg-[var(--bg-tertiary)]',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                'min-h-[36px]',
+              )}
+            >
+              Load more
+            </button>
+          )}
+        </div>
+      )}
+      {allLoaded && loadedCount > PLAYLIST_PAGE_SIZE && (
+        <p className="py-6 text-center text-xs text-caption/70">
+          All {totalCount.toLocaleString()} playlists loaded
+        </p>
+      )}
+      <PinSpotifyPlaylistDialog open={pinDialogOpen} onOpenChange={setPinDialogOpen} />
+    </div>
+  )
+}
+
+function PinnedHeader({ onPin, count }: { onPin: () => void; count: number }) {
+  return (
+    <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
+      <div className="flex items-center gap-1.5 text-xs font-medium text-heading">
+        <Pin className="h-3.5 w-3.5 text-fairy-400" aria-hidden="true" />
+        <span>
+          Pinned
+          {count > 0 && <span className="ml-1 text-caption/70">({count})</span>}
+        </span>
+      </div>
+      <button
+        type="button"
+        onClick={onPin}
+        className={cn(
+          'inline-flex items-center gap-1 rounded-lg bg-[var(--bg-secondary)] px-2.5 py-1.5',
+          'text-xs font-medium text-body transition-colors hover:bg-[var(--bg-tertiary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[32px]',
+        )}
+      >
+        <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+        <span>Pin playlist</span>
+      </button>
+    </div>
+  )
+}
+
+function SpotifyApiInfoNote() {
+  return (
+    <div className="mb-3 mx-1 rounded-lg border border-fairy-400/20 bg-fairy-400/5 px-3 py-2.5 text-xs text-caption">
+      <div className="flex items-start gap-2">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-fairy-400" aria-hidden="true" />
+        <p>
+          <span className="font-medium text-heading">Missing Discover Weekly or Release Radar?</span>{' '}
+          Spotify stopped letting third-party apps list their own playlists in 2024. Tap{' '}
+          <span className="font-medium">Pin playlist</span> and paste the share link — we'll still
+          play it on your speakers.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ── Album list ────────────────────────────────────────────────────────────────
+
+type AlbumSort = 'recent' | 'a-z' | 'country'
+
+function EnrichmentStatusBar() {
+  const { data: progress, refetch } = useQuery({
+    queryKey: ['enrichment-status'],
+    queryFn: () => api.spotify.getEnrichmentStatus(),
+    staleTime: 2_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 2_000 : false
+    },
+  })
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const enrich = useMutation({
+    mutationFn: () => api.spotify.enrichArtists(),
+    onSuccess: (data) => {
+      if (data.status === 'started') {
+        toast({ message: `Enriching ${data.total} artists...` })
+        refetch()
+      } else if (data.status === 'already_running') {
+        toast({ message: 'Enrichment already in progress' })
+      } else if (data.status === 'no_artists') {
+        toast({ message: 'No artists to enrich' })
+      }
+    },
+    onError: () => toast({ message: 'Failed to start enrichment', type: 'error' }),
+  })
+
+  const cancel = useMutation({
+    mutationFn: () => api.spotify.cancelEnrichment(),
+    onSuccess: () => {
+      toast({ message: 'Enrichment cancelled' })
+      refetch()
+      queryClient.invalidateQueries({ queryKey: ['spotify-enriched-albums'] })
+    },
+  })
+
+  const backfill = useMutation({
+    mutationFn: () => api.spotify.backfillImages(),
+    onSuccess: (data) => {
+      if (data.total_updated > 0) {
+        toast({ message: `Updated ${data.total_updated} artist images` })
+        queryClient.invalidateQueries({ queryKey: ['spotify-artist-countries'] })
+        queryClient.invalidateQueries({ queryKey: ['spotify-enriched-albums'] })
+        queryClient.invalidateQueries({ queryKey: ['spotify-artists'] })
+      } else {
+        toast({ message: 'All artist images are up to date' })
+      }
+    },
+    onError: () => toast({ message: 'Failed to fetch artwork', type: 'error' }),
+  })
+
+  const isRunning = progress?.status === 'running'
+  const pct = progress && progress.total > 0 ? Math.round((progress.processed / progress.total) * 100) : 0
+
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <button
+        type="button"
+        onClick={() => isRunning ? cancel.mutate() : enrich.mutate()}
+        disabled={enrich.isPending || cancel.isPending}
+        className={cn(
+          'flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[36px]',
+          isRunning
+            ? 'bg-amber-400/10 text-amber-300 hover:bg-amber-400/20'
+            : 'bg-[var(--bg-secondary)] text-caption hover:bg-[var(--bg-tertiary)] hover:text-body',
+        )}
+      >
+        {isRunning ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            {pct}% ({progress.resolved} resolved) — Cancel
+          </>
+        ) : (
+          <>
+            <Globe className="h-3.5 w-3.5" aria-hidden="true" />
+            Enrich countries
+          </>
+        )}
+      </button>
+      {progress?.status === 'complete' && progress.resolved > 0 && (
+        <span className="text-xs text-caption">
+          {progress.resolved} of {progress.total} resolved
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={() => backfill.mutate()}
+        disabled={backfill.isPending || isRunning}
+        className={cn(
+          'flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium transition-colors',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[36px]',
+          'bg-[var(--bg-secondary)] text-caption hover:bg-[var(--bg-tertiary)] hover:text-body',
+          backfill.isPending && 'opacity-50',
+        )}
+      >
+        {backfill.isPending ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            Fetching artwork...
+          </>
+        ) : (
+          <>
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+            Fetch artwork
+          </>
+        )}
+      </button>
+    </div>
+  )
+}
+
+function groupAlbumsByCountry(
+  items: EnrichedAlbumItem[],
+): Array<{ country: string; countryCode: string | null; albums: EnrichedAlbumItem[] }> {
+  const groups = new Map<string, EnrichedAlbumItem[]>()
+
+  for (const item of items) {
+    // Use the first artist's country (primary artist)
+    const primaryCountry = item.artist_countries?.[0]
+    const cc = primaryCountry?.country_code
+    const hasValidCode = typeof cc === 'string' && /^[A-Z]{2}$/.test(cc)
+    const key = hasValidCode ? (primaryCountry?.country_name ?? cc!) : 'Not Known'
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(item)
+  }
+
+  // Sort groups: known countries alphabetically, "Not Known" last
+  const sorted = Array.from(groups.entries())
+    .map(([country, albums]) => ({
+      country,
+      countryCode: albums[0]?.artist_countries?.[0]?.country_code ?? null,
+      albums,
+    }))
+    .sort((a, b) => {
+      if (a.country === 'Not Known') return 1
+      if (b.country === 'Not Known') return -1
+      return a.country.localeCompare(b.country, undefined, { sensitivity: 'base' })
+    })
+
+  return sorted
+}
+
+function AlbumList({ onSelect, speaker, pickMode = false, selectedUri }: { onSelect: (album: SpotifyAlbum) => void; speaker: string | null; pickMode?: boolean; selectedUri?: string }) {
+  const [sort, setSort] = useState<AlbumSort>('recent')
+  const [collapsedCountries, setCollapsedCountries] = useState<Set<string>>(new Set())
+  const queryClient = useQueryClient()
+
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['spotify-enriched-albums'],
+    queryFn: () => api.spotify.getEnrichedAlbums(),
+    staleTime: 5 * 60_000,
+  })
+
+  // Refresh enriched data when enrichment completes
+  const { data: enrichStatus } = useQuery({
+    queryKey: ['enrichment-status'],
+    queryFn: () => api.spotify.getEnrichmentStatus(),
+    staleTime: 5_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 3_000 : false
+    },
+  })
+
+  // When enrichment transitions to complete, invalidate albums
+  const prevStatus = useRef(enrichStatus?.status)
+  useEffect(() => {
+    if (prevStatus.current === 'running' && enrichStatus?.status === 'complete') {
+      queryClient.invalidateQueries({ queryKey: ['spotify-enriched-albums'] })
+    }
+    prevStatus.current = enrichStatus?.status
+  }, [enrichStatus?.status, queryClient])
+
+  if (isLoading) return <ListSkeleton />
+
+  if (isError) {
+    return (
+      <ErrorState
+        title="Could not load albums"
+        message={(error as Error).message ?? 'Failed to load your saved albums. Try again.'}
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  const items = data?.items ?? []
+
+  if (items.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <Disc3 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+        <div>
+          <p className="text-sm font-medium text-heading">No saved albums</p>
+          <p className="mt-1 max-w-xs text-xs text-caption">
+            Save albums in Spotify to browse them here.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  const toggleCountry = (country: string) => {
+    setCollapsedCountries(prev => {
+      const next = new Set(prev)
+      if (next.has(country)) next.delete(country)
+      else next.add(country)
+      return next
+    })
+  }
+
+  // Sort albums
+  const sortedItems = [...items]
+  if (sort === 'a-z') {
+    sortedItems.sort((a, b) => a.album.name.localeCompare(b.album.name, undefined, { sensitivity: 'base' }))
+  }
+
+  const hasCountryData = items.some(item =>
+    item.artist_countries?.some(ac => ac.country_code !== null),
+  )
+
+  return (
+    <div>
+      {/* Sort + enrichment controls */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {([
+          { value: 'recent' as const, label: 'Recent', icon: Clock },
+          { value: 'a-z' as const, label: 'A – Z', icon: ArrowDownAZ },
+          ...(hasCountryData ? [{ value: 'country' as const, label: 'Country', icon: MapPin }] : []),
+        ]).map(opt => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setSort(opt.value)}
+            className={cn(
+              'flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors',
+              'min-h-[32px]',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+              sort === opt.value
+                ? 'bg-fairy-500 text-white'
+                : 'bg-[var(--bg-secondary)] text-caption hover:text-body',
+            )}
+          >
+            <opt.icon className="h-3.5 w-3.5" aria-hidden="true" />
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      <EnrichmentStatusBar />
+
+      {sort === 'country' ? (
+        // Grouped by country
+        <div className="-mx-4">
+          {groupAlbumsByCountry(sortedItems).map(group => {
+            const isCollapsed = collapsedCountries.has(group.country)
+            return (
+              <div key={group.country}>
+                <button
+                  type="button"
+                  onClick={() => toggleCountry(group.country)}
+                  className={cn(
+                    'flex w-full items-center gap-2 px-4 py-2.5 text-left',
+                    'bg-[var(--bg-secondary)] transition-colors hover:bg-[var(--bg-tertiary)]',
+                    'min-h-[40px]',
+                  )}
+                  aria-expanded={!isCollapsed}
+                >
+                  <MapPin className="h-4 w-4 shrink-0 text-fairy-500" aria-hidden="true" />
+                  <span className="flex-1 text-sm font-semibold text-heading">
+                    {group.country}
+                  </span>
+                  <span className="text-xs text-caption">{group.albums.length}</span>
+                  <ChevronDown
+                    className={cn('h-4 w-4 text-caption/50 transition-transform', isCollapsed && '-rotate-90')}
+                    aria-hidden="true"
+                  />
+                </button>
+                {!isCollapsed && (
+                  <ul>
+                    {group.albums.map(item => (
+                      <AlbumRow key={item.album.id} item={item} onSelect={onSelect} showCountry={false} speaker={speaker} pickMode={pickMode} isSelected={selectedUri === item.album.uri} />
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      ) : (
+        // Flat list
+        <ul className="-mx-4">
+          {sortedItems.map(item => (
+            <AlbumRow key={item.album.id} item={item} onSelect={onSelect} showCountry={hasCountryData} speaker={speaker} pickMode={pickMode} isSelected={selectedUri === item.album.uri} />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function AlbumRow({
+  item,
+  onSelect,
+  showCountry,
+  speaker,
+  pickMode = false,
+  isSelected = false,
+}: {
+  item: EnrichedAlbumItem
+  onSelect: (album: SpotifyAlbum) => void
+  showCountry: boolean
+  speaker: string | null
+  pickMode?: boolean
+  isSelected?: boolean
+}) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+  const country = item.artist_countries?.[0]
+  const countryLabel = country?.country_code ?? null
+
+  const artistNames = item.album.artists.map(a => a.name).join(', ')
+  const songCount = item.album.total_tracks
+  const subtitleParts = [artistNames, `${songCount} ${songCount === 1 ? 'song' : 'songs'}`]
+  if (showCountry && countryLabel) subtitleParts.push(countryLabel)
+  const subtitle = subtitleParts.join(' · ')
+
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, item.album.uri, 'now'),
+    onSuccess: () => toast({ message: `Playing "${item.album.name}"` }),
+    onError: () => toast({ message: 'Failed to play album', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, item.album.uri, 'next'),
+    onSuccess: () => {
+      toast({ message: `"${item.album.name}" will play next` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, item.album.uri, 'queue'),
+    onSuccess: () => {
+      toast({ message: `Added "${item.album.name}" to queue` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  return (
+    <MusicListItem
+      artwork={{ images: item.album.images, size: 48 }}
+      title={item.album.name}
+      subtitle={subtitle}
+      onTap={() => onSelect(item.album)}
+      pickMode={pickMode}
+      isCurrentTrack={isSelected}
+      isPlaying={false}
+      {...(!pickMode && {
+        onPlay: () => playNow.mutate(),
+        playPending: playNow.isPending,
+        disabled: !speaker,
+        menuProps: {
+          label: item.album.name,
+          onPlayNext: () => playNext.mutate(),
+          onAddToQueue: () => addToQueue.mutate(),
+          fairylistTrack: {
+            source: 'spotify',
+            source_uri: item.album.uri,
+            title: item.album.name,
+            artist: artistNames,
+            album_art_uri: item.album.images?.[0]?.url,
+          },
+        },
+      })}
+    />
+  )
+}
+
+// ── Show (podcast) list ───────────────────────────────────────────────────────
+
+function ShowRow({
+  show,
+  speaker,
+  onSelect,
+  pickMode = false,
+  isSelected = false,
+}: {
+  show: SpotifyShow
+  speaker: string | null
+  onSelect: (show: SpotifyShow) => void
+  pickMode?: boolean
+  isSelected?: boolean
+}) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, show.uri, 'now'),
+    onSuccess: () => toast({ message: `Playing "${show.name}"` }),
+    onError: () => toast({ message: 'Failed to play podcast', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, show.uri, 'next'),
+    onSuccess: () => {
+      toast({ message: `"${show.name}" will play next` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, show.uri, 'queue'),
+    onSuccess: () => {
+      toast({ message: `Added "${show.name}" to queue` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const subtitleParts = [show.publisher]
+  if (show.total_episodes > 0) {
+    subtitleParts.push(`${show.total_episodes} ${show.total_episodes === 1 ? 'episode' : 'episodes'}`)
+  }
+  const subtitle = subtitleParts.join(' · ')
+
+  return (
+    <MusicListItem
+      artwork={{ images: show.images, size: 48 }}
+      title={show.name}
+      subtitle={subtitle}
+      onTap={() => onSelect(show)}
+      pickMode={pickMode}
+      isCurrentTrack={isSelected}
+      isPlaying={false}
+      {...(!pickMode && {
+        onPlay: () => playNow.mutate(),
+        playPending: playNow.isPending,
+        disabled: !speaker,
+        menuProps: {
+          label: show.name,
+          onPlayNext: () => playNext.mutate(),
+          onAddToQueue: () => addToQueue.mutate(),
+          fairylistTrack: {
+            source: 'spotify',
+            source_uri: show.uri,
+            title: show.name,
+            album_art_uri: show.images?.[0]?.url,
+          },
+        },
+      })}
+    />
+  )
+}
+
+function ShowList({
+  onSelect,
+  speaker,
+  pickMode = false,
+  selectedUri,
+}: {
+  onSelect: (show: SpotifyShow) => void
+  speaker: string | null
+  pickMode?: boolean
+  selectedUri?: string
+}) {
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['spotify-saved-shows'],
+    queryFn: () => api.spotify.getSavedShows(),
+    staleTime: 5 * 60_000,
+  })
+
+  if (isLoading) return <ListSkeleton />
+
+  if (isError) {
+    return (
+      <ErrorState
+        title="Could not load podcasts"
+        message={(error as Error).message ?? 'Failed to load your saved podcasts. Try again.'}
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  const shows = (data?.items ?? [])
+    .map(item => item.show)
+    .filter((s): s is SpotifyShow => s !== null && s !== undefined)
+
+  if (shows.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <Mic2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+        <div>
+          <p className="text-sm font-medium text-heading">No saved podcasts</p>
+          <p className="mt-1 max-w-xs text-xs text-caption">
+            Follow podcasts in Spotify to browse them here.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <ul className="-mx-4">
+      {shows.map(show => (
+        <ShowRow key={show.id} show={show} speaker={speaker} onSelect={onSelect} pickMode={pickMode} isSelected={selectedUri === show.uri} />
+      ))}
+    </ul>
+  )
+}
+
+// ── Songs (liked tracks) ──────────────────────────────────────────────────────
+
+function SongsList({ speaker }: { speaker: string | null }) {
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['spotify-saved-tracks'],
+    queryFn: () => api.spotify.getSavedTracks(),
+    staleTime: 5 * 60_000,
+  })
+
+  if (isLoading) return <TrackListSkeleton />
+
+  if (isError) {
+    return (
+      <ErrorState
+        title="Could not load liked songs"
+        message={(error as Error).message ?? 'Failed to load your liked songs. Try again.'}
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  const tracks = (data?.items ?? []).map(item => item.track).filter((t): t is SpotifyTrack => t !== null)
+
+  if (tracks.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+        <div>
+          <p className="text-sm font-medium text-heading">No liked songs</p>
+          <p className="mt-1 max-w-xs text-xs text-caption">
+            Like songs in Spotify to find them here.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <ul className="-mx-4">
+      {tracks.map((track, i) => (
+        <SpotifyTrackRow key={track.id + ':' + i} track={track} speaker={speaker} />
+      ))}
+    </ul>
+  )
+}
+
+// ── Artist list ───────────────────────────────────────────────────────────────
+
+function ArtistList({ onSelect }: { onSelect: (artist: SpotifyArtist) => void }) {
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['spotify-artists'],
+    queryFn: () => api.spotify.getArtists(),
+    staleTime: 5 * 60_000,
+  })
+
+  if (isLoading) return <ListSkeleton />
+
+  if (isError) {
+    return (
+      <ErrorState
+        title="Could not load artists"
+        message={(error as Error).message ?? 'Failed to load your artists. Try again.'}
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  const artists = data?.items ?? []
+
+  return (
+    <div>
+      {data?.scope_warning && (
+        <div className="mb-4 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm text-amber-300">
+          <p className="font-medium">Limited results</p>
+          <p className="mt-0.5 text-xs">{data.scope_warning} Go to Settings to reconnect Spotify.</p>
+        </div>
+      )}
+      {artists.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+          <Mic2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+          <div>
+            <p className="text-sm font-medium text-heading">No artists found</p>
+            <p className="mt-1 max-w-xs text-xs text-caption">
+              Follow artists or listen to music in Spotify to see them here.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <ul className="-mx-4">
+          {artists.map(artist => (
+            <li key={artist.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(artist)}
+                className={cn(
+                  'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+                  'transition-colors hover:bg-[var(--bg-secondary)]',
+                  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                  'min-h-[44px]',
+                )}
+              >
+                <ArtworkImage images={artist.images} size={48} rounded="rounded-full" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
+                  <p className="truncate text-xs text-caption">
+                    {artist.followers !== undefined && `${artist.followers.total.toLocaleString()} followers`}
+                    {artist.genres.length > 0 && ` · ${artist.genres[0]}`}
+                  </p>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ── Search result helpers ─────────────────────────────────────────────────────
+
+type SpotifySearchAlbum = {
+  id: string
+  name: string
+  images: Array<{ url: string; height: number | null; width: number | null }>
+  artists: Array<{ id: string; name: string }>
+  uri: string
+  external_urls: { spotify: string }
+}
+
+type SpotifySearchArtistItem = {
+  id: string
+  name: string
+  images: Array<{ url: string; height: number | null; width: number | null }>
+  genres: string[]
+  uri: string
+  external_urls: { spotify: string }
+}
+
+function SearchPlaylistRow({
+  playlist,
+  speaker,
+  isPinned,
+}: {
+  playlist: SpotifyPlaylist
+  speaker: string | null
+  isPinned: boolean
+}) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'now'),
+    onSuccess: () => toast({ message: `Playing "${playlist.name}"` }),
+    onError: () => toast({ message: 'Failed to play playlist', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'next'),
+    onSuccess: () => {
+      toast({ message: `"${playlist.name}" will play next` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, playlist.uri, 'queue'),
+    onSuccess: () => {
+      toast({ message: `Added "${playlist.name}" to queue` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const pinPlaylist = useMutation({
+    mutationFn: () => api.spotify.pinPlaylist(playlist.uri),
+    onSuccess: () => {
+      toast({ message: `Pinned "${playlist.name}"` })
+      queryClient.invalidateQueries({ queryKey: ['spotify-pinned'] })
+    },
+    onError: (err: Error) =>
+      toast({ message: err.message || 'Failed to pin playlist', type: 'error' }),
+  })
+
+  const songCount = playlist.tracks.total
+  const ownerName = playlist.owner?.display_name?.trim() || 'Unknown'
+  const subtitle = `${songCount} ${songCount === 1 ? 'song' : 'songs'} · ${ownerName}`
+
+  return (
+    <MusicListItem
+      artwork={{ images: playlist.images, size: 40 }}
+      title={playlist.name}
+      subtitle={subtitle}
+      onTap={() => playNow.mutate()}
+      onPlay={() => playNow.mutate()}
+      playPending={playNow.isPending}
+      disabled={!speaker}
+      badge={isPinned ? <PinnedBadge /> : undefined}
+      menuProps={{
+        label: playlist.name,
+        onPin: isPinned ? undefined : () => pinPlaylist.mutate(),
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
+        fairylistTrack: {
+          source: 'spotify',
+          source_uri: playlist.uri,
+          title: playlist.name,
+          album_art_uri: playlist.images?.[0]?.url,
+        },
+      }}
+    />
+  )
+}
+
+function SearchAlbumRow({
+  album,
+  speaker,
+}: {
+  album: SpotifySearchAlbum
+  speaker: string | null
+}) {
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
+
+  const playNow = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'now'),
+    onSuccess: () => toast({ message: `Playing "${album.name}"` }),
+    onError: () => toast({ message: 'Failed to play album', type: 'error' }),
+  })
+
+  const playNext = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'next'),
+    onSuccess: () => {
+      toast({ message: `"${album.name}" will play next` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to play next', type: 'error' }),
+  })
+
+  const addToQueue = useMutation({
+    mutationFn: () => api.sonos.playSpotify(speaker!, album.uri, 'queue'),
+    onSuccess: () => {
+      toast({ message: `Added "${album.name}" to queue` })
+      invalidateQueue(queryClient, speaker)
+    },
+    onError: () => toast({ message: 'Failed to add to queue', type: 'error' }),
+  })
+
+  const artistNames = album.artists.map(a => a.name).join(', ')
+
+  return (
+    <MusicListItem
+      artwork={{ images: album.images, size: 40 }}
+      title={album.name}
+      subtitle={artistNames}
+      onTap={() => playNow.mutate()}
+      onPlay={() => playNow.mutate()}
+      playPending={playNow.isPending}
+      disabled={!speaker}
+      menuProps={{
+        label: album.name,
+        onPlayNext: () => playNext.mutate(),
+        onAddToQueue: () => addToQueue.mutate(),
+        fairylistTrack: {
+          source: 'spotify',
+          source_uri: album.uri,
+          title: album.name,
+          artist: artistNames,
+          album_art_uri: album.images?.[0]?.url,
+        },
+      }}
+    />
+  )
+}
+
+function SearchArtistRow({
+  artist,
+  onSelect,
+}: {
+  artist: SpotifySearchArtistItem
+  onSelect: (artist: SpotifyArtist) => void
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() => onSelect(artist as SpotifyArtist)}
+        className={cn(
+          'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+          'transition-colors hover:bg-[var(--bg-secondary)]',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+          'min-h-[44px]',
+        )}
+      >
+        <ArtworkImage images={artist.images} size={40} rounded="rounded-full" fallback="user" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
+          {artist.genres.length > 0 && (
+            <p className="truncate text-xs text-caption">
+              {artist.genres.slice(0, 2).join(', ')}
+            </p>
+          )}
+        </div>
+        <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+      </button>
+    </li>
+  )
+}
+
+// ── Spotify search results ────────────────────────────────────────────────────
+
+function SpotifySearchResults({
+  query,
+  speaker,
+  onSelectArtist,
+}: {
+  query: string
+  speaker: string | null
+  onSelectArtist: (artist: SpotifyArtist) => void
+}) {
+  const [artistsOpen, setArtistsOpen] = useState(true)
+  const [tracksOpen, setTracksOpen] = useState(true)
+  const [albumsOpen, setAlbumsOpen] = useState(true)
+  const [playlistsOpen, setPlaylistsOpen] = useState(true)
+
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['spotify-search', query],
+    queryFn: () => api.spotify.search(query),
+    staleTime: 60_000,
+    enabled: query.length > 0,
+  })
+
+  const { data: pinnedData } = useQuery({
+    queryKey: ['spotify-pinned'],
+    queryFn: () => api.spotify.getPinnedPlaylists(),
+    staleTime: 5 * 60_000,
+  })
+  const pinnedIdSet = useMemo(
+    () => new Set((pinnedData ?? []).map(p => p.playlist_id)),
+    [pinnedData],
+  )
+
+  if (isLoading) return <TrackListSkeleton />
+
+  if (isError) {
+    return (
+      <ErrorState
+        message={(error as Error).message ?? 'Search failed'}
+        onRetry={() => refetch()}
+      />
+    )
+  }
+
+  const trackItems = (data?.tracks?.items ?? []).filter((t): t is SpotifyTrack => t !== null)
+  const playlistItems = (data?.playlists?.items ?? []).filter((p): p is SpotifyPlaylist => p !== null)
+  const albumItems = (data?.albums?.items ?? []).filter((a): a is SpotifySearchAlbum => a !== null)
+  const artistItems = (data?.artists?.items ?? []).filter((a): a is SpotifySearchArtistItem => a !== null)
+  const totalResults = trackItems.length + playlistItems.length + albumItems.length + artistItems.length
+
+  if (totalResults === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-16 text-center">
+        <Music2 className="h-10 w-10 text-caption/40" aria-hidden="true" />
+        <div>
+          <p className="text-sm font-medium text-heading">No results for "{query}"</p>
+          <p className="mt-1 text-xs text-caption">Try a different search term</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {artistItems.length > 0 && (
+        <Accordion
+          id="spotify-search-artists"
+          title="Artists"
+          open={artistsOpen}
+          onToggle={() => setArtistsOpen(v => !v)}
+          count={artistItems.length}
+          card={false}
+        >
+          <ul className="-mx-4">
+            {artistItems.map(artist => (
+              <SearchArtistRow key={artist.id} artist={artist} onSelect={onSelectArtist} />
+            ))}
+          </ul>
+        </Accordion>
+      )}
+      {trackItems.length > 0 && (
+        <Accordion
+          id="spotify-search-tracks"
+          title="Tracks"
+          open={tracksOpen}
+          onToggle={() => setTracksOpen(v => !v)}
+          count={trackItems.length}
+          card={false}
+        >
+          <ul className="-mx-4">
+            {trackItems.map((track, i) => (
+              <SpotifyTrackRow key={track.id + ':track:' + i} track={track} speaker={speaker} />
+            ))}
+          </ul>
+        </Accordion>
+      )}
+      {albumItems.length > 0 && (
+        <Accordion
+          id="spotify-search-albums"
+          title="Albums"
+          open={albumsOpen}
+          onToggle={() => setAlbumsOpen(v => !v)}
+          count={albumItems.length}
+          card={false}
+        >
+          <ul className="-mx-4">
+            {albumItems.map((album, i) => (
+              <SearchAlbumRow key={album.id + ':album:' + i} album={album} speaker={speaker} />
+            ))}
+          </ul>
+        </Accordion>
+      )}
+      {playlistItems.length > 0 && (
+        <Accordion
+          id="spotify-search-playlists"
+          title="Playlists"
+          open={playlistsOpen}
+          onToggle={() => setPlaylistsOpen(v => !v)}
+          count={playlistItems.length}
+          card={false}
+        >
+          <ul className="-mx-4">
+            {playlistItems.map(pl => (
+              <SearchPlaylistRow
+                key={pl.id}
+                playlist={pl}
+                speaker={speaker}
+                isPinned={pinnedIdSet.has(pl.id)}
+              />
+            ))}
+          </ul>
+        </Accordion>
+      )}
+    </div>
+  )
+}
+
+// ── SpotifyCountryList ────────────────────────────────────────────────────────
+
+function SpotifyCountryList({
+  onSelectCountry,
+}: {
+  onSelectCountry: (code: string, name: string) => void
+}) {
+  const queryClient = useQueryClient()
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['spotify-artist-countries'],
+    queryFn: () => api.spotify.getArtistCountries(),
+    staleTime: 5 * 60_000,
+  })
+
+  const { data: enrichStatus } = useQuery({
+    queryKey: ['enrichment-status'],
+    queryFn: () => api.spotify.getEnrichmentStatus(),
+    staleTime: 5_000,
+    refetchInterval: (query) => {
+      const d = query.state.data as EnrichmentProgress | undefined
+      return d?.status === 'running' ? 3_000 : false
+    },
+  })
+
+  const prevStatus = useRef(enrichStatus?.status)
+  useEffect(() => {
+    if (prevStatus.current === 'running' && enrichStatus?.status === 'complete') {
+      queryClient.invalidateQueries({ queryKey: ['spotify-artist-countries'] })
+    }
+    prevStatus.current = enrichStatus?.status
+  }, [enrichStatus?.status, queryClient])
+
+  const artists: CountryArtistItem[] = (data?.items ?? []).map(a => ({
+    id: a.spotify_artist_id,
+    name: a.artist_name,
+    country_code: a.country_code,
+    country_name: a.country_name,
+    sub_region: a.sub_region,
+    image_url: a.image_url,
+  }))
+
+  return (
+    <CountryList
+      artists={artists}
+      isLoading={isLoading}
+      isError={isError}
+      error={error as Error | null}
+      onRetry={() => refetch()}
+      onSelectCountry={onSelectCountry}
+      enrichmentStatusBar={<EnrichmentStatusBar />}
+    />
+  )
+}
+
+// ── SpotifyCountryArtistList ──────────────────────────────────────────────────
+
+function SpotifyCountryArtistList({
+  countryCode,
+  countryName,
+  onSelectArtist,
+  onBack,
+}: {
+  countryCode: string
+  countryName: string
+  onSelectArtist: (artist: SpotifyArtist) => void
+  onBack: () => void
+}) {
+  const { data: countryData, isLoading: countryLoading, isError: countryIsError, error: countryError, refetch: refetchCountry } = useQuery({
+    queryKey: ['spotify-artist-countries'],
+    queryFn: () => api.spotify.getArtistCountries(),
+    staleTime: 5 * 60_000,
+  })
+
+  const { data: artistsData } = useQuery({
+    queryKey: ['spotify-artists'],
+    queryFn: () => api.spotify.getArtists(),
+    staleTime: 5 * 60_000,
+  })
+
+  const artists: CountryArtistItem[] = (countryData?.items ?? []).map(a => ({
+    id: a.spotify_artist_id,
+    name: a.artist_name,
+    country_code: a.country_code,
+    country_name: a.country_name,
+    sub_region: a.sub_region,
+    image_url: a.image_url,
+  }))
+
+  // Build a lookup of Spotify artist objects for rich rendering
+  const spotifyArtistMap = new Map<string, SpotifyArtist>()
+  for (const a of artistsData?.items ?? []) {
+    spotifyArtistMap.set(a.id, a)
+    spotifyArtistMap.set(a.name.toLowerCase(), a)
+  }
+
+  return (
+    <CountryArtistList
+      countryCode={countryCode}
+      countryName={countryName}
+      artists={artists}
+      isLoading={countryLoading}
+      isError={countryIsError}
+      error={countryError as Error | null}
+      onRetry={() => refetchCountry()}
+      onBack={onBack}
+      renderArtistRow={(artist) => {
+        const spotifyArtist = spotifyArtistMap.get(artist.id) ?? spotifyArtistMap.get(artist.name.toLowerCase())
+        const artistForNav: SpotifyArtist = spotifyArtist ?? {
+          id: artist.id,
+          name: artist.name,
+          images: artist.image_url ? [{ url: artist.image_url, height: null, width: null }] : [],
+          genres: [],
+          uri: `spotify:artist:${artist.id}`,
+          external_urls: { spotify: `https://open.spotify.com/artist/${artist.id}` },
+        }
+        return (
+          <li key={artist.id}>
+            <button
+              type="button"
+              onClick={() => onSelectArtist(artistForNav)}
+              className={cn(
+                'flex w-full items-center gap-3 px-4 py-2.5 text-left',
+                'transition-colors hover:bg-[var(--bg-secondary)]',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+                'min-h-[44px]',
+              )}
+            >
+              <ArtworkImage
+                src={artist.image_url}
+                images={!artist.image_url ? spotifyArtist?.images : undefined}
+                size={48}
+                rounded="rounded-full"
+                fallback="user"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-heading">{artist.name}</p>
+                {spotifyArtist && (
+                  <p className="truncate text-xs text-caption">
+                    {spotifyArtist.followers !== undefined && `${spotifyArtist.followers.total.toLocaleString()} followers`}
+                    {spotifyArtist.genres.length > 0 && ` · ${spotifyArtist.genres[0]}`}
+                  </p>
+                )}
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-caption/40" aria-hidden="true" />
+            </button>
+          </li>
+        )
+      }}
+    />
+  )
+}
+
+// ── Pick-mode artist album drill-down ─────────────────────────────────────────
+
+function PickArtistAlbums({
+  artist,
+  onBack,
+  onPick,
+  selectedUri,
+}: {
+  artist: SpotifyArtist
+  onBack: () => void
+  onPick: (title: string, uri: string) => void
+  selectedUri?: string
+}) {
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['spotify-artist-albums-pick', artist.id],
+    queryFn: () => api.spotify.getArtistAlbums(artist.id),
+    staleTime: 5 * 60_000,
+  })
+
+  const albums = data?.items ?? []
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={onBack}
+        className={cn(
+          'flex items-center gap-1.5 rounded-lg px-1 text-sm text-caption transition-colors',
+          'min-h-[44px] hover:text-body',
+          'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fairy-500',
+        )}
+      >
+        <ChevronDown className="h-4 w-4 -rotate-90" aria-hidden="true" />
+        {artist.name}
+      </button>
+
+      {isLoading && <ListSkeleton count={5} />}
+      {isError && (
+        <ErrorState
+          message={(error as Error).message ?? 'Could not load albums'}
+          onRetry={() => refetch()}
+        />
+      )}
+      {!isLoading && !isError && albums.length === 0 && (
+        <p className="px-4 py-6 text-center text-sm text-caption">No albums found</p>
+      )}
+      {albums.length > 0 && (
+        <ul className="-mx-4">
+          {albums.map(album => (
+            <MusicListItem
+              key={album.id}
+              artwork={{ images: album.images, size: 48 }}
+              title={album.name}
+              subtitle={album.artists.map(a => a.name).join(', ')}
+              onTap={() => onPick(album.name, album.uri)}
+              pickMode
+              isCurrentTrack={selectedUri === album.uri}
+              isPlaying={false}
+            />
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+// ── SpotifyBrowseView ─────────────────────────────────────────────────────────
+
+interface SpotifyBrowseViewProps {
+  searchQuery: string
+  targetSpeaker?: string | null
+  onPickPlaylist?: (title: string, uri: string) => void
+  onPickAlbum?: (title: string, uri: string) => void
+  onPickShow?: (title: string, uri: string) => void
+  onPickArtist?: (title: string, uri: string) => void
+  selectedUri?: string
+}
+
+export function SpotifyBrowseView({ searchQuery, targetSpeaker, onPickPlaylist, onPickAlbum, onPickShow, onPickArtist, selectedUri }: SpotifyBrowseViewProps) {
+  const [view, setView] = useState<SpotifyView>('home')
+  const [browseMode, setBrowseMode] = usePersistedState<BrowseMode>('spotify-browse-mode', 'playlists')
+  const [selectedCountry, setSelectedCountry] = useState<{ code: string; name: string } | null>(null)
+  const [drillArtist, setDrillArtist] = useState<SpotifyArtist | null>(null)
+
+  const inPickMode = !!(onPickPlaylist || onPickAlbum || onPickShow || onPickArtist)
+
+  const { selectedSpeaker } = usePlaybackState()
+  const speaker = targetSpeaker ?? selectedSpeaker
+  const navigate = useNavigate()
+  const speakerQuery = speaker ? `?speaker=${encodeURIComponent(speaker)}` : ''
+
+  const debouncedQuery = useDebounce(searchQuery.trim(), 300)
+  const isSearching = debouncedQuery.length > 0
+
+  const {
+    data: statusData,
+    isLoading: statusLoading,
+    isError: statusIsError,
+    refetch: refetchStatus,
+  } = useQuery({
+    queryKey: ['spotify-status'],
+    queryFn: api.spotify.getStatus,
+    staleTime: 30_000,
+    retry: 1,
+  })
+
+  function handleSelectPlaylist(playlist: SpotifyPlaylist) {
+    if (onPickPlaylist) { onPickPlaylist(playlist.name, playlist.uri); return }
+    navigate(`/sonos/browse/spotify/playlist/${encodeURIComponent(playlist.id)}${speakerQuery}`)
+  }
+
+  function handleSelectPinned(pinned: SpotifyPinnedPlaylist) {
+    if (onPickPlaylist) { onPickPlaylist(pinned.name, pinned.uri); return }
+    navigate(`/sonos/browse/spotify/playlist/${encodeURIComponent(pinned.playlist_id)}${speakerQuery}`)
+  }
+
+  function handleSelectAlbum(album: SpotifyAlbum) {
+    if (onPickAlbum) { onPickAlbum(album.name, album.uri); return }
+    navigate(`/sonos/browse/spotify/album/${encodeURIComponent(album.id)}${speakerQuery}`)
+  }
+
+  function handleSelectShow(show: SpotifyShow) {
+    if (onPickShow) { onPickShow(show.name, show.uri); return }
+    navigate(`/sonos/browse/spotify/show/${encodeURIComponent(show.id)}${speakerQuery}`)
+  }
+
+  function handleSelectArtist(artist: SpotifyArtist) {
+    if (inPickMode) { setDrillArtist(artist); return }
+    navigate(`/sonos/browse/spotify/artist/${encodeURIComponent(artist.id)}${speakerQuery}`)
+  }
+
+  function handleSelectCountry(code: string, name: string) {
+    setSelectedCountry({ code, name })
+    setView('country-artists')
+  }
+
+  function handleBack() {
+    if (view === 'country-artists') {
+      setView('home')
+      setSelectedCountry(null)
+    }
+  }
+
+  if (statusLoading) {
+    return <ListSkeleton />
+  }
+
+  if (statusIsError) {
+    return (
+      <ErrorState
+        title="Spotify unavailable"
+        message="Could not reach Spotify. Check your internet connection and try again."
+        onRetry={() => refetchStatus()}
+      />
+    )
+  }
+
+  if (!statusData?.connected) {
+    return <ConnectSpotifyPrompt configured={statusData?.configured ?? false} />
+  }
+
+  if (isSearching) {
+    return (
+      <SpotifySearchResults
+        query={debouncedQuery}
+        speaker={speaker}
+        onSelectArtist={handleSelectArtist}
+      />
+    )
+  }
+
+  if (drillArtist && inPickMode && onPickAlbum) {
+    return (
+      <PickArtistAlbums
+        artist={drillArtist}
+        onBack={() => setDrillArtist(null)}
+        onPick={onPickAlbum}
+        selectedUri={selectedUri}
+      />
+    )
+  }
+
+  if (view === 'country-artists' && selectedCountry) {
+    return (
+      <SpotifyCountryArtistList
+        countryCode={selectedCountry.code}
+        countryName={selectedCountry.name}
+        onSelectArtist={handleSelectArtist}
+        onBack={handleBack}
+      />
+    )
+  }
+
+  return (
+    <div>
+      <BrowseModeTabs mode={browseMode} onChangeMode={m => { setBrowseMode(m); setView('home') }} />
+      {browseMode === 'playlists' && (
+        <PlaylistList
+          onSelect={handleSelectPlaylist}
+          onSelectPinned={handleSelectPinned}
+          speaker={speaker}
+          pickMode={!!onPickPlaylist}
+          selectedUri={selectedUri}
+        />
+      )}
+      {browseMode === 'countries' && <SpotifyCountryList onSelectCountry={handleSelectCountry} />}
+      {browseMode === 'podcasts' && <ShowList onSelect={handleSelectShow} speaker={speaker} pickMode={!!onPickShow} selectedUri={selectedUri} />}
+      {browseMode === 'albums' && <AlbumList onSelect={handleSelectAlbum} speaker={speaker} pickMode={!!onPickAlbum} selectedUri={selectedUri} />}
+      {browseMode === 'artists' && <ArtistList onSelect={handleSelectArtist} />}
+      {browseMode === 'songs' && <SongsList speaker={speaker} />}
+    </div>
+  )
+}

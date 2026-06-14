@@ -468,11 +468,119 @@
 ## PR #77 — Unified loading skeletons across the entire app
 - **Branch**: feature/unified-loading-skeletons → dev
 - **Created**: 2026-03-28
-- **Status**: open
-- **Summary**: Created shared Skeleton.tsx component library (8 primitives). Replaced 60+ ad-hoc skeleton implementations across 22 files with consistent, layout-matched loading states. Eliminates layout jumps on page load.
-- **Files**: 23 files changed (1 new, 22 modified) — Skeleton.tsx (new), 15 pages, 7 components
+- **Status**: merged
+- **Merge date**: 2026-03-28
+- **Branch cleanup**: done
+- **Summary**: Shared Skeleton.tsx component library (8 primitives). Replaced 60+ ad-hoc skeletons across 25 files. Eager homepage import, per-section async skeletons, replaced PageLoader spinner.
+- **Files**: 25 files changed (1 new, 24 modified) — Skeleton.tsx (new), 16 pages, 7 components, App.tsx
+
+## PR #78 — Room ordering fix, drag-and-drop reorder, homepage section editor
+- **Branch**: feature/room-ordering-and-reorder-ui → dev
+- **Created**: 2026-03-28
+- **Status**: merged
+- **Merge date**: 2026-03-28
+- **Branch cleanup**: done
+- **Summary**: Fix ScenesPage room ordering. Bulk reorder API. Room drag-and-drop reorder overlay. Homepage section editor (reorder + show/hide sections). Shared SortableOverlay component. Mobile header reordered (mode pill, bell, settings). Theme-aware overlay colours. iOS touch fix.
+- **Files**: SortableOverlay.tsx (new), RoomReorderOverlay.tsx (new), HomeSectionEditor.tsx (new), homepage-sections.ts (new), useOverlaySessionKey.ts (new), HomePage.tsx, ScenesPage.tsx, AppLayout.tsx, rooms.ts, system.ts, api.ts, package.json
+
+## PR #79 — Fix subway accordion: add direction icon, allow text wrap
+- **Branch**: fix/subway-accordion-direction-icon → dev
+- **Created**: 2026-03-28
+- **Status**: merged
+- **Merge date**: 2026-03-28
+- **Branch cleanup**: done
+- **Summary**: Add uptown/downtown arrow icon to subway accordion title. Allow accordion title text to wrap instead of overflow.
+- **Files**: `client/src/components/ui/Accordion.tsx`, `client/src/pages/HomePage.tsx`
+
+## PR #80 — Accordion device grouping, nav state preservation, and subway fixes
+- **Branch**: feature/accordion-devices-nav-state → dev
+- **Created**: 2026-03-28
+- **Status**: merged
+- **Merge date**: 2026-03-28
+- **Branch cleanup**: done
+- **Summary**: Devices page accordion grouping (default closed, room display order). usePersistedState hook for filter/search/accordion state across navigations. Scroll restoration timing fix for accordion transitions. Subway WCAG AA contrast fix and accordion title layout fix.
+- **Files**: `client/src/hooks/usePersistedState.ts` (new), `client/src/hooks/useScrollRestoration.ts`, `client/src/pages/DevicesPage.tsx`, `client/src/pages/ScenesPage.tsx`, `client/src/pages/HomePage.tsx`
+
+## PR #82 — Add room hierarchy with child rooms, inline expansion, and reordering
+- **Branch**: feature/room-hierarchy-subspaces → dev
+- **Created**: 2026-03-29
+- **Status**: merged
+- **Merge date**: 2026-03-29
+- **Branch cleanup**: done
+- **Summary**: Full room hierarchy feature. Homepage: inline child room expansion via pills, promoted children get own card. Scenes/Devices pages: nested compact sub-accordions. Room Detail: Child rooms accordion, config in Settings with Radix Switch. Rooms page: drag-and-drop reorder with showAll mode. Homepage reorder auto-positions hidden children. New promoted boolean, server-side child-of-child validation, display order input removed.
+- **Files**: `server/src/db/index.ts`, `server/src/routes/rooms.ts`, `client/src/lib/api.ts`, `client/src/pages/HomePage.tsx`, `client/src/pages/ScenesPage.tsx`, `client/src/pages/DevicesPage.tsx`, `client/src/pages/RoomDetailPage.tsx`, `client/src/pages/RoomsPage.tsx`, `client/src/components/RoomReorderOverlay.tsx`
+
+## PR #83 — Add Better Auth authentication
+- **Branch**: feature/better-auth → dev
+- **Created**: 2026-03-29
+- **Status**: closed (superseded by PR #84)
+- **Summary**: Better Auth with email/password, admin plugin, 30-day cookie sessions. All /api/* routes and Socket.io require auth. Login page, AuthGuard, admin user management in Settings. Hubitat webhook unchanged. CLI seed script for first admin. Upgraded better-sqlite3 to v12.
+- **Files**: `server/src/lib/auth.ts`, `server/src/middleware/requireAuth.ts`, `server/src/scripts/create-admin.ts`, `server/src/index.ts`, `client/src/lib/auth-client.ts`, `client/src/pages/LoginPage.tsx`, `client/src/components/auth/AuthGuard.tsx`, `client/src/App.tsx`, `client/src/pages/SettingsPage.tsx`, `client/src/lib/api.ts`
+
+## PR #84 — Better Auth with access links and QR codes
+- **Branch**: feature/better-auth → main
+- **Created**: 2026-03-29
+- **Status**: merged
+- **Merge date**: 2026-03-29
+- **Branch cleanup**: done
+- **Summary**: Full auth feature: Better Auth, role-based access (Manager/Resident/Guest), access links with QR codes, personalised invite flow
+- **Files**: All auth files + access links, invite page, account page
+
+## PR #85 — User action tracking, Fairy Queen identity, and room rename
+- **Branch**: feature/user-action-tracking → dev
+- **Created**: 2026-03-29
+- **Status**: merged
+- **Merge date**: 2026-03-30
+- **Branch cleanup**: done
+- **Summary**: User action audit log (user_actions table), scene attribution (created_by/updated_by/last_activated_by), Fairy Queen system identity for legacy content, attribution display in Recent tab and scene editor, whimsical Fairy Queen profile page at /fairy-queen
+- **Files**: `server/src/db/index.ts`, `server/src/lib/constants.ts`, `server/src/lib/user-action-logger.ts`, `server/src/lib/scene-executor.ts`, `server/src/routes/scenes.ts`, `server/src/routes/user-actions.ts`, `server/src/index.ts`, `client/src/lib/api.ts`, `client/src/components/ui/UserName.tsx`, `client/src/pages/FairyQueenPage.tsx`, `client/src/pages/ScenesPage.tsx`, `client/src/pages/SceneEditorPage.tsx`, `client/src/App.tsx`
+
+## PR #86 — Fix missed mode transitions and orphaned Sonos auto-play
+- **Branch**: fix/scheduler-catchup-and-autoplay-cleanup → dev
+- **Created**: 2026-03-30
+- **Status**: merged
+- **Merge date**: 2026-03-30
+- **Branch cleanup**: done
+- **Summary**: Fix sun-mode and time-trigger schedulers to catch up on missed transitions at startup, and clean up orphaned Sonos auto-play when rooms leave modes that had autoPlay enabled
+- **Files**: `server/src/index.ts`, `server/src/lib/sonos-manager.ts`, `server/src/lib/sun-mode-scheduler.ts`, `server/src/lib/time-trigger-scheduler.ts`
 
 ## Reconciliation — Sync main and dev (2026-03-27)
 - **Action**: Merged main into dev (fast-forward) to reconcile divergence
 - **Context**: PRs #60 and #61 had been merged directly to main (bypassing dev). PR #62 was merged to dev without #61's changes. This caused progressive disclosure work from PR #61 to be missing on dev. After merging PR #63 into main, merged main into dev — both branches now at commit 18cca7a, fully in sync.
 - **Resolved divergence**: dev now has PRs #61 (insights progressive disclosure) + #63 (kasa strip fix) that it was missing
+
+## PR #106 — Disable Sonos follow-me for rooms in manual mode
+- **Branch**: fix/follow-me-respect-manual-mode → dev
+- **Created**: 2026-04-01
+- **Status**: merged
+- **Merge date**: 2026-04-01
+- **Branch cleanup**: done
+- **Summary**: When a room's auto/manual toggle is set to manual, follow-me music no longer triggers for that room's speaker on motion. One-line change in `isRoomFollowMeEnabled()` to also check `room.auto === 1`.
+- **Files**: `server/src/lib/sonos-manager.ts`
+
+## PR #109 — Add activity feed with Fairy Queen narratives
+- **Branch**: feature/activity-feed → dev
+- **Created**: 2026-04-02
+- **Status**: merged
+- **Merge date**: 2026-04-02
+- **Branch cleanup**: done
+- **Summary**: Replaces the flat log list with a narrative activity feed as the default view. Groups related log events using parent_id linking, generates Fairy Queen-voiced messages explaining what happened and why. Filters out sensor telemetry noise. Raw Logs tab preserved.
+- **Files**: `server/src/lib/activity-narrator.ts`, `server/src/lib/logger.ts`, `server/src/lib/motion-handler.ts`, `server/src/lib/scene-executor.ts`, `server/src/routes/system.ts`, `server/src/db/index.ts`, `client/src/components/ui/ActivityCard.tsx`, `client/src/pages/LogsPage.tsx`, `client/src/lib/api.ts`
+
+## PR #145 — Fix Sonos Browse: play buttons, track menus, album/playlist actions
+- **Branch**: fix/sonos-browse-ux → dev
+- **Created**: 2026-04-03
+- **Status**: merged
+- **Merge date**: 2026-04-03
+- **Branch cleanup**: done
+- **Summary**: Replace unclear icon-only buttons on track rows with Play + three-dot context menu (Play next, Add to queue, Add to favourites). Add Play album/playlist buttons. Make Spotify search albums/playlists actionable. New PUT /sonos/play-uri endpoint. Fix radio playNext API, 44px touch targets, remove truncate, theme-consistent colours.
+- **Files**: 5 files changed — NasBrowseView.tsx, SpotifyBrowseView.tsx, RadioBrowseView.tsx, api.ts, sonos.ts
+
+## PR #144 — Fix Sonos Browse: genres, albums with art, radio, Spotify config
+- **Branch**: fix/sonos-browse-errors → dev
+- **Created**: 2026-04-03
+- **Status**: merged
+- **Merge date**: 2026-04-03
+- **Branch cleanup**: done
+- **Summary**: Complete Sonos Browse overhaul. Genre browsing via UPnP SOAP (26 genres → albums with cover art → tracks). Album browsing with artwork (704 albums). Artist browsing (1,240 artists). Radio from Sonos favourites. Spotify configured/not-configured states. PWA service worker fix for OAuth. Cloudflare 502 HTML interception fix. FavouritesTab wired up. SearchableSelect for Hushing Home.
+- **Files**: 13 files changed (+1,166/-311) — sonos-client.ts, sonos.ts, spotify-client.ts, spotify.ts, NasBrowseView.tsx, BrowseTab.tsx, SpotifyBrowseView.tsx, SonosPage.tsx, api.ts, HushingHomeSection.tsx, vite.config.ts, .env.example, prs.md

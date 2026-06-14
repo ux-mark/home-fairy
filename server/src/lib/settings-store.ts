@@ -1,0 +1,347 @@
+/**
+ * settings-store — in-process cache + DB-backed persistence for user-facing
+ * settings that used to live in process.env.
+ *
+ * Phase 1 (WI #4): introduces the store and seeds from env on first boot.
+ * Phase 2 will migrate the actual readers (sun-tracker, weather-client,
+ * Hubitat/LIFX/Spotify clients) onto these accessors.
+ *
+ * Conventions:
+ *   - One row per setting in `app_settings`, key = `<group>.<field>`.
+ *   - Values are JSON-encoded so we round-trip scalars and objects faithfully.
+ *   - The cache is hydrated synchronously at boot. Reads are sync after that.
+ *   - Writes update the DB then the cache slot in the same call.
+ */
+
+import { randomUUID } from 'node:crypto'
+import { db, run, getAll } from '../db/index.js'
+
+// ---------- Group shapes ----------
+
+export interface LocationSettings {
+  latitude: number | null
+  longitude: number | null
+  timezone: string
+  locale: string
+}
+
+export interface HubitatSettings {
+  baseUrl: string | null
+  token: string | null
+  webhookSecret: string | null
+}
+
+export interface LifxSettings {
+  token: string | null
+}
+
+export interface WeatherSettings {
+  apiKey: string | null
+}
+
+export interface SpotifySettings {
+  clientId: string | null
+  clientSecret: string | null
+  /**
+   * Legacy field — kept for backwards compatibility with existing rows and
+   * the generic PUT endpoint. Starting in Phase 7 (WI #4) the source of
+   * truth for the Spotify OAuth redirect URI is `publicBaseUrl`; the
+   * redirect URI is derived as `${publicBaseUrl}/api/spotify/callback`.
+   * This field is no longer surfaced in the Settings UI.
+   */
+  redirectUri: string | null
+  /**
+   * The public-facing base URL for this server, e.g. `https://home.thefairies.ie`.
+   * Spotify's OAuth callback hits this address from the internet, so we can't
+   * auto-detect it the way Hubitat's LAN webhook URL is detected. The user
+   * supplies the hostname; we append `/api/spotify/callback` to get the
+   * redirect URI Spotify expects in its dev console.
+   */
+  publicBaseUrl: string | null
+}
+
+export type SettingsGroup =
+  | 'location'
+  | 'hubitat'
+  | 'lifx'
+  | 'weather'
+  | 'spotify'
+
+// ---------- Defaults + env source map ----------
+
+const LOCATION_DEFAULTS: LocationSettings = {
+  latitude: null,
+  longitude: null,
+  timezone: 'Europe/Dublin',
+  locale: 'en-IE',
+}
+
+// Each entry maps `<group>.<field>` to the env var it should seed from
+// (null = no env source; default applies). Order matters only for log output.
+const ENV_SEED_MAP: ReadonlyArray<{
+  key: string
+  envVar: string | null
+  parse?: (raw: string) => unknown
+  defaultValue?: unknown
+}> = [
+  { key: 'location.latitude', envVar: 'LATITUDE', parse: (v) => Number(v), defaultValue: null },
+  { key: 'location.longitude', envVar: 'LONGITUDE', parse: (v) => Number(v), defaultValue: null },
+  { key: 'location.timezone', envVar: null, defaultValue: LOCATION_DEFAULTS.timezone },
+  { key: 'location.locale', envVar: null, defaultValue: LOCATION_DEFAULTS.locale },
+  { key: 'hubitat.baseUrl', envVar: 'HUB_BASE_URL', defaultValue: null },
+  { key: 'hubitat.token', envVar: 'HUBITAT_TOKEN', defaultValue: null },
+  { key: 'hubitat.webhookSecret', envVar: 'HUBITAT_WEBHOOK_SECRET', defaultValue: null },
+  { key: 'lifx.token', envVar: 'LIFX_TOKEN', defaultValue: null },
+  { key: 'weather.apiKey', envVar: 'OPENWEATHER_API', defaultValue: null },
+  { key: 'spotify.clientId', envVar: 'SPOTIFY_CLIENT_ID', defaultValue: null },
+  { key: 'spotify.clientSecret', envVar: 'SPOTIFY_CLIENT_SECRET', defaultValue: null },
+  { key: 'spotify.redirectUri', envVar: 'SPOTIFY_REDIRECT_URI', defaultValue: null },
+  { key: 'spotify.publicBaseUrl', envVar: null, defaultValue: null },
+]
+
+// ---------- In-process cache ----------
+
+const cache = new Map<string, unknown>()
+let hydrated = false
+
+function assertHydrated(): void {
+  if (!hydrated) {
+    throw new Error('[settings-store] not hydrated — call hydrate() at boot before reads')
+  }
+}
+
+// ---------- Hydrate + seed ----------
+
+/**
+ * Load every row from app_settings into the in-process cache. Must run
+ * exactly once at boot, before HTTP starts listening.
+ */
+export function hydrate(): void {
+  const rows = getAll<{ key: string; value: string }>(
+    'SELECT key, value FROM app_settings',
+  )
+  cache.clear()
+  for (const row of rows) {
+    try {
+      cache.set(row.key, JSON.parse(row.value))
+    } catch {
+      // Corrupt JSON — log and skip; better than crashing the boot.
+      console.warn(`[settings-store] dropping corrupt value for key="${row.key}"`)
+    }
+  }
+  hydrated = true
+}
+
+/**
+ * For each entry in ENV_SEED_MAP, if the DB row is missing, write a seeded
+ * value (env var if present, else the declared default). Existing rows are
+ * not overwritten — re-running this on later boots is a no-op for any key
+ * the user has already set.
+ */
+export function seedFromEnvIfMissing(): void {
+  assertHydrated()
+
+  const seeded: string[] = []
+  for (const entry of ENV_SEED_MAP) {
+    if (cache.has(entry.key)) continue
+
+    let value: unknown
+    const envValue = entry.envVar ? process.env[entry.envVar] : undefined
+    if (envValue !== undefined && envValue !== '') {
+      value = entry.parse ? entry.parse(envValue) : envValue
+      // Guard against NaN from numeric parses
+      if (typeof value === 'number' && !Number.isFinite(value)) {
+        value = entry.defaultValue ?? null
+      }
+    } else {
+      value = entry.defaultValue ?? null
+    }
+
+    setSetting(entry.key, value)
+    seeded.push(entry.key)
+  }
+
+  if (seeded.length > 0) {
+    console.log(`[settings-store] seeded ${seeded.length} keys: ${seeded.join(', ')}`)
+  }
+}
+
+// ---------- Generic accessors ----------
+
+export function getSetting<T>(key: string): T | null {
+  assertHydrated()
+  const raw = cache.get(key)
+  return (raw === undefined ? null : raw) as T | null
+}
+
+export function setSetting(key: string, value: unknown): void {
+  const encoded = JSON.stringify(value ?? null)
+  run(
+    `INSERT INTO app_settings (key, value, updated_at)
+     VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    [key, encoded],
+  )
+  cache.set(key, value ?? null)
+}
+
+// ---------- Group accessors ----------
+
+export function getLocation(): LocationSettings {
+  assertHydrated()
+  return {
+    latitude: (cache.get('location.latitude') as number | null) ?? null,
+    longitude: (cache.get('location.longitude') as number | null) ?? null,
+    timezone: (cache.get('location.timezone') as string | null) ?? LOCATION_DEFAULTS.timezone,
+    locale: (cache.get('location.locale') as string | null) ?? LOCATION_DEFAULTS.locale,
+  }
+}
+
+export function setLocation(v: LocationSettings): void {
+  setSetting('location.latitude', v.latitude)
+  setSetting('location.longitude', v.longitude)
+  setSetting('location.timezone', v.timezone)
+  setSetting('location.locale', v.locale)
+}
+
+export function getHubitat(): HubitatSettings {
+  assertHydrated()
+  return {
+    baseUrl: (cache.get('hubitat.baseUrl') as string | null) ?? null,
+    token: (cache.get('hubitat.token') as string | null) ?? null,
+    webhookSecret: (cache.get('hubitat.webhookSecret') as string | null) ?? null,
+  }
+}
+
+export function setHubitat(v: HubitatSettings): void {
+  setSetting('hubitat.baseUrl', v.baseUrl)
+  setSetting('hubitat.token', v.token)
+  setSetting('hubitat.webhookSecret', v.webhookSecret)
+}
+
+/**
+ * Ensure the Hubitat webhook secret is set. If it's already populated
+ * (e.g. seeded from HUBITAT_WEBHOOK_SECRET in .env, or generated on a
+ * previous boot), leave it untouched. Otherwise generate a cryptographically
+ * random UUID, persist it, and log the action so operators see why it
+ * appeared.
+ *
+ * Phase 6 (WI #4): replaces the user-typed "Webhook Secret" field — the
+ * secret is now an internal value embedded in the auto-generated webhook
+ * URL the user copies into Hubitat.
+ *
+ * Returns the secret (existing or newly minted) so callers don't have to
+ * re-fetch.
+ */
+export function ensureHubitatWebhookSecret(): string {
+  assertHydrated()
+  const existing = cache.get('hubitat.webhookSecret') as string | null | undefined
+  if (existing !== null && existing !== undefined && existing !== '') {
+    return existing
+  }
+  const fresh = randomUUID()
+  setSetting('hubitat.webhookSecret', fresh)
+  console.log('[settings-store] generated initial Hubitat webhook secret')
+  return fresh
+}
+
+/**
+ * Generate a new Hubitat webhook secret regardless of whether one already
+ * exists, persist it, and return the new value. Used by the
+ * `POST /api/settings/hubitat/regenerate-secret` endpoint when the user
+ * clicks "Regenerate" — the old URL must stop working.
+ */
+export function regenerateHubitatWebhookSecret(): string {
+  assertHydrated()
+  const fresh = randomUUID()
+  setSetting('hubitat.webhookSecret', fresh)
+  console.log('[settings-store] regenerated Hubitat webhook secret')
+  return fresh
+}
+
+export function getLifx(): LifxSettings {
+  assertHydrated()
+  return {
+    token: (cache.get('lifx.token') as string | null) ?? null,
+  }
+}
+
+export function setLifx(v: LifxSettings): void {
+  setSetting('lifx.token', v.token)
+}
+
+export function getWeather(): WeatherSettings {
+  assertHydrated()
+  return {
+    apiKey: (cache.get('weather.apiKey') as string | null) ?? null,
+  }
+}
+
+export function setWeather(v: WeatherSettings): void {
+  setSetting('weather.apiKey', v.apiKey)
+}
+
+export function getSpotify(): SpotifySettings {
+  assertHydrated()
+  return {
+    clientId: (cache.get('spotify.clientId') as string | null) ?? null,
+    clientSecret: (cache.get('spotify.clientSecret') as string | null) ?? null,
+    redirectUri: (cache.get('spotify.redirectUri') as string | null) ?? null,
+    publicBaseUrl: (cache.get('spotify.publicBaseUrl') as string | null) ?? null,
+  }
+}
+
+export function setSpotify(v: SpotifySettings): void {
+  setSetting('spotify.clientId', v.clientId)
+  setSetting('spotify.clientSecret', v.clientSecret)
+  setSetting('spotify.redirectUri', v.redirectUri)
+  setSetting('spotify.publicBaseUrl', v.publicBaseUrl)
+}
+
+/**
+ * One-time migration: if `spotify.publicBaseUrl` is unset but the legacy
+ * `spotify.redirectUri` is set to something that looks like
+ * `<scheme>://<host>[:port]/api/spotify/callback`, extract the prefix into
+ * `publicBaseUrl` and persist it. The user's existing Spotify dev-console
+ * registration keeps working (the derived URI matches the old one) and the
+ * new UI has the value it needs without the user re-entering anything.
+ *
+ * Idempotent: subsequent runs are no-ops once `publicBaseUrl` is populated.
+ * Tolerates a missing or malformed `redirectUri` — never throws, never
+ * touches existing `publicBaseUrl`.
+ *
+ * Phase 7 (WI #4) — called from the boot sequence right after
+ * `ensureHubitatWebhookSecret()`.
+ */
+export function migrateSpotifyPublicBaseUrl(): void {
+  assertHydrated()
+  const existing = cache.get('spotify.publicBaseUrl') as string | null | undefined
+  if (existing !== null && existing !== undefined && existing !== '') return
+
+  const redirectUri = cache.get('spotify.redirectUri') as string | null | undefined
+  if (!redirectUri || typeof redirectUri !== 'string') return
+
+  // Expect exactly `<scheme>://<host>[:port]/api/spotify/callback` with no
+  // trailing slash and no extra path. If anything else, leave it alone.
+  const match = redirectUri.match(/^(https?:\/\/[^/]+)\/api\/spotify\/callback$/)
+  if (!match) return
+
+  const baseUrl = match[1]
+  setSetting('spotify.publicBaseUrl', baseUrl)
+  console.log('[settings-store] migrated spotify.publicBaseUrl from existing redirectUri')
+}
+
+// ---------- Test-only helpers ----------
+
+/**
+ * Reset the in-process cache and hydration state. Intended for unit tests
+ * only; do not call from runtime code. Does NOT touch the DB.
+ */
+export function _resetForTests(): void {
+  cache.clear()
+  hydrated = false
+}
+
+// Re-export the underlying db handle for tests that need to seed rows
+// directly. Keeps the import surface narrow for production callers.
+export { db as _db }

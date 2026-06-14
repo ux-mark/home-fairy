@@ -3,8 +3,10 @@
 // for the full decision window (walkTime + maxWaitMinutes), then reverts.
 
 import { getOne, run } from '../db/index.js'
+import { log as logToDb } from './logger.js'
 import { lifxClient } from './lifx-client.js'
 import { mtaClient } from './mta-client.js'
+import { isHushingActive } from './hushing.js'
 
 interface CurrentStateRow {
   key: string
@@ -41,11 +43,7 @@ const STATUS_PRIORITY: Record<string, number> = { green: 3, orange: 2, red: 1, n
 const UPDATE_INTERVAL_MS = 30_000 // 30 seconds — matches MTA feed refresh rate
 
 function log(message: string): void {
-  try {
-    run('INSERT INTO logs (message, category) VALUES (?, ?)', [message, 'mta-indicator'])
-  } catch {
-    console.log(`[mta-indicator] ${message}`)
-  }
+  logToDb(message, 'mta-indicator')
 }
 
 class MtaIndicatorManager {
@@ -115,6 +113,11 @@ class MtaIndicatorManager {
    */
   private async updateLight(): Promise<string> {
     if (!this.isActive || !this.currentLightId) return 'none'
+
+    if (isHushingActive()) {
+      log('Hushing Home active — suppressing MTA indicator update')
+      return 'none'
+    }
 
     const { enabledStops, maxWaitMinutes } = this.readStopsConfig()
     if (enabledStops.length === 0) {

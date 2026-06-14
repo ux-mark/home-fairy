@@ -2,6 +2,9 @@ import { Router, Request, Response } from 'express'
 import { z } from 'zod'
 import { getAll, getOne, run, db } from '../db/index.js'
 import { activateScene, deactivateScene } from '../lib/scene-executor.js'
+import { FAIRY_QUEEN } from '../lib/constants.js'
+import { logUserAction } from '../lib/user-action-logger.js'
+import { log } from '../lib/logger.js'
 
 const IS_PRODUCTION = process.env.NODE_ENV === 'production'
 
@@ -15,8 +18,11 @@ interface SceneRow {
   active_from: string | null
   active_to: string | null
   last_activated_at: string | null
+  last_activated_by: string
   created_at: string
   updated_at: string
+  created_by: string
+  updated_by: string
   sort_order: number
 }
 
@@ -47,6 +53,20 @@ function parseScene(row: SceneRow) {
     [row.name],
   ).map(m => m.mode_name)
 
+  const userIds = new Set<string>()
+  for (const id of [row.created_by, row.updated_by, row.last_activated_by]) {
+    if (id && id !== 'fairy-queen') userIds.add(id)
+  }
+  const nameMap = new Map<string, string>([['fairy-queen', 'Fairy Queen']])
+  if (userIds.size > 0) {
+    const placeholders = [...userIds].map(() => '?').join(',')
+    const users = getAll<{ id: string; name: string }>(
+      `SELECT id, name FROM user WHERE id IN (${placeholders})`,
+      [...userIds],
+    )
+    for (const u of users) nameMap.set(u.id, u.name)
+  }
+
   return {
     ...row,
     rooms,
@@ -56,6 +76,9 @@ function parseScene(row: SceneRow) {
     active_from: row.active_from ?? null,
     active_to: row.active_to ?? null,
     last_activated_at: row.last_activated_at ?? null,
+    created_by_name: nameMap.get(row.created_by) ?? 'Fairy Queen',
+    updated_by_name: nameMap.get(row.updated_by) ?? 'Fairy Queen',
+    last_activated_by_name: nameMap.get(row.last_activated_by) ?? 'Fairy Queen',
   }
 }
 
@@ -139,6 +162,24 @@ router.get('/', (_req: Request, res: Response) => {
       modesByScene.set(sm.scene_name, list)
     }
 
+    // Collect unique user IDs for batch name lookup
+    const userIds = new Set<string>()
+    for (const row of rows) {
+      if (row.created_by && row.created_by !== 'fairy-queen') userIds.add(row.created_by)
+      if (row.updated_by && row.updated_by !== 'fairy-queen') userIds.add(row.updated_by)
+      if (row.last_activated_by && row.last_activated_by !== 'fairy-queen') userIds.add(row.last_activated_by)
+    }
+    const userNameMap = new Map<string, string>()
+    userNameMap.set('fairy-queen', 'Fairy Queen')
+    if (userIds.size > 0) {
+      const placeholders = [...userIds].map(() => '?').join(',')
+      const users = getAll<{ id: string; name: string }>(
+        `SELECT id, name FROM user WHERE id IN (${placeholders})`,
+        [...userIds],
+      )
+      for (const u of users) userNameMap.set(u.id, u.name)
+    }
+
     const scenes = rows.map(row => {
       let commands: unknown = []
       let tags: unknown = []
@@ -153,6 +194,9 @@ router.get('/', (_req: Request, res: Response) => {
         active_from: row.active_from ?? null,
         active_to: row.active_to ?? null,
         last_activated_at: row.last_activated_at ?? null,
+        created_by_name: userNameMap.get(row.created_by) ?? 'Fairy Queen',
+        updated_by_name: userNameMap.get(row.updated_by) ?? 'Fairy Queen',
+        last_activated_by_name: userNameMap.get(row.last_activated_by) ?? 'Fairy Queen',
       }
     })
 
@@ -225,6 +269,24 @@ router.put('/reorder', (req: Request, res: Response) => {
       list.push(sm.mode_name)
       modesByScene.set(sm.scene_name, list)
     }
+
+    const reorderUserIds = new Set<string>()
+    for (const row of rows) {
+      if (row.created_by && row.created_by !== 'fairy-queen') reorderUserIds.add(row.created_by)
+      if (row.updated_by && row.updated_by !== 'fairy-queen') reorderUserIds.add(row.updated_by)
+      if (row.last_activated_by && row.last_activated_by !== 'fairy-queen') reorderUserIds.add(row.last_activated_by)
+    }
+    const reorderUserNameMap = new Map<string, string>()
+    reorderUserNameMap.set('fairy-queen', 'Fairy Queen')
+    if (reorderUserIds.size > 0) {
+      const placeholders = [...reorderUserIds].map(() => '?').join(',')
+      const users = getAll<{ id: string; name: string }>(
+        `SELECT id, name FROM user WHERE id IN (${placeholders})`,
+        [...reorderUserIds],
+      )
+      for (const u of users) reorderUserNameMap.set(u.id, u.name)
+    }
+
     const scenes = rows.map(row => {
       let commands: unknown = []
       let tags: unknown = []
@@ -239,6 +301,9 @@ router.put('/reorder', (req: Request, res: Response) => {
         active_from: row.active_from ?? null,
         active_to: row.active_to ?? null,
         last_activated_at: row.last_activated_at ?? null,
+        created_by_name: reorderUserNameMap.get(row.created_by) ?? 'Fairy Queen',
+        updated_by_name: reorderUserNameMap.get(row.updated_by) ?? 'Fairy Queen',
+        last_activated_by_name: reorderUserNameMap.get(row.last_activated_by) ?? 'Fairy Queen',
       }
     })
 
@@ -260,6 +325,9 @@ router.put('/reorder', (req: Request, res: Response) => {
 // POST / — create scene
 router.post('/', (req: Request, res: Response) => {
   try {
+    const user = (req as any).user
+    const userId = user?.id ?? FAIRY_QUEEN.id
+    const userName = user?.name ?? FAIRY_QUEEN.name
     const body = createSceneSchema.parse(req.body)
 
     const createTransaction = db.transaction(() => {
@@ -268,8 +336,8 @@ router.post('/', (req: Request, res: Response) => {
         : ((getOne<{ m: number | null }>('SELECT MAX(sort_order) as m FROM scenes')?.m ?? -1) + 1)
 
       run(
-        `INSERT INTO scenes (name, icon, commands, tags, active_from, active_to, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO scenes (name, icon, commands, tags, active_from, active_to, sort_order, created_by, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           body.name,
           body.icon ?? '',
@@ -278,6 +346,8 @@ router.post('/', (req: Request, res: Response) => {
           body.active_from ?? null,
           body.active_to ?? null,
           sortOrder,
+          userId,
+          userId,
         ],
       )
 
@@ -299,6 +369,8 @@ router.post('/', (req: Request, res: Response) => {
     })
 
     createTransaction()
+    log(`${userName} created scene ${body.name}`, 'scene', { id: userId, name: userName })
+    logUserAction(userId, userName, 'create', 'scene', body.name)
 
     const created = getOne<SceneRow>('SELECT * FROM scenes WHERE name = ?', [body.name])
     res.status(201).json(parseScene(created!))
@@ -315,6 +387,9 @@ router.post('/', (req: Request, res: Response) => {
 // PUT /:name — update scene
 router.put('/:name', (req: Request, res: Response) => {
   try {
+    const user = (req as any).user
+    const userId = user?.id ?? FAIRY_QUEEN.id
+    const userName = user?.name ?? FAIRY_QUEEN.name
     const existing = getOne<SceneRow>('SELECT * FROM scenes WHERE name = ?', [req.params.name])
     if (!existing) {
       res.status(404).json({ error: 'Scene not found' })
@@ -336,6 +411,8 @@ router.put('/:name', (req: Request, res: Response) => {
 
       if (fields.length > 0) {
         fields.push("updated_at = datetime('now')")
+        fields.push('updated_by = ?')
+        values.push(userId)
         values.push(req.params.name)
         run(`UPDATE scenes SET ${fields.join(', ')} WHERE name = ?`, values)
       }
@@ -389,6 +466,9 @@ router.put('/:name', (req: Request, res: Response) => {
     updateTransaction()
 
     const lookupName = body.name ?? req.params.name
+    log(`${userName} updated scene ${lookupName}`, 'scene', { id: userId, name: userName })
+    logUserAction(userId, userName, 'update', 'scene', String(lookupName))
+
     const updated = getOne<SceneRow>('SELECT * FROM scenes WHERE name = ?', [lookupName])
     res.json(parseScene(updated!))
   } catch (err) {
@@ -404,11 +484,16 @@ router.put('/:name', (req: Request, res: Response) => {
 // DELETE /:name — delete scene
 router.delete('/:name', (req: Request, res: Response) => {
   try {
+    const user = (req as any).user
+    const userId = user?.id ?? FAIRY_QUEEN.id
+    const userName = user?.name ?? FAIRY_QUEEN.name
     const existing = getOne<SceneRow>('SELECT * FROM scenes WHERE name = ?', [req.params.name])
     if (!existing) {
       res.status(404).json({ error: 'Scene not found' })
       return
     }
+    log(`${userName} deleted scene ${req.params.name}`, 'scene', { id: userId, name: userName })
+    logUserAction(userId, userName, 'delete', 'scene', String(req.params.name))
     run('DELETE FROM scenes WHERE name = ?', [req.params.name])
     res.json({ success: true })
   } catch (err) {
@@ -420,8 +505,11 @@ router.delete('/:name', (req: Request, res: Response) => {
 // POST /:name/activate — activate scene
 router.post('/:name/activate', async (req: Request, res: Response) => {
   try {
+    const user = (req as any).user
+    const userId = user?.id ?? FAIRY_QUEEN.id
+    const userName = user?.name ?? FAIRY_QUEEN.name
     const name = req.params.name as string
-    await activateScene(name, new Set(), 'manual')
+    await activateScene(name, new Set(), 'manual', { id: userId, name: userName })
 
     // Mark all rooms in this scene as having a manual override so motion
     // events do not replace the user's chosen scene until the room goes idle.
@@ -440,9 +528,33 @@ router.post('/:name/activate', async (req: Request, res: Response) => {
 // POST /:name/deactivate — deactivate scene
 router.post('/:name/deactivate', async (req: Request, res: Response) => {
   try {
+    const user = (req as any).user
+    const userId = user?.id ?? FAIRY_QUEEN.id
+    const userName = user?.name ?? FAIRY_QUEEN.name
     const name = req.params.name as string
-    await deactivateScene(name)
+    await deactivateScene(name, { id: userId, name: userName })
     res.json({ success: true, scene: name, action: 'deactivated' })
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
+  }
+})
+
+// GET /:name/activity — activity log for a specific scene
+router.get('/:name/activity', (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Number(req.query.limit) || 20, 100)
+    const actions = getAll<{
+      id: number; user_id: string; user_name: string; action: string;
+      entity_type: string; entity_id: string; details: string | null; created_at: string
+    }>(
+      'SELECT * FROM user_actions WHERE entity_type = ? AND entity_id = ? ORDER BY created_at DESC LIMIT ?',
+      ['scene', req.params.name, limit],
+    )
+    res.json(actions.map(a => ({
+      ...a,
+      details: a.details ? JSON.parse(a.details) : null,
+    })))
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     res.status(500).json({ error: IS_PRODUCTION ? 'Internal server error' : msg })
