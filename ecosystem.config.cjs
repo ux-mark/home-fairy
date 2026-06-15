@@ -1,3 +1,5 @@
+const os = require('os')
+
 module.exports = {
   apps: [
     {
@@ -41,7 +43,9 @@ module.exports = {
     },
     {
       name: 'sonos-http-api',
-      cwd: '/home/queen/node-sonos-http-api',
+      // Resolve the Sonos API path from the running user's home so the same
+      // config works on every Pi (queen, bog-witch, …) with no per-host edit.
+      cwd: `${os.homedir()}/node-sonos-http-api`,
       script: 'server.js',
       watch: false,
       // Steady-state RSS sits at ~135–140 MB after speaker discovery; the

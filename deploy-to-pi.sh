@@ -3,13 +3,18 @@ set -e
 # Deploy Home Fairy to Raspberry Pi
 # Run this from your Mac: bash deploy-to-pi.sh
 #
+# Target: defaults to the queen Pi. Override PI_HOST (and optionally PI_DIR)
+# to deploy elsewhere, e.g. the bog-witch Pi:
+#   PI_HOST=bog-witch@home-fairy.local bash deploy-to-pi.sh
+# PI_DIR is derived from the remote username unless you set it explicitly.
+#
 # Database behaviour:
 #   By default, the local database is NOT copied to the Pi.
 #   Pass --include-db to copy the local database (overwrites Pi database).
 #   Up to 5 timestamped backups are kept automatically.
 
-PI_HOST="queen@192.168.10.201"
-PI_DIR="/home/queen/home-fairy"
+PI_HOST="${PI_HOST:-queen@192.168.10.201}"
+PI_DIR="${PI_DIR:-/home/${PI_HOST%@*}/home-fairy}"
 LOCAL_DB="server/data/thefairies.sqlite"
 INCLUDE_DB=false
 
@@ -147,4 +152,4 @@ REMOTE
 
 echo ""
 echo "Deployment complete!"
-echo "   Open: http://192.168.10.201:3001"
+echo "   Open: http://${PI_HOST#*@}:3001"
